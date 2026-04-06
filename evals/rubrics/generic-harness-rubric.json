@@ -1,0 +1,118 @@
+{
+  "rubric_id": "generic-harness-rubric",
+  "evaluator_profile_path": "../verification-profiles/fullstack-app.profile.json",
+  "target_total_score": 0.9,
+  "minimum_control_plane_score": 1,
+  "minimum_proof_score": 0.85,
+  "target_signal_requires_adapter": true,
+  "target_signal_requires_grade_score": true,
+  "stop_after_plateau_rounds": 1,
+  "max_remediation_rounds": 2,
+  "required_artifacts": [
+    "round-contract.json",
+    "contract-review.json",
+    "contract-agreement.json",
+    "generator-plan.json",
+    "evaluator-verdict.json",
+    "patch-request.json",
+    "round-result.json",
+    "eval_report.json",
+    "agent_handoff/planner-context.md",
+    "agent_handoff/generator-brief.md",
+    "agent_handoff/qa-review.md",
+    "agent_handoff/controller-decision.md"
+  ],
+  "quality_dimensions": [
+    "planner_clarity",
+    "contract_testability",
+    "artifact_handoff",
+    "patch_authority",
+    "qa_rigor",
+    "runtime_portability"
+  ],
+  "score_dimensions": [
+    {
+      "dimension_id": "contract_execution",
+      "label": "Contract execution",
+      "description": "The round contract carries release QA scope and the handoff stays resumable without a separate sprint layer.",
+      "minimum_score": 1,
+      "skip_in_negotiation_modes": [
+        "patch_only"
+      ],
+      "check_ids": [
+        "round_contract_written",
+        "round_contract_is_testable",
+        "contract_review_written",
+        "contract_review_quality",
+        "contract_agreement_written",
+        "agreement_matches_review",
+        "round_contract_scopes_release_qa",
+        "generator_plan_written",
+        "handoff_is_resumable"
+      ]
+    },
+    {
+      "dimension_id": "proof_integrity",
+      "label": "Proof integrity",
+      "description": "Claims must stay grounded in attested, live, independent proof.",
+      "minimum_score": 1,
+      "requires_adapter": true,
+      "check_ids": [
+        "adapter_claims_are_honest",
+        "proof_provenance_is_attested",
+        "live_verification_present",
+        "proof_boundary_is_independent",
+        "adapter_evidence_is_meaningful",
+        "adapter_criteria_are_grounded",
+        "adapter_criteria_match_profile",
+        "independent_target_probe_present"
+      ]
+    },
+    {
+      "dimension_id": "browser_release_qa",
+      "label": "Browser release QA",
+      "description": "Browser-facing targets must ship at least one passing Playwright-style release gate.",
+      "minimum_score": 1,
+      "requires_adapter": true,
+      "requires_target_surfaces": [
+        "browser"
+      ],
+      "check_ids": [
+        "live_verification_present",
+        "independent_target_probe_present"
+      ],
+      "required_core_probe_modes": [
+        "browser_journey"
+      ]
+    },
+    {
+      "dimension_id": "api_release_qa",
+      "label": "API release QA",
+      "description": "API-facing targets must ship passing release-gate HTTP checks under the core profile.",
+      "minimum_score": 1,
+      "requires_adapter": true,
+      "requires_target_surfaces": [
+        "api"
+      ],
+      "check_ids": [
+        "live_verification_present",
+        "independent_target_probe_present"
+      ],
+      "required_core_probe_modes": [
+        "http_json"
+      ]
+    },
+    {
+      "dimension_id": "repair_convergence",
+      "label": "Repair convergence",
+      "description": "Remediation rounds should keep blockers explicit and close carried fixes instead of drifting.",
+      "minimum_score": 1,
+      "blocks_target_signal": false,
+      "check_ids": [
+        "previous_patch_request_addressed",
+        "previous_patch_request_resolved",
+        "release_blockers_recorded"
+      ]
+    }
+  ]
+}

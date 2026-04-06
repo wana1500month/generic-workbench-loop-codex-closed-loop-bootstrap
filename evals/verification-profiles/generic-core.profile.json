@@ -1,0 +1,14 @@
+{
+  "profile_id": "generic-core-profile",
+  "label": "Generic Harness Core Bundle",
+  "bundle_label": "Generic Harness Core Bundle",
+  "target_family": "generic-core",
+  "validation_lane": "deterministic_semantic",
+  "target_reached_requires_core_probes": true,
+  "minimum_feature_release_assertions": 2,
+  "criteria": [],
+  "notes": [
+    "This neutral bundle is the default for adapter-free runs so the harness reports generic-core semantics instead of a product-biased family.",
+    "It is intended for harness-core structural closure and should not be used to claim target_reached for a real external target."
+  ]
+}

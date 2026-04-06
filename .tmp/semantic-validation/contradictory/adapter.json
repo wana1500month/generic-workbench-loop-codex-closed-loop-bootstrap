@@ -1,0 +1,19 @@
+{
+  "adapter_id": "semantic-contradictory",
+  "label": "Semantic Contradictory Adapter",
+  "contract_version": "1",
+  "target_root": ".",
+  "capabilities": {
+    "prepare_target": { "command": "node ../executor.cjs contradictory" },
+    "apply_change": { "command": "node ../executor.cjs contradictory" },
+    "run_target": { "command": "node ../executor.cjs contradictory" }
+  },
+  "verification_provider": {
+    "provider_id": "semantic-contradictory-verifier",
+    "capabilities": {
+      "capture_evidence": { "command": "node ../verifier.cjs contradictory" },
+      "run_checks": { "command": "node ../verifier.cjs contradictory" },
+      "grade_round": { "command": "node ../verifier.cjs contradictory" }
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "rubric_id": "generic-harness-rubric-no-profile",
+  "target_total_score": 0.9,
+  "minimum_control_plane_score": 1,
+  "minimum_proof_score": 0.85,
+  "target_signal_requires_adapter": true,
+  "target_signal_requires_grade_score": true,
+  "stop_after_plateau_rounds": 1,
+  "max_remediation_rounds": 2,
+  "required_artifacts": [
+    "round-contract.json",
+    "contract-review.json",
+    "contract-agreement.json",
+    "generator-plan.json",
+    "evaluator-verdict.json",
+    "patch-request.json",
+    "round-result.json",
+    "eval_report.json",
+    "agent_handoff/planner-context.md",
+    "agent_handoff/generator-brief.md",
+    "agent_handoff/qa-review.md",
+    "agent_handoff/controller-decision.md"
+  ],
+  "quality_dimensions": [
+    "planner_clarity",
+    "contract_testability",
+    "artifact_handoff",
+    "patch_authority",
+    "qa_rigor",
+    "runtime_portability"
+  ]
+}

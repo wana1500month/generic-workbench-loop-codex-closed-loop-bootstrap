@@ -1,0 +1,19 @@
+{
+  "adapter_id": "semantic-dashboard-recontract",
+  "label": "Semantic Dashboard Recontract Adapter",
+  "contract_version": "1",
+  "target_root": ".",
+  "capabilities": {
+    "prepare_target": { "command": "node ../executor.cjs dashboard-recontract" },
+    "apply_change": { "command": "node ../executor.cjs dashboard-recontract" },
+    "run_target": { "command": "node ../executor.cjs dashboard-recontract" }
+  },
+  "verification_provider": {
+    "provider_id": "semantic-dashboard-recontract-verifier",
+    "capabilities": {
+      "capture_evidence": { "command": "node ../verifier.cjs dashboard-recontract" },
+      "run_checks": { "command": "node ../verifier.cjs dashboard-recontract" },
+      "grade_round": { "command": "node ../verifier.cjs dashboard-recontract" }
+    }
+  }
+}

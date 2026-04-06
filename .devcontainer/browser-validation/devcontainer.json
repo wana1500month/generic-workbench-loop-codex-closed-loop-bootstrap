@@ -1,0 +1,17 @@
+{
+  "name": "Browser Validation",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "../.."
+  },
+  "workspaceFolder": "/workspaces/generic-workbench-loop",
+  "postCreateCommand": "npm ci",
+  "remoteUser": "root",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}

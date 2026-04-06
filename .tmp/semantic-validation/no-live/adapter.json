@@ -1,0 +1,19 @@
+{
+  "adapter_id": "semantic-no-live",
+  "label": "Semantic No-Live Adapter",
+  "contract_version": "1",
+  "target_root": ".",
+  "capabilities": {
+    "prepare_target": { "command": "node ../executor.cjs no-live" },
+    "apply_change": { "command": "node ../executor.cjs no-live" },
+    "run_target": { "command": "node ../executor.cjs no-live" }
+  },
+  "verification_provider": {
+    "provider_id": "semantic-no-live-verifier",
+    "capabilities": {
+      "capture_evidence": { "command": "node ../verifier.cjs no-live" },
+      "run_checks": { "command": "node ../verifier.cjs no-live" },
+      "grade_round": { "command": "node ../verifier.cjs no-live" }
+    }
+  }
+}

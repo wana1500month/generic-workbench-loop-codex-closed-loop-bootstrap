@@ -1,0 +1,19 @@
+{
+  "adapter_id": "semantic-shell-only",
+  "label": "Semantic Shell-Only Probe Adapter",
+  "contract_version": "1",
+  "target_root": ".",
+  "capabilities": {
+    "prepare_target": { "command": "node ../executor.cjs truth" },
+    "apply_change": { "command": "node ../executor.cjs truth" },
+    "run_target": { "command": "node ../executor.cjs truth" }
+  },
+  "verification_provider": {
+    "provider_id": "semantic-shell-only-verifier",
+    "capabilities": {
+      "capture_evidence": { "command": "node ../verifier.cjs truth" },
+      "run_checks": { "command": "node ../verifier.cjs truth" },
+      "grade_round": { "command": "node ../verifier.cjs truth" }
+    }
+  }
+}

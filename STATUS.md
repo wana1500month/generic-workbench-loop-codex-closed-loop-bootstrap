@@ -1,0 +1,170 @@
+# Status
+
+- Each round now persists a first-class `round-contract.json` / `.md` artifact before execution, so planner/generator/evaluator alignment is explicit instead of inferred after the fact.
+- `eval_report.json`, `round_summary.json`, and `summary.json` now surface `dimension_scores[]` plus `dimension_thresholds_met`, so hard floors for contract execution, proof integrity, release-gate QA, and repair convergence are machine-auditable.
+- The default rubric now includes target-surface-aware release-QA dimensions, and adapters receive `round_contract_path` in their input packet so target-side tooling can read the same scoped contract the controller grades.
+- Bootstrap now turns intake answers into first-run evaluator artifacts, not just runtime config: `rubric.generated.json` and `verification-profile.generated.json` now carry intake-derived release criteria, journey probes, and `quality_contract` axes.
+- Each evaluated round now also persists `quality-critique.json`, so evaluator-side quality findings, preserve signals, and remediation strategy remain first-class controller state alongside `patch-request.json`.
+- The repo now ships an external quality-lane scaffold plus regression coverage, so stricter companion evaluator bundles can be generated and validated without bundling a product surface into this repository.
+
+## Current phase
+
+- Date: 2026-04-07
+- Phase: harness-controlled quality-lift mainline
+- Bundled adapter: none
+- Latest required validations: `npm run build`, `npm run validate:lifecycle-api`, `npm run validate:family-browser-semantic`, `npm run validate:family-fullstack-semantic`, `npm run validate:failure-policy`, `npm run validate:score-policy`, `npm run validate:quality-lift`, `npm run validate:bootstrap-generator-fail-closed`, `npm run validate:bootstrap-evidence-integrity`, `npm run validate:codex-profile-wiring`, `npm run validate:end-pass-qa`, `npm run validate:codex-executor-mode`, `npm run validate:resume-smoke`, `npm run validate:reference-adapter:check`, `npm run validate:reference-adapter:canonical`, `npm run validate:reference-adapter:canonical:patch-only`, `npm run validate:reference-adapter:canonical:recontract`, `npm run validate:reference-adapter:canonical:crud`, `npm run validate:reference-adapter:canonical:crud:patch-only`, `npm run validate:reference-adapter:canonical:crud:recontract`, `npm run validate:reference-adapter:canonical:chat`, `npm run validate:reference-adapter:canonical:chat:patch-only`, `npm run validate:reference-adapter:canonical:chat:recontract`, `npm run validate:codex-auth-preflight`, trusted self-hosted CI `npm run validate:codex:real-smoke:strict`
+
+## What exists
+
+- Generic idea intake through `IDEA.md`
+- A staged intake gate that now separates product questions, execution-control questions, and confirmation before bootstrap
+- Interactive bootstrap now asks for direct `target score` and `max rounds`, keeps target-family inference internal, and only asks run/check/URL hints when they are needed for an existing target
+- Interactive bootstrap now also emits evaluator-owned `quality_contract` axes and generated journey probes, so the first run starts from intake-derived release criteria instead of only family defaults
+- Explicit executor split: `harness` is the mainline, while `subagents-experimental` is an opt-in manifest-backed prompt path
+- Planner output through `planned-scenario.json`, `plan.json`, and `planner-brief.md`
+- The planner now emits one long-build strategy plus remediation policy instead of a fixed multi-round playbook
+- Remediation attempts now advertise patch-request-driven carry-forward work instead of pretending each attempt restarts from a fresh micro-decomposition
+- The controller now keeps an active contract frame, chooses `full_negotiation`, `patch_only`, or `recontract` per round, and defaults post-build remediation to patch-only carry-forward work
+- Round contracts now distinguish `initial_build` from `remediation`, and remediation attempts carry a lighter required-artifact surface than the first build pass
+- Clean remediation attempts now omit `contract-review.*` and `contract-agreement.*` on disk unless negotiation blocks and those files are needed diagnostically
+- V2 round protocol artifacts:
+  - `round-contract.json`
+  - `generator-plan.json`
+  - `evaluator-verdict.json`
+  - `patch-request.json`
+  - `quality-critique.json`
+  - `round-result.json`
+  - `contract-review.json` and `contract-agreement.json` on the initial build attempt, and on blocked remediation attempts when negotiation diagnostics are needed
+- Run-level `controller-summary.md` and `codex-handoff.md`
+- External adapter contract and example config
+- A rubric focused on harness coherence rather than bundled app quality
+- Structural patch carry-forward through `target_check_ids`
+- Rule-based contract review that can block an untestable round before build execution
+- Adapter execution gated behind contract agreement
+- Placeholder-backed checks are named `*_surface_reserved` and only claim reserved output surfaces
+- Adapter capability failures now degrade round verdicts instead of being passive check noise
+- Adapter capability failures are now carried forward through evaluator-known checks such as `adapter_execution_healthy`
+- Adapter result payloads are now schema-validated before the evaluator trusts them
+- Successful `capture_evidence`, `run_checks`, and `grade_round` claims now require verifiable evidence paths
+- Windows and PowerShell can now pass adapter/runtime flags through `npm run loop:run -- ...` via the root runner shim
+- Empty evidence files are now rejected instead of counting as proof
+- Adapter evidence semantics are now checked separately from schema honesty so `run_checks` and `grade_round` must explain what their proof supports
+- Successful proof claims now require evidence item `kind` and `description` fields, and `grade_round` must trace back to concrete upstream evidence paths
+- The runtime now performs generic content checks for text, JSON, image, and binary evidence before trusting adapter proof
+- Successful `run_checks` and `grade_round` claims now require grounded criterion manifests, so proof must name which criteria passed or failed and which evidence supports each claim
+- Adapter-attached target proof now requires a core-owned evaluator profile, so target criteria can live outside adapter-authored status strings
+- Adapter-attached target proof now also requires an independent verification provider, so proof capabilities run in a separate trust domain from target mutation
+- Successful `run_checks` and `grade_round` criteria now require `observed_value`, and the core compares those observations against the verification profile before trusting criterion status
+- Successful `grade_round` claims now require `threshold_verdict`, keep `blocking_criterion_ids` aligned with failing criteria, and fail when grading contradicts earlier hard criteria without new grounded proof
+- Proof executions now persist command, stdout, stderr, result, and evidence hashes so verifier provenance is attested instead of staying purely declarative
+- Adapter-attached target proof now requires a verifier-produced live interaction artifact such as an `interaction-log`, transcript, or trace before the run can claim target closure
+- Adapter-attached target proof now also requires a structured `verification-witness` manifest that names the verifier steps and points back to the live interaction log
+- Adapter-attached target proof now also requires evaluator-owned `core_probes`, so the core can probe target surfaces itself before it emits `target_reached`
+- Successful `run_target` can now publish `target_manifest` URLs such as `health_url`, `app_url`, and `api_base_url`, which the core uses to resolve live target probes without trusting adapter-authored pass strings
+- `target_reached` now requires assertion-based release gates: supporting probes may use `http`, `browser`, target-root files, target JSON, or `shell_command`, but required release-gate probes must use `http_json` or `browser_journey`
+- Release-gate probes now carry `assertion_id`, `semantic_level`, and `target_manifest_key`, and the profile can require a minimum number of distinct passing feature/workflow assertions before `target_reached` is eligible
+- Hard release assertions now require both verifier witness coverage and passing core-owned probe coverage, so witness/core disagreement keeps the run in `revise`
+- Evaluator profile ownership has moved into the core: rubrics and CLI now attach the only evaluator profile the runtime will load, while adapter-authored `verification_profile_path` remains schema-only compatibility metadata
+- Core-owned evaluator profiles can now declare expected browser/API surfaces, and those declarations are the single source of truth for browser witnesses, `browser_journey` gates, API witnesses, and `http_json` gates
+- The evaluator fails runs that do not publish the `target_manifest` URLs required by those core-owned surface declarations
+- Core-owned evaluator bundles can now declare `minimum_assertion_tag_counts`, so bundle strength can require persistence and error-path release assertions in addition to raw surface coverage
+- The default rubric now selects the fullstack evaluator bundle, while CLI overrides can switch bundles either by explicit profile path or by `--target-family`
+- Additional target-family evaluator packs now exist for `crud-api`, `chat-agent`, `browser-editor`, and `dashboard`, so release semantics can move past one generic browser/API split
+- Core-owned evaluator bundles can now publish `score_policy`, so proof and release score composition can vary by target family instead of staying hard-coded in the controller
+- Eval reports now split `control_plane_score`, `proof_score`, and `release_score` instead of collapsing everything into one opaque score
+- Skeptical proof failures now cap `proof_score`, so contradictory grading no longer leaves release summaries looking nearly successful
+- Final runs now distinguish `contract_completed` from `target_reached`, so adapter-free success no longer impersonates thresholded release success
+- Adapter-free runs now record `target_signal_thresholds_met` as `not_applicable` instead of a passing target-closure check, so eval reports no longer imply false target success
+- Adapter-attached threshold misses now stay in `revise` and carry `target_signal_thresholds_met` forward instead of terminating as a misleading contract success
+- Adapter-attached threshold misses can now consume a bounded remediation budget beyond the initial build-attempt budget before the controller stops with `max_rounds_reached`
+- Stop-reason selection now prefers `max_rounds_reached` over `plateau_limit_reached` when both would apply on the final round
+- Plateau no longer stops a round sequence when `patch-request.json` still explicitly says `advance`
+- Run directories are now claimed at allocation time so concurrent launches do not reuse the same `run-###` id
+- Terminal success now ends with `patch-request.next_action = "complete"` instead of a fake stabilization request
+- Terminal `complete` now closes the round contract, while `target_reached` additionally requires release thresholds to pass
+- Round-result and handoff files now carry explicit previous-patch addressed/resolved state instead of inferring absence as failure
+- Eval reports now record `previous_patch_request_addressed` and `previous_patch_request_resolved` explicitly so round summaries stay aligned with runtime state
+- `summary.json` is now terminal-first and preserves separate `best_scoring_*` fields when the highest score happened earlier
+- `current_best.json` now points at the terminal selected round and preserves separate `best_scoring_*` fields when the highest score happened earlier
+- `target_reached` now requires both verifier-owned live proof and at least one passing required release-gate probe result, so release closure is no longer based on adapter/verifier declarations alone
+- The fixed three-stage round scaffold has been removed from the runtime; the first attempt is now a long build pass and later `round-###` directories are remediation attempts reopened by evaluator feedback
+- Static adapter contract failures such as missing verifier/profile policy, missing required release-gate probes, or verifier/executor command overlap now stop immediately with `adapter_contract_invalid` instead of burning remediation budget
+- Deterministic semantic-validation fixtures now exist for `patch-only-success` and `patch-recontract`, and their validation lane is pinned to the API-only semantic profile so the post-build remediation lifecycle can be forced on demand without depending on browser availability
+- Semantic-validation adapter fixtures no longer advertise deprecated `verification_profile_path` hints, so evaluator bundle ownership is now visible as a core-side concern instead of looking adapter-authored
+- Deprecated adapter `verification_profile_path` now emits a runtime warning instead of failing silently
+- `loop:single` now executes exactly one attempt even when an adapter is attached, which makes resume smoke deterministic
+- The runtime now supports `--resume-run`, restores controller state from persisted artifacts, and rewrites controller summaries with carried runtime warnings
+- Resume identity now also fingerprints `executor_mode`, so switching between `harness` and `subagents-experimental` fails closed unless migration is accepted explicitly
+- Stage-level Codex ablation flags now exist for planner, contract review, generator plan, and evaluator enhancement paths
+- A real Codex smoke validator now exists for trusted environments, while environments without the `codex` binary report `environment_blocked` instead of pretending the smoke ran
+- Codex auth preflight now exists as a runtime-level primitive, so strict smoke can distinguish missing CLI, missing login, missing file-backed auth, wrong auth mode, and missing refresh tokens without leaking secrets
+- Trusted CI now authenticates Codex through a persistent self-hosted `CODEX_HOME`, seeds `auth.json` only when the runner does not already have one, and runs strict real smoke against both the pinned CLI contract (`0.114.0`) and a newer CLI release (`0.118.0`)
+- Resume identity is now locked to the adapter contract, bundle selection, validation lane, and rubric fingerprints, so mismatched resumes fail closed unless `--allow-resume-migration` is explicitly set
+- Each run now persists `resume-identity.json`, so fail-closed resume checks no longer depend on reconstructing identity only from `summary.json`
+- Accepted resume migrations now persist `resume-migration.json` plus bundle fingerprint metadata in `summary.json`, `controller-summary.md`, and `codex-handoff.md`
+- Resumed invocations now also persist `resume-decision.json` plus machine-readable `runtime_events[]`, so noop, continue, and terminal reopen behavior is reviewable without matching warning strings
+- Per-round summaries now also persist `decision_source`, so `policy_snapshot`, hard-rule, and default patch-authority decisions stay machine-auditable
+- Resuming a run that already ended with `target_reached`, `contract_completed`, `environment_blocked`, or `adapter_contract_invalid` now defaults to a no-op closure unless `--force-reopen-terminal` is supplied explicitly, and `--allow-resume-migration` no longer reopens those terminal runs on its own
+- Each evaluated attempt now writes `failure-lineage.json`, which persists unresolved signatures, release regressions, target-manifest breakage, contradictory witness coverage, and environment blockers as first-class controller state
+- Patch requests now surface `environment_blockers` when browser or live-target probes are blocked by the host environment rather than the product
+- Pure environment-blocked remediation now stops honestly with `stop_reason = "environment_blocked"` instead of burning patch budget on product repair
+- Run summaries and handoff files now surface `validation_lane` so deterministic semantic packs stay separate from environment-integration packs
+- Explicit `--evaluator-profile` bundles can now carry `target_family` and `validation_lane` metadata directly, so profile-path launches keep family/lane reporting intact
+- Adapter-free launches now default to the neutral `generic-core` bundle in the deterministic semantic lane instead of inheriting the rubric's product-biased fallback family
+- `summary.json.round_history[]` and `round_summary.json` now persist the resolved `target_family`, `validation_lane`, and `round_stop_reason` for every attempt, so bundle migrations and explicit-profile resumes can be audited machine-to-machine
+- Per-round handoff files now use the resolved `target_family` and `validation_lane`, so explicit-profile runs no longer render `Validation lane: none` while the run summary says otherwise
+- Browser-family probe failures can now classify as `environment_blocked`, which keeps browser/editor/dashboard realism lanes from looking like pure product defects when the host browser is blocked
+- Additional target-family semantic validation lanes now exist for `crud-api`, `chat-agent`, `browser-editor`, and `dashboard`
+- `browser-editor` and `dashboard` now also have deterministic semantic controller lanes, so browser-family controller regression can be tested without depending only on environment smoke
+- `browser-app` and `fullstack-app` now also split into deterministic semantic lanes and environment-integration smoke lanes, so controller regression and realism smoke are no longer coupled for those target families
+- Successful rounds now record `failure_classification = "none"` instead of mislabeling clean closures as `product_defect`
+- `failure-lineage.json` now also persists a reviewable `policy_snapshot`, so recontract and stop recommendations are visible as machine-readable controller policy instead of only implicit heuristics
+- Plateau and repeated-signature reopen now open through `policy_snapshot` itself, so the controller no longer needs separate legacy override branches for those fallback paths
+- `validate:failure-policy` now directly locks weighted reopen policy and hard-rule stops against deterministic fixtures, including plateau-driven recontract that comes from the persisted policy surface
+- Harness-side validation scripts now exist for deterministic lifecycle coverage, resume smoke, family-specific acceptance packs, score-policy regression, and companion reference-adapter smoke
+- `validate:reference-adapter` now acts as a strict validator rather than a loose smoke: it requires honest target closure, proof, and core proof-health checks from an external companion adapter
+- `validate:reference-adapter:check` now provides preflight-only companion setup validation, `validate:reference-adapter:canonical` plus `patch-only` and `recontract` variants prove fully reproducible multi-round external adapter paths, and `reference-adapter:scaffold` now supports `canonical-api`, `canonical-api-patch-only`, `canonical-api-recontract`, `canonical-crud`, `canonical-crud-patch-only`, `canonical-crud-recontract`, `canonical-chat`, `canonical-chat-patch-only`, `canonical-chat-recontract`, and `placeholder`
+- `reference-adapter:bootstrap-independent` now scaffolds a sibling independent companion repo and installs the strict CI workflow in one command, so the repo can hand off a real external validation surface without bundling that target here
+- Browser/fullstack preflight now writes machine-readable `browser-preflight.json` or `fullstack-preflight.json` into the run directory before reporting readiness or `environment_blocked`
+- Editor/dashboard preflight now also writes machine-readable `editor-preflight.json` or `dashboard-preflight.json` into the run directory before reporting readiness or `environment_blocked`
+- The repo now ships a Playwright-ready devcontainer under `.devcontainer/browser-validation` plus a dedicated GitHub Actions workflow at `.github/workflows/realism-preflight.yml` for browser/fullstack realism preflight
+- The repo now also ships `.github/workflows/realism-positive.yml`, which runs the positive browser/editor/fullstack/dashboard realism validators inside a browser-ready container
+- Positive realism runs now also write `latest-realism-state.json`, `latest-positive-realism-state.json`, and `realism-positive-summary.json`, so the uploaded `realism-positive-runs` artifact carries both the latest observed environment state and the latest known green packaged-environment evidence
+- Failure-lineage policy snapshots now persist `trigger_codes`, `trigger_scores`, `dominant_trigger_code`, `patch_authority_state`, `escalation_confidence`, and `recommendation_source`, so recontract remains reviewable as evidence policy instead of prose only
+- Target-family acceptance packs now go beyond surface liveness: browser adds draft-restore continuity, editor adds autosave restore plus selection recovery after invalid mutation, fullstack adds retry recovery plus audit continuity across refresh, and dashboard adds filter-reset plus drilldown refresh continuity on top of the earlier workflow checks
+- `reference-adapter:install-ci` now installs a strict harness validation workflow into an external companion repository so real adapter repos can run the same validator in their own CI
+- `reference-adapter:install-ci` now derives the harness repository and branch from the current git checkout by default, with `--harness-repo` and `--harness-ref` reserved for explicit overrides
+- `quality-critique.json` now records structured evaluator findings even when only threshold gaps remain, while `patch-request.json.must_fix` only promotes carry-forward-safe targets so patch-only remediation does not false-escalate into scope drift or recontract
+- `reference-adapter:scaffold-quality-lane` now generates stricter companion evaluator bundles by tightening only the release assertions that the source bundle actually configures, and `validate:quality-lift` locks that behavior against baseline lenient bundles and intake-generated bundles
+
+## What was removed
+
+- Bundled sample app
+- Domain model package
+- Scenario and fixture bundles
+- In-repo browser execution surface
+- Product-specific evaluation logic
+
+## Known gaps
+
+- No external adapter is attached by default.
+- Real target proof still depends on adapter-side scripts that are not in this repo by design.
+- Negotiation is rule-based skepticism, not an LLM-backed back-and-forth.
+- `subagents-experimental` currently reuses custom agent manifests as prompt scaffolding, but it still executes one Codex CLI call per harness stage rather than native spawned subagents.
+- The core now owns target criteria through external verification profiles, separate verification providers, live-verification requirements, provenance attestation, target manifests, and evaluator-owned release-gate probes, but those probes are still generic and adapter-configured rather than a bundled product-specific QA stack.
+- Evidence meaning is stronger than before, but the content checks and core/live verification requirements are still generic harness heuristics rather than target-specific correctness tests.
+- Proof thresholds are now explicit and target-family bundles can override score composition, but the acceptance packs are still shallow compared with a truly domain-deep QA stack.
+- Structured quality critique and intake-derived evaluator bundles now exist, but the quality contract is still deterministic and generic rather than a learned or taste-aware product judge.
+- Remediation attempts are now patch-request-led semantically, and the runtime drops clean review/agreement rewrites, but the control plane still preserves generator-plan compatibility artifacts because the harness is optimized for resumable file handoff.
+- Fresh-process resume smoke now exists, terminal-success resume defaults to no-op closure, and multiple canonical external companion adapters are available, but no real independently evolving external production companion repo is attached by default.
+- Resume identity migration is explicit and reviewable now, and failure-lineage now persists a controller policy snapshot, but recontract escalation is still a rule-driven policy rather than a learned one.
+- Browser/fullstack/controller semantics are now deterministic in semantic lanes and have a standard preflight environment package, but live realism still depends on running inside that browser-ready host or CI environment.
+- Editor/dashboard now have parity preflight artifacts, but live realism still depends on the same class of browser-ready host or CI environment.
+- Score policy is now directly testable, but bundle depth is still shallow compared with a real target-family QA stack.
+- ChatGPT-managed auth is now the intended Codex operating mode, but the actual enforcement source still lives in runner/user Codex config and persistent `CODEX_HOME` state rather than repo-local project config.
+
+## Next actions
+
+1. Attach a real production companion adapter beyond the canonical scaffold so the stricter external quality lane can be exercised on a non-synthetic target.
+2. Add benchmark and component-ablation reporting so planner, critique, and external-quality-lane lift is measurable per change.
+3. Deepen the target-family acceptance packs and generated `quality_contract` axes beyond baseline persistence/error-path semantics into domain-real release gates.

@@ -1,0 +1,263 @@
+{
+  "profile_id": "semantic-validation-browser-profile",
+  "label": "Semantic Validation Browser Profile",
+  "bundle_label": "Semantic Validation Browser Profile",
+  "target_family": "browser-app",
+  "validation_lane": "environment_integration",
+  "expected_target_surfaces": [
+    "browser",
+    "api"
+  ],
+  "required_live_verification_modes": [
+    "browser",
+    "api"
+  ],
+  "target_reached_requires_core_probes": true,
+  "minimum_feature_release_assertions": 7,
+  "minimum_assertion_tag_counts": {
+    "browser": 2,
+    "persistence": 3,
+    "error_path": 1,
+    "workflow_multi_step": 4,
+    "consistency": 1
+  },
+  "core_probes": [
+    {
+      "probe_id": "target-health-http",
+      "label": "Supporting health endpoint probe",
+      "role": "supporting",
+      "mode": "http",
+      "target_manifest_key": "health_url",
+      "expected_value": "\"status\":\"ready\"",
+      "required": true
+    },
+    {
+      "probe_id": "target-app-browser",
+      "label": "Core browser journey opens the live app shell",
+      "role": "release_gate",
+      "mode": "browser_journey",
+      "assertion_id": "ui_shell_renders",
+      "assertion_tags": [
+        "browser"
+      ],
+      "semantic_level": "feature",
+      "target_manifest_key": "app_url",
+      "steps": [
+        {
+          "action": "goto"
+        },
+        {
+          "action": "assert_visible",
+          "selector": "[data-testid='app-shell']"
+        }
+      ],
+      "required": true
+    },
+    {
+      "probe_id": "target-invalid-browser-flow",
+      "label": "Core browser journey confirms invalid flows render an explicit error banner",
+      "role": "release_gate",
+      "mode": "browser_journey",
+      "assertion_id": "invalid_form_rejected",
+      "assertion_tags": [
+        "browser",
+        "error_path"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "app_url",
+      "steps": [
+        {
+          "action": "goto",
+          "value": "?fixture=invalid"
+        },
+        {
+          "action": "assert_visible",
+          "selector": "[data-testid='error-banner']"
+        }
+      ],
+      "required": true
+    },
+    {
+      "probe_id": "target-draft-persistence",
+      "label": "Core API probe confirms browser draft state persists across the workflow",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "draft_persists",
+      "assertion_tags": [
+        "persistence",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "browser/draft",
+      "json_path": "status",
+      "expected_value": "persisted",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "target-navigation-state",
+      "label": "Core API probe confirms browser navigation state remains continuous",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "navigation_state_preserved",
+      "assertion_tags": [
+        "api",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "browser/navigation",
+      "json_path": "status",
+      "expected_value": "preserved",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "target-run-marker",
+      "label": "Supporting target-root run marker probe",
+      "role": "supporting",
+      "mode": "file_contains",
+      "scope": "target_root",
+      "target": "target-state/run_target.txt",
+      "expected_value": "run_target evidence for round",
+      "required": false
+    },
+    {
+      "probe_id": "refresh-state-persisted",
+      "label": "Core API probe confirms refresh preserves browser draft state",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "refresh_state_persisted",
+      "assertion_tags": [
+        "api",
+        "persistence",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "browser/refresh",
+      "json_path": "status",
+      "expected_value": "persisted",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "submission-roundtrip-consistent",
+      "label": "Core API probe confirms browser submission roundtrip remains consistent",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "submission_roundtrip_consistent",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "browser/submit",
+      "json_path": "status",
+      "expected_value": "consistent",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "draft-restore-after-refresh",
+      "label": "Core API probe confirms browser draft state restores after refresh",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "draft_restore_after_refresh",
+      "assertion_tags": [
+        "api",
+        "persistence",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "browser/draft-restore",
+      "json_path": "status",
+      "expected_value": "restored",
+      "expected_status": 200,
+      "required": true
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "ui_shell_renders",
+      "assertion_id": "ui_shell_renders",
+      "capability": "run_checks",
+      "summary": "run_checks must observe a visible UI shell.",
+      "operator": "equals",
+      "expected_value": "visible",
+      "hard": true
+    },
+    {
+      "criterion_id": "invalid_form_rejected",
+      "assertion_id": "invalid_form_rejected",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm invalid browser flows surface an explicit rejection state.",
+      "operator": "equals",
+      "expected_value": "rejected",
+      "hard": true
+    },
+    {
+      "criterion_id": "draft_persists",
+      "assertion_id": "draft_persists",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the browser draft state persists across the workflow.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "navigation_state_preserved",
+      "assertion_id": "navigation_state_preserved",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm browser navigation state remains continuous across the workflow.",
+      "operator": "equals",
+      "expected_value": "preserved",
+      "hard": true
+    },
+    {
+      "criterion_id": "draft_persists",
+      "assertion_id": "draft_persists",
+      "capability": "grade_round",
+      "summary": "grade_round must confirm the browser draft state persists before release gating passes.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "refresh_state_persisted",
+      "assertion_id": "refresh_state_persisted",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm refresh preserves browser draft state.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "submission_roundtrip_consistent",
+      "assertion_id": "submission_roundtrip_consistent",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm browser submission roundtrip remains consistent.",
+      "operator": "equals",
+      "expected_value": "consistent",
+      "hard": true
+    },
+    {
+      "criterion_id": "draft_restore_after_refresh",
+      "assertion_id": "draft_restore_after_refresh",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm browser draft state restores after refresh.",
+      "operator": "equals",
+      "expected_value": "restored",
+      "hard": true
+    }
+  ],
+  "notes": [
+    "This profile exercises a browser-owned release gate that resolves app_url from run_target target_manifest output.",
+    "It requires visible browser evidence, persisted browser-side workflow state, and navigation continuity so target_reached cannot be satisfied by shell liveness alone.",
+    "Release quality now also requires a coherent draft restore after refresh."
+  ]
+}

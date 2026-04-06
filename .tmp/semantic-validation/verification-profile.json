@@ -1,0 +1,173 @@
+{
+  "profile_id": "semantic-validation-fullstack-profile",
+  "label": "Semantic Validation Fullstack Profile",
+  "bundle_label": "Semantic Validation Fullstack Profile",
+  "target_family": "fullstack-app",
+  "validation_lane": "environment_integration",
+  "expected_target_surfaces": ["browser", "api"],
+  "required_live_verification_modes": ["browser", "api"],
+  "target_reached_requires_core_probes": true,
+  "minimum_feature_release_assertions": 5,
+  "minimum_assertion_tag_counts": {
+    "browser": 1,
+    "api": 3,
+    "persistence": 2,
+    "error_path": 1,
+    "workflow_multi_step": 2
+  },
+  "core_probes": [
+    {
+      "probe_id": "target-health-http",
+      "label": "Core probe hits the live target health endpoint",
+      "role": "supporting",
+      "mode": "http",
+      "target_manifest_key": "health_url",
+      "expected_value": "\"status\":\"ready\"",
+      "required": true
+    },
+    {
+      "probe_id": "target-app-shell-journey",
+      "label": "Core browser journey confirms the app shell renders",
+      "role": "release_gate",
+      "mode": "browser_journey",
+      "assertion_id": "ui_shell_renders",
+      "assertion_tags": ["browser"],
+      "semantic_level": "feature",
+      "target_manifest_key": "app_url",
+      "steps": [
+        { "action": "goto" },
+        { "action": "assert_visible", "selector": "[data-testid='app-shell']" }
+      ],
+      "required": true
+    },
+    {
+      "probe_id": "target-item-persistence",
+      "label": "Core API probe confirms the latest item persists",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "item_persists",
+      "assertion_tags": ["api", "persistence"],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "items/latest",
+      "json_path": "title",
+      "expected_value": "Smoke Item",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "target-invalid-item",
+      "label": "Core API probe confirms invalid item requests are rejected",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "invalid_item_rejected",
+      "assertion_tags": ["api", "error_path"],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "items/invalid",
+      "json_path": "error",
+      "expected_value": "invalid_title",
+      "expected_status": 400,
+      "required": true
+    },
+    {
+      "probe_id": "target-session-state",
+      "label": "Core API probe confirms the fullstack session state persists",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "session_state_persists",
+      "assertion_tags": ["api", "persistence", "workflow_multi_step"],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "fullstack/session",
+      "json_path": "status",
+      "expected_value": "persisted",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "target-roundtrip-state",
+      "label": "Core API probe confirms browser-to-API roundtrip state remains consistent",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "browser_api_roundtrip_consistent",
+      "assertion_tags": ["api", "consistency", "workflow_multi_step"],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "fullstack/roundtrip",
+      "json_path": "status",
+      "expected_value": "consistent",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "target-run-marker",
+      "label": "Supporting target-root run marker probe",
+      "role": "supporting",
+      "mode": "file_contains",
+      "scope": "target_root",
+      "target": "target-state/run_target.txt",
+      "expected_value": "run_target evidence for round",
+      "required": false
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "ui_shell_renders",
+      "assertion_id": "ui_shell_renders",
+      "capability": "run_checks",
+      "summary": "run_checks must observe a visible UI shell.",
+      "operator": "equals",
+      "expected_value": "visible",
+      "hard": true
+    },
+    {
+      "criterion_id": "item_persists",
+      "assertion_id": "item_persists",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the latest item persists before release gating passes.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "invalid_item_rejected",
+      "assertion_id": "invalid_item_rejected",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the invalid item path is rejected before release gating passes.",
+      "operator": "equals",
+      "expected_value": "rejected",
+      "hard": true
+    },
+    {
+      "criterion_id": "session_state_persists",
+      "assertion_id": "session_state_persists",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm fullstack session state persists before release gating passes.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "browser_api_roundtrip_consistent",
+      "assertion_id": "browser_api_roundtrip_consistent",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm browser-to-API roundtrip state remains consistent before release gating passes.",
+      "operator": "equals",
+      "expected_value": "consistent",
+      "hard": true
+    },
+    {
+      "criterion_id": "item_persists",
+      "assertion_id": "item_persists",
+      "capability": "grade_round",
+      "summary": "grade_round must confirm the latest item persists before release gating passes.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    }
+  ],
+  "notes": [
+    "This profile is evaluator-owned and models a fullstack bundle with UI, persistence, error-path, session-state, and browser-to-API roundtrip release gates."
+  ]
+}

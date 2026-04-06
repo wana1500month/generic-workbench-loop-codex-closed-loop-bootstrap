@@ -1,0 +1,19 @@
+{
+  "adapter_id": "semantic-hollow",
+  "label": "Semantic Hollow Adapter",
+  "contract_version": "1",
+  "target_root": ".",
+  "capabilities": {
+    "prepare_target": { "command": "node ../executor.cjs hollow" },
+    "apply_change": { "command": "node ../executor.cjs hollow" },
+    "run_target": { "command": "node ../executor.cjs hollow" }
+  },
+  "verification_provider": {
+    "provider_id": "semantic-hollow-verifier",
+    "capabilities": {
+      "capture_evidence": { "command": "node ../verifier.cjs hollow" },
+      "run_checks": { "command": "node ../verifier.cjs hollow" },
+      "grade_round": { "command": "node ../verifier.cjs hollow" }
+    }
+  }
+}

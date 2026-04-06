@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+.next/
+coverage/
+*.tsbuildinfo
+
+# Local env
+.env
+.env.local
+.env.*.local
+npm-debug.log
+*.log
+
+# Generated eval artifacts
+evals/runs/*
+!evals/runs/.gitkeep
+
+.tmp/*
+!.tmp/semantic-validation/
+!.tmp/semantic-validation/**
+.tmp/semantic-validation/**/target-state/
+.tmp/semantic-validation/**/target-state/**

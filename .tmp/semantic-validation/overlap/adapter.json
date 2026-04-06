@@ -1,0 +1,19 @@
+{
+  "adapter_id": "semantic-overlap",
+  "label": "Semantic Overlap Adapter",
+  "contract_version": "1",
+  "target_root": ".",
+  "capabilities": {
+    "prepare_target": { "command": "node ../executor.cjs truth" },
+    "apply_change": { "command": "node ../executor.cjs truth" },
+    "run_target": { "command": "node ../executor.cjs truth" }
+  },
+  "verification_provider": {
+    "provider_id": "semantic-overlap-verifier",
+    "capabilities": {
+      "capture_evidence": { "command": "node ../executor.cjs truth" },
+      "run_checks": { "command": "node ../executor.cjs truth" },
+      "grade_round": { "command": "node ../executor.cjs truth" }
+    }
+  }
+}

@@ -1,0 +1,249 @@
+{
+  "profile_id": "semantic-validation-browser-semantic",
+  "label": "Semantic Validation Browser Deterministic",
+  "bundle_label": "Semantic Validation Browser Deterministic",
+  "target_family": "browser-app",
+  "validation_lane": "deterministic_semantic",
+  "expected_target_surfaces": [
+    "api"
+  ],
+  "required_live_verification_modes": [
+    "browser",
+    "api"
+  ],
+  "target_reached_requires_core_probes": true,
+  "minimum_feature_release_assertions": 7,
+  "minimum_assertion_tag_counts": {
+    "api": 6,
+    "error_path": 1,
+    "persistence": 3,
+    "workflow_multi_step": 5,
+    "consistency": 1
+  },
+  "score_policy": {
+    "proof_weights": {
+      "proof_pass_rate": 0.25,
+      "criterion_pass_rate": 0.35,
+      "threshold_verdict": 0.1,
+      "external_grade": 0.3
+    },
+    "release_weights": {
+      "control_plane_score": 0.4,
+      "proof_score": 0.6
+    }
+  },
+  "core_probes": [
+    {
+      "probe_id": "browser-semantic-health",
+      "label": "Browser semantic lane health endpoint",
+      "role": "supporting",
+      "mode": "http",
+      "target_manifest_key": "health_url",
+      "expected_value": "\"status\":\"ready\"",
+      "required": true
+    },
+    {
+      "probe_id": "browser-semantic-shell",
+      "label": "Browser semantic lane confirms the shell remains visible",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "ui_shell_renders",
+      "assertion_tags": [
+        "api"
+      ],
+      "semantic_level": "feature",
+      "target_manifest_key": "api_base_url",
+      "target_path": "browser/summary",
+      "json_path": "shell",
+      "expected_value": "visible",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "browser-semantic-invalid-flow",
+      "label": "Browser semantic lane confirms invalid form flows are rejected",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "invalid_form_rejected",
+      "assertion_tags": [
+        "api",
+        "error_path"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "browser/invalid",
+      "json_path": "status",
+      "expected_value": "rejected",
+      "expected_status": 400,
+      "required": true
+    },
+    {
+      "probe_id": "browser-semantic-draft",
+      "label": "Browser semantic lane confirms draft state persists",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "draft_persists",
+      "assertion_tags": [
+        "api",
+        "persistence",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "browser/draft",
+      "json_path": "status",
+      "expected_value": "persisted",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "browser-semantic-navigation",
+      "label": "Browser semantic lane confirms navigation state stays continuous",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "navigation_state_preserved",
+      "assertion_tags": [
+        "api",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "browser/navigation",
+      "json_path": "status",
+      "expected_value": "preserved",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "browser-semantic-refresh",
+      "label": "Browser semantic lane confirms refresh keeps draft state persisted",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "refresh_state_persisted",
+      "assertion_tags": [
+        "api",
+        "persistence",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "browser/refresh",
+      "json_path": "status",
+      "expected_value": "persisted",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "browser-semantic-submit",
+      "label": "Browser semantic lane confirms submission roundtrip remains consistent",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "submission_roundtrip_consistent",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "browser/submit",
+      "json_path": "status",
+      "expected_value": "consistent",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "browser-semantic-draft-restore",
+      "label": "Browser semantic lane confirms draft state restores after refresh",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "draft_restore_after_refresh",
+      "assertion_tags": [
+        "api",
+        "persistence",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "browser/draft-restore",
+      "json_path": "status",
+      "expected_value": "restored",
+      "expected_status": 200,
+      "required": true
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "ui_shell_renders",
+      "assertion_id": "ui_shell_renders",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the browser shell remains visible.",
+      "operator": "equals",
+      "expected_value": "visible",
+      "hard": true
+    },
+    {
+      "criterion_id": "invalid_form_rejected",
+      "assertion_id": "invalid_form_rejected",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm invalid form flows are rejected explicitly.",
+      "operator": "equals",
+      "expected_value": "rejected",
+      "hard": true
+    },
+    {
+      "criterion_id": "draft_persists",
+      "assertion_id": "draft_persists",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the browser draft state persists across the workflow.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "navigation_state_preserved",
+      "assertion_id": "navigation_state_preserved",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm browser navigation state stays continuous across the workflow.",
+      "operator": "equals",
+      "expected_value": "preserved",
+      "hard": true
+    },
+    {
+      "criterion_id": "draft_persists",
+      "assertion_id": "draft_persists",
+      "capability": "grade_round",
+      "summary": "grade_round must keep browser draft state persisted before release.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "refresh_state_persisted",
+      "assertion_id": "refresh_state_persisted",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm browser refresh keeps draft state persisted.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "submission_roundtrip_consistent",
+      "assertion_id": "submission_roundtrip_consistent",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm browser submission roundtrip state remains consistent.",
+      "operator": "equals",
+      "expected_value": "consistent",
+      "hard": true
+    },
+    {
+      "criterion_id": "draft_restore_after_refresh",
+      "assertion_id": "draft_restore_after_refresh",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm browser draft state restores after refresh.",
+      "operator": "equals",
+      "expected_value": "restored",
+      "hard": true
+    }
+  ]
+}

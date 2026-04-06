@@ -1,0 +1,213 @@
+{
+  "profile_id": "semantic-validation-api-service-profile",
+  "label": "Semantic Validation API Service Profile",
+  "bundle_label": "Semantic Validation API Service Profile",
+  "target_family": "api-service",
+  "validation_lane": "deterministic_semantic",
+  "expected_target_surfaces": [
+    "api"
+  ],
+  "required_live_verification_modes": [
+    "api"
+  ],
+  "target_reached_requires_core_probes": true,
+  "minimum_feature_release_assertions": 6,
+  "minimum_assertion_tag_counts": {
+    "api": 5,
+    "persistence": 1,
+    "error_path": 2,
+    "consistency": 2,
+    "workflow_multi_step": 3
+  },
+  "core_probes": [
+    {
+      "probe_id": "target-health-http",
+      "label": "Supporting health endpoint probe",
+      "role": "supporting",
+      "mode": "http",
+      "target_manifest_key": "health_url",
+      "expected_value": "\"status\":\"ready\"",
+      "required": true
+    },
+    {
+      "probe_id": "target-item-title",
+      "label": "Core API probe confirms the latest item title persists",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "item_persists",
+      "assertion_tags": [
+        "api",
+        "persistence"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "items/latest",
+      "json_path": "title",
+      "expected_value": "Smoke Item",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "target-invalid-item",
+      "label": "Core API probe confirms invalid item requests are rejected",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "invalid_item_rejected",
+      "assertion_tags": [
+        "api",
+        "error_path"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "items/invalid",
+      "json_path": "error",
+      "expected_value": "invalid_title",
+      "expected_status": 400,
+      "required": true
+    },
+    {
+      "probe_id": "target-item-summary",
+      "label": "Core API probe confirms the canonical item summary remains consistent",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "collection_consistent",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "items/summary",
+      "json_path": "status",
+      "expected_value": "consistent",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "target-idempotent-write",
+      "label": "Core API probe confirms repeated writes remain idempotent",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "idempotent_write_safe",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "items/idempotent",
+      "json_path": "status",
+      "expected_value": "idempotent",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "target-stale-write",
+      "label": "Core API probe confirms stale writes are rejected explicitly",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "stale_write_rejected",
+      "assertion_tags": [
+        "api",
+        "error_path",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "items/stale",
+      "json_path": "error",
+      "expected_value": "stale_write",
+      "expected_status": 409,
+      "required": true
+    },
+    {
+      "probe_id": "target-pagination-consistent",
+      "label": "Core API probe confirms pagination remains stable across repeated reads",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "pagination_consistent",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "items/pagination",
+      "json_path": "status",
+      "expected_value": "stable",
+      "expected_status": 200,
+      "required": true
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "item_persists",
+      "assertion_id": "item_persists",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the latest item persists before release gating passes.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "invalid_item_rejected",
+      "assertion_id": "invalid_item_rejected",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the invalid item path is rejected before release gating passes.",
+      "operator": "equals",
+      "expected_value": "rejected",
+      "hard": true
+    },
+    {
+      "criterion_id": "collection_consistent",
+      "assertion_id": "collection_consistent",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the canonical item summary remains internally consistent.",
+      "operator": "equals",
+      "expected_value": "consistent",
+      "hard": true
+    },
+    {
+      "criterion_id": "idempotent_write_safe",
+      "assertion_id": "idempotent_write_safe",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm repeated writes remain idempotent.",
+      "operator": "equals",
+      "expected_value": "idempotent",
+      "hard": true
+    },
+    {
+      "criterion_id": "item_persists",
+      "assertion_id": "item_persists",
+      "capability": "grade_round",
+      "summary": "grade_round must confirm the latest item persists before release gating passes.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "stale_write_rejected",
+      "assertion_id": "stale_write_rejected",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm stale writes are rejected explicitly before release gating passes.",
+      "operator": "equals",
+      "expected_value": "stale_rejected",
+      "hard": true
+    },
+    {
+      "criterion_id": "pagination_consistent",
+      "assertion_id": "pagination_consistent",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm pagination remains stable across repeated reads before release gating passes.",
+      "operator": "equals",
+      "expected_value": "stable",
+      "hard": true
+    }
+  ],
+  "notes": [
+    "This profile is intentionally API-only and requires persistence, error-path, summary-consistency, and idempotent-write release assertions."
+  ]
+}

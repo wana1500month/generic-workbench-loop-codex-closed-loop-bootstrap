@@ -1,0 +1,19 @@
+{
+  "adapter_id": "semantic-lying",
+  "label": "Semantic Lying Adapter",
+  "contract_version": "1",
+  "target_root": ".",
+  "capabilities": {
+    "prepare_target": { "command": "node ../executor.cjs lying" },
+    "apply_change": { "command": "node ../executor.cjs lying" },
+    "run_target": { "command": "node ../executor.cjs lying" }
+  },
+  "verification_provider": {
+    "provider_id": "semantic-lying-verifier",
+    "capabilities": {
+      "capture_evidence": { "command": "node ../verifier.cjs lying" },
+      "run_checks": { "command": "node ../verifier.cjs lying" },
+      "grade_round": { "command": "node ../verifier.cjs lying" }
+    }
+  }
+}

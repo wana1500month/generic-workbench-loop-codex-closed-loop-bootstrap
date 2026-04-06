@@ -1,0 +1,19 @@
+{
+  "adapter_id": "semantic-patch-recontract",
+  "label": "Semantic Patch-Recontract Adapter",
+  "contract_version": "1",
+  "target_root": ".",
+  "capabilities": {
+    "prepare_target": { "command": "node ../executor.cjs patch-recontract" },
+    "apply_change": { "command": "node ../executor.cjs patch-recontract" },
+    "run_target": { "command": "node ../executor.cjs patch-recontract" }
+  },
+  "verification_provider": {
+    "provider_id": "semantic-patch-recontract-verifier",
+    "capabilities": {
+      "capture_evidence": { "command": "node ../verifier.cjs patch-recontract" },
+      "run_checks": { "command": "node ../verifier.cjs patch-recontract" },
+      "grade_round": { "command": "node ../verifier.cjs patch-recontract" }
+    }
+  }
+}

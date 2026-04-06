@@ -1,0 +1,227 @@
+{
+  "profile_id": "chat-agent-profile",
+  "label": "Chat Agent Acceptance Pack",
+  "bundle_label": "Chat Agent Acceptance Pack",
+  "target_family": "chat-agent",
+  "validation_lane": "deterministic_semantic",
+  "expected_target_surfaces": [
+    "api"
+  ],
+  "required_live_verification_modes": [
+    "api"
+  ],
+  "target_reached_requires_core_probes": true,
+  "minimum_feature_release_assertions": 6,
+  "minimum_assertion_tag_counts": {
+    "api": 5,
+    "grounded_tool_use": 3,
+    "workflow_multi_step": 2,
+    "error_path": 2
+  },
+  "score_policy": {
+    "proof_weights": {
+      "proof_pass_rate": 0.25,
+      "criterion_pass_rate": 0.35,
+      "threshold_verdict": 0.1,
+      "external_grade": 0.3
+    },
+    "release_weights": {
+      "control_plane_score": 0.4,
+      "proof_score": 0.6
+    }
+  },
+  "core_probes": [
+    {
+      "probe_id": "chat-health",
+      "label": "Chat agent health endpoint",
+      "role": "supporting",
+      "mode": "http",
+      "target_manifest_key": "health_url",
+      "expected_value": "\"status\":\"ready\"",
+      "required": true
+    },
+    {
+      "probe_id": "chat-grounded-reply",
+      "label": "Latest assistant response stays grounded in tool evidence",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "grounded_reply",
+      "assertion_tags": [
+        "api",
+        "grounded_tool_use",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "conversations/latest",
+      "json_path": "grounded",
+      "expected_value": "true",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "chat-invalid-tool-call-rejected",
+      "label": "Invalid tool invocation surfaces a structured rejection",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "invalid_tool_call_rejected",
+      "assertion_tags": [
+        "api",
+        "error_path"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "conversations/invalid-tool",
+      "json_path": "error",
+      "expected_value": "tool_rejected",
+      "expected_status": 400,
+      "required": true
+    },
+    {
+      "probe_id": "chat-memory-preserved",
+      "label": "Conversation memory remains preserved across the latest tool-backed turn",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "conversation_memory_preserved",
+      "assertion_tags": [
+        "api",
+        "workflow_multi_step",
+        "grounded_tool_use"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "conversations/memory",
+      "json_path": "status",
+      "expected_value": "preserved",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "chat-unsafe-tool-blocked",
+      "label": "Unsafe tool requests surface a structured block response",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "unsafe_tool_request_blocked",
+      "assertion_tags": [
+        "api",
+        "error_path",
+        "grounded_tool_use"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "conversations/unsafe-tool",
+      "json_path": "status",
+      "expected_value": "blocked",
+      "expected_status": 400,
+      "required": true
+    },
+    {
+      "probe_id": "chat-refusal-fallback-safe",
+      "label": "Unsupported requests fall back to a safe refusal response",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "refusal_fallback_safe",
+      "assertion_tags": [
+        "api",
+        "grounded_tool_use",
+        "error_path"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "conversations/refusal",
+      "json_path": "status",
+      "expected_value": "safe_refusal",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "chat-tool-trace-persisted",
+      "label": "Tool-trace metadata remains persisted across the latest grounded turn",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "tool_trace_persisted",
+      "assertion_tags": [
+        "api",
+        "grounded_tool_use",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "conversations/tool-trace",
+      "json_path": "status",
+      "expected_value": "persisted",
+      "expected_status": 200,
+      "required": true
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "grounded_reply",
+      "assertion_id": "grounded_reply",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the latest assistant response is grounded in tool evidence.",
+      "operator": "equals",
+      "expected_value": "grounded",
+      "hard": true
+    },
+    {
+      "criterion_id": "invalid_tool_call_rejected",
+      "assertion_id": "invalid_tool_call_rejected",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm invalid tool use returns an explicit rejection.",
+      "operator": "equals",
+      "expected_value": "rejected",
+      "hard": true
+    },
+    {
+      "criterion_id": "conversation_memory_preserved",
+      "assertion_id": "conversation_memory_preserved",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm conversation memory remains preserved across the latest tool-backed turn.",
+      "operator": "equals",
+      "expected_value": "preserved",
+      "hard": true
+    },
+    {
+      "criterion_id": "unsafe_tool_request_blocked",
+      "assertion_id": "unsafe_tool_request_blocked",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm unsafe tool requests are blocked explicitly.",
+      "operator": "equals",
+      "expected_value": "blocked",
+      "hard": true
+    },
+    {
+      "criterion_id": "grounded_reply",
+      "assertion_id": "grounded_reply",
+      "capability": "grade_round",
+      "summary": "grade_round must preserve grounded multi-step tool use before release.",
+      "operator": "equals",
+      "expected_value": "grounded",
+      "hard": true
+    },
+    {
+      "criterion_id": "refusal_fallback_safe",
+      "assertion_id": "refusal_fallback_safe",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm unsupported requests produce a safe refusal fallback.",
+      "operator": "equals",
+      "expected_value": "safe_refusal",
+      "hard": true
+    },
+    {
+      "criterion_id": "tool_trace_persisted",
+      "assertion_id": "tool_trace_persisted",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm tool trace metadata persists across the latest grounded turn.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    }
+  ],
+  "notes": [
+    "Use this pack for chat or agent APIs where grounded tool use matters more than generic CRUD semantics.",
+    "Release quality means the latest answer stays grounded, invalid and unsafe tool requests are rejected explicitly, and conversation memory survives the latest turn.",
+    "Release quality now also requires safe refusal fallback behavior and persisted tool-trace metadata."
+  ]
+}

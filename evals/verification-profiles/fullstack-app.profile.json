@@ -1,0 +1,318 @@
+{
+  "profile_id": "fullstack-app-profile",
+  "label": "Fullstack App Evaluator Bundle",
+  "bundle_label": "Fullstack App Evaluator Bundle",
+  "target_family": "fullstack-app",
+  "validation_lane": "environment_integration",
+  "expected_target_surfaces": [
+    "browser",
+    "api"
+  ],
+  "required_live_verification_modes": [
+    "browser",
+    "api"
+  ],
+  "target_reached_requires_core_probes": true,
+  "minimum_feature_release_assertions": 9,
+  "minimum_assertion_tag_counts": {
+    "browser": 1,
+    "api": 5,
+    "persistence": 4,
+    "error_path": 1,
+    "workflow_multi_step": 6,
+    "consistency": 3
+  },
+  "score_policy": {
+    "proof_weights": {
+      "proof_pass_rate": 0.25,
+      "criterion_pass_rate": 0.35,
+      "threshold_verdict": 0.1,
+      "external_grade": 0.3
+    },
+    "release_weights": {
+      "control_plane_score": 0.45,
+      "proof_score": 0.55
+    }
+  },
+  "core_probes": [
+    {
+      "probe_id": "fullstack-health",
+      "label": "Live fullstack target health endpoint",
+      "role": "supporting",
+      "mode": "http",
+      "target_manifest_key": "health_url",
+      "expected_value": "\"status\":\"ready\"",
+      "required": true
+    },
+    {
+      "probe_id": "app-shell-renders",
+      "label": "App shell renders in the browser",
+      "role": "release_gate",
+      "mode": "browser_journey",
+      "assertion_id": "ui_shell_renders",
+      "assertion_tags": [
+        "browser"
+      ],
+      "semantic_level": "feature",
+      "target_manifest_key": "app_url",
+      "steps": [
+        {
+          "action": "goto"
+        },
+        {
+          "action": "assert_visible",
+          "selector": "[data-testid='app-shell']"
+        }
+      ],
+      "required": true
+    },
+    {
+      "probe_id": "item-persists",
+      "label": "Persisted item remains available through the API",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "item_persists",
+      "assertion_tags": [
+        "api",
+        "persistence"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "items/latest",
+      "json_path": "title",
+      "expected_value": "Smoke Item",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "invalid-item-rejected",
+      "label": "Invalid API request returns an explicit rejection",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "invalid_item_rejected",
+      "assertion_tags": [
+        "api",
+        "error_path"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "items/invalid",
+      "json_path": "error",
+      "expected_value": "invalid_title",
+      "expected_status": 400,
+      "required": true
+    },
+    {
+      "probe_id": "session-state-persists",
+      "label": "Session state persists through the fullstack workflow",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "session_state_persists",
+      "assertion_tags": [
+        "api",
+        "persistence",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "fullstack/session",
+      "json_path": "status",
+      "expected_value": "persisted",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "browser-api-roundtrip-consistent",
+      "label": "Browser-to-API roundtrip state remains consistent",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "browser_api_roundtrip_consistent",
+      "assertion_tags": [
+        "api",
+        "workflow_multi_step",
+        "consistency"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "fullstack/roundtrip",
+      "json_path": "status",
+      "expected_value": "consistent",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "refresh-state-persisted",
+      "label": "Fullstack refresh retains the persisted session state",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "refresh_state_persisted",
+      "assertion_tags": [
+        "api",
+        "persistence",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "fullstack/refresh",
+      "json_path": "status",
+      "expected_value": "persisted",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "mutation-audit-recorded",
+      "label": "Fullstack mutation audit records remain attached to the workflow state",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "mutation_audit_recorded",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "fullstack/audit",
+      "json_path": "status",
+      "expected_value": "recorded",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "retry-recovery-persisted",
+      "label": "Fullstack retry recovery preserves workflow state",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "retry_recovery_persisted",
+      "assertion_tags": [
+        "api",
+        "persistence",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "fullstack/retry",
+      "json_path": "status",
+      "expected_value": "recovered",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "audit-refresh-consistent",
+      "label": "Fullstack audit continuity remains consistent after refresh",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "audit_refresh_consistent",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "fullstack/audit-refresh",
+      "json_path": "status",
+      "expected_value": "consistent",
+      "expected_status": 200,
+      "required": true
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "ui_shell_renders",
+      "assertion_id": "ui_shell_renders",
+      "capability": "run_checks",
+      "summary": "run_checks must observe a visible UI shell before release.",
+      "operator": "equals",
+      "expected_value": "visible",
+      "hard": true
+    },
+    {
+      "criterion_id": "item_persists",
+      "assertion_id": "item_persists",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the latest item persists through the API before release.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "invalid_item_rejected",
+      "assertion_id": "invalid_item_rejected",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the invalid API path is rejected before release.",
+      "operator": "equals",
+      "expected_value": "rejected",
+      "hard": true
+    },
+    {
+      "criterion_id": "session_state_persists",
+      "assertion_id": "session_state_persists",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm session state persists across the fullstack workflow before release.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "browser_api_roundtrip_consistent",
+      "assertion_id": "browser_api_roundtrip_consistent",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm browser-to-API roundtrip state remains consistent before release.",
+      "operator": "equals",
+      "expected_value": "consistent",
+      "hard": true
+    },
+    {
+      "criterion_id": "item_persists",
+      "assertion_id": "item_persists",
+      "capability": "grade_round",
+      "summary": "grade_round must keep the persisted item assertion green before release.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "refresh_state_persisted",
+      "assertion_id": "refresh_state_persisted",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm refresh retains the persisted session state.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "mutation_audit_recorded",
+      "assertion_id": "mutation_audit_recorded",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm mutation audit records remain attached to the workflow state.",
+      "operator": "equals",
+      "expected_value": "recorded",
+      "hard": true
+    },
+    {
+      "criterion_id": "retry_recovery_persisted",
+      "assertion_id": "retry_recovery_persisted",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm retry recovery preserves fullstack workflow state.",
+      "operator": "equals",
+      "expected_value": "recovered",
+      "hard": true
+    },
+    {
+      "criterion_id": "audit_refresh_consistent",
+      "assertion_id": "audit_refresh_consistent",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm audit continuity remains consistent after refresh.",
+      "operator": "equals",
+      "expected_value": "consistent",
+      "hard": true
+    }
+  ],
+  "notes": [
+    "Use this bundle for browser-plus-API products that need both UI and API release gates.",
+    "The bundle requires one browser assertion, one API persistence assertion, one API error-path assertion, one persisted session-state assertion, and one browser-to-API roundtrip consistency assertion.",
+    "The proof score includes external_grade so weak verifier grading still drags the run below target_reached.",
+    "Release quality now also requires retry recovery and audit continuity across refresh boundaries."
+  ]
+}

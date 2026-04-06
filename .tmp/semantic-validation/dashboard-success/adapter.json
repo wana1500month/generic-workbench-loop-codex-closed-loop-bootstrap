@@ -1,0 +1,19 @@
+{
+  "adapter_id": "semantic-dashboard-success",
+  "label": "Semantic Dashboard Success Adapter",
+  "contract_version": "1",
+  "target_root": ".",
+  "capabilities": {
+    "prepare_target": { "command": "node ../executor.cjs dashboard-success" },
+    "apply_change": { "command": "node ../executor.cjs dashboard-success" },
+    "run_target": { "command": "node ../executor.cjs dashboard-success" }
+  },
+  "verification_provider": {
+    "provider_id": "semantic-dashboard-success-verifier",
+    "capabilities": {
+      "capture_evidence": { "command": "node ../verifier.cjs dashboard-success" },
+      "run_checks": { "command": "node ../verifier.cjs dashboard-success" },
+      "grade_round": { "command": "node ../verifier.cjs dashboard-success" }
+    }
+  }
+}

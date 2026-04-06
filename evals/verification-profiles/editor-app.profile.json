@@ -1,0 +1,328 @@
+{
+  "profile_id": "editor-app-profile",
+  "label": "Editor App Acceptance Pack",
+  "bundle_label": "Editor App Acceptance Pack",
+  "target_family": "browser-editor",
+  "validation_lane": "environment_integration",
+  "expected_target_surfaces": [
+    "browser",
+    "api"
+  ],
+  "required_live_verification_modes": [
+    "browser",
+    "api"
+  ],
+  "target_reached_requires_core_probes": true,
+  "minimum_feature_release_assertions": 9,
+  "minimum_assertion_tag_counts": {
+    "browser": 3,
+    "error_path": 2,
+    "undo_redo": 2,
+    "workflow_multi_step": 5,
+    "persistence": 2
+  },
+  "score_policy": {
+    "proof_weights": {
+      "proof_pass_rate": 0.3,
+      "criterion_pass_rate": 0.35,
+      "threshold_verdict": 0.1,
+      "external_grade": 0.25
+    },
+    "release_weights": {
+      "control_plane_score": 0.4,
+      "proof_score": 0.6
+    }
+  },
+  "core_probes": [
+    {
+      "probe_id": "editor-health",
+      "label": "Editor app health endpoint",
+      "role": "supporting",
+      "mode": "http",
+      "target_manifest_key": "health_url",
+      "expected_value": "\"status\":\"ready\"",
+      "required": true
+    },
+    {
+      "probe_id": "editor-shell-renders",
+      "label": "Editor shell and canvas render together",
+      "role": "release_gate",
+      "mode": "browser_journey",
+      "assertion_id": "editor_shell_renders",
+      "assertion_tags": [
+        "browser"
+      ],
+      "semantic_level": "feature",
+      "target_manifest_key": "app_url",
+      "steps": [
+        {
+          "action": "goto"
+        },
+        {
+          "action": "assert_visible",
+          "selector": "[data-testid='app-shell']"
+        },
+        {
+          "action": "assert_visible",
+          "selector": "[data-testid='editor-canvas']"
+        }
+      ],
+      "required": true
+    },
+    {
+      "probe_id": "editor-invalid-flow-rejected",
+      "label": "Invalid editor flow surfaces a visible error state",
+      "role": "release_gate",
+      "mode": "browser_journey",
+      "assertion_id": "invalid_editor_flow_rejected",
+      "assertion_tags": [
+        "browser",
+        "error_path"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "app_url",
+      "steps": [
+        {
+          "action": "goto",
+          "value": "?fixture=invalid"
+        },
+        {
+          "action": "assert_visible",
+          "selector": "[data-testid='error-banner']"
+        }
+      ],
+      "required": true
+    },
+    {
+      "probe_id": "editor-undo-preserved",
+      "label": "Undo affordance remains visible after the editor loads",
+      "role": "release_gate",
+      "mode": "browser_journey",
+      "assertion_id": "undo_redo_available",
+      "assertion_tags": [
+        "browser",
+        "undo_redo",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "app_url",
+      "steps": [
+        {
+          "action": "goto"
+        },
+        {
+          "action": "assert_visible",
+          "selector": "[data-testid='undo-button']"
+        }
+      ],
+      "required": true
+    },
+    {
+      "probe_id": "editor-selection-persists",
+      "label": "Selection indicator remains visible after the editor loads",
+      "role": "release_gate",
+      "mode": "browser_journey",
+      "assertion_id": "selection_state_persisted",
+      "assertion_tags": [
+        "browser",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "app_url",
+      "steps": [
+        {
+          "action": "goto"
+        },
+        {
+          "action": "assert_visible",
+          "selector": "[data-testid='selection-indicator']"
+        }
+      ],
+      "required": true
+    },
+    {
+      "probe_id": "editor-redo-preserved",
+      "label": "Redo affordance remains visible after the editor loads",
+      "role": "release_gate",
+      "mode": "browser_journey",
+      "assertion_id": "redo_state_available",
+      "assertion_tags": [
+        "browser",
+        "undo_redo",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "app_url",
+      "steps": [
+        {
+          "action": "goto"
+        },
+        {
+          "action": "assert_visible",
+          "selector": "[data-testid='redo-button']"
+        }
+      ],
+      "required": true
+    },
+    {
+      "probe_id": "editor-autosave-persisted",
+      "label": "Editor autosave keeps the latest draft persisted",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "autosave_persisted",
+      "assertion_tags": [
+        "persistence",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "editor/autosave",
+      "json_path": "status",
+      "expected_value": "persisted",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "editor-invalid-selection-blocked",
+      "label": "Invalid selection mutations are blocked explicitly",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "invalid_selection_blocked",
+      "assertion_tags": [
+        "error_path",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "editor/invalid-selection",
+      "json_path": "status",
+      "expected_value": "blocked",
+      "expected_status": 400,
+      "required": true
+    },
+    {
+      "probe_id": "editor-autosave-restore-after-refresh",
+      "label": "Editor autosave restores the latest draft after refresh",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "autosave_restore_after_refresh",
+      "assertion_tags": [
+        "persistence",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "editor/restore",
+      "json_path": "status",
+      "expected_value": "restored",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "editor-selection-recovers",
+      "label": "Editor selection state recovers after an invalid mutation",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "selection_recovery_after_invalid_mutation",
+      "assertion_tags": [
+        "error_path",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "editor/selection-recovery",
+      "json_path": "status",
+      "expected_value": "recovered",
+      "expected_status": 200,
+      "required": true
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "editor_shell_renders",
+      "assertion_id": "editor_shell_renders",
+      "capability": "run_checks",
+      "summary": "run_checks must observe both the editor shell and editing canvas.",
+      "operator": "equals",
+      "expected_value": "visible",
+      "hard": true
+    },
+    {
+      "criterion_id": "invalid_editor_flow_rejected",
+      "assertion_id": "invalid_editor_flow_rejected",
+      "capability": "run_checks",
+      "summary": "run_checks must observe the invalid editor flow error state.",
+      "operator": "equals",
+      "expected_value": "rejected",
+      "hard": true
+    },
+    {
+      "criterion_id": "undo_redo_available",
+      "assertion_id": "undo_redo_available",
+      "capability": "grade_round",
+      "summary": "grade_round must preserve visible undo or redo affordances before release.",
+      "operator": "equals",
+      "expected_value": "available",
+      "hard": true
+    },
+    {
+      "criterion_id": "selection_state_persisted",
+      "assertion_id": "selection_state_persisted",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm selection state remains visible after the editor loads.",
+      "operator": "equals",
+      "expected_value": "preserved",
+      "hard": true
+    },
+    {
+      "criterion_id": "redo_state_available",
+      "assertion_id": "redo_state_available",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm redo remains available after multi-step edits.",
+      "operator": "equals",
+      "expected_value": "available",
+      "hard": true
+    },
+    {
+      "criterion_id": "autosave_persisted",
+      "assertion_id": "autosave_persisted",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm editor autosave keeps the latest draft persisted.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "invalid_selection_blocked",
+      "assertion_id": "invalid_selection_blocked",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm invalid selection mutations are blocked explicitly.",
+      "operator": "equals",
+      "expected_value": "blocked",
+      "hard": true
+    },
+    {
+      "criterion_id": "autosave_restore_after_refresh",
+      "assertion_id": "autosave_restore_after_refresh",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm editor autosave restores the latest draft after refresh.",
+      "operator": "equals",
+      "expected_value": "restored",
+      "hard": true
+    },
+    {
+      "criterion_id": "selection_recovery_after_invalid_mutation",
+      "assertion_id": "selection_recovery_after_invalid_mutation",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm selection state recovers after an invalid mutation.",
+      "operator": "equals",
+      "expected_value": "recovered",
+      "hard": true
+    }
+  ],
+  "notes": [
+    "Use this pack for browser-first editor targets where reversible editing affordances matter.",
+    "Release quality means the editor shell renders, invalid flows fail visibly, undo and redo remain available, and selection state stays visible.",
+    "Release quality now also requires autosave restore continuity and post-error selection recovery."
+  ]
+}

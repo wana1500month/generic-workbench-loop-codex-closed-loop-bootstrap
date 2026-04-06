@@ -1,0 +1,19 @@
+{
+  "adapter_id": "semantic-low-score",
+  "label": "Semantic Low Score Adapter",
+  "contract_version": "1",
+  "target_root": ".",
+  "capabilities": {
+    "prepare_target": { "command": "node ../executor.cjs low-score" },
+    "apply_change": { "command": "node ../executor.cjs low-score" },
+    "run_target": { "command": "node ../executor.cjs low-score" }
+  },
+  "verification_provider": {
+    "provider_id": "semantic-low-score-verifier",
+    "capabilities": {
+      "capture_evidence": { "command": "node ../verifier.cjs low-score" },
+      "run_checks": { "command": "node ../verifier.cjs low-score" },
+      "grade_round": { "command": "node ../verifier.cjs low-score" }
+    }
+  }
+}

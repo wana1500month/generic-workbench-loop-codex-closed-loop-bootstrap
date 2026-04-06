@@ -1,0 +1,22 @@
+{
+  "profile_id": "semantic-validation-profile-no-core-probe",
+  "label": "Semantic Validation Profile Without Core Probe",
+  "bundle_label": "Semantic Validation Profile Without Core Probe",
+  "target_family": "browser-app",
+  "validation_lane": "environment_integration",
+  "required_live_verification_modes": ["browser"],
+  "target_reached_requires_core_probes": true,
+  "criteria": [
+    {
+      "criterion_id": "ui_shell_renders",
+      "capability": "run_checks",
+      "summary": "run_checks must observe a visible UI shell.",
+      "operator": "equals",
+      "expected_value": "visible",
+      "hard": true
+    }
+  ],
+  "notes": [
+    "This profile intentionally omits core_probes so contract review should reject target-reached signaling."
+  ]
+}

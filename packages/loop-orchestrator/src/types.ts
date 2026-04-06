@@ -1,0 +1,981 @@
+export type HarnessFocusArea =
+  | "planner_clarity"
+  | "contract_testability"
+  | "artifact_handoff"
+  | "patch_authority"
+  | "qa_rigor"
+  | "runtime_portability";
+
+export type RewriteScope = "incremental" | "structural" | "integration";
+export type AttemptKind = "initial_build" | "remediation";
+export type NegotiationMode = "full_negotiation" | "patch_only" | "recontract";
+export type ContinuationAuthority = "planner_contract" | "patch_request";
+export type RecontractReason =
+  | "missing_active_contract_frame"
+  | "no_actionable_patch_ids"
+  | "repeated_same_failure_signature"
+  | "release_gate_regression"
+  | "scope_drift"
+  | "manifest_contract_broken"
+  | "plateau_without_progress"
+  | "contradictory_evidence"
+  | "patch_entropy_spike";
+
+export type RoundVerdict = "advance" | "revise" | "hold";
+export type RoundCheckStatus = "pass" | "fail" | "not_applicable";
+export type RunStopReason =
+  | "target_reached"
+  | "contract_completed"
+  | "environment_blocked"
+  | "adapter_contract_invalid"
+  | "plateau_limit_reached"
+  | "max_rounds_reached";
+export type RoundStopReason = RunStopReason | "continue";
+export type RuntimeEventCode =
+  | "run.resumed_from_history"
+  | "resume.migration_override"
+  | "resume.noop_terminal"
+  | "resume.reopened_terminal"
+  | "resume.continued"
+  | "validation.environment_lane_hint";
+export type ValidationLane =
+  | "deterministic_semantic"
+  | "environment_integration";
+export type ExecutorMode = "harness" | "subagents-experimental";
+export type ProbeFailureClassification = "environment_blocked" | "probe_error";
+export type FailureLineagePolicyAction = "patch_only" | "recontract" | "stop";
+export type FailureLineageTriggerCode =
+  | "environment_blocked"
+  | "manifest_contract_broken"
+  | "release_gate_regression"
+  | "scope_drift"
+  | "contradiction_detected"
+  | "repeated_same_failure_signature"
+  | "plateau_without_progress"
+  | "patch_entropy_spike"
+  | "stable_patch_authority";
+export type FailureLineageClassification =
+  | "none"
+  | "product_defect"
+  | "environment_blocked"
+  | "mixed";
+export type PatchAuthorityState = "healthy" | "strained" | "collapsed";
+export type FailureLineagePolicySource = "hard_rule" | "weighted_policy";
+export type LifecycleDecisionSource =
+  | "initial_round"
+  | "missing_active_contract_frame"
+  | "no_actionable_patch_ids"
+  | "hard_rule"
+  | "policy_snapshot"
+  | "default_patch_authority";
+
+export type AdapterCapabilityName =
+  | "prepare_target"
+  | "apply_change"
+  | "run_target"
+  | "capture_evidence"
+  | "run_checks"
+  | "grade_round";
+
+export type ProofCapabilityName =
+  | "capture_evidence"
+  | "run_checks"
+  | "grade_round";
+
+export type VerificationCriterionOperator =
+  | "equals"
+  | "contains"
+  | "regex"
+  | "number_gte"
+  | "number_lte";
+export type QualityFindingSeverity = "critical" | "high" | "medium" | "low";
+export type QualityFindingCategory =
+  | "workflow_completeness"
+  | "interaction_clarity"
+  | "error_recovery"
+  | "persistence"
+  | "consistency"
+  | "reference_fit"
+  | "proof_signal";
+export type RemediationStrategy = "tighten" | "refine" | "pivot";
+
+export type LiveVerificationMode = "browser" | "api" | "db" | "shell";
+export type CoreVerificationProbeMode =
+  | "browser_journey"
+  | "browser"
+  | "http_json"
+  | "http"
+  | "file_contains"
+  | "json_value"
+  | "shell_command";
+export type CoreVerificationProbeRole = "supporting" | "release_gate";
+export type CoreVerificationProbeScope = "target_root";
+export type TargetManifestKey = "health_url" | "app_url" | "api_base_url";
+export type ProbeSemanticLevel = "liveness" | "feature" | "workflow";
+
+export type TargetSurface = "browser" | "api";
+export type VerificationAssertionTag =
+  | "browser"
+  | "api"
+  | "persistence"
+  | "error_path"
+  | "auth"
+  | "consistency"
+  | "workflow_multi_step"
+  | "latency_budget"
+  | "undo_redo"
+  | "grounded_tool_use";
+export type TargetFamily =
+  | "generic-core"
+  | "api-service"
+  | "crud-api"
+  | "chat-agent"
+  | "browser-app"
+  | "browser-editor"
+  | "editor-app"
+  | "fullstack-app"
+  | "dashboard";
+export type BrowserJourneyStepAction =
+  | "goto"
+  | "click"
+  | "fill"
+  | "press"
+  | "reload"
+  | "wait_for"
+  | "assert_visible"
+  | "assert_not_visible"
+  | "assert_text"
+  | "assert_value"
+  | "assert_url";
+
+export interface BrowserJourneyStep {
+  action: BrowserJourneyStepAction;
+  selector?: string;
+  value?: string;
+  timeout_ms?: number;
+}
+
+export interface RubricScoreDimension {
+  dimension_id: string;
+  label: string;
+  description?: string;
+  weight?: number;
+  minimum_score: number;
+  check_ids?: string[];
+  requires_adapter?: boolean;
+  requires_target_surfaces?: TargetSurface[];
+  required_core_probe_modes?: CoreVerificationProbeMode[];
+  skip_in_negotiation_modes?: NegotiationMode[];
+  blocks_target_signal?: boolean;
+}
+
+export interface EvalScoreDimension {
+  dimension_id: string;
+  label: string;
+  description?: string;
+  weight: number;
+  minimum_score: number;
+  applicable: boolean;
+  passed: boolean;
+  score: number;
+  contributing_check_ids: string[];
+  contributing_probe_ids: string[];
+  detail: string;
+}
+
+export interface IdeaBrief {
+  title: string;
+  summary: string;
+  user_goals: string[];
+  constraints: string[];
+  quality_bar: string[];
+  source_path: string;
+  raw_markdown: string;
+}
+
+export interface LoopScenario {
+  scenario_id: string;
+  title: string;
+  description: string;
+  user_goals: string[];
+  acceptance_highlights: string[];
+  idea_source_path?: string;
+  planner_notes?: string[];
+}
+
+export interface LoopRubric {
+  rubric_id: string;
+  evaluator_profile_path?: string;
+  target_total_score: number;
+  minimum_control_plane_score: number;
+  minimum_proof_score: number;
+  target_signal_requires_adapter: boolean;
+  target_signal_requires_grade_score: boolean;
+  stop_after_plateau_rounds: number;
+  max_remediation_rounds: number;
+  required_artifacts: string[];
+  quality_dimensions: string[];
+  score_dimensions?: RubricScoreDimension[];
+}
+
+export interface LoopRoundDirective {
+  round_id: string;
+  attempt_kind: AttemptKind;
+  label: string;
+  objective: string;
+  focus_areas: HarnessFocusArea[];
+  rewrite_scope: RewriteScope;
+  acceptance_checks: string[];
+}
+
+export interface LoopImprovementContract {
+  contract_id: string;
+  attempt_kind: AttemptKind;
+  objective: string;
+  rewrite_scope: RewriteScope;
+  focus_areas: HarnessFocusArea[];
+  acceptance_checks: string[];
+  notes: string[];
+  carry_over_patch_ids?: string[];
+  carry_over_check_ids?: string[];
+}
+
+export interface AttemptLifecycleDecision {
+  negotiation_mode: NegotiationMode;
+  continuation_authority: ContinuationAuthority;
+  persist_contract_review: boolean;
+  persist_contract_agreement: boolean;
+  reopen_contract: boolean;
+  decision_source: LifecycleDecisionSource;
+  reason: string;
+  recontract_reason?: RecontractReason;
+}
+
+export interface FailureLineage {
+  failing_check_ids: string[];
+  failing_assertion_ids: string[];
+  failing_probe_ids: string[];
+  missing_target_manifest_keys: string[];
+  contradictory_witness_assertion_ids: string[];
+  release_regression_ids: string[];
+  environment_blocked_probe_ids: string[];
+  failure_classification?: FailureLineageClassification;
+  unresolved_signature?: string;
+  policy_snapshot?: FailureLineagePolicySnapshot;
+}
+
+export interface FailureLineagePolicySnapshot {
+  recommended_action: FailureLineagePolicyAction;
+  reasons: string[];
+  trigger_codes: FailureLineageTriggerCode[];
+  trigger_scores: Partial<Record<FailureLineageTriggerCode, number>>;
+  dominant_trigger_code: FailureLineageTriggerCode;
+  patch_authority_state: PatchAuthorityState;
+  escalation_confidence: number;
+  recommendation_source: FailureLineagePolicySource;
+  repeated_failure_signature_count: number;
+  repeated_failure_classification_count: number;
+  unresolved_check_count: number;
+  contradiction_count: number;
+  regression_count: number;
+  missing_manifest_count: number;
+  plateau_delta_window: number[];
+  plateau_without_progress: boolean;
+  projected_plateau_count: number;
+  plateau_limit: number;
+  plateau_limit_reached: boolean;
+  environment_blocked: boolean;
+  scope_drift_detected: boolean;
+}
+
+export interface RemediationHistory {
+  repeated_unresolved_signature_count: number;
+  repeated_failure_classification_count: number;
+  unresolved_signature?: string;
+  failing_assertion_ids: string[];
+  failing_release_gate_probe_ids: string[];
+  target_manifest_keys_missing: string[];
+  regression_check_ids: string[];
+  contradiction_count: number;
+  environment_blocked: boolean;
+  score_deltas: number[];
+  patch_entropy: number;
+  scope_drift_detected: boolean;
+  patch_authority_state?: PatchAuthorityState;
+  policy_snapshot?: FailureLineagePolicySnapshot;
+}
+
+export interface AdapterCommandSpec {
+  command: string;
+  cwd?: string;
+  timeout_ms?: number;
+  shell?: "powershell" | "sh" | "bash" | "cmd";
+}
+
+export interface VerificationProviderSpec {
+  provider_id: string;
+  capabilities: Partial<Record<ProofCapabilityName, AdapterCommandSpec>>;
+  notes?: string[];
+}
+
+export interface VerificationCriterion {
+  criterion_id: string;
+  capability: Extract<AdapterCapabilityName, "run_checks" | "grade_round">;
+  summary: string;
+  operator: VerificationCriterionOperator;
+  expected_value: string;
+  assertion_id?: string;
+  quality_axis_id?: string;
+  hard?: boolean;
+}
+
+export interface QualityContractAxis {
+  axis_id: string;
+  label: string;
+  description: string;
+  desired_outcome?: string;
+  preserve_signals?: string[];
+  reference_signals?: string[];
+}
+
+export interface QualityContract {
+  primary_goal: string;
+  quality_axes: QualityContractAxis[];
+  preserve_signals?: string[];
+  reference_signals?: string[];
+  critique_style?: "deterministic_release_gate";
+}
+
+export interface VerificationCoreProbe {
+  probe_id: string;
+  label: string;
+  mode: CoreVerificationProbeMode;
+  role?: CoreVerificationProbeRole;
+  assertion_id?: string;
+  assertion_tags?: VerificationAssertionTag[];
+  quality_axis_id?: string;
+  semantic_level?: ProbeSemanticLevel;
+  target?: string;
+  target_manifest_key?: TargetManifestKey;
+  target_path?: string;
+  scope?: CoreVerificationProbeScope;
+  expected_value?: string;
+  expected_status?: number;
+  json_path?: string;
+  steps?: BrowserJourneyStep[];
+  cwd?: string;
+  shell?: AdapterCommandSpec["shell"];
+  browser_executable?: string;
+  expected_exit_code?: number;
+  timeout_ms?: number;
+  required?: boolean;
+}
+
+export interface VerificationProofScoreWeights {
+  proof_pass_rate?: number;
+  criterion_pass_rate?: number;
+  threshold_verdict?: number;
+  external_grade?: number;
+}
+
+export interface VerificationReleaseScoreWeights {
+  control_plane_score?: number;
+  proof_score?: number;
+}
+
+export interface VerificationScorePolicy {
+  proof_weights?: VerificationProofScoreWeights;
+  release_weights?: VerificationReleaseScoreWeights;
+}
+
+export interface VerificationProfile {
+  profile_id: string;
+  label: string;
+  bundle_label?: string;
+  target_family?: TargetFamily;
+  validation_lane?: ValidationLane;
+  criteria: VerificationCriterion[];
+  expected_target_surfaces?: TargetSurface[];
+  required_live_verification_modes?: LiveVerificationMode[];
+  core_probes?: VerificationCoreProbe[];
+  target_reached_requires_core_probes?: boolean;
+  minimum_feature_release_assertions?: number;
+  minimum_assertion_tag_counts?: Partial<Record<VerificationAssertionTag, number>>;
+  score_policy?: VerificationScorePolicy;
+  quality_contract?: QualityContract;
+  notes?: string[];
+}
+
+export interface LoadedVerificationProfile {
+  profile_path: string;
+  profile: VerificationProfile;
+}
+
+export interface TargetManifest {
+  health_url?: string;
+  app_url?: string;
+  api_base_url?: string;
+}
+
+export interface ExternalAdapterContract {
+  adapter_id: string;
+  label: string;
+  contract_version: "1";
+  target_root: string;
+  capabilities: Partial<Record<AdapterCapabilityName, AdapterCommandSpec>>;
+  verification_provider?: VerificationProviderSpec;
+  // Deprecated: the harness no longer loads adapter-authored profiles.
+  // Keep this field only so older adapters remain schema-compatible.
+  verification_profile_path?: string;
+  notes?: string[];
+}
+
+export interface LoadedAdapterContract {
+  base_directory: string;
+  contract_path: string;
+  contract: ExternalAdapterContract;
+  verification_profile?: LoadedVerificationProfile;
+  verification_profile_source?: "core" | "adapter";
+  runtime_warnings?: string[];
+}
+
+export interface AdapterCapabilityPacket {
+  adapter_id: string;
+  capability: AdapterCapabilityName;
+  run_id: string;
+  round: number;
+  run_directory: string;
+  round_directory: string;
+  runtime_directory?: string;
+  codex_session_registry_path?: string;
+  target_root: string;
+  idea_path?: string;
+  planned_scenario_path?: string;
+  plan_path?: string;
+  round_contract_path: string;
+  contract_review_path?: string;
+  contract_agreement_path?: string;
+  generator_plan_path: string;
+  patch_request_path?: string;
+  eval_report_path?: string;
+}
+
+export interface AdapterEvidenceItem {
+  path: string;
+  kind?: string;
+  description?: string;
+  supports_check_ids?: string[];
+  supports_criterion_ids?: string[];
+  derived_from_capabilities?: AdapterCapabilityName[];
+  derived_from_evidence_paths?: string[];
+}
+
+export interface VerifiedAdapterEvidenceItem {
+  path: string;
+  size_bytes: number;
+  sha256: string;
+  produced_by_capability: AdapterCapabilityName;
+  kind?: string;
+  description?: string;
+  supports_check_ids: string[];
+  supports_criterion_ids: string[];
+  derived_from_capabilities: AdapterCapabilityName[];
+  derived_from_evidence_paths: string[];
+  content_summary: string;
+  witness?: VerificationWitness;
+}
+
+export interface VerificationWitnessStep {
+  action: string;
+  outcome: "pass" | "fail" | "info";
+  artifact_paths: string[];
+}
+
+export interface VerificationWitness {
+  witness_id: string;
+  provider_id: string;
+  provider_role: "verifier";
+  capability: ProofCapabilityName;
+  mode: LiveVerificationMode;
+  target_root: string;
+  target_reference: string;
+  interaction_log_path: string;
+  assertion_ids: string[];
+  steps: VerificationWitnessStep[];
+}
+
+export interface AdapterExecutionAttestation {
+  command: string;
+  command_sha256: string;
+  cwd: string;
+  shell: "powershell" | "sh" | "bash" | "cmd" | "system";
+  timeout_ms: number;
+  started_at: string;
+  finished_at: string;
+  duration_ms: number;
+  stdout_path: string;
+  stdout_sha256: string;
+  stderr_path: string;
+  stderr_sha256: string;
+  result_sha256: string;
+}
+
+export interface CoreProbeAttestation {
+  started_at: string;
+  finished_at: string;
+  duration_ms: number;
+  target: string;
+  result_sha256: string;
+  evidence_sha256: Record<string, string>;
+}
+
+export interface CoreVerificationProbeExecution {
+  probe_id: string;
+  label: string;
+  mode: CoreVerificationProbeMode;
+  role: CoreVerificationProbeRole;
+  assertion_id?: string;
+  assertion_tags?: VerificationAssertionTag[];
+  quality_axis_id?: string;
+  semantic_level: ProbeSemanticLevel;
+  required: boolean;
+  ok: boolean;
+  summary: string;
+  target: string;
+  evidence_paths: string[];
+  observed_value?: string;
+  failure_classification?: ProbeFailureClassification;
+  attestation: CoreProbeAttestation;
+}
+
+export interface AdapterCriterionResult {
+  criterion_id: string;
+  status: "pass" | "fail";
+  summary: string;
+  evidence_paths: string[];
+  hard?: boolean;
+  threshold?: string;
+  observed_value?: string;
+}
+
+export interface VerifiedAdapterCriterionResult {
+  criterion_id: string;
+  status: "pass" | "fail";
+  summary: string;
+  evidence_paths: string[];
+  hard: boolean;
+  threshold?: string;
+  observed_value?: string;
+}
+
+export interface AdapterCapabilityResult {
+  capability: AdapterCapabilityName;
+  ok: boolean;
+  summary: string;
+  findings: string[];
+  evidence_paths: string[];
+  evidence_items?: AdapterEvidenceItem[];
+  target_manifest?: TargetManifest;
+  criteria_results?: AdapterCriterionResult[];
+  threshold_verdict?: "pass" | "fail";
+  blocking_criterion_ids?: string[];
+  metadata?: Record<string, string | number | boolean>;
+  score?: number;
+  overall_verdict?: RoundVerdict;
+}
+
+export interface AdapterCapabilityExecution {
+  capability: AdapterCapabilityName;
+  provider_id: string;
+  provider_role: "executor" | "verifier";
+  packet_path: string;
+  result_path: string;
+  result: AdapterCapabilityResult;
+  verified_evidence: VerifiedAdapterEvidenceItem[];
+  verified_criteria_results: VerifiedAdapterCriterionResult[];
+  verified_evidence_paths: string[];
+  validation_errors: string[];
+  attestation?: AdapterExecutionAttestation;
+}
+
+export interface RoundCheckResult {
+  check_id: string;
+  status: RoundCheckStatus;
+  detail: string;
+}
+
+export interface ReleaseThresholdResults {
+  contract_completed: boolean;
+  minimum_control_plane_score_met: boolean;
+  minimum_proof_score_met: boolean;
+  minimum_release_score_met: boolean;
+  adapter_required_met: boolean;
+  grade_score_required_met: boolean;
+  core_probe_required_met: boolean;
+  dimension_thresholds_met: boolean;
+  target_reached_eligible: boolean;
+}
+
+export interface EvalReport {
+  generated_at: string;
+  round: number;
+  total_score: number;
+  control_plane_score: number;
+  proof_score: number;
+  release_score: number;
+  overall_verdict: RoundVerdict;
+  strengths: string[];
+  blockers: string[];
+  next_actions: string[];
+  evidence_paths: string[];
+  threshold_gap_details: string[];
+  check_results: RoundCheckResult[];
+  resolved_check_ids: string[];
+  unresolved_check_ids: string[];
+  adapter_attached: boolean;
+  threshold_results: ReleaseThresholdResults;
+  dimension_scores: EvalScoreDimension[];
+  adapter_results: AdapterCapabilityExecution[];
+  core_probe_results: CoreVerificationProbeExecution[];
+}
+
+export interface QualityFinding {
+  finding_id: string;
+  category: QualityFindingCategory;
+  severity: QualityFindingSeverity;
+  summary: string;
+  expected_change: string;
+  evidence: string[];
+  preserve: string[];
+  pivot_or_refine: RemediationStrategy;
+  target_check_ids: string[];
+  probe_id?: string;
+  dimension_id?: string;
+  axis_id?: string;
+}
+
+export interface QualityCritiqueArtifact {
+  critique_id: string;
+  contract_id: string;
+  round: number;
+  remediation_strategy: RemediationStrategy;
+  quality_focus: string[];
+  preserve_signals: string[];
+  findings: QualityFinding[];
+  notes: string[];
+}
+
+export interface RoundArtifacts {
+  round_directory: string;
+  contract_json_path: string;
+  contract_md_path: string;
+  contract_review_json_path: string;
+  contract_review_md_path: string;
+  contract_agreement_json_path: string;
+  contract_agreement_md_path: string;
+  generator_plan_json_path: string;
+  generator_plan_md_path: string;
+  evaluator_verdict_json_path: string;
+  evaluator_verdict_md_path: string;
+  patch_request_json_path: string;
+  patch_request_md_path: string;
+  quality_critique_json_path: string;
+  quality_critique_md_path: string;
+  round_result_json_path: string;
+  eval_report_path: string;
+  failure_lineage_path: string;
+  planner_context_path: string;
+  generator_brief_path: string;
+  qa_review_path: string;
+  controller_decision_path: string;
+  adapter_directory: string;
+}
+
+export interface RoundContractArtifact {
+  contract_id: string;
+  round: number;
+  attempt_kind: AttemptKind;
+  negotiation_mode: NegotiationMode;
+  continuation_authority: ContinuationAuthority;
+  recontract_reason?: RecontractReason;
+  objective: string;
+  rewrite_scope: RewriteScope;
+  focus_areas: HarnessFocusArea[];
+  acceptance_checks: string[];
+  release_gate_check_ids: string[];
+  browser_release_gate_probe_ids: string[];
+  api_release_gate_probe_ids: string[];
+  required_live_verification_modes: LiveVerificationMode[];
+  proof_plan: string[];
+  pivot_triggers: string[];
+  success_thresholds: {
+    target_total_score: number;
+    minimum_control_plane_score: number;
+    minimum_proof_score: number;
+  };
+  required_artifacts: string[];
+  non_goals: string[];
+  carry_over_context: string[];
+  carry_over_patch_ids: string[];
+  carry_over_check_ids: string[];
+  adapter_expectations: string[];
+}
+
+export interface ContractReviewArtifact {
+  contract_id: string;
+  review_id: string;
+  decision: "accept" | "revise";
+  concerns: string[];
+  required_changes: string[];
+  approved_checks: string[];
+  adapter_ready: boolean;
+  static_blockers: string[];
+}
+
+export interface ContractAgreementArtifact {
+  contract_id: string;
+  agreement_id: string;
+  status: "agreed" | "blocked";
+  objective: string;
+  acceptance_checks: string[];
+  generator_must_deliver: string[];
+  evaluator_must_verify: string[];
+  carry_over_context: string[];
+}
+
+export interface ActiveContractFrame {
+  source_round: number;
+  contract_id: string;
+  objective: string;
+  focus_areas: HarnessFocusArea[];
+  rewrite_scope: RewriteScope;
+  acceptance_checks: string[];
+  agreement: ContractAgreementArtifact;
+}
+
+export interface GeneratorPlanArtifact {
+  contract_id: string;
+  agreement_id: string;
+  generator_plan_id: string;
+  implementation_intent: string;
+  remediation_strategy?: RemediationStrategy;
+  target_check_ids: string[];
+  quality_focus?: string[];
+  must_preserve?: string[];
+  files_to_touch: string[];
+  expected_proof: string[];
+  risk_notes: string[];
+  out_of_scope: string[];
+  adapter_actions: string[];
+}
+
+
+export interface EvaluatorVerdictArtifact {
+  contract_id: string;
+  verdict_id: string;
+  overall_verdict: RoundVerdict;
+  findings: string[];
+  release_blockers: string[];
+  contract_completed: boolean;
+}
+
+export interface PatchRequestItem {
+  id: string;
+  why: string;
+  expected_change: string;
+  target_check_ids: string[];
+  source_round: number;
+}
+
+export interface PatchRequestArtifact {
+  request_id: string;
+  derived_from_verdict_id: string;
+  next_action: RoundVerdict | "complete";
+  priority: "blocking" | "important" | "polish";
+  remediation_strategy?: RemediationStrategy;
+  must_fix: PatchRequestItem[];
+  quality_findings?: QualityFinding[];
+  environment_blockers?: string[];
+  preserve_signals?: string[];
+  must_preserve: string[];
+  forbidden_scope_expansion: string[];
+  promotion_rule: string;
+}
+
+export interface RoundResultArtifact {
+  round: number;
+  contract_id: string;
+  agreement_id: string;
+  generator_plan_id: string;
+  verdict_id: string;
+  request_id: string;
+  quality_critique_id?: string;
+  total_score: number;
+  control_plane_score: number;
+  proof_score: number;
+  release_score: number;
+  overall_verdict: RoundVerdict;
+  selected_for_run: boolean;
+  status: "advanced" | "revised" | "blocked";
+  eval_report_path: string;
+  evidence_paths: string[];
+  check_pass_rate: number;
+  previous_patch_request_addressed: boolean;
+  previous_patch_request_resolved: boolean;
+  resolved_check_ids: string[];
+  unresolved_check_ids: string[];
+  threshold_results: ReleaseThresholdResults;
+}
+
+export interface RoundSummary {
+  round: number;
+  attempt_kind: AttemptKind;
+  negotiation_mode: NegotiationMode;
+  continuation_authority: ContinuationAuthority;
+  decision_source: LifecycleDecisionSource;
+  recontract_reason?: RecontractReason;
+  label: string;
+  controller_reason: string;
+  objective: string;
+  target_family?: TargetFamily;
+  validation_lane?: ValidationLane;
+  round_stop_reason?: RoundStopReason;
+  total_score: number;
+  control_plane_score: number;
+  proof_score: number;
+  release_score: number;
+  overall_verdict: RoundVerdict;
+  check_pass_rate: number;
+  contract_path: string;
+  contract_review_path?: string;
+  contract_agreement_path?: string;
+  generator_plan_path: string;
+  evaluator_verdict_path: string;
+  patch_request_path: string;
+  quality_critique_path?: string;
+  eval_report_path: string;
+  failure_lineage_path?: string;
+  planner_context_path: string;
+  generator_brief_path: string;
+  qa_review_path: string;
+  controller_decision_path: string;
+  evidence_paths: string[];
+  previous_patch_request_addressed: boolean;
+  previous_patch_request_resolved: boolean;
+  resolved_check_ids: string[];
+  unresolved_check_ids: string[];
+  threshold_results: ReleaseThresholdResults;
+  dimension_scores: EvalScoreDimension[];
+  failure_lineage?: FailureLineage;
+}
+
+export interface LoopPlan {
+  scenario_id: string;
+  rubric_id: string;
+  target_total_score: number;
+  minimum_control_plane_score: number;
+  minimum_proof_score: number;
+  target_signal_requires_adapter: boolean;
+  target_signal_requires_grade_score: boolean;
+  stop_after_plateau_rounds: number;
+  max_remediation_rounds: number;
+  max_rounds: number;
+  north_star: string;
+  attempt_strategy: string;
+  planner_focus_areas: HarnessFocusArea[];
+  planner_acceptance_checks: string[];
+  remediation_policy: string[];
+  planner_notes: string[];
+  idea_title?: string;
+  idea_source_path?: string;
+}
+
+export interface LoopRunSummary {
+  run_id: string;
+  round_count: number;
+  scenario_id: string;
+  rubric_id: string;
+  executor_mode?: ExecutorMode;
+  target_family?: TargetFamily;
+  validation_lane?: ValidationLane;
+  evaluator_profile_path?: string;
+  adapter_contract_sha256?: string;
+  evaluator_bundle_sha256?: string;
+  rubric_sha256?: string;
+  total_score: number;
+  control_plane_score: number;
+  proof_score: number;
+  release_score: number;
+  planner_brief_path?: string;
+  idea_path?: string;
+  planned_scenario_path?: string;
+  plan_path?: string;
+  codex_handoff_path?: string;
+  adapter_contract_path?: string;
+  adapter_id?: string;
+  verification_provider_id?: string;
+  adapter_attached?: boolean;
+  codex_session_registry_path?: string;
+  resume_identity_path?: string;
+  stop_reason?: RunStopReason;
+  selection_basis?: "terminal_round";
+  best_round?: number;
+  terminal_round?: number;
+  threshold_results?: ReleaseThresholdResults;
+  dimension_scores?: EvalScoreDimension[];
+  best_scoring_total_score?: number;
+  best_scoring_control_plane_score?: number;
+  best_scoring_proof_score?: number;
+  best_scoring_release_score?: number;
+  best_scoring_threshold_results?: ReleaseThresholdResults;
+  round_history?: RoundSummary[];
+  runtime_warnings?: string[];
+  runtime_events?: RuntimeEvent[];
+  bundle_migrated?: boolean;
+  previous_bundle_fingerprint?: string;
+  new_bundle_fingerprint?: string;
+  resume_migration_path?: string;
+  resume_decision_path?: string;
+  resumed_from_run_id?: string;
+}
+
+export interface RuntimeEvent {
+  code: RuntimeEventCode;
+  message: string;
+  created_at: string;
+  metadata?: Record<string, string | number | boolean | null>;
+}
+
+export interface ResumeDecisionArtifact {
+  run_id: string;
+  decided_at: string;
+  decision: "continue" | "noop_terminal" | "reopened_terminal";
+  previous_stop_reason?: RunStopReason;
+  force_reopen_terminal: boolean;
+  allow_resume_migration: boolean;
+  mismatches: string[];
+  runtime_event_codes: RuntimeEventCode[];
+}
+
+export interface PlannerStageResult {
+  planned_scenario_path: string;
+  plan_path: string;
+  planner_brief_path: string;
+  idea: IdeaBrief;
+  scenario: LoopScenario;
+  plan: LoopPlan;
+  rubric: LoopRubric;
+}
+
+export interface ClosedLoopResult {
+  plan: LoopPlan;
+  summary: LoopRunSummary;
+  runDirectory: string;
+  plannedScenarioPath?: string;
+}
+
+export interface SingleRoundResult {
+  summary: LoopRunSummary;
+  runDirectory: string;
+  roundDirectory: string;
+}

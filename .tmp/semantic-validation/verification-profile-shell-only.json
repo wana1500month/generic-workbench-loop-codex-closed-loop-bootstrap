@@ -1,0 +1,34 @@
+{
+  "profile_id": "semantic-validation-profile-shell-only",
+  "label": "Semantic Validation Profile With Shell-Only Supporting Probe",
+  "bundle_label": "Semantic Validation Profile With Shell-Only Supporting Probe",
+  "target_family": "browser-app",
+  "validation_lane": "environment_integration",
+  "required_live_verification_modes": ["browser"],
+  "target_reached_requires_core_probes": true,
+  "core_probes": [
+    {
+      "probe_id": "target-run-shell-check",
+      "label": "Supporting shell command probe for target marker",
+      "role": "supporting",
+      "mode": "shell_command",
+      "target": "node ../core-probe.cjs",
+      "cwd": ".",
+      "expected_value": "run_target evidence for round",
+      "required": true
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "ui_shell_renders",
+      "capability": "run_checks",
+      "summary": "run_checks must observe a visible UI shell.",
+      "operator": "equals",
+      "expected_value": "visible",
+      "hard": true
+    }
+  ],
+  "notes": [
+    "This profile intentionally uses only a supporting shell_command core probe so contract review should reject target-reached signaling."
+  ]
+}

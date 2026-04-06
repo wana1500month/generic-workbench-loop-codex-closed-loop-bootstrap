@@ -1,0 +1,305 @@
+{
+  "profile_id": "semantic-validation-fullstack-semantic",
+  "label": "Semantic Validation Fullstack Deterministic",
+  "bundle_label": "Semantic Validation Fullstack Deterministic",
+  "target_family": "fullstack-app",
+  "validation_lane": "deterministic_semantic",
+  "expected_target_surfaces": [
+    "api"
+  ],
+  "required_live_verification_modes": [
+    "browser",
+    "api"
+  ],
+  "target_reached_requires_core_probes": true,
+  "minimum_feature_release_assertions": 9,
+  "minimum_assertion_tag_counts": {
+    "api": 7,
+    "persistence": 4,
+    "error_path": 1,
+    "workflow_multi_step": 6,
+    "consistency": 3
+  },
+  "score_policy": {
+    "proof_weights": {
+      "proof_pass_rate": 0.25,
+      "criterion_pass_rate": 0.35,
+      "threshold_verdict": 0.1,
+      "external_grade": 0.3
+    },
+    "release_weights": {
+      "control_plane_score": 0.45,
+      "proof_score": 0.55
+    }
+  },
+  "core_probes": [
+    {
+      "probe_id": "fullstack-semantic-health",
+      "label": "Fullstack semantic lane health endpoint",
+      "role": "supporting",
+      "mode": "http",
+      "target_manifest_key": "health_url",
+      "expected_value": "\"status\":\"ready\"",
+      "required": true
+    },
+    {
+      "probe_id": "fullstack-semantic-shell",
+      "label": "Fullstack semantic lane confirms the shell remains visible",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "ui_shell_renders",
+      "assertion_tags": [
+        "api"
+      ],
+      "semantic_level": "feature",
+      "target_manifest_key": "api_base_url",
+      "target_path": "fullstack/shell",
+      "json_path": "shell",
+      "expected_value": "visible",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "fullstack-semantic-item",
+      "label": "Fullstack semantic lane confirms the latest item persists",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "item_persists",
+      "assertion_tags": [
+        "api",
+        "persistence"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "items/latest",
+      "json_path": "title",
+      "expected_value": "Smoke Item",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "fullstack-semantic-invalid-item",
+      "label": "Fullstack semantic lane confirms invalid item requests are rejected",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "invalid_item_rejected",
+      "assertion_tags": [
+        "api",
+        "error_path"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "items/invalid",
+      "json_path": "error",
+      "expected_value": "invalid_title",
+      "expected_status": 400,
+      "required": true
+    },
+    {
+      "probe_id": "fullstack-semantic-session",
+      "label": "Fullstack semantic lane confirms session state persists",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "session_state_persists",
+      "assertion_tags": [
+        "api",
+        "persistence",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "fullstack/session",
+      "json_path": "status",
+      "expected_value": "persisted",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "fullstack-semantic-roundtrip",
+      "label": "Fullstack semantic lane confirms browser-to-API roundtrip state remains consistent",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "browser_api_roundtrip_consistent",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "fullstack/roundtrip",
+      "json_path": "status",
+      "expected_value": "consistent",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "fullstack-semantic-refresh",
+      "label": "Fullstack semantic lane confirms refresh retains the persisted session state",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "refresh_state_persisted",
+      "assertion_tags": [
+        "api",
+        "persistence",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "fullstack/refresh",
+      "json_path": "status",
+      "expected_value": "persisted",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "fullstack-semantic-audit",
+      "label": "Fullstack semantic lane confirms mutation audit records stay attached",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "mutation_audit_recorded",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "fullstack/audit",
+      "json_path": "status",
+      "expected_value": "recorded",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "fullstack-semantic-retry",
+      "label": "Fullstack semantic lane confirms retry recovery preserves workflow state",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "retry_recovery_persisted",
+      "assertion_tags": [
+        "api",
+        "persistence",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "fullstack/retry",
+      "json_path": "status",
+      "expected_value": "recovered",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "fullstack-semantic-audit-refresh",
+      "label": "Fullstack semantic lane confirms audit continuity survives refresh",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "audit_refresh_consistent",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "fullstack/audit-refresh",
+      "json_path": "status",
+      "expected_value": "consistent",
+      "expected_status": 200,
+      "required": true
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "ui_shell_renders",
+      "assertion_id": "ui_shell_renders",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the fullstack shell remains visible.",
+      "operator": "equals",
+      "expected_value": "visible",
+      "hard": true
+    },
+    {
+      "criterion_id": "item_persists",
+      "assertion_id": "item_persists",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the latest item persists through the API.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "invalid_item_rejected",
+      "assertion_id": "invalid_item_rejected",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm invalid item requests are rejected explicitly.",
+      "operator": "equals",
+      "expected_value": "rejected",
+      "hard": true
+    },
+    {
+      "criterion_id": "session_state_persists",
+      "assertion_id": "session_state_persists",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm session state persists across the fullstack workflow.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "browser_api_roundtrip_consistent",
+      "assertion_id": "browser_api_roundtrip_consistent",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm browser-to-API roundtrip state remains consistent.",
+      "operator": "equals",
+      "expected_value": "consistent",
+      "hard": true
+    },
+    {
+      "criterion_id": "session_state_persists",
+      "assertion_id": "session_state_persists",
+      "capability": "grade_round",
+      "summary": "grade_round must keep session state persisted before release.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "refresh_state_persisted",
+      "assertion_id": "refresh_state_persisted",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm fullstack refresh retains the persisted session state.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "mutation_audit_recorded",
+      "assertion_id": "mutation_audit_recorded",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm mutation audit records stay attached to the workflow state.",
+      "operator": "equals",
+      "expected_value": "recorded",
+      "hard": true
+    },
+    {
+      "criterion_id": "retry_recovery_persisted",
+      "assertion_id": "retry_recovery_persisted",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm retry recovery preserves fullstack workflow state.",
+      "operator": "equals",
+      "expected_value": "recovered",
+      "hard": true
+    },
+    {
+      "criterion_id": "audit_refresh_consistent",
+      "assertion_id": "audit_refresh_consistent",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm audit continuity survives refresh.",
+      "operator": "equals",
+      "expected_value": "consistent",
+      "hard": true
+    }
+  ]
+}

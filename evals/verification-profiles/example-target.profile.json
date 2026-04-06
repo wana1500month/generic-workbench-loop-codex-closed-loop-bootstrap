@@ -1,0 +1,91 @@
+{
+  "profile_id": "external-target-example-profile",
+  "label": "External Target Example Verification Profile",
+  "bundle_label": "External Target Example Verification Profile",
+  "target_family": "fullstack-app",
+  "validation_lane": "environment_integration",
+  "expected_target_surfaces": ["browser", "api"],
+  "required_live_verification_modes": ["browser", "api"],
+  "target_reached_requires_core_probes": true,
+  "minimum_feature_release_assertions": 2,
+  "core_probes": [
+    {
+      "probe_id": "app-health",
+      "label": "Live target health endpoint",
+      "role": "supporting",
+      "mode": "http",
+      "target_manifest_key": "health_url",
+      "expected_value": "\"status\":\"ready\"",
+      "required": true
+    },
+    {
+      "probe_id": "shell-renders",
+      "label": "App shell renders in browser",
+      "role": "release_gate",
+      "mode": "browser_journey",
+      "assertion_id": "ui_shell_renders",
+      "semantic_level": "feature",
+      "target_manifest_key": "app_url",
+      "steps": [
+        {
+          "action": "goto"
+        },
+        {
+          "action": "assert_visible",
+          "selector": "[data-testid='app-shell']"
+        }
+      ],
+      "required": true
+    },
+    {
+      "probe_id": "create-persists",
+      "label": "Created item persists through API",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "item_persists",
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "items/latest",
+      "json_path": "title",
+      "expected_value": "Smoke Item",
+      "expected_status": 200,
+      "required": true
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "ui_shell_renders",
+      "assertion_id": "ui_shell_renders",
+      "capability": "run_checks",
+      "summary": "run_checks must observe a visible UI shell before the round can advance.",
+      "operator": "equals",
+      "expected_value": "visible",
+      "hard": true
+    },
+    {
+      "criterion_id": "item_persists",
+      "assertion_id": "item_persists",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the created item persists before the round can advance.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "item_persists",
+      "assertion_id": "item_persists",
+      "capability": "grade_round",
+      "summary": "grade_round must confirm the created item persists before the evaluator can release the round.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    }
+  ],
+  "notes": [
+    "Keep target-specific correctness criteria here so the harness core can compare observed values against evaluator-owned expectations.",
+    "Define core probes here when target_reached should require evaluator-owned evidence in addition to verifier-produced live proof.",
+    "Release-gate probes must use mode browser_journey or http_json, carry assertion_id, and point at target_manifest_key values published by run_target.",
+    "Supporting probes can still use http, browser, file_contains, json_value, or shell_command for liveness and diagnostics, but they cannot open target_reached on their own.",
+    "Use shared assertion_id values to bind criteria, verifier witnesses, and core-owned release gates to the same feature or workflow claim."
+  ]
+}

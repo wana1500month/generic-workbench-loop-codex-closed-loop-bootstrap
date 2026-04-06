@@ -1,0 +1,92 @@
+name: Codex Real Smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 18 * * 0"
+  pull_request:
+    paths:
+      - ".github/workflows/codex-real-smoke.yml"
+      - ".codex/config.toml"
+      - "docs/codex-auth.md"
+      - "package.json"
+      - "packages/loop-orchestrator/**"
+      - "scripts/**"
+      - "STATUS.md"
+
+jobs:
+  codex-real-smoke:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux]
+    concurrency:
+      group: codex-chatgpt-auth
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        codex-version:
+          - "0.114.0"
+          - "0.118.0"
+    env:
+      CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure persistent CODEX_HOME
+        shell: bash
+        run: |
+          echo "CODEX_HOME=$HOME/.codex-harness" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex@${{ matrix.codex-version }}
+
+      - name: Bootstrap Codex runner config and auth when missing
+        shell: bash
+        run: |
+          mkdir -p "$CODEX_HOME"
+          chmod 700 "$CODEX_HOME"
+          if [ ! -f "$CODEX_HOME/config.toml" ]; then
+            cat > "$CODEX_HOME/config.toml" <<'EOF'
+cli_auth_credentials_store = "file"
+forced_login_method = "chatgpt"
+EOF
+            chmod 600 "$CODEX_HOME/config.toml"
+          fi
+          if [ ! -f "$CODEX_HOME/auth.json" ]; then
+            test -n "$CODEX_AUTH_JSON" || {
+              echo "::error::CODEX_AUTH_JSON secret is required to seed a missing auth.json on the trusted runner"
+              exit 1
+            }
+            printf '%s' "$CODEX_AUTH_JSON" > "$CODEX_HOME/auth.json"
+            chmod 600 "$CODEX_HOME/auth.json"
+          fi
+          codex login status
+
+      - name: Persist refreshed auth.json permissions
+        shell: bash
+        run: |
+          test -f "$CODEX_HOME/auth.json" || {
+            echo "::error::CODEX_HOME/auth.json disappeared before strict smoke"
+            exit 1
+          }
+          chmod 600 "$CODEX_HOME/auth.json"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify login before strict smoke
+        shell: bash
+        run: |
+          codex login status
+
+      - name: Real Codex smoke (strict)
+        run: npm run validate:codex:real-smoke:strict

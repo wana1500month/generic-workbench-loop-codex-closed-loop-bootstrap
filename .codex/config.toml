@@ -1,0 +1,14 @@
+model = "gpt-5.4"
+model_reasoning_effort = "medium"
+
+# This repo keeps auth enforcement out of project config. The runtime selects
+# these profiles explicitly via `--profile` for repo-root read-only harness
+# stages, while ChatGPT-managed auth is expected to come from user/runner
+# `CODEX_HOME` state plus user/managed Codex config. Bootstrap mutation against
+# external target roots uses explicit `-c` overrides instead of profile
+# discovery.
+
+[profiles.readonly_agent]
+approval_policy = "never"
+sandbox_mode = "read-only"
+model_reasoning_effort = "high"

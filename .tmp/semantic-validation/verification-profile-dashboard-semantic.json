@@ -1,0 +1,304 @@
+{
+  "profile_id": "semantic-validation-dashboard-semantic",
+  "label": "Semantic Validation Dashboard Deterministic",
+  "bundle_label": "Semantic Validation Dashboard Deterministic",
+  "target_family": "dashboard",
+  "validation_lane": "deterministic_semantic",
+  "expected_target_surfaces": [
+    "api"
+  ],
+  "required_live_verification_modes": [
+    "browser",
+    "api"
+  ],
+  "target_reached_requires_core_probes": true,
+  "minimum_feature_release_assertions": 9,
+  "minimum_assertion_tag_counts": {
+    "api": 7,
+    "consistency": 5,
+    "error_path": 1,
+    "workflow_multi_step": 5
+  },
+  "score_policy": {
+    "proof_weights": {
+      "proof_pass_rate": 0.25,
+      "criterion_pass_rate": 0.35,
+      "threshold_verdict": 0.1,
+      "external_grade": 0.3
+    },
+    "release_weights": {
+      "control_plane_score": 0.45,
+      "proof_score": 0.55
+    }
+  },
+  "core_probes": [
+    {
+      "probe_id": "dashboard-semantic-health",
+      "label": "Dashboard semantic lane health endpoint",
+      "role": "supporting",
+      "mode": "http",
+      "target_manifest_key": "health_url",
+      "expected_value": "\"status\":\"ready\"",
+      "required": true
+    },
+    {
+      "probe_id": "dashboard-semantic-shell",
+      "label": "Dashboard semantic lane confirms the shell remains visible",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "dashboard_shell_renders",
+      "assertion_tags": [
+        "api"
+      ],
+      "semantic_level": "feature",
+      "target_manifest_key": "api_base_url",
+      "target_path": "dashboard/shell",
+      "json_path": "shell",
+      "expected_value": "visible",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "dashboard-semantic-metrics",
+      "label": "Dashboard semantic lane confirms metrics remain consistent",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "metrics_consistent",
+      "assertion_tags": [
+        "api",
+        "consistency"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "dashboard/metrics",
+      "json_path": "status",
+      "expected_value": "consistent",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "dashboard-semantic-invalid-filter",
+      "label": "Dashboard semantic lane confirms invalid filters are rejected",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "invalid_filter_rejected",
+      "assertion_tags": [
+        "api",
+        "error_path"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "dashboard/invalid-filter",
+      "json_path": "status",
+      "expected_value": "rejected",
+      "expected_status": 400,
+      "required": true
+    },
+    {
+      "probe_id": "dashboard-semantic-time-range",
+      "label": "Dashboard semantic lane confirms the active time range stays consistent across panels",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "time_range_consistent",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "dashboard/time-range",
+      "json_path": "status",
+      "expected_value": "consistent",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "dashboard-semantic-filter",
+      "label": "Dashboard semantic lane confirms filter state remains persisted",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "filter_state_persisted",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "dashboard/filter",
+      "json_path": "status",
+      "expected_value": "persisted",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "dashboard-semantic-aggregation",
+      "label": "Dashboard semantic lane confirms aggregations remain correct",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "aggregation_correct",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "dashboard/aggregation",
+      "json_path": "status",
+      "expected_value": "correct",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "dashboard-semantic-drilldown",
+      "label": "Dashboard semantic lane confirms drilldown continuity remains stable",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "drilldown_continuity",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "dashboard/drilldown",
+      "json_path": "status",
+      "expected_value": "continuous",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "dashboard-semantic-filter-reset",
+      "label": "Dashboard semantic lane confirms filter reset restores the default slice",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "filter_reset_restored",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "dashboard/filter-reset",
+      "json_path": "status",
+      "expected_value": "restored",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "dashboard-semantic-drilldown-refresh",
+      "label": "Dashboard semantic lane confirms drilldown context survives refresh",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "drilldown_refresh_preserved",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "dashboard/drilldown-refresh",
+      "json_path": "status",
+      "expected_value": "preserved",
+      "expected_status": 200,
+      "required": true
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "dashboard_shell_renders",
+      "assertion_id": "dashboard_shell_renders",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the dashboard shell remains visible.",
+      "operator": "equals",
+      "expected_value": "visible",
+      "hard": true
+    },
+    {
+      "criterion_id": "metrics_consistent",
+      "assertion_id": "metrics_consistent",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm dashboard metrics remain consistent.",
+      "operator": "equals",
+      "expected_value": "consistent",
+      "hard": true
+    },
+    {
+      "criterion_id": "invalid_filter_rejected",
+      "assertion_id": "invalid_filter_rejected",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm invalid filters are rejected explicitly.",
+      "operator": "equals",
+      "expected_value": "rejected",
+      "hard": true
+    },
+    {
+      "criterion_id": "metrics_consistent",
+      "assertion_id": "metrics_consistent",
+      "capability": "grade_round",
+      "summary": "grade_round must keep metric consistency green before release.",
+      "operator": "equals",
+      "expected_value": "consistent",
+      "hard": true
+    },
+    {
+      "criterion_id": "time_range_consistent",
+      "assertion_id": "time_range_consistent",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the dashboard time range remains consistent across panels.",
+      "operator": "equals",
+      "expected_value": "consistent",
+      "hard": true
+    },
+    {
+      "criterion_id": "filter_state_persisted",
+      "assertion_id": "filter_state_persisted",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm dashboard filter state remains persisted across refreshes.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "aggregation_correct",
+      "assertion_id": "aggregation_correct",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm dashboard aggregations remain correct for the active slice.",
+      "operator": "equals",
+      "expected_value": "correct",
+      "hard": true
+    },
+    {
+      "criterion_id": "drilldown_continuity",
+      "assertion_id": "drilldown_continuity",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm drilldown continuity remains stable across panel transitions.",
+      "operator": "equals",
+      "expected_value": "continuous",
+      "hard": true
+    },
+    {
+      "criterion_id": "filter_reset_restored",
+      "assertion_id": "filter_reset_restored",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm filter reset restores the default dashboard slice coherently.",
+      "operator": "equals",
+      "expected_value": "restored",
+      "hard": true
+    },
+    {
+      "criterion_id": "drilldown_refresh_preserved",
+      "assertion_id": "drilldown_refresh_preserved",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm drilldown context survives refresh.",
+      "operator": "equals",
+      "expected_value": "preserved",
+      "hard": true
+    }
+  ]
+}

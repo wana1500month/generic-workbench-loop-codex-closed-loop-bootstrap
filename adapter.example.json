@@ -1,0 +1,37 @@
+{
+  "adapter_id": "external-target-example",
+  "label": "External Target Example",
+  "contract_version": "1",
+  "target_root": "../external-target-repo",
+  "capabilities": {
+    "prepare_target": {
+      "command": "node scripts/prepare-target.js"
+    },
+    "apply_change": {
+      "command": "node scripts/apply-change.js"
+    },
+    "run_target": {
+      "command": "node scripts/run-target.js"
+    }
+  },
+  "verification_provider": {
+    "provider_id": "external-target-verifier",
+    "capabilities": {
+      "capture_evidence": {
+        "command": "node scripts/capture-evidence.js"
+      },
+      "run_checks": {
+        "command": "node scripts/run-checks.js"
+      },
+      "grade_round": {
+        "command": "node scripts/grade-round.js"
+      }
+    }
+  },
+  "notes": [
+    "Copy this file into another repository or local path and replace commands with real adapter scripts.",
+    "Select a core-owned evaluator profile through rubric.evaluator_profile_path or --evaluator-profile instead of carrying target_reached policy inside adapter.json.",
+    "Make the verification provider emit both a live interaction artifact and a structured verification-witness manifest, because target_reached now requires verifier-owned live proof with grounded witness steps.",
+    "Publish target_manifest URLs from run_target so the harness runtime can independently confirm live browser/API assertions before it emits target_reached."
+  ]
+}

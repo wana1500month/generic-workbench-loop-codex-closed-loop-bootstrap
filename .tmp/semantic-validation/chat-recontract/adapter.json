@@ -1,0 +1,19 @@
+{
+  "adapter_id": "semantic-chat-recontract",
+  "label": "Semantic Chat Recontract Adapter",
+  "contract_version": "1",
+  "target_root": ".",
+  "capabilities": {
+    "prepare_target": { "command": "node ../executor.cjs chat-recontract" },
+    "apply_change": { "command": "node ../executor.cjs chat-recontract" },
+    "run_target": { "command": "node ../executor.cjs chat-recontract" }
+  },
+  "verification_provider": {
+    "provider_id": "semantic-chat-recontract-verifier",
+    "capabilities": {
+      "capture_evidence": { "command": "node ../verifier.cjs chat-recontract" },
+      "run_checks": { "command": "node ../verifier.cjs chat-recontract" },
+      "grade_round": { "command": "node ../verifier.cjs chat-recontract" }
+    }
+  }
+}

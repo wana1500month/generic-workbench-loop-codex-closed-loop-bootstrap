@@ -1,0 +1,39 @@
+{
+  "profile_id": "semantic-validation-profile-liveness-only",
+  "label": "Semantic Validation Profile With Liveness-Only Release Gate",
+  "bundle_label": "Semantic Validation Profile With Liveness-Only Release Gate",
+  "target_family": "browser-app",
+  "validation_lane": "environment_integration",
+  "required_live_verification_modes": ["browser", "api"],
+  "target_reached_requires_core_probes": true,
+  "minimum_feature_release_assertions": 2,
+  "core_probes": [
+    {
+      "probe_id": "target-health-json",
+      "label": "Invalid liveness-only release gate",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "health_ready",
+      "semantic_level": "liveness",
+      "target_manifest_key": "health_url",
+      "json_path": "status",
+      "expected_value": "ready",
+      "expected_status": 200,
+      "required": true
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "health_ready_run_checks",
+      "assertion_id": "health_ready",
+      "capability": "run_checks",
+      "summary": "run_checks must observe a ready health endpoint.",
+      "operator": "equals",
+      "expected_value": "ready",
+      "hard": true
+    }
+  ],
+  "notes": [
+    "This profile is intentionally invalid because release-gate assertions cannot stay at liveness semantics."
+  ]
+}

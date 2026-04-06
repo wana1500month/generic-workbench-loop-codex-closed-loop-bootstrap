@@ -1,0 +1,19 @@
+{
+  "adapter_id": "semantic-browser-recontract",
+  "label": "Semantic Browser Recontract Adapter",
+  "contract_version": "1",
+  "target_root": ".",
+  "capabilities": {
+    "prepare_target": { "command": "node ../executor.cjs browser-recontract" },
+    "apply_change": { "command": "node ../executor.cjs browser-recontract" },
+    "run_target": { "command": "node ../executor.cjs browser-recontract" }
+  },
+  "verification_provider": {
+    "provider_id": "semantic-browser-recontract-verifier",
+    "capabilities": {
+      "capture_evidence": { "command": "node ../verifier.cjs browser-recontract" },
+      "run_checks": { "command": "node ../verifier.cjs browser-recontract" },
+      "grade_round": { "command": "node ../verifier.cjs browser-recontract" }
+    }
+  }
+}

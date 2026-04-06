@@ -1,0 +1,19 @@
+{
+  "adapter_id": "semantic-dashboard-patch-only",
+  "label": "Semantic Dashboard Patch Only Adapter",
+  "contract_version": "1",
+  "target_root": ".",
+  "capabilities": {
+    "prepare_target": { "command": "node ../executor.cjs dashboard-patch-only" },
+    "apply_change": { "command": "node ../executor.cjs dashboard-patch-only" },
+    "run_target": { "command": "node ../executor.cjs dashboard-patch-only" }
+  },
+  "verification_provider": {
+    "provider_id": "semantic-dashboard-patch-only-verifier",
+    "capabilities": {
+      "capture_evidence": { "command": "node ../verifier.cjs dashboard-patch-only" },
+      "run_checks": { "command": "node ../verifier.cjs dashboard-patch-only" },
+      "grade_round": { "command": "node ../verifier.cjs dashboard-patch-only" }
+    }
+  }
+}

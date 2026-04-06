@@ -1,0 +1,19 @@
+{
+  "adapter_id": "semantic-editor-recontract",
+  "label": "Semantic Editor Recontract Adapter",
+  "contract_version": "1",
+  "target_root": ".",
+  "capabilities": {
+    "prepare_target": { "command": "node ../executor.cjs editor-recontract" },
+    "apply_change": { "command": "node ../executor.cjs editor-recontract" },
+    "run_target": { "command": "node ../executor.cjs editor-recontract" }
+  },
+  "verification_provider": {
+    "provider_id": "semantic-editor-recontract-verifier",
+    "capabilities": {
+      "capture_evidence": { "command": "node ../verifier.cjs editor-recontract" },
+      "run_checks": { "command": "node ../verifier.cjs editor-recontract" },
+      "grade_round": { "command": "node ../verifier.cjs editor-recontract" }
+    }
+  }
+}

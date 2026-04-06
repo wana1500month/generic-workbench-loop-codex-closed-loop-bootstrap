@@ -1,0 +1,320 @@
+{
+  "profile_id": "dashboard-profile",
+  "label": "Dashboard Acceptance Pack",
+  "bundle_label": "Dashboard Acceptance Pack",
+  "target_family": "dashboard",
+  "validation_lane": "environment_integration",
+  "expected_target_surfaces": [
+    "browser",
+    "api"
+  ],
+  "required_live_verification_modes": [
+    "browser",
+    "api"
+  ],
+  "target_reached_requires_core_probes": true,
+  "minimum_feature_release_assertions": 9,
+  "minimum_assertion_tag_counts": {
+    "browser": 1,
+    "api": 5,
+    "consistency": 5,
+    "error_path": 1,
+    "workflow_multi_step": 5
+  },
+  "score_policy": {
+    "proof_weights": {
+      "proof_pass_rate": 0.25,
+      "criterion_pass_rate": 0.35,
+      "threshold_verdict": 0.1,
+      "external_grade": 0.3
+    },
+    "release_weights": {
+      "control_plane_score": 0.45,
+      "proof_score": 0.55
+    }
+  },
+  "core_probes": [
+    {
+      "probe_id": "dashboard-health",
+      "label": "Dashboard health endpoint",
+      "role": "supporting",
+      "mode": "http",
+      "target_manifest_key": "health_url",
+      "expected_value": "\"status\":\"ready\"",
+      "required": true
+    },
+    {
+      "probe_id": "dashboard-shell-renders",
+      "label": "Dashboard shell renders in the browser",
+      "role": "release_gate",
+      "mode": "browser_journey",
+      "assertion_id": "dashboard_shell_renders",
+      "assertion_tags": [
+        "browser"
+      ],
+      "semantic_level": "feature",
+      "target_manifest_key": "app_url",
+      "steps": [
+        {
+          "action": "goto"
+        },
+        {
+          "action": "assert_visible",
+          "selector": "[data-testid='app-shell']"
+        },
+        {
+          "action": "assert_visible",
+          "selector": "[data-testid='dashboard-grid']"
+        }
+      ],
+      "required": true
+    },
+    {
+      "probe_id": "dashboard-metrics-consistent",
+      "label": "Dashboard summary API returns the expected metric envelope",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "metrics_consistent",
+      "assertion_tags": [
+        "api",
+        "consistency"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "metrics/summary",
+      "json_path": "status",
+      "expected_value": "ready",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "dashboard-invalid-filter-rejected",
+      "label": "Invalid dashboard filter request returns a structured rejection",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "invalid_filter_rejected",
+      "assertion_tags": [
+        "api",
+        "error_path"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "metrics/summary?filter=invalid",
+      "json_path": "error",
+      "expected_value": "invalid_filter",
+      "expected_status": 400,
+      "required": true
+    },
+    {
+      "probe_id": "dashboard-time-range-consistent",
+      "label": "Time-range state remains consistent across dashboard panels",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "time_range_consistent",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "dashboard/time-range",
+      "json_path": "status",
+      "expected_value": "consistent",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "dashboard-filter-state-persists",
+      "label": "Dashboard filter state remains persisted across panel refreshes",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "filter_state_persisted",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "dashboard/filter",
+      "json_path": "status",
+      "expected_value": "persisted",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "dashboard-aggregation-correct",
+      "label": "Dashboard aggregations remain correct for the active slice",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "aggregation_correct",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "dashboard/aggregation",
+      "json_path": "status",
+      "expected_value": "correct",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "dashboard-drilldown-continuity",
+      "label": "Dashboard drilldown continuity remains stable across panel transitions",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "drilldown_continuity",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "dashboard/drilldown",
+      "json_path": "status",
+      "expected_value": "continuous",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "dashboard-filter-reset-restored",
+      "label": "Dashboard filter reset restores a coherent default slice",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "filter_reset_restored",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "dashboard/filter-reset",
+      "json_path": "status",
+      "expected_value": "restored",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "dashboard-drilldown-refresh-preserved",
+      "label": "Dashboard drilldown context survives a refresh boundary",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "drilldown_refresh_preserved",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "dashboard/drilldown-refresh",
+      "json_path": "status",
+      "expected_value": "preserved",
+      "expected_status": 200,
+      "required": true
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "dashboard_shell_renders",
+      "assertion_id": "dashboard_shell_renders",
+      "capability": "run_checks",
+      "summary": "run_checks must observe the dashboard shell and primary data grid.",
+      "operator": "equals",
+      "expected_value": "visible",
+      "hard": true
+    },
+    {
+      "criterion_id": "metrics_consistent",
+      "assertion_id": "metrics_consistent",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the summary metrics API stays internally consistent.",
+      "operator": "equals",
+      "expected_value": "consistent",
+      "hard": true
+    },
+    {
+      "criterion_id": "invalid_filter_rejected",
+      "assertion_id": "invalid_filter_rejected",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm invalid dashboard filters are rejected explicitly.",
+      "operator": "equals",
+      "expected_value": "rejected",
+      "hard": true
+    },
+    {
+      "criterion_id": "metrics_consistent",
+      "assertion_id": "metrics_consistent",
+      "capability": "grade_round",
+      "summary": "grade_round must keep the metric consistency gate green before release.",
+      "operator": "equals",
+      "expected_value": "consistent",
+      "hard": true
+    },
+    {
+      "criterion_id": "time_range_consistent",
+      "assertion_id": "time_range_consistent",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the dashboard time range remains consistent across panels.",
+      "operator": "equals",
+      "expected_value": "consistent",
+      "hard": true
+    },
+    {
+      "criterion_id": "filter_state_persisted",
+      "assertion_id": "filter_state_persisted",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm dashboard filter state remains persisted across refreshes.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "aggregation_correct",
+      "assertion_id": "aggregation_correct",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm dashboard aggregations remain correct for the active slice.",
+      "operator": "equals",
+      "expected_value": "correct",
+      "hard": true
+    },
+    {
+      "criterion_id": "drilldown_continuity",
+      "assertion_id": "drilldown_continuity",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm drilldown continuity remains stable across panel transitions.",
+      "operator": "equals",
+      "expected_value": "continuous",
+      "hard": true
+    },
+    {
+      "criterion_id": "filter_reset_restored",
+      "assertion_id": "filter_reset_restored",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm filter reset restores the default dashboard slice coherently.",
+      "operator": "equals",
+      "expected_value": "restored",
+      "hard": true
+    },
+    {
+      "criterion_id": "drilldown_refresh_preserved",
+      "assertion_id": "drilldown_refresh_preserved",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm drilldown context survives a refresh boundary.",
+      "operator": "equals",
+      "expected_value": "preserved",
+      "hard": true
+    }
+  ],
+  "notes": [
+    "Use this pack for dashboard-style products that combine browser rendering with API-backed data views.",
+    "Release quality means the shell renders, data stays consistent, invalid filters fail explicitly, time-range state remains coherent, and filter state stays persisted.",
+    "Release quality now also requires coherent filter reset and drilldown continuity across refresh."
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "adapter_id": "semantic-chat-patch-only",
+  "label": "Semantic Chat Patch-Only Adapter",
+  "contract_version": "1",
+  "target_root": ".",
+  "capabilities": {
+    "prepare_target": { "command": "node ../executor.cjs chat-patch-only" },
+    "apply_change": { "command": "node ../executor.cjs chat-patch-only" },
+    "run_target": { "command": "node ../executor.cjs chat-patch-only" }
+  },
+  "verification_provider": {
+    "provider_id": "semantic-chat-patch-only-verifier",
+    "capabilities": {
+      "capture_evidence": { "command": "node ../verifier.cjs chat-patch-only" },
+      "run_checks": { "command": "node ../verifier.cjs chat-patch-only" },
+      "grade_round": { "command": "node ../verifier.cjs chat-patch-only" }
+    }
+  }
+}

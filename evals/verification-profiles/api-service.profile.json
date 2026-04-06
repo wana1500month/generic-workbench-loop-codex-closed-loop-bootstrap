@@ -1,0 +1,228 @@
+{
+  "profile_id": "api-service-profile",
+  "label": "API Service Evaluator Bundle",
+  "bundle_label": "API Service Evaluator Bundle",
+  "target_family": "api-service",
+  "validation_lane": "deterministic_semantic",
+  "expected_target_surfaces": [
+    "api"
+  ],
+  "required_live_verification_modes": [
+    "api"
+  ],
+  "target_reached_requires_core_probes": true,
+  "minimum_feature_release_assertions": 6,
+  "minimum_assertion_tag_counts": {
+    "api": 5,
+    "persistence": 1,
+    "error_path": 2,
+    "consistency": 2,
+    "workflow_multi_step": 3
+  },
+  "score_policy": {
+    "proof_weights": {
+      "proof_pass_rate": 0.25,
+      "criterion_pass_rate": 0.35,
+      "threshold_verdict": 0.1,
+      "external_grade": 0.3
+    },
+    "release_weights": {
+      "control_plane_score": 0.4,
+      "proof_score": 0.6
+    }
+  },
+  "core_probes": [
+    {
+      "probe_id": "service-health",
+      "label": "Live service health endpoint",
+      "role": "supporting",
+      "mode": "http",
+      "target_manifest_key": "health_url",
+      "expected_value": "\"status\":\"ready\"",
+      "required": true
+    },
+    {
+      "probe_id": "item-persists",
+      "label": "Persisted item remains available through the API",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "item_persists",
+      "assertion_tags": [
+        "api",
+        "persistence"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "items/latest",
+      "json_path": "title",
+      "expected_value": "Smoke Item",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "invalid-item-rejected",
+      "label": "Invalid API request returns an explicit rejection",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "invalid_item_rejected",
+      "assertion_tags": [
+        "api",
+        "error_path"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "items/invalid",
+      "json_path": "error",
+      "expected_value": "invalid_title",
+      "expected_status": 400,
+      "required": true
+    },
+    {
+      "probe_id": "item-summary-consistent",
+      "label": "Canonical item summary remains internally consistent",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "collection_consistent",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "items/summary",
+      "json_path": "status",
+      "expected_value": "consistent",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "idempotent-write-safe",
+      "label": "Repeated writes remain idempotent through the canonical API",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "idempotent_write_safe",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "items/idempotent",
+      "json_path": "status",
+      "expected_value": "idempotent",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "stale-write-rejected",
+      "label": "Stale writes are rejected instead of silently overwriting newer state",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "stale_write_rejected",
+      "assertion_tags": [
+        "api",
+        "error_path",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "items/stale",
+      "json_path": "status",
+      "expected_value": "stale_rejected",
+      "expected_status": 409,
+      "required": true
+    },
+    {
+      "probe_id": "pagination-consistent",
+      "label": "Paginated API reads remain stable across repeated requests",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "pagination_consistent",
+      "assertion_tags": [
+        "api",
+        "consistency",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "items/pagination",
+      "json_path": "status",
+      "expected_value": "stable",
+      "expected_status": 200,
+      "required": true
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "item_persists",
+      "assertion_id": "item_persists",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the latest item persists through the API.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "invalid_item_rejected",
+      "assertion_id": "invalid_item_rejected",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the API rejects the invalid item path.",
+      "operator": "equals",
+      "expected_value": "rejected",
+      "hard": true
+    },
+    {
+      "criterion_id": "collection_consistent",
+      "assertion_id": "collection_consistent",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the canonical item summary remains internally consistent.",
+      "operator": "equals",
+      "expected_value": "consistent",
+      "hard": true
+    },
+    {
+      "criterion_id": "idempotent_write_safe",
+      "assertion_id": "idempotent_write_safe",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm repeated writes remain idempotent.",
+      "operator": "equals",
+      "expected_value": "idempotent",
+      "hard": true
+    },
+    {
+      "criterion_id": "item_persists",
+      "assertion_id": "item_persists",
+      "capability": "grade_round",
+      "summary": "grade_round must keep the persisted item assertion green before release.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "stale_write_rejected",
+      "assertion_id": "stale_write_rejected",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm stale writes are rejected explicitly.",
+      "operator": "equals",
+      "expected_value": "stale_rejected",
+      "hard": true
+    },
+    {
+      "criterion_id": "pagination_consistent",
+      "assertion_id": "pagination_consistent",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm paginated reads remain stable across repeated requests.",
+      "operator": "equals",
+      "expected_value": "stable",
+      "hard": true
+    }
+  ],
+  "notes": [
+    "Use this bundle for API-only services with no required browser surface.",
+    "The bundle requires persistence, error-path rejection, summary consistency, and idempotent write safety release assertions.",
+    "The proof score includes external_grade so weak verifier grading can still hold the run below target_reached even when structural checks pass.",
+    "The acceptance pack now also requires explicit stale-write rejection and pagination stability before release."
+  ]
+}

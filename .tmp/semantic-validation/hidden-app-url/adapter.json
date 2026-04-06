@@ -1,0 +1,19 @@
+{
+  "adapter_id": "semantic-hidden-app-url",
+  "label": "Semantic Hidden App URL Adapter",
+  "contract_version": "1",
+  "target_root": ".",
+  "capabilities": {
+    "prepare_target": { "command": "node ../executor.cjs hidden-app-url" },
+    "apply_change": { "command": "node ../executor.cjs hidden-app-url" },
+    "run_target": { "command": "node ../executor.cjs hidden-app-url" }
+  },
+  "verification_provider": {
+    "provider_id": "semantic-hidden-app-url-verifier",
+    "capabilities": {
+      "capture_evidence": { "command": "node ../verifier.cjs hidden-app-url" },
+      "run_checks": { "command": "node ../verifier.cjs hidden-app-url" },
+      "grade_round": { "command": "node ../verifier.cjs hidden-app-url" }
+    }
+  }
+}

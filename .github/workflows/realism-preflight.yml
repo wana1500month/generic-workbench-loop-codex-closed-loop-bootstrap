@@ -1,0 +1,58 @@
+name: Realism Preflight
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/realism-preflight.yml"
+      - ".devcontainer/browser-validation/**"
+      - "package.json"
+      - "packages/loop-orchestrator/**"
+      - "scripts/**"
+      - "evals/verification-profiles/**"
+      - ".tmp/semantic-validation/**"
+
+jobs:
+  browser-fullstack-preflight:
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.59.1-jammy
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Link Chromium for harness probes
+        run: |
+          BROWSER_PATH="$(find /ms-playwright -path '*chrome-linux/chrome' | head -n1)"
+          test -n "$BROWSER_PATH"
+          ln -sf "$BROWSER_PATH" /usr/bin/chromium
+          chromium --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Browser preflight
+        run: npm run validate:family-browser:preflight
+
+      - name: Editor preflight
+        run: npm run validate:family-editor:preflight
+
+      - name: Fullstack preflight
+        run: npm run validate:family-fullstack:preflight
+
+      - name: Dashboard preflight
+        run: npm run validate:family-dashboard:preflight
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: realism-preflight-runs
+          path: evals/runs/**

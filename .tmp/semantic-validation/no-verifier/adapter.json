@@ -1,0 +1,14 @@
+{
+  "adapter_id": "semantic-no-verifier",
+  "label": "Semantic No Verifier Adapter",
+  "contract_version": "1",
+  "target_root": ".",
+  "capabilities": {
+    "prepare_target": { "command": "node ../adapter.cjs truth" },
+    "apply_change": { "command": "node ../adapter.cjs truth" },
+    "run_target": { "command": "node ../adapter.cjs truth" },
+    "capture_evidence": { "command": "node ../adapter.cjs truth" },
+    "run_checks": { "command": "node ../adapter.cjs truth" },
+    "grade_round": { "command": "node ../adapter.cjs truth" }
+  }
+}

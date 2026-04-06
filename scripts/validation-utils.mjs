@@ -1,0 +1,618 @@
+import { spawn } from "node:child_process";
+import { readFile, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+export const runLoop = async (args, options = {}) =>
+  new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn(process.execPath, ["./scripts/loop-runner.mjs", ...args], {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        ...(options.env ?? {})
+      }
+    });
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      const text = chunk.toString();
+      stdout += text;
+      if (options.silent !== true) {
+        process.stdout.write(text);
+      }
+    });
+    child.stderr.on("data", (chunk) => {
+      const text = chunk.toString();
+      stderr += text;
+      if (options.silent !== true) {
+        process.stderr.write(text);
+      }
+    });
+    child.on("error", rejectPromise);
+    child.on("close", (code) => {
+      resolvePromise({
+        code: code ?? 1,
+        stdout,
+        stderr
+      });
+    });
+  });
+
+export const extractRunDirectory = (stdout) => {
+  const match = stdout.match(/Run created:\s+(.+)/);
+  if (!match) {
+    throw new Error("Could not find 'Run created:' in loop output.");
+  }
+  return resolve(repoRoot, match[1].trim());
+};
+
+export const readSummary = async (runDirectory) =>
+  JSON.parse(await readFile(resolve(runDirectory, "summary.json"), "utf8"));
+
+export const readTextFile = async (path) =>
+  readFile(resolve(path), "utf8");
+
+export const readJsonFile = async (path) =>
+  JSON.parse(await readFile(resolve(path), "utf8"));
+
+export const assertStopReason = (summary, expectedStopReason) => {
+  if (summary.stop_reason !== expectedStopReason) {
+    throw new Error(
+      `Expected stop_reason '${expectedStopReason}', received '${summary.stop_reason ?? "none"}'.`
+    );
+  }
+};
+
+export const assertRoundCount = (summary, expectedRoundCount) => {
+  if (summary.round_count !== expectedRoundCount) {
+    throw new Error(
+      `Expected round_count '${expectedRoundCount}', received '${summary.round_count}'.`
+    );
+  }
+};
+
+export const latestRoundSummary = (summary) =>
+  summary.round_history?.[summary.round_history.length - 1];
+
+export const assertRoundBundleSemantics = (
+  roundSummary,
+  expectedTargetFamily,
+  expectedValidationLane
+) => {
+  if (!roundSummary) {
+    throw new Error("Expected a round summary, but none was recorded.");
+  }
+
+  if (roundSummary.target_family !== expectedTargetFamily) {
+    throw new Error(
+      `Expected round ${roundSummary.round} target_family '${expectedTargetFamily}', received '${roundSummary.target_family ?? "none"}'.`
+    );
+  }
+
+  if (roundSummary.validation_lane !== expectedValidationLane) {
+    throw new Error(
+      `Expected round ${roundSummary.round} validation_lane '${expectedValidationLane}', received '${roundSummary.validation_lane ?? "none"}'.`
+    );
+  }
+};
+
+export const assertRoundStopReason = (
+  roundSummary,
+  expectedRoundStopReason,
+  label = "round summary"
+) => {
+  if (!roundSummary) {
+    throw new Error(`Expected ${label}, but no round summary was recorded.`);
+  }
+
+  if (roundSummary.round_stop_reason !== expectedRoundStopReason) {
+    throw new Error(
+      `Expected ${label} round_stop_reason '${expectedRoundStopReason}', received '${roundSummary.round_stop_reason ?? "missing"}'.`
+    );
+  }
+};
+
+export const assertTargetFamily = (summary, expectedTargetFamily) => {
+  if (summary.target_family !== expectedTargetFamily) {
+    throw new Error(
+      `Expected target_family '${expectedTargetFamily}', received '${summary.target_family ?? "none"}'.`
+    );
+  }
+};
+
+export const assertValidationLane = (summary, expectedValidationLane) => {
+  if (summary.validation_lane !== expectedValidationLane) {
+    throw new Error(
+      `Expected validation_lane '${expectedValidationLane}', received '${summary.validation_lane ?? "none"}'.`
+    );
+  }
+};
+
+export const assertRuntimeWarningContains = (summary, expectedSubstring) => {
+  const warnings = summary.runtime_warnings ?? [];
+  if (!warnings.some((warning) => warning.includes(expectedSubstring))) {
+    throw new Error(
+      `Expected runtime warnings to contain '${expectedSubstring}', but received: ${warnings.join(" | ") || "none"}.`
+    );
+  }
+};
+
+export const assertRuntimeWarningMissing = (summary, unexpectedSubstring) => {
+  const warnings = summary.runtime_warnings ?? [];
+  if (warnings.some((warning) => warning.includes(unexpectedSubstring))) {
+    throw new Error(
+      `Expected runtime warnings to exclude '${unexpectedSubstring}', but received: ${warnings.join(" | ") || "none"}.`
+    );
+  }
+};
+
+export const assertRuntimeEventCode = (summary, expectedCode) => {
+  const eventCodes = (summary.runtime_events ?? []).map((event) => event.code);
+  if (!eventCodes.includes(expectedCode)) {
+    throw new Error(
+      `Expected runtime_events to include '${expectedCode}', but received: ${eventCodes.join(", ") || "none"}.`
+    );
+  }
+};
+
+export const assertRuntimeEventCodeMissing = (summary, unexpectedCode) => {
+  const eventCodes = (summary.runtime_events ?? []).map((event) => event.code);
+  if (eventCodes.includes(unexpectedCode)) {
+    throw new Error(
+      `Expected runtime_events to exclude '${unexpectedCode}', but received: ${eventCodes.join(", ") || "none"}.`
+    );
+  }
+};
+
+export const readResumeDecisionArtifact = async (summary) => {
+  if (!summary.resume_decision_path) {
+    throw new Error("Expected summary.resume_decision_path to be present.");
+  }
+  return readJsonFile(summary.resume_decision_path);
+};
+
+export const assertTextContains = (text, expectedSubstring, label = "text") => {
+  if (!text.includes(expectedSubstring)) {
+    throw new Error(
+      `Expected ${label} to contain '${expectedSubstring}', but it did not.`
+    );
+  }
+};
+
+export const assertControllerDecisionBundleSemantics = async (
+  roundSummary,
+  expectedTargetFamily,
+  expectedValidationLane,
+  label = "controller decision"
+) => {
+  assertRoundBundleSemantics(
+    roundSummary,
+    expectedTargetFamily,
+    expectedValidationLane
+  );
+  const controllerDecision = await readTextFile(roundSummary.controller_decision_path);
+  assertTextContains(
+    controllerDecision,
+    `Target family: ${expectedTargetFamily}`,
+    label
+  );
+  assertTextContains(
+    controllerDecision,
+    `Validation lane: ${expectedValidationLane}`,
+    label
+  );
+};
+
+export const assertSuccessfulRoundHasNoFailureClassification = async (
+  roundSummary,
+  label = "successful round"
+) => {
+  if (!roundSummary?.failure_lineage_path) {
+    throw new Error(`Expected ${label} to persist failure_lineage_path.`);
+  }
+  const failureLineage = await readJsonFile(roundSummary.failure_lineage_path);
+  if (failureLineage.failure_classification !== "none") {
+    throw new Error(
+      `Expected ${label} to record failure_classification 'none', received '${failureLineage.failure_classification ?? "missing"}'.`
+    );
+  }
+};
+
+export const assertEnvironmentBlockedRound = async (
+  roundSummary,
+  label = "environment-blocked round"
+) => {
+  if (!roundSummary?.failure_lineage_path) {
+    throw new Error(`Expected ${label} to persist failure_lineage_path.`);
+  }
+  const [failureLineage, patchRequest] = await Promise.all([
+    readJsonFile(roundSummary.failure_lineage_path),
+    readJsonFile(roundSummary.patch_request_path)
+  ]);
+  if (failureLineage.failure_classification !== "environment_blocked") {
+    throw new Error(
+      `Expected ${label} to record failure_classification 'environment_blocked', received '${failureLineage.failure_classification ?? "missing"}'.`
+    );
+  }
+  if (patchRequest.next_action !== "hold") {
+    throw new Error(
+      `Expected ${label} to keep patch_request.next_action 'hold', received '${patchRequest.next_action ?? "missing"}'.`
+    );
+  }
+};
+
+export const assertEvalReportCoverage = async (
+  roundSummary,
+  { expectedProbeIds = [], expectedCriterionIds = [], label = "eval report" } = {}
+) => {
+  if (!roundSummary?.eval_report_path) {
+    throw new Error(`Expected ${label} to persist eval_report_path.`);
+  }
+
+  const evalReport = await readJsonFile(roundSummary.eval_report_path);
+  const observedProbeIds = new Set(
+    (evalReport.core_probe_results ?? []).map((probe) => probe.probe_id)
+  );
+  const observedCriterionIds = new Set(
+    (evalReport.adapter_results ?? []).flatMap((execution) =>
+      (execution.verified_criteria_results ?? []).map((criterion) => criterion.criterion_id)
+    )
+  );
+
+  const missingProbeIds = expectedProbeIds.filter((probeId) => !observedProbeIds.has(probeId));
+  if (missingProbeIds.length > 0) {
+    throw new Error(
+      `Expected ${label} to include probe ids ${missingProbeIds.join(", ")}, but they were missing.`
+    );
+  }
+
+  const missingCriterionIds = expectedCriterionIds.filter(
+    (criterionId) => !observedCriterionIds.has(criterionId)
+  );
+  if (missingCriterionIds.length > 0) {
+    throw new Error(
+      `Expected ${label} to include criterion ids ${missingCriterionIds.join(", ")}, but they were missing.`
+    );
+  }
+};
+
+export const assertRoundContractReleaseQa = async (
+  roundSummary,
+  {
+    expectedBrowserProbeIds = [],
+    expectedApiProbeIds = [],
+    label = "round contract release QA"
+  } = {}
+) => {
+  if (!roundSummary?.contract_path) {
+    throw new Error(`Expected ${label} to persist contract_path.`);
+  }
+  const roundContract = await readJsonFile(roundSummary.contract_path);
+  const missingBrowserProbeIds = expectedBrowserProbeIds.filter(
+    (probeId) => !(roundContract.browser_release_gate_probe_ids ?? []).includes(probeId)
+  );
+  if (missingBrowserProbeIds.length > 0) {
+    throw new Error(
+      `Expected ${label} to include browser probe ids ${missingBrowserProbeIds.join(", ")}, but they were missing.`
+    );
+  }
+  const missingApiProbeIds = expectedApiProbeIds.filter(
+    (probeId) => !(roundContract.api_release_gate_probe_ids ?? []).includes(probeId)
+  );
+  if (missingApiProbeIds.length > 0) {
+    throw new Error(
+      `Expected ${label} to include api probe ids ${missingApiProbeIds.join(", ")}, but they were missing.`
+    );
+  }
+  if (!(roundContract.release_gate_check_ids ?? []).length) {
+    throw new Error(`Expected ${label} to include release_gate_check_ids.`);
+  }
+  if (!(roundContract.pivot_triggers ?? []).length) {
+    throw new Error(`Expected ${label} to include pivot_triggers.`);
+  }
+  return roundContract;
+};
+
+export const assertDimensionScores = async (
+  roundSummary,
+  {
+    expectedDimensionIds = [],
+    requireThresholdsMet,
+    label = "dimension scores"
+  } = {}
+) => {
+  if (!roundSummary?.eval_report_path) {
+    throw new Error(`Expected ${label} to persist eval_report_path.`);
+  }
+  const evalReport = await readJsonFile(roundSummary.eval_report_path);
+  const observedDimensionIds = new Set(
+    (evalReport.dimension_scores ?? []).map((dimension) => dimension.dimension_id)
+  );
+  const missingDimensionIds = expectedDimensionIds.filter(
+    (dimensionId) => !observedDimensionIds.has(dimensionId)
+  );
+  if (missingDimensionIds.length > 0) {
+    throw new Error(
+      `Expected ${label} to include dimension ids ${missingDimensionIds.join(", ")}, but they were missing.`
+    );
+  }
+  if (
+    requireThresholdsMet !== undefined &&
+    Boolean(evalReport.threshold_results?.dimension_thresholds_met) !== requireThresholdsMet
+  ) {
+    throw new Error(
+      `Expected ${label} dimension_thresholds_met '${requireThresholdsMet}', received '${evalReport.threshold_results?.dimension_thresholds_met ?? "missing"}'.`
+    );
+  }
+  return evalReport.dimension_scores ?? [];
+};
+
+export const assertFailurePolicyRecommendation = async (
+  roundSummary,
+  expectedAction,
+  label = "failure policy"
+) => {
+  if (!roundSummary?.failure_lineage_path) {
+    throw new Error(`Expected ${label} to persist failure_lineage_path.`);
+  }
+  const failureLineage = await readJsonFile(roundSummary.failure_lineage_path);
+  const action = failureLineage.policy_snapshot?.recommended_action;
+  if (action !== expectedAction) {
+    throw new Error(
+      `Expected ${label} to recommend '${expectedAction}', received '${action ?? "missing"}'.`
+    );
+  }
+};
+
+export const assertDecisionSource = (
+  roundSummary,
+  expectedDecisionSource,
+  label = "decision source"
+) => {
+  if (!roundSummary) {
+    throw new Error(`Expected ${label}, but no round summary was recorded.`);
+  }
+  if (roundSummary.decision_source !== expectedDecisionSource) {
+    throw new Error(
+      `Expected ${label} '${expectedDecisionSource}', received '${roundSummary.decision_source ?? "missing"}'.`
+    );
+  }
+};
+
+export const assertFailurePolicySnapshot = async (
+  roundSummary,
+  {
+    expectedAction,
+    expectedDominantTrigger,
+    expectedPatchAuthorityState,
+    expectedRecommendationSource,
+    expectedTriggerCodes = [],
+    label = "failure policy snapshot"
+  }
+) => {
+  if (!roundSummary?.failure_lineage_path) {
+    throw new Error(`Expected ${label} to persist failure_lineage_path.`);
+  }
+  const failureLineage = await readJsonFile(roundSummary.failure_lineage_path);
+  const snapshot = failureLineage.policy_snapshot;
+  if (!snapshot) {
+    throw new Error(`Expected ${label} to persist policy_snapshot.`);
+  }
+  if (expectedAction && snapshot.recommended_action !== expectedAction) {
+    throw new Error(
+      `Expected ${label} recommended_action '${expectedAction}', received '${snapshot.recommended_action ?? "missing"}'.`
+    );
+  }
+  if (
+    expectedDominantTrigger &&
+    snapshot.dominant_trigger_code !== expectedDominantTrigger
+  ) {
+    throw new Error(
+      `Expected ${label} dominant_trigger_code '${expectedDominantTrigger}', received '${snapshot.dominant_trigger_code ?? "missing"}'.`
+    );
+  }
+  if (
+    expectedPatchAuthorityState &&
+    snapshot.patch_authority_state !== expectedPatchAuthorityState
+  ) {
+    throw new Error(
+      `Expected ${label} patch_authority_state '${expectedPatchAuthorityState}', received '${snapshot.patch_authority_state ?? "missing"}'.`
+    );
+  }
+  if (
+    expectedRecommendationSource &&
+    snapshot.recommendation_source !== expectedRecommendationSource
+  ) {
+    throw new Error(
+      `Expected ${label} recommendation_source '${expectedRecommendationSource}', received '${snapshot.recommendation_source ?? "missing"}'.`
+    );
+  }
+  const missingTriggerCodes = expectedTriggerCodes.filter(
+    (code) => !(snapshot.trigger_codes ?? []).includes(code)
+  );
+  if (missingTriggerCodes.length > 0) {
+    throw new Error(
+      `Expected ${label} to include trigger_codes ${missingTriggerCodes.join(", ")}, but they were missing.`
+    );
+  }
+  return snapshot;
+};
+
+export const assertPatchOnlyArtifactSurface = async (
+  roundSummary,
+  label = "patch-only artifact surface"
+) => {
+  if (!roundSummary) {
+    throw new Error(`Expected ${label}, but no round summary was recorded.`);
+  }
+  if (roundSummary.negotiation_mode !== "patch_only") {
+    throw new Error(
+      `Expected ${label} negotiation_mode 'patch_only', received '${roundSummary.negotiation_mode}'.`
+    );
+  }
+  if (roundSummary.contract_review_path) {
+    throw new Error(
+      `Expected ${label} to omit contract_review_path, but found '${roundSummary.contract_review_path}'.`
+    );
+  }
+  if (roundSummary.contract_agreement_path) {
+    throw new Error(
+      `Expected ${label} to omit contract_agreement_path, but found '${roundSummary.contract_agreement_path}'.`
+    );
+  }
+  for (const requiredPath of [
+    "contract_path",
+    "generator_plan_path",
+    "patch_request_path",
+    "quality_critique_path",
+    "eval_report_path",
+    "failure_lineage_path"
+  ]) {
+    if (!roundSummary[requiredPath]) {
+      throw new Error(`Expected ${label} to persist '${requiredPath}'.`);
+    }
+  }
+};
+
+export const assertRecontractArtifactSurface = async (
+  roundSummary,
+  label = "recontract artifact surface"
+) => {
+  if (!roundSummary) {
+    throw new Error(`Expected ${label}, but no round summary was recorded.`);
+  }
+  if (roundSummary.negotiation_mode !== "recontract") {
+    throw new Error(
+      `Expected ${label} negotiation_mode 'recontract', received '${roundSummary.negotiation_mode}'.`
+    );
+  }
+  for (const requiredPath of [
+    "contract_path",
+    "contract_review_path",
+    "contract_agreement_path",
+    "generator_plan_path",
+    "patch_request_path",
+    "quality_critique_path",
+    "eval_report_path",
+    "failure_lineage_path"
+  ]) {
+    if (!roundSummary[requiredPath]) {
+      throw new Error(`Expected ${label} to persist '${requiredPath}'.`);
+    }
+  }
+};
+
+export const assertQualityCritiqueSurface = async (
+  roundSummary,
+  {
+    expectedStrategy,
+    minimumFindingCount = 1,
+    requirePreserveSignals = true,
+    label = "quality critique"
+  } = {}
+) => {
+  if (!roundSummary?.quality_critique_path) {
+    throw new Error(`Expected ${label} to persist quality_critique_path.`);
+  }
+  const qualityCritique = await readJsonFile(roundSummary.quality_critique_path);
+  if (
+    expectedStrategy &&
+    qualityCritique.remediation_strategy !== expectedStrategy
+  ) {
+    throw new Error(
+      `Expected ${label} remediation_strategy '${expectedStrategy}', received '${qualityCritique.remediation_strategy ?? "missing"}'.`
+    );
+  }
+  if ((qualityCritique.findings ?? []).length < minimumFindingCount) {
+    throw new Error(
+      `Expected ${label} to include at least ${minimumFindingCount} finding(s), received ${(qualityCritique.findings ?? []).length}.`
+    );
+  }
+  if (
+    requirePreserveSignals &&
+    !(qualityCritique.preserve_signals ?? []).length
+  ) {
+    throw new Error(`Expected ${label} to include preserve_signals.`);
+  }
+  return qualityCritique;
+};
+
+export const assertPatchRequestQualitySurface = async (
+  roundSummary,
+  {
+    expectedStrategy,
+    minimumMustFixCount = 1,
+    requireQualityFindings = true,
+    label = "patch request quality surface"
+  } = {}
+) => {
+  if (!roundSummary?.patch_request_path) {
+    throw new Error(`Expected ${label} to persist patch_request_path.`);
+  }
+  const patchRequest = await readJsonFile(roundSummary.patch_request_path);
+  if (
+    expectedStrategy &&
+    patchRequest.remediation_strategy !== expectedStrategy
+  ) {
+    throw new Error(
+      `Expected ${label} remediation_strategy '${expectedStrategy}', received '${patchRequest.remediation_strategy ?? "missing"}'.`
+    );
+  }
+  if ((patchRequest.must_fix ?? []).length < minimumMustFixCount) {
+    throw new Error(
+      `Expected ${label} to include at least ${minimumMustFixCount} must_fix item(s), received ${(patchRequest.must_fix ?? []).length}.`
+    );
+  }
+  if (
+    requireQualityFindings &&
+    !(patchRequest.quality_findings ?? []).length
+  ) {
+    throw new Error(`Expected ${label} to include structured quality_findings.`);
+  }
+  if (!(patchRequest.must_preserve ?? []).length) {
+    throw new Error(`Expected ${label} to include must_preserve signals.`);
+  }
+  return patchRequest;
+};
+
+export const environmentPreflightChecklist = (targetFamily) => [
+  `Run the ${targetFamily} preflight inside the Playwright-ready devcontainer or Docker image documented in RUNBOOK.md.`,
+  "Install or expose a Chromium-compatible browser executable so headless browser probes can launch.",
+  "Allow localhost browser navigation and loopback networking in the current host or CI environment.",
+  "If the host remains blocked, use the deterministic semantic lane for controller regression and rerun realism preflight in the browser-ready environment."
+];
+
+export const writeEnvironmentPreflightArtifact = async ({
+  runDirectory,
+  artifactName,
+  targetFamily,
+  validationLane,
+  stopReason,
+  ready,
+  checklist,
+  notes = []
+}) => {
+  const artifactPath = join(runDirectory, artifactName);
+  await writeFile(
+    artifactPath,
+    `${JSON.stringify(
+      {
+        generated_at: new Date().toISOString(),
+        target_family: targetFamily,
+        validation_lane: validationLane,
+        stop_reason: stopReason ?? null,
+        ready,
+        checklist,
+        notes,
+        summary_path: join(runDirectory, "summary.json")
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  return artifactPath;
+};

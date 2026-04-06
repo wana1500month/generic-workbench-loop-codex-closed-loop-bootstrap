@@ -1,0 +1,296 @@
+{
+  "profile_id": "semantic-validation-editor-semantic",
+  "label": "Semantic Validation Editor Deterministic",
+  "bundle_label": "Semantic Validation Editor Deterministic",
+  "target_family": "browser-editor",
+  "validation_lane": "deterministic_semantic",
+  "expected_target_surfaces": [
+    "api"
+  ],
+  "required_live_verification_modes": [
+    "browser",
+    "api"
+  ],
+  "target_reached_requires_core_probes": true,
+  "minimum_feature_release_assertions": 9,
+  "minimum_assertion_tag_counts": {
+    "api": 6,
+    "error_path": 2,
+    "undo_redo": 2,
+    "workflow_multi_step": 5,
+    "persistence": 2
+  },
+  "score_policy": {
+    "proof_weights": {
+      "proof_pass_rate": 0.3,
+      "criterion_pass_rate": 0.35,
+      "threshold_verdict": 0.1,
+      "external_grade": 0.25
+    },
+    "release_weights": {
+      "control_plane_score": 0.4,
+      "proof_score": 0.6
+    }
+  },
+  "core_probes": [
+    {
+      "probe_id": "editor-semantic-health",
+      "label": "Editor semantic lane health endpoint",
+      "role": "supporting",
+      "mode": "http",
+      "target_manifest_key": "health_url",
+      "expected_value": "\"status\":\"ready\"",
+      "required": true
+    },
+    {
+      "probe_id": "editor-semantic-shell",
+      "label": "Editor semantic lane confirms the shell remains visible",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "editor_shell_renders",
+      "assertion_tags": [
+        "api"
+      ],
+      "semantic_level": "feature",
+      "target_manifest_key": "api_base_url",
+      "target_path": "editor/summary",
+      "json_path": "shell",
+      "expected_value": "visible",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "editor-semantic-invalid-flow",
+      "label": "Editor semantic lane confirms invalid flows are rejected",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "invalid_editor_flow_rejected",
+      "assertion_tags": [
+        "api",
+        "error_path"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "editor/invalid",
+      "json_path": "status",
+      "expected_value": "rejected",
+      "expected_status": 400,
+      "required": true
+    },
+    {
+      "probe_id": "editor-semantic-undo",
+      "label": "Editor semantic lane confirms undo remains available",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "undo_redo_available",
+      "assertion_tags": [
+        "api",
+        "undo_redo",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "editor/undo",
+      "json_path": "status",
+      "expected_value": "available",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "editor-semantic-selection",
+      "label": "Editor semantic lane confirms selection state persists across edits",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "selection_state_persisted",
+      "assertion_tags": [
+        "api",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "editor/selection",
+      "json_path": "status",
+      "expected_value": "preserved",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "editor-semantic-redo",
+      "label": "Editor semantic lane confirms redo remains available",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "redo_state_available",
+      "assertion_tags": [
+        "api",
+        "undo_redo",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "editor/redo",
+      "json_path": "status",
+      "expected_value": "available",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "editor-semantic-autosave",
+      "label": "Editor semantic lane confirms autosave remains persisted",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "autosave_persisted",
+      "assertion_tags": [
+        "api",
+        "persistence",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "editor/autosave",
+      "json_path": "status",
+      "expected_value": "persisted",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "editor-semantic-invalid-selection",
+      "label": "Editor semantic lane confirms invalid selections are blocked explicitly",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "invalid_selection_blocked",
+      "assertion_tags": [
+        "api",
+        "error_path",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "editor/invalid-selection",
+      "json_path": "status",
+      "expected_value": "blocked",
+      "expected_status": 400,
+      "required": true
+    },
+    {
+      "probe_id": "editor-semantic-restore",
+      "label": "Editor semantic lane confirms autosave restores the draft after refresh",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "autosave_restore_after_refresh",
+      "assertion_tags": [
+        "api",
+        "persistence",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "editor/restore",
+      "json_path": "status",
+      "expected_value": "restored",
+      "expected_status": 200,
+      "required": true
+    },
+    {
+      "probe_id": "editor-semantic-selection-recovery",
+      "label": "Editor semantic lane confirms selection state recovers after invalid mutation",
+      "role": "release_gate",
+      "mode": "http_json",
+      "assertion_id": "selection_recovery_after_invalid_mutation",
+      "assertion_tags": [
+        "api",
+        "error_path",
+        "workflow_multi_step"
+      ],
+      "semantic_level": "workflow",
+      "target_manifest_key": "api_base_url",
+      "target_path": "editor/selection-recovery",
+      "json_path": "status",
+      "expected_value": "recovered",
+      "expected_status": 200,
+      "required": true
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "editor_shell_renders",
+      "assertion_id": "editor_shell_renders",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm the editor shell remains visible.",
+      "operator": "equals",
+      "expected_value": "visible",
+      "hard": true
+    },
+    {
+      "criterion_id": "invalid_editor_flow_rejected",
+      "assertion_id": "invalid_editor_flow_rejected",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm invalid editor flows are rejected explicitly.",
+      "operator": "equals",
+      "expected_value": "rejected",
+      "hard": true
+    },
+    {
+      "criterion_id": "undo_redo_available",
+      "assertion_id": "undo_redo_available",
+      "capability": "grade_round",
+      "summary": "grade_round must preserve undo or redo availability before release.",
+      "operator": "equals",
+      "expected_value": "available",
+      "hard": true
+    },
+    {
+      "criterion_id": "selection_state_persisted",
+      "assertion_id": "selection_state_persisted",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm editor selection state persists across the workflow.",
+      "operator": "equals",
+      "expected_value": "preserved",
+      "hard": true
+    },
+    {
+      "criterion_id": "redo_state_available",
+      "assertion_id": "redo_state_available",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm redo remains available across the workflow.",
+      "operator": "equals",
+      "expected_value": "available",
+      "hard": true
+    },
+    {
+      "criterion_id": "autosave_persisted",
+      "assertion_id": "autosave_persisted",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm editor autosave remains persisted across the workflow.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "invalid_selection_blocked",
+      "assertion_id": "invalid_selection_blocked",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm invalid selections are blocked explicitly.",
+      "operator": "equals",
+      "expected_value": "blocked",
+      "hard": true
+    },
+    {
+      "criterion_id": "autosave_restore_after_refresh",
+      "assertion_id": "autosave_restore_after_refresh",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm autosave restores the draft after refresh.",
+      "operator": "equals",
+      "expected_value": "restored",
+      "hard": true
+    },
+    {
+      "criterion_id": "selection_recovery_after_invalid_mutation",
+      "assertion_id": "selection_recovery_after_invalid_mutation",
+      "capability": "run_checks",
+      "summary": "run_checks must confirm selection state recovers after an invalid mutation.",
+      "operator": "equals",
+      "expected_value": "recovered",
+      "hard": true
+    }
+  ]
+}

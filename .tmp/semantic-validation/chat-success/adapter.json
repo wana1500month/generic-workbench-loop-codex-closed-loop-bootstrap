@@ -1,0 +1,19 @@
+{
+  "adapter_id": "semantic-chat-success",
+  "label": "Semantic Chat Success Adapter",
+  "contract_version": "1",
+  "target_root": ".",
+  "capabilities": {
+    "prepare_target": { "command": "node ../executor.cjs chat-success" },
+    "apply_change": { "command": "node ../executor.cjs chat-success" },
+    "run_target": { "command": "node ../executor.cjs chat-success" }
+  },
+  "verification_provider": {
+    "provider_id": "semantic-chat-success-verifier",
+    "capabilities": {
+      "capture_evidence": { "command": "node ../verifier.cjs chat-success" },
+      "run_checks": { "command": "node ../verifier.cjs chat-success" },
+      "grade_round": { "command": "node ../verifier.cjs chat-success" }
+    }
+  }
+}

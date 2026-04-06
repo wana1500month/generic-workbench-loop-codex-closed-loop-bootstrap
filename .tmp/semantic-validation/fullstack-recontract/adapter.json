@@ -1,0 +1,19 @@
+{
+  "adapter_id": "semantic-fullstack-recontract",
+  "label": "Semantic Fullstack Recontract Adapter",
+  "contract_version": "1",
+  "target_root": ".",
+  "capabilities": {
+    "prepare_target": { "command": "node ../executor.cjs fullstack-recontract" },
+    "apply_change": { "command": "node ../executor.cjs fullstack-recontract" },
+    "run_target": { "command": "node ../executor.cjs fullstack-recontract" }
+  },
+  "verification_provider": {
+    "provider_id": "semantic-fullstack-recontract-verifier",
+    "capabilities": {
+      "capture_evidence": { "command": "node ../verifier.cjs fullstack-recontract" },
+      "run_checks": { "command": "node ../verifier.cjs fullstack-recontract" },
+      "grade_round": { "command": "node ../verifier.cjs fullstack-recontract" }
+    }
+  }
+}
