@@ -23,7 +23,9 @@ import type {
   LoadedVerificationProfile,
   ProbeSemanticLevel,
   ProofCapabilityName,
+  QualityContract,
   RoundVerdict,
+  SubjectiveMetricResult,
   TargetFamily,
   TargetSurface,
   TargetManifest,
@@ -34,6 +36,7 @@ import type {
   VerificationProfile,
   VerificationCoreProbe,
   VerificationProviderSpec,
+  VerificationSubjectiveMetric,
   VerifiedAdapterCriterionResult,
   VerifiedAdapterEvidenceItem,
   VerificationWitness,
@@ -163,9 +166,12 @@ const browserJourneyStepActions = new Set<BrowserJourneyStepAction>([
   "click",
   "fill",
   "press",
+  "reload",
   "wait_for",
   "assert_visible",
+  "assert_not_visible",
   "assert_text",
+  "assert_value",
   "assert_url"
 ]);
 
@@ -563,6 +569,57 @@ const parseStringList = (
   return unique(value.map((entry) => entry.trim()).filter(Boolean));
 };
 
+const optionalTrimmedString = (value: unknown): string | undefined =>
+  typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+
+const requiredProfileString = (
+  value: unknown,
+  profilePath: string,
+  fieldName: string
+): string => {
+  const normalized = optionalTrimmedString(value);
+  if (!normalized) {
+    throw new Error(
+      `Verification profile '${profilePath}' must provide a non-empty '${fieldName}'.`
+    );
+  }
+  return normalized;
+};
+
+const parseOptionalProfileStringArray = (
+  value: unknown,
+  profilePath: string,
+  fieldName: string
+): string[] | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string")) {
+    throw new Error(
+      `Verification profile '${profilePath}' must use a string array for '${fieldName}'.`
+    );
+  }
+  return unique(value.map((entry) => entry.trim()).filter(Boolean));
+};
+
+const normalizeScoreOutOfTen = (input: {
+  value: unknown;
+  profilePath: string;
+  fieldName: string;
+}): number => {
+  if (typeof input.value !== "number" || !Number.isFinite(input.value)) {
+    throw new Error(
+      `Verification profile '${input.profilePath}' must use a finite number for '${input.fieldName}'.`
+    );
+  }
+  if (input.value < 0 || input.value > 10) {
+    throw new Error(
+      `Verification profile '${input.profilePath}' must keep '${input.fieldName}' between 0 and 10.`
+    );
+  }
+  return Number(input.value.toFixed(1));
+};
+
 const normalizeEvidenceItems = (
   input: {
     capability: AdapterCapabilityName;
@@ -806,6 +863,170 @@ const normalizeCriteriaResults = (
   }
 
   return normalizedCriteria;
+};
+
+const normalizeSubjectiveMetricResults = (
+  input: {
+    capability: AdapterCapabilityName;
+    rawResult?: Record<string, unknown>;
+  },
+  validationErrors: string[]
+): SubjectiveMetricResult[] => {
+  if (input.rawResult?.subjective_metric_results === undefined) {
+    return [];
+  }
+
+  if (input.capability !== "grade_round") {
+    validationErrors.push(
+      `Capability '${input.capability}' cannot return 'subjective_metric_results'; only 'grade_round' may report subjective grading.`
+    );
+    return [];
+  }
+
+  if (!Array.isArray(input.rawResult.subjective_metric_results)) {
+    validationErrors.push(
+      "Capability 'grade_round' returned a non-array 'subjective_metric_results' field."
+    );
+    return [];
+  }
+
+  const normalizedResults: SubjectiveMetricResult[] = [];
+  for (const rawMetric of input.rawResult.subjective_metric_results) {
+    if (!isPlainObject(rawMetric)) {
+      validationErrors.push(
+        "Capability 'grade_round' returned a non-object subjective metric result."
+      );
+      continue;
+    }
+
+    const metricId = optionalTrimmedString(rawMetric.metric_id);
+    if (!metricId) {
+      validationErrors.push(
+        "Capability 'grade_round' returned a subjective metric result without a metric_id."
+      );
+      continue;
+    }
+
+    const label = optionalTrimmedString(rawMetric.label);
+    if (!label) {
+      validationErrors.push(
+        `Capability 'grade_round' returned subjective metric '${metricId}' with an empty label.`
+      );
+      continue;
+    }
+
+    const score =
+      typeof rawMetric.score_out_of_ten === "number" &&
+      Number.isFinite(rawMetric.score_out_of_ten) &&
+      rawMetric.score_out_of_ten >= 0 &&
+      rawMetric.score_out_of_ten <= 10
+        ? Number(rawMetric.score_out_of_ten.toFixed(1))
+        : undefined;
+    if (score === undefined) {
+      validationErrors.push(
+        `Capability 'grade_round' returned subjective metric '${metricId}' with an invalid score_out_of_ten.`
+      );
+      continue;
+    }
+
+    const minimumScore =
+      typeof rawMetric.minimum_score_out_of_ten === "number" &&
+      Number.isFinite(rawMetric.minimum_score_out_of_ten) &&
+      rawMetric.minimum_score_out_of_ten >= 0 &&
+      rawMetric.minimum_score_out_of_ten <= 10
+        ? Number(rawMetric.minimum_score_out_of_ten.toFixed(1))
+        : undefined;
+    if (minimumScore === undefined) {
+      validationErrors.push(
+        `Capability 'grade_round' returned subjective metric '${metricId}' with an invalid minimum_score_out_of_ten.`
+      );
+      continue;
+    }
+
+    const status =
+      rawMetric.status === "pass" || rawMetric.status === "fail"
+        ? rawMetric.status
+        : undefined;
+    if (!status) {
+      validationErrors.push(
+        `Capability 'grade_round' returned subjective metric '${metricId}' with an invalid status.`
+      );
+      continue;
+    }
+
+    const rationale = optionalTrimmedString(rawMetric.rationale);
+    if (!rationale) {
+      validationErrors.push(
+        `Capability 'grade_round' returned subjective metric '${metricId}' without rationale.`
+      );
+      continue;
+    }
+
+    const recommendedChanges = parseStringList(
+      rawMetric.recommended_changes,
+      `Capability 'grade_round' returned subjective metric '${metricId}' with a non-string 'recommended_changes' collection.`,
+      validationErrors
+    );
+    const evidencePaths = parseStringList(
+      rawMetric.evidence_paths,
+      `Capability 'grade_round' returned subjective metric '${metricId}' with a non-string 'evidence_paths' collection.`,
+      validationErrors
+    );
+    if (evidencePaths.length === 0) {
+      validationErrors.push(
+        `Capability 'grade_round' returned subjective metric '${metricId}' without evidence paths.`
+      );
+      continue;
+    }
+
+    const qualityAxisId =
+      rawMetric.quality_axis_id === undefined
+        ? undefined
+        : optionalTrimmedString(rawMetric.quality_axis_id);
+    if (rawMetric.quality_axis_id !== undefined && !qualityAxisId) {
+      validationErrors.push(
+        `Capability 'grade_round' returned subjective metric '${metricId}' with an empty quality_axis_id.`
+      );
+      continue;
+    }
+
+    const required =
+      rawMetric.required === undefined
+        ? undefined
+        : typeof rawMetric.required === "boolean"
+          ? rawMetric.required
+          : (() => {
+              validationErrors.push(
+                `Capability 'grade_round' returned subjective metric '${metricId}' with a non-boolean required flag.`
+              );
+              return undefined;
+            })();
+
+    normalizedResults.push({
+      metric_id: metricId,
+      label,
+      score_out_of_ten: score,
+      minimum_score_out_of_ten: minimumScore,
+      status,
+      rationale,
+      recommended_changes: recommendedChanges,
+      evidence_paths: evidencePaths,
+      ...(qualityAxisId ? { quality_axis_id: qualityAxisId } : {}),
+      ...(required !== undefined ? { required } : {})
+    });
+  }
+
+  const duplicateMetricIds = normalizedResults.filter(
+    (metric, index, allMetrics) =>
+      allMetrics.findIndex((candidate) => candidate.metric_id === metric.metric_id) !== index
+  );
+  if (duplicateMetricIds.length > 0) {
+    validationErrors.push(
+      `Capability 'grade_round' returned duplicate subjective metric ids: ${unique(duplicateMetricIds.map((metric) => metric.metric_id)).join(", ")}.`
+    );
+  }
+
+  return normalizedResults;
 };
 
 const parseVerificationWitness = async (input: {
@@ -1082,6 +1303,13 @@ const validateAdapterCapabilityResult = async (input: {
     validationErrors
   );
   const criteriaResults = normalizeCriteriaResults(
+    {
+      capability: input.capability,
+      rawResult
+    },
+    validationErrors
+  );
+  const subjectiveMetricResults = normalizeSubjectiveMetricResults(
     {
       capability: input.capability,
       rawResult
@@ -1483,7 +1711,10 @@ const validateAdapterCapabilityResult = async (input: {
         : {}),
       ...(metadata !== undefined && hasPrimitiveMetadata(metadata) ? { metadata } : {}),
       ...(validatedScore !== undefined ? { score: validatedScore } : {}),
-      ...(validatedVerdict !== undefined ? { overall_verdict: validatedVerdict } : {})
+      ...(validatedVerdict !== undefined ? { overall_verdict: validatedVerdict } : {}),
+      ...(subjectiveMetricResults.length > 0
+        ? { subjective_metric_results: subjectiveMetricResults }
+        : {})
     },
     verified_evidence: verifiedEvidence,
     verified_criteria_results: verifiedCriteriaResults,
@@ -1687,7 +1918,18 @@ const normalizeVerificationProfile = (
           ? rawCriterion.assertion_id.trim()
           : (() => {
               throw new Error(
-                `Verification profile '${profilePath}' criterion '${criterionId}' has an empty 'assertion_id'.`
+              `Verification profile '${profilePath}' criterion '${criterionId}' has an empty 'assertion_id'.`
+            );
+          })();
+    const qualityAxisId =
+      rawCriterion.quality_axis_id === undefined
+        ? undefined
+        : typeof rawCriterion.quality_axis_id === "string" &&
+            rawCriterion.quality_axis_id.trim().length > 0
+          ? rawCriterion.quality_axis_id.trim()
+          : (() => {
+              throw new Error(
+                `Verification profile '${profilePath}' criterion '${criterionId}' has an empty 'quality_axis_id'.`
               );
             })();
 
@@ -1698,6 +1940,7 @@ const normalizeVerificationProfile = (
       operator,
       expected_value: expectedValue,
       ...(assertionId ? { assertion_id: assertionId } : {}),
+      ...(qualityAxisId ? { quality_axis_id: qualityAxisId } : {}),
       ...(hard !== undefined ? { hard } : {})
     };
   });
@@ -1856,7 +2099,18 @@ const normalizeVerificationProfile = (
                   ? rawProbe.assertion_id.trim()
                   : (() => {
                       throw new Error(
-                        `Verification profile '${profilePath}' core probe '${probeId}' has an empty 'assertion_id'.`
+                      `Verification profile '${profilePath}' core probe '${probeId}' has an empty 'assertion_id'.`
+                    );
+                  })();
+            const qualityAxisId =
+              rawProbe.quality_axis_id === undefined
+                ? undefined
+                : typeof rawProbe.quality_axis_id === "string" &&
+                    rawProbe.quality_axis_id.trim().length > 0
+                  ? rawProbe.quality_axis_id.trim()
+                  : (() => {
+                      throw new Error(
+                        `Verification profile '${profilePath}' core probe '${probeId}' has an empty 'quality_axis_id'.`
                       );
                     })();
             const assertionTags =
@@ -2016,12 +2270,15 @@ const normalizeVerificationProfile = (
                         "click",
                         "fill",
                         "press",
-                        "assert_visible"
+                        "assert_visible",
+                        "assert_not_visible",
+                        "assert_value"
                       ]);
                       const valueRequiredActions = new Set([
                         "fill",
                         "press",
                         "assert_text",
+                        "assert_value",
                         "assert_url"
                       ]);
                       if (selectorRequiredActions.has(action) && !selector) {
@@ -2229,6 +2486,7 @@ const normalizeVerificationProfile = (
               ...(assertionTags && assertionTags.length > 0
                 ? { assertion_tags: assertionTags }
                 : {}),
+              ...(qualityAxisId ? { quality_axis_id: qualityAxisId } : {}),
               ...(semanticLevel ? { semantic_level: semanticLevel } : {}),
               ...(target ? { target } : {}),
               ...(targetManifestKey ? { target_manifest_key: targetManifestKey } : {}),
@@ -2358,6 +2616,212 @@ const normalizeVerificationProfile = (
               `Verification profile '${profilePath}' must use an object for 'score_policy'.`
             );
           })();
+  const qualityContract =
+    rawProfile.quality_contract === undefined
+      ? undefined
+      : isPlainObject(rawProfile.quality_contract)
+        ? ({
+            primary_goal: requiredProfileString(
+              rawProfile.quality_contract.primary_goal,
+              profilePath,
+              "quality_contract.primary_goal"
+            ),
+            quality_axes: Array.isArray(rawProfile.quality_contract.quality_axes)
+              ? rawProfile.quality_contract.quality_axes.map((rawAxis, index) => {
+                  if (!isPlainObject(rawAxis)) {
+                    throw new Error(
+                      `Verification profile '${profilePath}' has a non-object quality axis at index ${index}.`
+                    );
+                  }
+
+                  const scoringMode =
+                    rawAxis.scoring_mode === undefined
+                      ? undefined
+                      : rawAxis.scoring_mode === "binary_release_gate" ||
+                          rawAxis.scoring_mode === "subjective_out_of_ten"
+                        ? rawAxis.scoring_mode
+                        : (() => {
+                            throw new Error(
+                              `Verification profile '${profilePath}' quality axis '${requiredProfileString(rawAxis.axis_id, profilePath, `quality_contract.quality_axes[${index}].axis_id`)}' has an invalid scoring_mode '${String(rawAxis.scoring_mode)}'.`
+                            );
+                          })();
+
+                  return {
+                    axis_id: requiredProfileString(
+                      rawAxis.axis_id,
+                      profilePath,
+                      `quality_contract.quality_axes[${index}].axis_id`
+                    ),
+                    label: requiredProfileString(
+                      rawAxis.label,
+                      profilePath,
+                      `quality_contract.quality_axes[${index}].label`
+                    ),
+                    description: requiredProfileString(
+                      rawAxis.description,
+                      profilePath,
+                      `quality_contract.quality_axes[${index}].description`
+                    ),
+                    ...(optionalTrimmedString(rawAxis.desired_outcome)
+                      ? { desired_outcome: optionalTrimmedString(rawAxis.desired_outcome) }
+                      : {}),
+                    ...(parseOptionalProfileStringArray(
+                      rawAxis.preserve_signals,
+                      profilePath,
+                      `quality_contract.quality_axes[${index}].preserve_signals`
+                    )
+                      ? {
+                          preserve_signals: parseOptionalProfileStringArray(
+                            rawAxis.preserve_signals,
+                            profilePath,
+                            `quality_contract.quality_axes[${index}].preserve_signals`
+                          )
+                        }
+                      : {}),
+                    ...(parseOptionalProfileStringArray(
+                      rawAxis.reference_signals,
+                      profilePath,
+                      `quality_contract.quality_axes[${index}].reference_signals`
+                    )
+                      ? {
+                          reference_signals: parseOptionalProfileStringArray(
+                            rawAxis.reference_signals,
+                            profilePath,
+                            `quality_contract.quality_axes[${index}].reference_signals`
+                          )
+                        }
+                      : {}),
+                    ...(scoringMode ? { scoring_mode: scoringMode } : {}),
+                    ...(rawAxis.minimum_score_out_of_ten !== undefined
+                      ? {
+                          minimum_score_out_of_ten: normalizeScoreOutOfTen({
+                            value: rawAxis.minimum_score_out_of_ten,
+                            profilePath,
+                            fieldName: `quality_contract.quality_axes[${index}].minimum_score_out_of_ten`
+                          })
+                        }
+                      : {})
+                  };
+                })
+              : (() => {
+                  throw new Error(
+                    `Verification profile '${profilePath}' must use an array for 'quality_contract.quality_axes'.`
+                  );
+                })(),
+            ...(parseOptionalProfileStringArray(
+              rawProfile.quality_contract.preserve_signals,
+              profilePath,
+              "quality_contract.preserve_signals"
+            )
+              ? {
+                  preserve_signals: parseOptionalProfileStringArray(
+                    rawProfile.quality_contract.preserve_signals,
+                    profilePath,
+                    "quality_contract.preserve_signals"
+                  )
+                }
+              : {}),
+            ...(parseOptionalProfileStringArray(
+              rawProfile.quality_contract.reference_signals,
+              profilePath,
+              "quality_contract.reference_signals"
+            )
+              ? {
+                  reference_signals: parseOptionalProfileStringArray(
+                    rawProfile.quality_contract.reference_signals,
+                    profilePath,
+                    "quality_contract.reference_signals"
+                  )
+                }
+              : {}),
+            ...(rawProfile.quality_contract.critique_style !== undefined
+              ? rawProfile.quality_contract.critique_style === "deterministic_release_gate"
+                ? { critique_style: "deterministic_release_gate" as const }
+                : (() => {
+                    throw new Error(
+                      `Verification profile '${profilePath}' has an invalid quality_contract.critique_style '${String(rawProfile.quality_contract.critique_style)}'.`
+                    );
+                  })()
+              : {})
+          } satisfies QualityContract)
+        : (() => {
+            throw new Error(
+              `Verification profile '${profilePath}' must use an object for 'quality_contract'.`
+            );
+          })();
+  const subjectiveMetrics =
+    rawProfile.subjective_metrics === undefined
+      ? undefined
+      : Array.isArray(rawProfile.subjective_metrics)
+        ? rawProfile.subjective_metrics.map((rawMetric, index) => {
+            if (!isPlainObject(rawMetric)) {
+              throw new Error(
+                `Verification profile '${profilePath}' has a non-object subjective metric at index ${index}.`
+              );
+            }
+
+            const required =
+              rawMetric.required === undefined
+                ? undefined
+                : typeof rawMetric.required === "boolean"
+                  ? rawMetric.required
+                  : (() => {
+                      throw new Error(
+                        `Verification profile '${profilePath}' subjective metric '${requiredProfileString(rawMetric.metric_id, profilePath, `subjective_metrics[${index}].metric_id`)}' has a non-boolean required flag.`
+                      );
+                    })();
+            const weight =
+              rawMetric.weight === undefined
+                ? undefined
+                : typeof rawMetric.weight === "number" &&
+                    Number.isFinite(rawMetric.weight) &&
+                    rawMetric.weight >= 0
+                  ? Number(rawMetric.weight.toFixed(3))
+                  : (() => {
+                      throw new Error(
+                        `Verification profile '${profilePath}' subjective metric '${requiredProfileString(rawMetric.metric_id, profilePath, `subjective_metrics[${index}].metric_id`)}' has an invalid weight.`
+                      );
+                    })();
+            const qualityAxisId =
+              rawMetric.quality_axis_id === undefined
+                ? undefined
+                : requiredProfileString(
+                    rawMetric.quality_axis_id,
+                    profilePath,
+                    `subjective_metrics[${index}].quality_axis_id`
+                  );
+
+            return {
+              metric_id: requiredProfileString(
+                rawMetric.metric_id,
+                profilePath,
+                `subjective_metrics[${index}].metric_id`
+              ),
+              label: requiredProfileString(
+                rawMetric.label,
+                profilePath,
+                `subjective_metrics[${index}].label`
+              ),
+              description: requiredProfileString(
+                rawMetric.description,
+                profilePath,
+                `subjective_metrics[${index}].description`
+              ),
+              minimum_score_out_of_ten: normalizeScoreOutOfTen({
+                value: rawMetric.minimum_score_out_of_ten,
+                profilePath,
+                fieldName: `subjective_metrics[${index}].minimum_score_out_of_ten`
+              }),
+              ...(qualityAxisId ? { quality_axis_id: qualityAxisId } : {}),
+              ...(required !== undefined ? { required } : {}),
+              ...(weight !== undefined ? { weight } : {})
+            } satisfies VerificationSubjectiveMetric;
+          })
+        : (() => {
+            throw new Error(
+              `Verification profile '${profilePath}' must use an array for 'subjective_metrics'.`
+            );
+          })();
   const expectedSurfaceSet = new Set(expectedTargetSurfaces ?? []);
   if (minimumAssertionTagCounts?.browser && !expectedSurfaceSet.has("browser")) {
     throw new Error(
@@ -2423,6 +2887,10 @@ const normalizeVerificationProfile = (
     ...(scorePolicy &&
     (scorePolicy.proof_weights || scorePolicy.release_weights)
       ? { score_policy: scorePolicy }
+      : {}),
+    ...(qualityContract ? { quality_contract: qualityContract } : {}),
+    ...(subjectiveMetrics && subjectiveMetrics.length > 0
+      ? { subjective_metrics: subjectiveMetrics }
       : {}),
     ...(notes && notes.length > 0 ? { notes } : {})
   };

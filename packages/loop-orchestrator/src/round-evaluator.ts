@@ -1400,6 +1400,19 @@ const adapterCriteriaGroundingCheck = (input: {
     const runCheckCriterionMap = new Map(
       runCheckCriteria.map((criterion) => [criterion.criterion_id, criterion])
     );
+    const gradeOnlyCriterionIds = new Set(
+      (input.loadedAdapter?.verification_profile?.profile.criteria ?? [])
+        .filter(
+          (criterion) =>
+            criterion.capability === "grade_round" &&
+            !(input.loadedAdapter?.verification_profile?.profile.criteria ?? []).some(
+              (candidate) =>
+                candidate.capability === "run_checks" &&
+                candidate.criterion_id === criterion.criterion_id
+            )
+        )
+        .map((criterion) => criterion.criterion_id)
+    );
 
     for (const execution of successfulCheckExecutions) {
       if (execution.verified_criteria_results.length === 0) {
@@ -1433,13 +1446,15 @@ const adapterCriteriaGroundingCheck = (input: {
 
       for (const criterion of execution.verified_criteria_results) {
         const matchingRunCheckCriterion = runCheckCriterionMap.get(criterion.criterion_id);
-        if (!matchingRunCheckCriterion) {
+        const isGradeOnlyCriterion = gradeOnlyCriterionIds.has(criterion.criterion_id);
+        if (!matchingRunCheckCriterion && !isGradeOnlyCriterion) {
           failures.push(
             `Capability 'grade_round' introduced criterion '${criterion.criterion_id}' without a matching run_checks criterion.`
           );
           continue;
         }
         if (
+          matchingRunCheckCriterion &&
           matchingRunCheckCriterion.status === "fail" &&
           criterion.status === "pass"
         ) {

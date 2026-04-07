@@ -26,6 +26,27 @@ export type GoalLevel =
   | "production-like"
   | "custom";
 
+export type BootstrapCustomQualityMetric = {
+  metricId: string;
+  label: string;
+  description: string;
+  minimumScoreOutOfTen: number;
+  required?: boolean;
+  weight?: number;
+};
+
+export type BootstrapProbeHints = {
+  appShellSelector?: string;
+  successSelector?: string;
+  errorSelector?: string;
+  persistenceInputSelector?: string;
+  saveActionSelector?: string;
+  restoredSelector?: string;
+  apiFinishLinePath?: string;
+  apiErrorPath?: string;
+  apiPersistencePath?: string;
+};
+
 export type BootstrapAnswers = {
   title: string;
   summary: string;
@@ -50,6 +71,13 @@ export type BootstrapAnswers = {
   constraints: string[];
   qualityBar: string[];
   notes?: string;
+  mustNotBreak?: string[];
+  failureExpectations?: string[];
+  continuityBoundaries?: string[];
+  referenceSignals?: string[];
+  nonGoals?: string[];
+  probeHints?: BootstrapProbeHints;
+  customQualityMetrics?: BootstrapCustomQualityMetric[];
 };
 
 export type BootstrapResult = {
@@ -146,6 +174,77 @@ const splitList = (value: string): string[] =>
     .filter(Boolean);
 
 const uniqueList = (values: readonly string[]): string[] => [...new Set(values.filter(Boolean))];
+
+const uniqueAxisList = (
+  axes: NonNullable<VerificationProfile["quality_contract"]>["quality_axes"]
+): NonNullable<VerificationProfile["quality_contract"]>["quality_axes"] => {
+  const seen = new Set<string>();
+  return axes.filter((axis) => {
+    if (seen.has(axis.axis_id)) {
+      return false;
+    }
+    seen.add(axis.axis_id);
+    return true;
+  });
+};
+
+const topPreserveSignals = (answers: BootstrapAnswers, limit = 4): string[] =>
+  uniqueList([
+    answers.finishLine,
+    ...(answers.mustNotBreak ?? []),
+    ...(answers.failureExpectations ?? []),
+    ...(answers.qualityBar ?? [])
+  ]).slice(0, limit);
+
+const topReferenceSignals = (answers: BootstrapAnswers, limit = 4): string[] =>
+  uniqueList([
+    ...(answers.referenceSignals ?? []),
+    ...(answers.referenceApps ?? [])
+  ]).slice(0, limit);
+
+const nonEmptyProbeHints = (
+  probeHints: BootstrapProbeHints | undefined
+): BootstrapProbeHints | undefined => {
+  if (!probeHints) {
+    return undefined;
+  }
+
+  const normalized = Object.fromEntries(
+    Object.entries(probeHints).filter(([, value]) => typeof value === "string" && value.trim())
+  ) as BootstrapProbeHints;
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+};
+
+const mergeQualityContract = (
+  base: VerificationProfile["quality_contract"] | undefined,
+  overlay: NonNullable<VerificationProfile["quality_contract"]>
+): NonNullable<VerificationProfile["quality_contract"]> => ({
+  primary_goal: overlay.primary_goal || base?.primary_goal || "",
+  critique_style: overlay.critique_style ?? base?.critique_style,
+  quality_axes: uniqueAxisList([...(base?.quality_axes ?? []), ...overlay.quality_axes]),
+  preserve_signals: uniqueList([
+    ...(base?.preserve_signals ?? []),
+    ...(overlay.preserve_signals ?? [])
+  ]),
+  reference_signals: uniqueList([
+    ...(base?.reference_signals ?? []),
+    ...(overlay.reference_signals ?? [])
+  ])
+});
+
+const mergeSubjectiveMetrics = (
+  baseMetrics: readonly NonNullable<VerificationProfile["subjective_metrics"]>[number][],
+  overlayMetrics: readonly NonNullable<VerificationProfile["subjective_metrics"]>[number][]
+): NonNullable<VerificationProfile["subjective_metrics"]> => {
+  const merged = new Map<
+    string,
+    NonNullable<VerificationProfile["subjective_metrics"]>[number]
+  >();
+  for (const metric of [...baseMetrics, ...overlayMetrics]) {
+    merged.set(metric.metric_id, metric);
+  }
+  return [...merged.values()];
+};
 
 const buildProductInferenceText = (input: {
   title: string;
@@ -337,10 +436,20 @@ const buildGeneratedQualityAxes = (
       label: `Feature: ${feature}`,
       description: `Keep the '${feature}' workflow reachable and explicit in the generated target.`,
       desired_outcome: `The '${feature}' workflow should remain visible, coherent, and releasable.`,
-      preserve_signals: answers.qualityBar.slice(0, 2),
-      reference_signals: answers.referenceApps.slice(0, 2)
+      preserve_signals: topPreserveSignals(answers, 4),
+      reference_signals: topReferenceSignals(answers, 4)
     };
   });
+  const customMetricAxes = (answers.customQualityMetrics ?? []).map((metric) => ({
+    axis_id: metric.metricId,
+    label: metric.label,
+    description: metric.description,
+    desired_outcome: `${metric.label} should score at least ${metric.minimumScoreOutOfTen}/10.`,
+    preserve_signals: topPreserveSignals(answers, 4),
+    reference_signals: topReferenceSignals(answers, 4),
+    scoring_mode: "subjective_out_of_ten" as const,
+    minimum_score_out_of_ten: metric.minimumScoreOutOfTen
+  }));
 
   return [
     {
@@ -348,8 +457,8 @@ const buildGeneratedQualityAxes = (
       label: "Primary Flow",
       description: `The main finish line for '${answers.title}' should stay reachable.`,
       desired_outcome: answers.finishLine,
-      preserve_signals: uniqueList([answers.finishLine, ...answers.qualityBar.slice(0, 2)]),
-      reference_signals: answers.referenceApps.slice(0, 3)
+      preserve_signals: topPreserveSignals(answers, 4),
+      reference_signals: topReferenceSignals(answers, 4)
     },
     ...featureAxes,
     {
@@ -357,8 +466,8 @@ const buildGeneratedQualityAxes = (
       label: "Error Recovery",
       description: "Invalid flows should fail with a visible, explicit recovery state.",
       desired_outcome: "Invalid flows should surface a clear recovery affordance instead of silently breaking.",
-      preserve_signals: answers.qualityBar.slice(0, 2),
-      reference_signals: answers.referenceApps.slice(0, 2)
+      preserve_signals: topPreserveSignals(answers, 4),
+      reference_signals: topReferenceSignals(answers, 4)
     },
     ...(browserBackedFamily(answers.targetFamily) || apiBackedFamily(answers.targetFamily)
       ? [
@@ -367,26 +476,30 @@ const buildGeneratedQualityAxes = (
             label: "State Continuity",
             description: "Progress should survive reload, refresh, retry, or persistence boundaries.",
             desired_outcome: "The target should preserve in-flight state across the first release workflow.",
-            preserve_signals: answers.qualityBar.slice(0, 2),
-            reference_signals: answers.referenceApps.slice(0, 2)
+            preserve_signals: topPreserveSignals(answers, 4),
+            reference_signals: topReferenceSignals(answers, 4)
           }
         ]
       : []),
-    ...(answers.referenceApps.length > 0 || answers.qualityBar.length > 0
+    ...(answers.referenceApps.length > 0 ||
+    answers.qualityBar.length > 0 ||
+    (answers.referenceSignals?.length ?? 0) > 0
       ? [
           {
             axis_id: "reference_fit",
             label: "Reference Fit",
             description: "The generated result should respect the requested references and quality direction.",
             desired_outcome:
+              answers.referenceSignals?.[0] ??
               answers.referenceApps[0] ??
               answers.qualityBar[0] ??
               "The product should feel aligned with the requested direction.",
-            preserve_signals: answers.qualityBar.slice(0, 2),
-            reference_signals: answers.referenceApps.slice(0, 3)
+            preserve_signals: topPreserveSignals(answers, 4),
+            reference_signals: topReferenceSignals(answers, 4)
           }
         ]
-      : [])
+      : []),
+    ...customMetricAxes
   ];
 };
 
@@ -396,12 +509,22 @@ const buildGeneratedQualityContract = (
   primary_goal: answers.finishLine,
   critique_style: "deterministic_release_gate",
   quality_axes: buildGeneratedQualityAxes(answers),
-  preserve_signals: uniqueList([
-    answers.finishLine,
-    ...answers.qualityBar.slice(0, 2)
-  ]),
-  reference_signals: answers.referenceApps.slice(0, 3)
+  preserve_signals: topPreserveSignals(answers, 6),
+  reference_signals: topReferenceSignals(answers, 6)
 });
+
+const buildGeneratedSubjectiveMetrics = (
+  answers: BootstrapAnswers
+): NonNullable<VerificationProfile["subjective_metrics"]> =>
+  (answers.customQualityMetrics ?? []).map((metric) => ({
+    metric_id: metric.metricId,
+    label: metric.label,
+    description: metric.description,
+    minimum_score_out_of_ten: metric.minimumScoreOutOfTen,
+    quality_axis_id: metric.metricId,
+    required: metric.required ?? true,
+    weight: metric.weight ?? 1
+  }));
 
 const uniqueCriteria = (
   criteria: VerificationProfile["criteria"]
@@ -492,6 +615,15 @@ const buildGeneratedCriteria = (
         hard: probe.required ?? true
       }
     ]);
+  const customMetricCriteria = (answers.customQualityMetrics ?? []).map((metric) => ({
+    criterion_id: `subjective_metric_${metric.metricId}_minimum`,
+    capability: "grade_round" as const,
+    summary: `${metric.label} must score at least ${metric.minimumScoreOutOfTen}/10.`,
+    operator: "number_gte" as const,
+    expected_value: String(metric.minimumScoreOutOfTen),
+    quality_axis_id: metric.metricId,
+    hard: metric.required ?? true
+  }));
 
   return uniqueCriteria([
     {
@@ -527,7 +659,8 @@ const buildGeneratedCriteria = (
       expected_value: "HTTP ",
       hard: true
     },
-    ...releaseGateProbeCriteria
+    ...releaseGateProbeCriteria,
+    ...customMetricCriteria
   ]);
 };
 
@@ -585,6 +718,31 @@ const buildGeneratedCoreProbes = (
 ): VerificationCoreProbe[] => {
   const titleSlug = slugify(answers.title);
   const qualityContract = buildGeneratedQualityContract(answers);
+  const selectors = {
+    appShell: answers.probeHints?.appShellSelector ?? "[data-testid='app-shell']",
+    success:
+      answers.probeHints?.successSelector ?? "[data-testid='finish-line-ready']",
+    error: answers.probeHints?.errorSelector ?? "[data-testid='error-banner']",
+    draftInput:
+      answers.probeHints?.persistenceInputSelector ?? "[data-testid='draft-input']",
+    saveAction:
+      answers.probeHints?.saveActionSelector ?? "[data-testid='save-draft']",
+    restored:
+      answers.probeHints?.restoredSelector ?? "[data-testid='draft-restored']"
+  };
+  const apiPaths = {
+    finishLine: answers.probeHints?.apiFinishLinePath ?? "quality/finish-line",
+    errorPath: answers.probeHints?.apiErrorPath ?? "quality/error-path",
+    persistence: answers.probeHints?.apiPersistencePath ?? "quality/persistence"
+  };
+  const continuityBoundaries = new Set(
+    (answers.continuityBoundaries ?? []).map((boundary) => boundary.toLowerCase())
+  );
+  const shouldProbeContinuity =
+    continuityBoundaries.size === 0 ||
+    continuityBoundaries.has("reload") ||
+    continuityBoundaries.has("refresh") ||
+    continuityBoundaries.has("reopen");
   const featureSlugs = answers.coreFeatures
     .slice(0, 3)
     .map((feature, index) => ({
@@ -618,8 +776,8 @@ const buildGeneratedCoreProbes = (
         assertionTags: ["browser", "workflow_multi_step"],
         steps: [
           { action: "goto" },
-          { action: "assert_visible", selector: "[data-testid='app-shell']" },
-          { action: "assert_visible", selector: "[data-testid='finish-line-ready']" }
+          { action: "assert_visible", selector: selectors.appShell },
+          { action: "assert_visible", selector: selectors.success }
         ]
       }),
       buildBrowserJourneyProbe({
@@ -630,44 +788,48 @@ const buildGeneratedCoreProbes = (
         assertionTags: ["browser", "error_path"],
         steps: [
           { action: "goto", value: "?fixture=invalid" },
-          { action: "assert_visible", selector: "[data-testid='app-shell']" },
-          { action: "assert_visible", selector: "[data-testid='error-banner']" },
+          { action: "assert_visible", selector: selectors.appShell },
+          { action: "assert_visible", selector: selectors.error },
           {
             action: "assert_not_visible",
-            selector: "[data-testid='finish-line-ready']"
+            selector: selectors.success
           }
         ]
       }),
-      buildBrowserJourneyProbe({
-        probeId: `${titleSlug}-state-continuity`,
-        label: `Saved browser state restores after a reload for ${answers.title}`,
-        assertionId: `${titleSlug}_state_continuity_ready`,
-        qualityAxisId: "state_continuity",
-        assertionTags: ["browser", "persistence", "workflow_multi_step"],
-        steps: [
-          { action: "goto", value: "?fixture=persistence" },
-          { action: "assert_visible", selector: "[data-testid='app-shell']" },
-          {
-            action: "fill",
-            selector: "[data-testid='draft-input']",
-            value: `${answers.title} continuity draft`
-          },
-          {
-            action: "click",
-            selector: "[data-testid='save-draft']"
-          },
-          { action: "reload" },
-          {
-            action: "assert_value",
-            selector: "[data-testid='draft-input']",
-            value: `${answers.title} continuity draft`
-          },
-          {
-            action: "assert_visible",
-            selector: "[data-testid='draft-restored']"
-          }
-        ]
-      }),
+      ...(shouldProbeContinuity
+        ? [
+            buildBrowserJourneyProbe({
+              probeId: `${titleSlug}-state-continuity`,
+              label: `Saved browser state restores after a reload for ${answers.title}`,
+              assertionId: `${titleSlug}_state_continuity_ready`,
+              qualityAxisId: "state_continuity",
+              assertionTags: ["browser", "persistence", "workflow_multi_step"],
+              steps: [
+                { action: "goto", value: "?fixture=persistence" },
+                { action: "assert_visible", selector: selectors.appShell },
+                {
+                  action: "fill",
+                  selector: selectors.draftInput,
+                  value: `${answers.title} continuity draft`
+                },
+                {
+                  action: "click",
+                  selector: selectors.saveAction
+                },
+                { action: "reload" },
+                {
+                  action: "assert_value",
+                  selector: selectors.draftInput,
+                  value: `${answers.title} continuity draft`
+                },
+                {
+                  action: "assert_visible",
+                  selector: selectors.restored
+                }
+              ]
+            })
+          ]
+        : []),
       ...featureSlugs.map(({ feature, featureSlug, axisId }) =>
         buildBrowserJourneyProbe({
           probeId: `${titleSlug}-${featureSlug}`,
@@ -678,7 +840,7 @@ const buildGeneratedCoreProbes = (
           semanticLevel: "feature",
           steps: [
             { action: "goto" },
-            { action: "assert_visible", selector: "[data-testid='app-shell']" },
+            { action: "assert_visible", selector: selectors.appShell },
             {
               action: "assert_visible",
               selector: `[data-testid='feature-${featureSlug}']`
@@ -697,7 +859,7 @@ const buildGeneratedCoreProbes = (
         assertionId: `${titleSlug}_finish_line_api_ready`,
         qualityAxisId: "primary_flow",
         assertionTags: ["api", "workflow_multi_step"],
-        targetPath: "quality/finish-line",
+        targetPath: apiPaths.finishLine,
         expectedValue: "ready"
       }),
       buildApiJsonProbe({
@@ -706,19 +868,23 @@ const buildGeneratedCoreProbes = (
         assertionId: `${titleSlug}_api_error_recovery_ready`,
         qualityAxisId: "error_recovery",
         assertionTags: ["api", "error_path"],
-        targetPath: "quality/error-path",
+        targetPath: apiPaths.errorPath,
         expectedValue: "handled",
         expectedStatus: 400
       }),
-      buildApiJsonProbe({
-        probeId: `${titleSlug}-persistence-api`,
-        label: `State persistence remains intact across the generated workflow`,
-        assertionId: `${titleSlug}_persistence_ready`,
-        qualityAxisId: "state_continuity",
-        assertionTags: ["api", "persistence", "workflow_multi_step"],
-        targetPath: "quality/persistence",
-        expectedValue: "ready"
-      }),
+      ...(shouldProbeContinuity
+        ? [
+            buildApiJsonProbe({
+              probeId: `${titleSlug}-persistence-api`,
+              label: `State persistence remains intact across the generated workflow`,
+              assertionId: `${titleSlug}_persistence_ready`,
+              qualityAxisId: "state_continuity",
+              assertionTags: ["api", "persistence", "workflow_multi_step"],
+              targetPath: apiPaths.persistence,
+              expectedValue: "ready"
+            })
+          ]
+        : []),
       ...featureSlugs.map(({ feature, featureSlug, axisId }) =>
         buildApiJsonProbe({
           probeId: `${titleSlug}-${featureSlug}-api`,
@@ -764,6 +930,7 @@ const buildGeneratedVerificationProfile = async (
   const baseProfile = await loadJson<VerificationProfile>(familySelection.profile_path);
   const generatedCoreProbes = buildGeneratedCoreProbes(answers);
   const generatedCriteria = buildGeneratedCriteria(answers, generatedCoreProbes);
+  const generatedSubjectiveMetrics = buildGeneratedSubjectiveMetrics(answers);
   const generatedReleaseGateProbeCount = generatedCoreProbes.filter(
     (probe) => (probe.role ?? "supporting") === "release_gate"
   ).length;
@@ -782,7 +949,27 @@ const buildGeneratedVerificationProfile = async (
     generatedMinimumAssertionTagCounts
   );
   const titleSlug = slugify(answers.title);
-  const qualityContract = buildGeneratedQualityContract(answers);
+  const qualityContract = mergeQualityContract(
+    baseProfile.quality_contract,
+    buildGeneratedQualityContract(answers)
+  );
+  const mergedSubjectiveMetrics = mergeSubjectiveMetrics(
+    baseProfile.subjective_metrics ?? [],
+    generatedSubjectiveMetrics
+  );
+  const mergedScorePolicy =
+    generatedSubjectiveMetrics.length > 0
+      ? {
+          ...(baseProfile.score_policy ?? {}),
+          proof_weights: {
+            ...(baseProfile.score_policy?.proof_weights ?? {}),
+            external_grade: Math.max(
+              baseProfile.score_policy?.proof_weights?.external_grade ?? 0,
+              0.35
+            )
+          }
+        }
+      : baseProfile.score_policy;
   const mergedExpectedTargetSurfaces = uniqueList([
     ...(baseProfile.expected_target_surfaces ?? []),
     ...targetSurfacesForFamily(answers.targetFamily)
@@ -808,10 +995,13 @@ const buildGeneratedVerificationProfile = async (
       Math.max(generatedReleaseGateProbeCount, 2)
     ),
     minimum_assertion_tag_counts: mergedMinimumAssertionTagCounts,
-    score_policy: baseProfile.score_policy,
+    score_policy: mergedScorePolicy,
     core_probes: mergedCoreProbes,
     criteria: mergedCriteria,
     quality_contract: qualityContract,
+    ...(mergedSubjectiveMetrics.length > 0
+      ? { subjective_metrics: mergedSubjectiveMetrics }
+      : {}),
     notes: uniqueList([
       ...(baseProfile.notes ?? []),
       `Generated from intake for '${answers.title}'.`,
@@ -819,8 +1009,12 @@ const buildGeneratedVerificationProfile = async (
       ...qualityContract.quality_axes
         .slice(0, 4)
         .map((axis) => `Quality axis: ${axis.label}`),
+      ...generatedSubjectiveMetrics.map(
+        (metric) =>
+          `Subjective metric: ${metric.label} >= ${metric.minimum_score_out_of_ten}/10`
+      ),
       ...answers.coreFeatures.slice(0, 3).map((feature) => `Core workflow: ${feature}`),
-      ...answers.qualityBar.slice(0, 2).map((entry) => `Quality bar: ${entry}`)
+      ...answers.qualityBar.slice(0, 4).map((entry) => `Quality bar: ${entry}`)
     ])
   };
 };
@@ -893,6 +1087,167 @@ const askOptionalList = async (
   const fallbackText = fallback && fallback.length > 0 ? fallback.join(", ") : undefined;
   const answer = await askText(rl, label, fallbackText);
   return splitList(answer);
+};
+
+const askYesNo = async (
+  rl: ReturnType<typeof createInterface>,
+  label: string,
+  fallback = "n"
+): Promise<boolean> => {
+  while (true) {
+    const answer = (await askText(rl, label, fallback)).toLowerCase();
+    if (answer === "y" || answer === "yes") {
+      return true;
+    }
+    if (answer === "n" || answer === "no") {
+      return false;
+    }
+    output.write("Please answer with 'y' or 'n'.\n");
+  }
+};
+
+const askScoreOutOfTen = async (
+  rl: ReturnType<typeof createInterface>,
+  label: string,
+  fallback = 8
+): Promise<number> => {
+  while (true) {
+    const answer = await askRequired(rl, label, String(fallback));
+    const parsed = Number(answer);
+    if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 10) {
+      return Number(parsed.toFixed(1));
+    }
+    output.write("Please enter a number between 0 and 10.\n");
+  }
+};
+
+const askCustomQualityMetrics = async (
+  rl: ReturnType<typeof createInterface>
+): Promise<BootstrapCustomQualityMetric[]> => {
+  const wantsCustomMetrics = await askYesNo(
+    rl,
+    "Do you want extra quality metrics like design quality or originality? (y/n)",
+    "n"
+  );
+  if (!wantsCustomMetrics) {
+    return [];
+  }
+
+  const metrics: BootstrapCustomQualityMetric[] = [];
+  while (true) {
+    const label = await askText(
+      rl,
+      "Metric name (leave blank to finish)",
+      metrics.length === 0 ? "design quality" : undefined
+    );
+    if (!label.trim()) {
+      break;
+    }
+
+    const description = await askRequired(
+      rl,
+      `What should '${label}' reward or punish?`
+    );
+    const minimumScoreOutOfTen = await askScoreOutOfTen(
+      rl,
+      `Minimum passing score for '${label}' (0-10)`,
+      8
+    );
+    const required = await askYesNo(
+      rl,
+      `Should '${label}' block target_reached if it falls below the threshold? (y/n)`,
+      "y"
+    );
+    const weight = await askScoreOutOfTen(
+      rl,
+      `Weight for '${label}' in the subjective average (0-10, usually 1 or 2)`,
+      required ? 2 : 1
+    );
+
+    metrics.push({
+      metricId: slugify(label),
+      label: label.trim(),
+      description,
+      minimumScoreOutOfTen,
+      required,
+      weight
+    });
+  }
+
+  return metrics;
+};
+
+const askProbeHints = async (
+  rl: ReturnType<typeof createInterface>,
+  targetFamily: BootstrapTargetFamily
+): Promise<BootstrapProbeHints | undefined> => {
+  const wantsHints = await askYesNo(
+    rl,
+    "Do you want to add probe hints like selectors or API paths? (y/n)",
+    "n"
+  );
+  if (!wantsHints) {
+    return undefined;
+  }
+
+  const probeHints: BootstrapProbeHints = {};
+  if (browserBackedFamily(targetFamily)) {
+    const appShellSelector = await askText(
+      rl,
+      "App shell selector (leave blank to skip)"
+    );
+    const successSelector = await askText(
+      rl,
+      "Success selector (leave blank to skip)"
+    );
+    const errorSelector = await askText(
+      rl,
+      "Error selector (leave blank to skip)"
+    );
+    const persistenceInputSelector = await askText(
+      rl,
+      "Persistence input selector (leave blank to skip)"
+    );
+    const saveActionSelector = await askText(
+      rl,
+      "Save action selector (leave blank to skip)"
+    );
+    const restoredSelector = await askText(
+      rl,
+      "Restored-state selector (leave blank to skip)"
+    );
+
+    Object.assign(probeHints, {
+      ...(appShellSelector ? { appShellSelector } : {}),
+      ...(successSelector ? { successSelector } : {}),
+      ...(errorSelector ? { errorSelector } : {}),
+      ...(persistenceInputSelector ? { persistenceInputSelector } : {}),
+      ...(saveActionSelector ? { saveActionSelector } : {}),
+      ...(restoredSelector ? { restoredSelector } : {})
+    });
+  }
+
+  if (apiBackedFamily(targetFamily)) {
+    const apiFinishLinePath = await askText(
+      rl,
+      "API finish-line path (leave blank to skip)"
+    );
+    const apiErrorPath = await askText(
+      rl,
+      "API error-path (leave blank to skip)"
+    );
+    const apiPersistencePath = await askText(
+      rl,
+      "API persistence path (leave blank to skip)"
+    );
+    Object.assign(probeHints, {
+      ...(apiFinishLinePath ? { apiFinishLinePath } : {}),
+      ...(apiErrorPath ? { apiErrorPath } : {}),
+      ...(apiPersistencePath ? { apiPersistencePath } : {})
+    });
+  }
+
+  return nonEmptyProbeHints(probeHints);
 };
 
 const askTargetFamily = async (
@@ -1001,6 +1356,29 @@ const summarizeAnswers = (answers: BootstrapAnswers): string =>
     `- Run command: ${answers.runCommand}`,
     `- Check command: ${answers.checkCommand || "(none)"}`,
     `- Ready URL: ${answers.readyUrl}`,
+    answers.mustNotBreak?.length
+      ? `- Must not break: ${answers.mustNotBreak.join("; ")}`
+      : undefined,
+    answers.failureExpectations?.length
+      ? `- Failure expectations: ${answers.failureExpectations.join("; ")}`
+      : undefined,
+    answers.continuityBoundaries?.length
+      ? `- Continuity boundaries: ${answers.continuityBoundaries.join("; ")}`
+      : undefined,
+    answers.referenceSignals?.length
+      ? `- Reference signals: ${answers.referenceSignals.join("; ")}`
+      : undefined,
+    answers.nonGoals?.length
+      ? `- Non-goals: ${answers.nonGoals.join("; ")}`
+      : undefined,
+    answers.customQualityMetrics?.length
+      ? `- Subjective metrics: ${answers.customQualityMetrics
+          .map(
+            (metric) =>
+              `${metric.label} >= ${metric.minimumScoreOutOfTen}/10${metric.required === false ? " (score-only)" : ""}`
+          )
+          .join("; ")}`
+      : undefined,
     answers.notes ? `- Notes: ${answers.notes}` : undefined,
     ""
   ]
@@ -1033,6 +1411,9 @@ const writeIdeaMarkdown = (answers: BootstrapAnswers): string => {
     ...(answers.constraints.length > 0
       ? answers.constraints.map((entry) => `- ${entry}`)
       : ["- Keep the generated workbench loop deterministic and resumable."]),
+    ...(answers.nonGoals?.length
+      ? ["", "## Non-Goals", ...answers.nonGoals.map((entry) => `- ${entry}`)]
+      : []),
     "",
     "## Success Target",
     `- Finish line: ${answers.finishLine}`,
@@ -1049,6 +1430,45 @@ const writeIdeaMarkdown = (answers: BootstrapAnswers): string => {
     ...(answers.referenceApps.length > 0
       ? answers.referenceApps.map((entry) => `- ${entry}`)
       : ["- None provided."]),
+    ...(answers.referenceSignals?.length
+      ? ["", "## Reference Signals", ...answers.referenceSignals.map((entry) => `- ${entry}`)]
+      : []),
+    ...(answers.mustNotBreak?.length
+      ? ["", "## Must Not Break", ...answers.mustNotBreak.map((entry) => `- ${entry}`)]
+      : []),
+    ...(answers.failureExpectations?.length
+      ? [
+          "",
+          "## Failure Expectations",
+          ...answers.failureExpectations.map((entry) => `- ${entry}`)
+        ]
+      : []),
+    ...(answers.continuityBoundaries?.length
+      ? [
+          "",
+          "## State Continuity",
+          ...answers.continuityBoundaries.map((entry) => `- ${entry}`)
+        ]
+      : []),
+    ...(answers.customQualityMetrics?.length
+      ? [
+          "",
+          "## Subjective Metrics",
+          ...answers.customQualityMetrics.map(
+            (metric) =>
+              `- ${metric.label}: ${metric.description} Minimum ${metric.minimumScoreOutOfTen}/10.${metric.required === false ? " Score influence only." : " Blocking if below threshold."}`
+          )
+        ]
+      : []),
+    ...(answers.probeHints && Object.keys(answers.probeHints).length > 0
+      ? [
+          "",
+          "## Probe Hints",
+          ...Object.entries(answers.probeHints).map(
+            ([key, value]) => `- ${key}: ${value}`
+          )
+        ]
+      : []),
     "",
     "## Technical Notes",
     `- Target family: ${answers.targetFamily}`,
@@ -1106,6 +1526,18 @@ const ensureDirectory = async (path) => {
 
 export const readConfig = async () =>
   JSON.parse(await readFile(new URL("../runtime-config.json", import.meta.url), "utf8"));
+
+export const readIdeaMarkdown = async () => {
+  const config = await readConfig();
+  if (!config.idea_path) {
+    return "";
+  }
+  try {
+    return await readFile(config.idea_path, "utf8");
+  } catch {
+    return "";
+  }
+};
 
 export const readVerificationProfile = async () =>
   JSON.parse(await readFile(verificationProfilePath, "utf8"));
@@ -1984,21 +2416,85 @@ const gradeRoundTemplate = (): string => `import { join } from "node:path";
 
 import {
   finalize,
+  readConfig,
   readCoreProbeResults,
+  readIdeaMarkdown,
   readJsonIfExists,
   readVerificationProfile,
   roundScore,
+  runCodexCommand,
   runtimePaths,
-  writeArtifact
+  writeArtifact,
+  writeArtifactJson
 } from "./runtime-helpers.mjs";
 
+const subjectiveMetricSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["summary", "metrics"],
+  properties: {
+    summary: { type: "string" },
+    metrics: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "metric_id",
+          "score_out_of_ten",
+          "rationale",
+          "recommended_changes"
+        ],
+        properties: {
+          metric_id: { type: "string" },
+          score_out_of_ten: { type: "number", minimum: 0, maximum: 10 },
+          rationale: { type: "string" },
+          recommended_changes: {
+            type: "array",
+            items: { type: "string" },
+            maxItems: 4
+          }
+        }
+      }
+    }
+  }
+};
+
+const clampScore = (value) =>
+  typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.min(10, Number(value.toFixed(1))))
+    : 0;
+
+const failClosedSubjectiveReview = (metrics, summary) => ({
+  summary,
+  metrics: metrics.map((metric) => ({
+    metric_id: metric.metric_id,
+    score_out_of_ten: 0,
+    rationale: "No subjective judge result was available.",
+    recommended_changes: [
+      "Re-run with Codex judge enabled or provide HARNESS_SUBJECTIVE_REVIEW_PATH."
+    ]
+  }))
+});
+
 const main = async () => {
+  const config = await readConfig();
+  const ideaMarkdown = await readIdeaMarkdown();
   const profile = await readVerificationProfile();
   const coreProbeResults = await readCoreProbeResults();
   const checksPath = join(runtimePaths.adapterDirectory, "run_checks-result.json");
   const checksResult = await readJsonIfExists(checksPath);
   const checksCriteria = Array.isArray(checksResult?.criteria_results)
     ? checksResult.criteria_results
+    : [];
+  const checksEvidencePaths = Array.isArray(checksResult?.evidence_paths)
+    ? checksResult.evidence_paths
+    : [];
+  const gradeCriteria = (profile.criteria ?? []).filter(
+    (criterion) => criterion.capability === "grade_round"
+  );
+  const subjectiveMetrics = Array.isArray(profile.subjective_metrics)
+    ? profile.subjective_metrics
     : [];
   const releaseGateProbes = coreProbeResults.filter(
     (probe) => (probe.role ?? "supporting") === "release_gate"
@@ -2028,10 +2524,208 @@ const main = async () => {
       ? 1
       : 0
     : 1;
-  const releaseScore = roundScore(
+  const deterministicReleaseScore = roundScore(
     0.2 * checksPass + 0.15 * commandPass + 0.65 * releaseGatePassRate
   );
-  const hardFailures = checksCriteria.filter(
+
+  const reviewOverridePath = process.env.HARNESS_SUBJECTIVE_REVIEW_PATH;
+  let subjectiveReview;
+  let judgeArtifacts = [];
+  if (subjectiveMetrics.length > 0) {
+    if (reviewOverridePath) {
+      subjectiveReview = await readJsonIfExists(reviewOverridePath);
+    }
+
+    if (!subjectiveReview) {
+      const evidenceInventory = {
+        run_checks_evidence_paths: checksEvidencePaths,
+        core_probe_results: coreProbeResults.map((probe) => ({
+          probe_id: probe.probe_id,
+          assertion_id: probe.assertion_id,
+          quality_axis_id: probe.quality_axis_id,
+          ok: probe.ok,
+          summary: probe.summary,
+          observed_value: probe.observed_value,
+          evidence_paths: probe.evidence_paths
+        }))
+      };
+      const prompt = [
+        "You are a skeptical product-quality judge.",
+        "Score each requested quality metric from 0 to 10.",
+        "Use only the supplied product brief, quality contract, requested metrics, and captured evidence.",
+        "Be conservative when evidence is thin.",
+        "Do not score visual or design metrics above 6/10 if there is no direct rendered evidence such as screenshots or browser traces.",
+        "",
+        "# Product brief",
+        ideaMarkdown || config.product_summary || config.product_title,
+        "",
+        "# Quality contract",
+        JSON.stringify(profile.quality_contract ?? {}, null, 2),
+        "",
+        "# Requested subjective metrics",
+        JSON.stringify(subjectiveMetrics, null, 2),
+        "",
+        "# Core probe summary",
+        JSON.stringify(evidenceInventory.core_probe_results, null, 2),
+        "",
+        "# Evidence inventory",
+        JSON.stringify(evidenceInventory, null, 2)
+      ].join("\\n");
+
+      const judgeExecution = await runCodexCommand({
+        name: "subjective-quality-judge",
+        prompt,
+        cwd: runtimePaths.targetRoot,
+        artifactDirectory: runtimePaths.artifactsDirectory,
+        configOverrides: {
+          approval_policy: "never",
+          sandbox_mode: "read-only",
+          "sandbox_read_only.network_access": false
+        },
+        addDirs: [runtimePaths.roundDirectory],
+        outputSchema: subjectiveMetricSchema,
+        metadata: {
+          role: "judge",
+          capability: "grade_round",
+          subjective_metric_count: subjectiveMetrics.length
+        }
+      });
+
+      judgeArtifacts = [judgeExecution.promptPath, judgeExecution.responsePath]
+        .filter(Boolean)
+        .map((path) => path.startsWith(runtimePaths.roundDirectory)
+          ? path.slice(runtimePaths.roundDirectory.length + 1).replace(/\\\\/g, "/")
+          : path.replace(/\\\\/g, "/"));
+
+      subjectiveReview =
+        judgeExecution.responseWritten && judgeExecution.responsePath
+          ? await readJsonIfExists(judgeExecution.responsePath)
+          : undefined;
+
+      if (
+        judgeExecution.disabled ||
+        judgeExecution.error ||
+        !judgeExecution.responseWritten ||
+        !subjectiveReview
+      ) {
+        subjectiveReview = failClosedSubjectiveReview(
+          subjectiveMetrics,
+          judgeExecution.disabled
+            ? "Subjective quality judge was disabled, so configured custom metrics failed closed."
+            : judgeExecution.error
+              ? "Subjective quality judge was unavailable, so configured custom metrics failed closed."
+              : "Subjective quality judge did not return structured output, so configured custom metrics failed closed."
+        );
+      }
+    }
+  }
+
+  const reviewMetricById = new Map(
+    Array.isArray(subjectiveReview?.metrics)
+      ? subjectiveReview.metrics
+          .filter((metric) => metric && typeof metric.metric_id === "string")
+          .map((metric) => [metric.metric_id, metric])
+      : []
+  );
+  const subjectiveMetricResults = subjectiveMetrics.map((metric) => {
+    const reviewMetric = reviewMetricById.get(metric.metric_id);
+    const scoreOutOfTen = clampScore(reviewMetric?.score_out_of_ten);
+    const passed = scoreOutOfTen + 0.001 >= metric.minimum_score_out_of_ten;
+    const rationale =
+      typeof reviewMetric?.rationale === "string" && reviewMetric.rationale.trim().length > 0
+        ? reviewMetric.rationale.trim()
+        : "No subjective judge rationale was available.";
+    const recommendedChanges = Array.isArray(reviewMetric?.recommended_changes)
+      ? reviewMetric.recommended_changes
+          .filter((entry) => typeof entry === "string" && entry.trim().length > 0)
+          .map((entry) => entry.trim())
+          .slice(0, 4)
+      : [];
+
+    return {
+      metric_id: metric.metric_id,
+      label: metric.label,
+      score_out_of_ten: scoreOutOfTen,
+      minimum_score_out_of_ten: metric.minimum_score_out_of_ten,
+      status: passed ? "pass" : "fail",
+      rationale,
+      recommended_changes:
+        recommendedChanges.length > 0
+          ? recommendedChanges
+          : ["Raise this metric until it clears the requested threshold."],
+      evidence_paths: [],
+      quality_axis_id: metric.quality_axis_id,
+      required: metric.required ?? true
+    };
+  });
+
+  const weightedSubjectiveScore =
+    subjectiveMetricResults.length > 0
+      ? subjectiveMetricResults.reduce(
+          (sum, metricResult) =>
+            sum +
+            metricResult.score_out_of_ten *
+              (subjectiveMetrics.find((metric) => metric.metric_id === metricResult.metric_id)?.weight ?? 1),
+          0
+        ) /
+        Math.max(
+          1,
+          subjectiveMetrics.reduce((sum, metric) => sum + (metric.weight ?? 1), 0)
+        )
+      : undefined;
+  const subjectiveAverageNormalized =
+    typeof weightedSubjectiveScore === "number"
+      ? roundScore(weightedSubjectiveScore / 10)
+      : undefined;
+  const subjectiveReviewPath =
+    subjectiveMetricResults.length > 0
+      ? await writeArtifactJson("subjective-quality-review.json", {
+          summary:
+            typeof subjectiveReview?.summary === "string" && subjectiveReview.summary.trim().length > 0
+              ? subjectiveReview.summary.trim()
+              : "Subjective metric review.",
+          metrics: subjectiveMetricResults,
+          overall_subjective_score_out_of_ten:
+            typeof weightedSubjectiveScore === "number"
+              ? roundScore(weightedSubjectiveScore)
+              : undefined
+        })
+      : undefined;
+
+  const subjectiveCriteriaResults = subjectiveMetrics.map((metric) => {
+    const metricResult = subjectiveMetricResults.find(
+      (candidate) => candidate.metric_id === metric.metric_id
+    );
+    const observed = metricResult?.score_out_of_ten ?? 0;
+    const passed = observed + 0.001 >= metric.minimum_score_out_of_ten;
+    return {
+      criterion_id: "subjective_metric_" + metric.metric_id + "_minimum",
+      status: passed ? "pass" : "fail",
+      summary: passed
+        ? metric.label + " scored " + observed + "/10 and cleared the requested minimum."
+        : metric.label +
+          " scored " +
+          observed +
+          "/10 and missed the requested minimum " +
+          metric.minimum_score_out_of_ten +
+          "/10.",
+      hard: metric.required ?? true,
+      threshold: metric.label + " >= " + metric.minimum_score_out_of_ten + "/10",
+      observed_value: String(observed),
+      evidence_paths: [
+        ...(subjectiveReviewPath ? [subjectiveReviewPath] : []),
+        ...checksEvidencePaths.slice(0, 1)
+      ]
+    };
+  });
+
+  const gradeCriteriaResults = [...checksCriteria, ...subjectiveCriteriaResults].filter(
+    (criterion) =>
+      gradeCriteria.some(
+        (expectedCriterion) => expectedCriterion.criterion_id === criterion.criterion_id
+      )
+  );
+  const hardFailures = gradeCriteriaResults.filter(
     (criterion) => criterion.hard && criterion.status === "fail"
   );
   const thresholdVerdict = hardFailures.length === 0 ? "pass" : "fail";
@@ -2040,6 +2734,10 @@ const main = async () => {
   const failedReleaseGateProbeIds = requiredReleaseGateProbes
     .filter((probe) => !probe.ok)
     .map((probe) => probe.probe_id);
+  const releaseScore =
+    subjectiveAverageNormalized === undefined
+      ? deterministicReleaseScore
+      : roundScore(0.7 * deterministicReleaseScore + 0.3 * subjectiveAverageNormalized);
   const reportPath = await writeArtifact(
     "grade-summary.md",
     [
@@ -2050,12 +2748,39 @@ const main = async () => {
       "Command check green: " + String(Boolean(commandPass)),
       "Release gate pass rate: " + String(roundScore(releaseGatePassRate)),
       "Failed release gate probes: " + (failedReleaseGateProbeIds.join(", ") || "none"),
+      "Subjective metric failures: " +
+        (subjectiveMetricResults
+          .filter((metric) => metric.status === "fail")
+          .map((metric) => metric.metric_id)
+          .join(", ") || "none"),
       "Hard failed criteria: " + (blockingCriterionIds.join(", ") || "none"),
+      "Deterministic release score: " + String(deterministicReleaseScore),
+      "Subjective average (0-10): " +
+        (typeof weightedSubjectiveScore === "number"
+          ? String(roundScore(weightedSubjectiveScore))
+          : "n/a"),
       "Release score: " + String(releaseScore),
       "Threshold verdict: " + thresholdVerdict,
       "Overall verdict: " + overallVerdict
     ].join("\\n")
   );
+
+  const findings = [
+    ...blockingCriterionIds.map(
+      (criterionId) => "Blocking criterion failed: " + criterionId + "."
+    ),
+    ...subjectiveMetricResults
+      .filter((metric) => metric.status === "fail")
+      .map(
+        (metric) =>
+          metric.label +
+          " scored " +
+          metric.score_out_of_ten +
+          "/10 against the requested minimum " +
+          metric.minimum_score_out_of_ten +
+          "/10."
+      )
+  ].slice(0, 8);
 
   await finalize({
     capability: "grade_round",
@@ -2064,30 +2789,55 @@ const main = async () => {
       thresholdVerdict === "pass"
         ? "Bootstrap verifier recommends advancing."
         : "Bootstrap verifier recommends revising.",
-    findings: blockingCriterionIds.map(
-      (criterionId) => "Blocking criterion failed: " + criterionId + "."
-    ),
-    evidence_paths: [reportPath, ...(Array.isArray(checksResult?.evidence_paths) ? checksResult.evidence_paths : [])],
+    findings,
+    evidence_paths: [
+      reportPath,
+      ...(subjectiveReviewPath ? [subjectiveReviewPath] : []),
+      ...checksEvidencePaths
+    ],
     evidence_items: [
       {
         path: reportPath,
         kind: "report",
         description: "Bootstrap-generated grading summary.",
         derived_from_capabilities: ["run_checks"],
-        derived_from_evidence_paths: Array.isArray(checksResult?.evidence_paths)
-          ? checksResult.evidence_paths
-          : []
-      }
+        derived_from_evidence_paths: checksEvidencePaths
+      },
+      ...(subjectiveReviewPath
+        ? [
+            {
+              path: subjectiveReviewPath,
+              kind: "json",
+              description: "Subjective quality review for user-defined metrics.",
+              derived_from_capabilities: ["run_checks"],
+              derived_from_evidence_paths: checksEvidencePaths
+            }
+          ]
+        : [])
     ],
-    criteria_results: checksCriteria,
+    criteria_results: gradeCriteriaResults,
     score: releaseScore,
     overall_verdict: overallVerdict,
     threshold_verdict: thresholdVerdict,
     blocking_criterion_ids: blockingCriterionIds,
+    subjective_metric_results: subjectiveMetricResults.map((metricResult) => ({
+      ...metricResult,
+      evidence_paths: [
+        ...(subjectiveReviewPath ? [subjectiveReviewPath] : []),
+        ...checksEvidencePaths.slice(0, 1)
+      ]
+    })),
     metadata: {
       release_gate_probe_count: requiredReleaseGateProbes.length,
       failed_release_gate_probe_count: failedReleaseGateProbeIds.length,
-      hard_failure_count: hardFailures.length
+      hard_failure_count: hardFailures.length,
+      subjective_metric_count: subjectiveMetrics.length,
+      failed_subjective_metric_count: subjectiveMetricResults.filter(
+        (metric) => metric.status === "fail"
+      ).length,
+      ...(typeof weightedSubjectiveScore === "number"
+        ? { subjective_average_out_of_ten: roundScore(weightedSubjectiveScore) }
+        : {})
     }
   });
 };
@@ -2131,6 +2881,24 @@ const scaffoldAdapterArtifacts = async (
     ...(answers.apiBaseUrl ? { api_base_url: answers.apiBaseUrl } : {}),
     constraints: answers.constraints,
     quality_bar: answers.qualityBar,
+    must_not_break: answers.mustNotBreak ?? [],
+    failure_expectations: answers.failureExpectations ?? [],
+    continuity_boundaries: answers.continuityBoundaries ?? [],
+    reference_signals: answers.referenceSignals ?? [],
+    non_goals: answers.nonGoals ?? [],
+    ...(answers.probeHints ? { probe_hints: answers.probeHints } : {}),
+    ...(answers.customQualityMetrics
+      ? {
+          custom_quality_metrics: answers.customQualityMetrics.map((metric) => ({
+            metric_id: metric.metricId,
+            label: metric.label,
+            description: metric.description,
+            minimum_score_out_of_ten: metric.minimumScoreOutOfTen,
+            required: metric.required ?? true,
+            weight: metric.weight ?? 1
+          }))
+        }
+      : {}),
     notes: answers.notes ?? "",
     idea_path: paths.ideaPath
   };
@@ -2230,6 +2998,24 @@ export const scaffoldBootstrapArtifacts = async (
     ...(answers.apiBaseUrl ? { api_base_url: answers.apiBaseUrl } : {}),
     constraints: answers.constraints,
     quality_bar: answers.qualityBar,
+    must_not_break: answers.mustNotBreak ?? [],
+    failure_expectations: answers.failureExpectations ?? [],
+    continuity_boundaries: answers.continuityBoundaries ?? [],
+    reference_signals: answers.referenceSignals ?? [],
+    non_goals: answers.nonGoals ?? [],
+    ...(answers.probeHints ? { probe_hints: answers.probeHints } : {}),
+    ...(answers.customQualityMetrics
+      ? {
+          custom_quality_metrics: answers.customQualityMetrics.map((metric) => ({
+            metric_id: metric.metricId,
+            label: metric.label,
+            description: metric.description,
+            minimum_score_out_of_ten: metric.minimumScoreOutOfTen,
+            required: metric.required ?? true,
+            weight: metric.weight ?? 1
+          }))
+        }
+      : {}),
     ...(answers.notes ? { notes: answers.notes } : {})
   });
   await writeJson(paths.generatedVerificationProfilePath, generatedProfile);
@@ -2277,6 +3063,33 @@ const collectAnswers = async (): Promise<BootstrapAnswers> => {
         rl,
         "For the first version, what counts as success?"
       );
+      output.write("\nQuality intake\n");
+      const mustNotBreak = await askOptionalList(
+        rl,
+        "Which experiences must never break? (optional, comma-separated)",
+        ["draft should survive reload"]
+      );
+      const failureExpectations = await askOptionalList(
+        rl,
+        "When the user hits a bad or invalid state, what should they see or be able to do? (optional, comma-separated)",
+        ["show an explicit error message", "offer a retry or recovery path"]
+      );
+      const continuityBoundaries = await askOptionalList(
+        rl,
+        "Which boundaries must preserve state? (optional, comma-separated: reload, retry, refresh, reopen)",
+        ["reload"]
+      );
+      const referenceSignals = await askOptionalList(
+        rl,
+        "What exactly should feel like the reference? (optional, comma-separated)",
+        ["clear hierarchy", "calm density", "fast transitions"]
+      );
+      const nonGoals = await askOptionalList(
+        rl,
+        "What is explicitly out of scope or forbidden? (optional, comma-separated)",
+        ["do not add a settings area"]
+      );
+      const customQualityMetrics = await askCustomQualityMetrics(rl);
 
       const targetFamily = inferProductTargetFamily(
         buildProductInferenceText({
@@ -2299,7 +3112,11 @@ const collectAnswers = async (): Promise<BootstrapAnswers> => {
         ),
         defaultRootForTitle(title)
       );
-      const targetScore = await askTargetScore(rl, goalPresets.usable);
+      const goalLevel = await askGoalLevel(rl, "usable");
+      const targetScore = await askTargetScore(
+        rl,
+        goalLevel === "custom" ? goalPresets.usable : goalPresets[goalLevel]
+      );
       const maxRounds = await askMaxRounds(rl, 3);
 
       const frameworkHint = defaultFrameworkHintForFamily(targetFamily);
@@ -2357,11 +3174,22 @@ const collectAnswers = async (): Promise<BootstrapAnswers> => {
               defaultApiBaseUrlForFamily(targetFamily)
             )
           : defaultApiBaseUrlForFamily(targetFamily) ?? "";
+      const probeHints =
+        projectMode === "existing" ? await askProbeHints(rl, targetFamily) : undefined;
 
-      const constraints: string[] = [];
+      const customMetricBar = customQualityMetrics.map(
+        (metric) =>
+          `${metric.label} must score at least ${metric.minimumScoreOutOfTen}/10`
+      );
+      const constraints = uniqueList(nonGoals);
       const notes = "";
-      const qualityBar = uniqueList([finishLine]);
-      const goalLevel = inferGoalLevelFromTargetScore(targetScore);
+      const qualityBar = uniqueList([
+        finishLine,
+        ...mustNotBreak,
+        ...failureExpectations,
+        ...referenceSignals,
+        ...customMetricBar
+      ]);
 
       const answers: BootstrapAnswers = {
         title,
@@ -2386,6 +3214,13 @@ const collectAnswers = async (): Promise<BootstrapAnswers> => {
         ...(apiBaseUrl ? { apiBaseUrl } : {}),
         constraints,
         qualityBar,
+        ...(mustNotBreak.length > 0 ? { mustNotBreak } : {}),
+        ...(failureExpectations.length > 0 ? { failureExpectations } : {}),
+        ...(continuityBoundaries.length > 0 ? { continuityBoundaries } : {}),
+        ...(referenceSignals.length > 0 ? { referenceSignals } : {}),
+        ...(nonGoals.length > 0 ? { nonGoals } : {}),
+        ...(probeHints ? { probeHints } : {}),
+        ...(customQualityMetrics.length > 0 ? { customQualityMetrics } : {}),
         ...(notes ? { notes } : {})
       };
 

@@ -477,6 +477,36 @@ export const buildQualityCritiqueArtifact = (input: {
     });
   }
 
+  const gradeRoundExecution = input.evalReport.adapter_results.find(
+    (execution) => execution.capability === "grade_round"
+  );
+  const subjectiveFindings =
+    gradeRoundExecution?.result.subjective_metric_results
+      ?.filter((metric) => metric.status === "fail")
+      .map((metric) => {
+        const axis = metric.quality_axis_id
+          ? axisLookup.get(metric.quality_axis_id)
+          : undefined;
+        const severity: QualityFinding["severity"] =
+          metric.required === false ? "medium" : "high";
+        return {
+          finding_id: `subjective-${metric.metric_id}`,
+          category: "subjective_quality" as const,
+          severity,
+          summary: `${metric.label} scored ${metric.score_out_of_ten}/10; required ${metric.minimum_score_out_of_ten}/10.`,
+          expected_change:
+            metric.recommended_changes[0] ??
+            axis?.desired_outcome ??
+            `Raise ${metric.label} until it clears the requested threshold.`,
+          evidence: metric.evidence_paths,
+          preserve: unique([...(axis?.preserve_signals ?? []), ...preserveSignals]).slice(0, 8),
+          pivot_or_refine: remediationStrategy,
+          target_check_ids: ["target_signal_thresholds_met"],
+          ...(metric.quality_axis_id ? { axis_id: metric.quality_axis_id } : {})
+        };
+      }) ?? [];
+  findings.push(...subjectiveFindings);
+
   if (input.evalReport.threshold_gap_details.length > 0) {
     findings.push({
       finding_id: `threshold-gap-round-${String(input.round).padStart(2, "0")}`,

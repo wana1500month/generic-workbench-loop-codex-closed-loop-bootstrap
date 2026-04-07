@@ -274,11 +274,16 @@ Turn intake answers into evaluator-owned quality steering, and let stricter comp
 
 Acceptance:
 - `loop:bootstrap` writes `rubric.generated.json` and `verification-profile.generated.json`, and the generated profile includes intake-derived `quality_contract.quality_axes`.
+- Bootstrap intake should collect deeper quality intent, including must-not-break flows, failure expectations, continuity boundaries, reference signals, non-goals, optional probe hints, and optional user-defined subjective metrics with minimum required scores.
+- Generated intake artifacts (`IDEA.md`, `intake.json`, runtime config, generated bundle) should preserve that deeper quality data rather than collapsing it into a shallow `qualityBar`.
 - Generated browser/API probes should cover finish-line flow, error recovery, and continuity/persistence, including browser `reload` plus `assert_value` and negative assertions such as `assert_not_visible`.
 - Bootstrap-generated `run_checks` and `grade_round` should consume harness-owned `core-probe-results.json` and `target-manifest.json` instead of re-running release probes independently, and they should express failed release criteria through `criteria_results`, `threshold_verdict`, and `blocking_criterion_ids` rather than `ok: false`.
+- Runtime loading should preserve generated `quality_contract`, per-criterion and per-probe `quality_axis_id`, and `subjective_metrics` so critique and patch-request generation keep the same quality semantics the intake authored.
 - Bootstrap-generated `apply_change` should inline the current round contract, generator plan, latest patch request, latest quality critique, and latest eval threshold gaps into the generator prompt so remediation rounds stay quality-aware.
 - Generated evaluator bundles should preserve the selected family bundle as a base floor, merging family probes, criteria, and assertion-tag minima with the intake-derived overlay instead of replacing them.
+- Bootstrap-generated `grade_round` should optionally run a fail-closed subjective judge for user-defined metrics, persist `subjective-quality-review.json`, publish `subjective_metric_results`, and turn required metric misses into blocking `grade_round` criteria.
 - Each evaluated round should persist `quality-critique.json` with `remediation_strategy`, `quality_focus`, `preserve_signals`, and structured findings tied to threshold gaps, failed dimensions, or failed release-gate probes.
+- Subjective metric failures should also surface as `quality-critique.json` findings and flow into `patch-request.json.quality_findings`, so later remediation rounds see concrete product-quality gaps instead of only generic score misses.
 - `patch-request.json` should carry `quality_findings`, `must_preserve`, and `remediation_strategy`, but it must only promote carry-forward-safe target checks into `must_fix`.
 - The repo should ship a companion strict-lane scaffold command that can derive a stricter evaluator bundle from a base bundle without requiring assertion tags or release assertions that the base bundle does not actually configure.
 - The repo should ship a regression validator that proves:
@@ -286,11 +291,15 @@ Acceptance:
   - a stricter external quality lane holds that same fixture open
   - intake-generated bundles publish richer quality axes and journey probes
   - patch-only remediation persists structured critique and patch-request quality surfaces
+  - deep intake fields survive bootstrap artifact generation
+  - subjective metric thresholds fail closed and become patch-request-visible quality findings
 
 Validation:
 - `npm run loop:bootstrap`
 - `npm run validate:bootstrap-generator-fail-closed`
 - `npm run validate:bootstrap-evidence-integrity`
+- `npm run validate:bootstrap-deep-intake`
+- `npm run validate:bootstrap-custom-quality-metrics`
 - `npm run validate:bootstrap-profile-aware-verifier`
 - `npm run validate:lifecycle-api`
 - `npm run validate:family-browser-semantic`

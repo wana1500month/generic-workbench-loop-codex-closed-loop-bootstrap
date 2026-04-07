@@ -8,7 +8,7 @@ This repository is the harness core only. It owns idea intake, planning, initial
 
 - `IDEA.md`: the current harness goal or refactor request
 - `npm run loop:intake -- "<user request>"`: staged intake gate that returns product questions, execution questions, or confirmation
-- `npm run loop:bootstrap`: writes `IDEA.md`, `intake.json`, `adapter.generated.json`, `rubric.generated.json`, and `verification-profile.generated.json`, then uses the generated rubric/bundle on the first run unless the CLI explicitly overrides them
+- `npm run loop:bootstrap`: writes `IDEA.md`, `intake.json`, `adapter.generated.json`, `rubric.generated.json`, and `verification-profile.generated.json`, then uses the generated rubric/bundle on the first run unless the CLI explicitly overrides them. Bootstrap now also captures deeper quality intent such as must-not-break flows, failure expectations, continuity boundaries, reference signals, non-goals, probe hints, and optional user-authored subjective metrics with minimum `x/10` thresholds.
 - `npm run reference-adapter:scaffold-quality-lane -- --profile <bundle.json> --out <strict-bundle.json>`: derives a stricter companion evaluator lane from an existing bundle without demanding release assertions that the source bundle does not actually configure
 - `SPEC.md`: stable harness scope
 - `PLANS.md`: current milestone map
@@ -26,11 +26,13 @@ This repository is the harness core only. It owns idea intake, planning, initial
 - `generator`: takes a long build attempt against the negotiated attempt contract
 - `evaluator`: reviews the contract before build, then writes the verdict, eval report, and patch request after each build attempt
 - `quality critique`: turns threshold gaps, failed dimensions, and failed release-gate probes into structured quality findings while keeping patch authority carry-forward-safe
+- `subjective judge`: optional bootstrap-owned grading path inside generated `grade_round` that scores user-defined quality metrics from captured evidence, fails closed when review evidence is unavailable, and publishes structured metric results
 - `controller`: records the attempt summary and stop reason
 - `adapter`: optional external capability provider for target prep, apply, and run
 - `verifier`: optional external proof provider for capture, checks, and grading under a separate trust domain
 - `Codex`: reads run artifacts and continues harness work in-session
 - `bootstrap generator`: now receives an inline remediation brief built from the current round contract, generator plan, latest patch request, latest quality critique, and latest eval threshold gaps so patch-only mutation is no longer prompt-stateless
+- `bootstrap grader`: now preserves `quality_contract`, `quality_axis_id`, and `subjective_metrics` through runtime loading, so intake-authored quality semantics reach grading, critique, and patch-request generation intact
 
 ## Round contract and dimension floors
 
@@ -97,6 +99,8 @@ This repository is the harness core only. It owns idea intake, planning, initial
 - Require hard release assertions to be covered by both verifier-owned `verification-witness.assertion_ids` and passing core-owned release-gate probes.
 - Require successful `grade_round` results to publish a `threshold_verdict`, keep `blocking_criterion_ids` aligned with failing criteria, and fail when grading contradicts earlier hard criteria without new grounded proof.
 - Generated evaluator bundles must preserve the selected family bundle as a quality floor. Intake-derived probes and criteria are layered on top of the base family profile rather than replacing its release assertions or assertion-tag minima.
+- User-defined subjective metrics belong to `grade_round`, not `run_checks`. Generated `grade_round` may attach minimum `x/10` thresholds, keep `ok: true`, publish `subjective_metric_results`, and fail closure through `criteria_results`, `threshold_verdict`, and `blocking_criterion_ids`.
+- When subjective metrics are configured, generated `grade_round` writes `artifacts/subjective-quality-review.json`. For deterministic tests, `HARNESS_SUBJECTIVE_REVIEW_PATH` can inject a prebuilt review artifact instead of calling Codex live.
 - Persist verifier command, stdout, stderr, result, and evidence hashes so proof provenance is reviewable after execution.
 - Perform generic content inspection on text, JSON, image, and binary evidence before trusting it.
 - Cap `proof_score` when skeptical proof checks fail so contradictory or weakly grounded proof cannot still look release-ready in summaries.
@@ -218,6 +222,9 @@ Initial build attempts and recontract attempts also write `contract-review.*` an
 
 ```powershell
 npm run build
+npm run validate:bootstrap-deep-intake
+npm run validate:bootstrap-custom-quality-metrics
+npm run validate:bootstrap-profile-aware-verifier
 npm run loop:single
 npm run loop:run -- 3
 npm run loop:run -- --adapter ./adapter.example.json --max-rounds 3
@@ -315,6 +322,10 @@ The deeper semantic packs now exercise more than surface liveness. API and CRUD 
 `validate:score-policy` proves that bundle-owned `score_policy` can change target closure outcomes for the same evidence without changing the controller's generic stop logic.
 
 `validate:quality-lift` proves that a lenient bundle can close low-score evidence, a stricter external quality lane can hold that same evidence open, intake-generated bundles publish richer `quality_contract` axes plus continuity/error-recovery probes while preserving the base family floor, and patch-only remediation persists structured `quality-critique.json` alongside quality-aware patch requests.
+
+`validate:bootstrap-deep-intake` proves that deeper quality intake fields survive into `IDEA.md`, `intake.json`, runtime config, generated quality axes, and generated `subjective_metrics`.
+
+`validate:bootstrap-custom-quality-metrics` proves that user-authored subjective metric thresholds are graded in `grade_round`, fail closed when the configured review falls below the requested minimum, publish `subjective-quality-review.json`, and surface as structured `subjective_quality` findings in quality critique generation.
 
 `validate:bootstrap-profile-aware-verifier` proves that bootstrap-generated `run_checks` and `grade_round` consume the already-executed core probe results, keep capability execution `ok: true` while hard criteria fail, publish `core-probe-summary.json`, and turn failing release-gate assertions into blocking grading criteria.
 

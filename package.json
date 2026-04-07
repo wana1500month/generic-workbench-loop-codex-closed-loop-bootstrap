@@ -49,6 +49,8 @@
     "validate:codex-warning-propagation": "node ./scripts/validate-codex-warning-propagation.mjs",
     "validate:bootstrap-generator-fail-closed": "node ./scripts/validate-bootstrap-generator-fail-closed.mjs",
     "validate:bootstrap-evidence-integrity": "node ./scripts/validate-bootstrap-evidence-integrity.mjs",
+    "validate:bootstrap-deep-intake": "node ./scripts/validate-bootstrap-deep-intake.mjs",
+    "validate:bootstrap-custom-quality-metrics": "node ./scripts/validate-bootstrap-custom-quality-metrics.mjs",
     "validate:bootstrap-profile-aware-verifier": "node ./scripts/validate-bootstrap-profile-aware-verifier.mjs",
     "validate:intake-gate": "node ./scripts/validate-intake-gate.mjs",
     "validate:codex-auth-preflight": "node ./scripts/validate-codex-auth-preflight.mjs",

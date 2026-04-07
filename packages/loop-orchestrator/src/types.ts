@@ -96,7 +96,8 @@ export type QualityFindingCategory =
   | "persistence"
   | "consistency"
   | "reference_fit"
-  | "proof_signal";
+  | "proof_signal"
+  | "subjective_quality";
 export type RemediationStrategy = "tighten" | "refine" | "pivot";
 
 export type LiveVerificationMode = "browser" | "api" | "db" | "shell";
@@ -336,6 +337,8 @@ export interface QualityContractAxis {
   desired_outcome?: string;
   preserve_signals?: string[];
   reference_signals?: string[];
+  scoring_mode?: "binary_release_gate" | "subjective_out_of_ten";
+  minimum_score_out_of_ten?: number;
 }
 
 export interface QualityContract {
@@ -344,6 +347,16 @@ export interface QualityContract {
   preserve_signals?: string[];
   reference_signals?: string[];
   critique_style?: "deterministic_release_gate";
+}
+
+export interface VerificationSubjectiveMetric {
+  metric_id: string;
+  label: string;
+  description: string;
+  minimum_score_out_of_ten: number;
+  quality_axis_id?: string;
+  required?: boolean;
+  weight?: number;
 }
 
 export interface VerificationCoreProbe {
@@ -403,6 +416,7 @@ export interface VerificationProfile {
   minimum_assertion_tag_counts?: Partial<Record<VerificationAssertionTag, number>>;
   score_policy?: VerificationScorePolicy;
   quality_contract?: QualityContract;
+  subjective_metrics?: VerificationSubjectiveMetric[];
   notes?: string[];
 }
 
@@ -558,6 +572,19 @@ export interface AdapterCriterionResult {
   observed_value?: string;
 }
 
+export interface SubjectiveMetricResult {
+  metric_id: string;
+  label: string;
+  score_out_of_ten: number;
+  minimum_score_out_of_ten: number;
+  status: "pass" | "fail";
+  rationale: string;
+  recommended_changes: string[];
+  evidence_paths: string[];
+  quality_axis_id?: string;
+  required?: boolean;
+}
+
 export interface VerifiedAdapterCriterionResult {
   criterion_id: string;
   status: "pass" | "fail";
@@ -582,6 +609,7 @@ export interface AdapterCapabilityResult {
   metadata?: Record<string, string | number | boolean>;
   score?: number;
   overall_verdict?: RoundVerdict;
+  subjective_metric_results?: SubjectiveMetricResult[];
 }
 
 export interface AdapterCapabilityExecution {
