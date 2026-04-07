@@ -109,11 +109,14 @@ const genericCoreProfilePath = join(
   "generic-core.profile.json"
 );
 
-const capabilityOrder: AdapterCapabilityName[] = [
+const preVerificationCapabilities: AdapterCapabilityName[] = [
   "prepare_target",
   "apply_change",
   "run_target",
-  "capture_evidence",
+  "capture_evidence"
+];
+
+const postVerificationCapabilities: AdapterCapabilityName[] = [
   "run_checks",
   "grade_round"
 ];
@@ -308,6 +311,7 @@ const isResumeNoopTerminalStopReason = (
 
 const runAdapterCapabilities = async (input: {
   loadedAdapter?: LoadedAdapterContract;
+  capabilities: AdapterCapabilityName[];
   runId: string;
   round: number;
   runDirectory: string;
@@ -322,18 +326,20 @@ const runAdapterCapabilities = async (input: {
   contractAgreementPath?: string;
   generatorPlanPath: string;
   previousPatchRequestPath?: string;
+  extraEnv?: Record<string, string>;
 }): Promise<AdapterCapabilityExecution[]> => {
   if (!input.loadedAdapter) {
     return [];
   }
 
   const executions: AdapterCapabilityExecution[] = [];
-  for (const capability of capabilityOrder) {
+  for (const capability of input.capabilities) {
     executions.push(
       await executeAdapterCapability({
         loadedAdapter: input.loadedAdapter,
         capability,
         roundDirectory: input.roundDirectory,
+        extraEnv: input.extraEnv,
         packet: {
           adapter_id: input.loadedAdapter.contract.adapter_id,
           capability,
@@ -944,10 +950,11 @@ export const runClosedLoop = async (input: {
       previousPatchTargetCheckIds.every((checkId) =>
         contractArtifact.carry_over_check_ids.includes(checkId)
       );
-    const adapterExecutions =
+    const preVerificationExecutions =
       loadedAdapter && contractAgreementArtifact.status === "agreed"
         ? await runAdapterCapabilities({
             loadedAdapter,
+            capabilities: preVerificationCapabilities,
             runId,
             round,
             runDirectory,
@@ -968,7 +975,7 @@ export const runClosedLoop = async (input: {
             previousPatchRequestPath
           })
         : [];
-    const targetManifest = adapterExecutions.find(
+    const targetManifest = preVerificationExecutions.find(
       (execution) => execution.capability === "run_target" && execution.result.ok
     )?.result.target_manifest;
     const coreProbeResults =
@@ -980,6 +987,49 @@ export const runClosedLoop = async (input: {
             targetManifest
           })
         : [];
+    const coreProbeResultsPath = join(roundDirectory, "core-probe-results.json");
+    await writeJson(coreProbeResultsPath, coreProbeResults);
+    const targetManifestPath = join(roundDirectory, "target-manifest.json");
+    await writeJson(targetManifestPath, targetManifest ?? {});
+    const postVerificationExecutions =
+      loadedAdapter && contractAgreementArtifact.status === "agreed"
+        ? await runAdapterCapabilities({
+            loadedAdapter,
+            capabilities: postVerificationCapabilities,
+            runId,
+            round,
+            runDirectory,
+            runtimeDirectory: runRuntimeDirectory,
+            codexSessionRegistryPath,
+            roundDirectory,
+            ideaPath: defaultIdeaPath,
+            plannedScenarioPath,
+            planPath,
+            roundContractPath: artifacts.contract_json_path,
+            contractReviewPath: persistContractReviewArtifact
+              ? artifacts.contract_review_json_path
+              : undefined,
+            contractAgreementPath: persistContractAgreementArtifact
+              ? artifacts.contract_agreement_json_path
+              : undefined,
+            generatorPlanPath: artifacts.generator_plan_json_path,
+            previousPatchRequestPath,
+            extraEnv: {
+              HARNESS_CORE_PROBE_RESULTS_PATH: coreProbeResultsPath,
+              HARNESS_TARGET_MANIFEST_PATH: targetManifestPath,
+              ...(selectedVerificationProfile
+                ? {
+                    HARNESS_VERIFICATION_PROFILE_PATH:
+                      selectedVerificationProfile.profile_path
+                  }
+                : {})
+            }
+          })
+        : [];
+    const adapterExecutions = [
+      ...preVerificationExecutions,
+      ...postVerificationExecutions
+    ];
     const baseEvalReport = buildEvalReport({
       round,
       rubric: hydratedRubric,

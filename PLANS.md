@@ -275,6 +275,7 @@ Turn intake answers into evaluator-owned quality steering, and let stricter comp
 Acceptance:
 - `loop:bootstrap` writes `rubric.generated.json` and `verification-profile.generated.json`, and the generated profile includes intake-derived `quality_contract.quality_axes`.
 - Generated browser/API probes should cover finish-line flow, error recovery, and continuity/persistence, including browser `reload` plus `assert_value` and negative assertions such as `assert_not_visible`.
+- Bootstrap-generated `run_checks` and `grade_round` should consume harness-owned `core-probe-results.json` and `target-manifest.json` instead of re-running release probes independently, and they should express failed release criteria through `criteria_results`, `threshold_verdict`, and `blocking_criterion_ids` rather than `ok: false`.
 - Each evaluated round should persist `quality-critique.json` with `remediation_strategy`, `quality_focus`, `preserve_signals`, and structured findings tied to threshold gaps, failed dimensions, or failed release-gate probes.
 - `patch-request.json` should carry `quality_findings`, `must_preserve`, and `remediation_strategy`, but it must only promote carry-forward-safe target checks into `must_fix`.
 - The repo should ship a companion strict-lane scaffold command that can derive a stricter evaluator bundle from a base bundle without requiring assertion tags or release assertions that the base bundle does not actually configure.
@@ -288,6 +289,7 @@ Validation:
 - `npm run loop:bootstrap`
 - `npm run validate:bootstrap-generator-fail-closed`
 - `npm run validate:bootstrap-evidence-integrity`
+- `npm run validate:bootstrap-profile-aware-verifier`
 - `npm run validate:lifecycle-api`
 - `npm run validate:family-browser-semantic`
 - `npm run validate:family-fullstack-semantic`

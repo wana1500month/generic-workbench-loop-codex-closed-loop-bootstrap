@@ -2510,6 +2510,7 @@ export const executeAdapterCapability = async (input: {
   capability: AdapterCapabilityName;
   packet: AdapterCapabilityPacket;
   roundDirectory: string;
+  extraEnv?: Record<string, string>;
 }): Promise<AdapterCapabilityExecution> => {
   const adapterDirectory = join(input.roundDirectory, "adapter");
   const packetPath = join(adapterDirectory, `${input.capability}-input.json`);
@@ -2567,7 +2568,8 @@ export const executeAdapterCapability = async (input: {
       join(input.packet.run_directory, "runtime", "codex-sessions.json"),
     HARNESS_CAPABILITY: input.capability,
     HARNESS_PROVIDER_ID: provider.providerId,
-    HARNESS_PROVIDER_ROLE: provider.providerRole
+    HARNESS_PROVIDER_ROLE: provider.providerRole,
+    ...(input.extraEnv ?? {})
   };
 
   const execution = await execCommand({

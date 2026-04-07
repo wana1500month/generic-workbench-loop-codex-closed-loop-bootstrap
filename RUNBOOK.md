@@ -83,6 +83,7 @@ This repository is the harness core only. It owns idea intake, planning, initial
 - Require adapter-attached target proof to include at least one structured `verification-witness` artifact that points at the live interaction log and enumerates verifier steps.
 - Require adapter-attached target proof to include evaluator-owned `core_probes` so the core can generate independent target evidence before claiming `target_reached`.
 - Require `run_target` to publish `target_manifest` URLs when release-gate probes resolve target surfaces through manifest keys.
+- Run generated or external `run_checks` / `grade_round` only after the core-owned probe phase has written `core-probe-results.json` and `target-manifest.json`, so verifier grading can consume one shared release-gate signal instead of re-executing probes out-of-band.
 - Require core-owned evaluator profiles to declare the target surfaces they expect through `expected_target_surfaces`, so browser/API coverage policy is owned by the harness instead of the adapter.
 - Require release-gate probes to use `http_json` or `browser_journey`, carry `assertion_id`, stay at `semantic_level: "feature"` or `"workflow"`, and resolve target surfaces through `target_manifest_key`.
 - Require browser/API proof only when the core-owned evaluator profile declares those surfaces through `expected_target_surfaces`.
@@ -312,6 +313,8 @@ The deeper semantic packs now exercise more than surface liveness. API and CRUD 
 `validate:score-policy` proves that bundle-owned `score_policy` can change target closure outcomes for the same evidence without changing the controller's generic stop logic.
 
 `validate:quality-lift` proves that a lenient bundle can close low-score evidence, a stricter external quality lane can hold that same evidence open, intake-generated bundles publish richer `quality_contract` axes plus continuity/error-recovery probes, and patch-only remediation persists structured `quality-critique.json` alongside quality-aware patch requests.
+
+`validate:bootstrap-profile-aware-verifier` proves that bootstrap-generated `run_checks` and `grade_round` consume the already-executed core probe results, keep capability execution `ok: true` while hard criteria fail, publish `core-probe-summary.json`, and turn failing release-gate assertions into blocking grading criteria.
 
 For concurrency validation, launch `loop:single` multiple times in parallel and confirm that each invocation allocates a distinct `evals/runs/run-###` directory.
 
