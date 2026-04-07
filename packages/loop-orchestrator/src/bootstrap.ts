@@ -417,10 +417,55 @@ const uniqueCriteria = (
   });
 };
 
+const mergeGeneratedProbeOverlay = (
+  baseProbes: readonly VerificationCoreProbe[],
+  generatedProbes: readonly VerificationCoreProbe[]
+): VerificationCoreProbe[] => {
+  const seenProbeIds = new Set<string>();
+  const seenAssertionKeys = new Set<string>();
+  const merged: VerificationCoreProbe[] = [];
+
+  for (const probe of [...baseProbes, ...generatedProbes]) {
+    const assertionKey = probe.assertion_id
+      ? `${probe.mode}:${probe.assertion_id}`
+      : undefined;
+    if (seenProbeIds.has(probe.probe_id)) {
+      continue;
+    }
+    if (assertionKey && seenAssertionKeys.has(assertionKey)) {
+      continue;
+    }
+    merged.push(probe);
+    seenProbeIds.add(probe.probe_id);
+    if (assertionKey) {
+      seenAssertionKeys.add(assertionKey);
+    }
+  }
+
+  return merged;
+};
+
+const mergeAssertionTagCountFloors = (
+  baseCounts: Partial<Record<VerificationAssertionTag, number>>,
+  generatedCounts: Partial<Record<VerificationAssertionTag, number>>
+): Partial<Record<VerificationAssertionTag, number>> => {
+  const merged: Partial<Record<VerificationAssertionTag, number>> = {};
+  for (const tag of uniqueList([
+    ...Object.keys(baseCounts),
+    ...Object.keys(generatedCounts)
+  ]) as VerificationAssertionTag[]) {
+    merged[tag] = Math.max(baseCounts[tag] ?? 0, generatedCounts[tag] ?? 0);
+  }
+  return merged;
+};
+
 const buildGeneratedCriteria = (
-  answers: BootstrapAnswers
+  answers: BootstrapAnswers,
+  generatedCoreProbes: readonly VerificationCoreProbe[] = buildGeneratedCoreProbes(
+    answers
+  )
 ): VerificationProfile["criteria"] => {
-  const releaseGateProbeCriteria = buildGeneratedCoreProbes(answers)
+  const releaseGateProbeCriteria = generatedCoreProbes
     .filter(
       (probe) =>
         (probe.role ?? "supporting") === "release_gate" && Boolean(probe.assertion_id)
@@ -718,28 +763,54 @@ const buildGeneratedVerificationProfile = async (
 
   const baseProfile = await loadJson<VerificationProfile>(familySelection.profile_path);
   const generatedCoreProbes = buildGeneratedCoreProbes(answers);
-  const releaseGateProbeCount = generatedCoreProbes.filter(
+  const generatedCriteria = buildGeneratedCriteria(answers, generatedCoreProbes);
+  const generatedReleaseGateProbeCount = generatedCoreProbes.filter(
     (probe) => (probe.role ?? "supporting") === "release_gate"
   ).length;
-  const minimumAssertionTagCounts =
+  const generatedMinimumAssertionTagCounts =
     minimumAssertionTagCountsForGeneratedProbes(generatedCoreProbes);
+  const mergedCoreProbes = mergeGeneratedProbeOverlay(
+    baseProfile.core_probes ?? [],
+    generatedCoreProbes
+  );
+  const mergedCriteria = uniqueCriteria([
+    ...(baseProfile.criteria ?? []),
+    ...generatedCriteria
+  ]);
+  const mergedMinimumAssertionTagCounts = mergeAssertionTagCountFloors(
+    baseProfile.minimum_assertion_tag_counts ?? {},
+    generatedMinimumAssertionTagCounts
+  );
   const titleSlug = slugify(answers.title);
   const qualityContract = buildGeneratedQualityContract(answers);
+  const mergedExpectedTargetSurfaces = uniqueList([
+    ...(baseProfile.expected_target_surfaces ?? []),
+    ...targetSurfacesForFamily(answers.targetFamily)
+  ]) as TargetSurface[];
+  const mergedLiveVerificationModes = uniqueList([
+    ...(baseProfile.required_live_verification_modes ?? []),
+    ...liveVerificationModesForFamily(answers.targetFamily)
+  ]) as NonNullable<VerificationProfile["required_live_verification_modes"]>;
 
   return {
+    ...baseProfile,
     profile_id: `generated-${titleSlug}-profile`,
     label: `${answers.title} Evaluator Bundle`,
     bundle_label: `${answers.title} Evaluator Bundle`,
     target_family: answers.targetFamily,
     validation_lane: baseProfile.validation_lane,
-    expected_target_surfaces: targetSurfacesForFamily(answers.targetFamily),
-    required_live_verification_modes: liveVerificationModesForFamily(answers.targetFamily),
-    target_reached_requires_core_probes: true,
-    minimum_feature_release_assertions: Math.max(releaseGateProbeCount, 2),
-    minimum_assertion_tag_counts: minimumAssertionTagCounts,
+    expected_target_surfaces: mergedExpectedTargetSurfaces,
+    required_live_verification_modes: mergedLiveVerificationModes,
+    target_reached_requires_core_probes:
+      baseProfile.target_reached_requires_core_probes ?? true,
+    minimum_feature_release_assertions: Math.max(
+      baseProfile.minimum_feature_release_assertions ?? 2,
+      Math.max(generatedReleaseGateProbeCount, 2)
+    ),
+    minimum_assertion_tag_counts: mergedMinimumAssertionTagCounts,
     score_policy: baseProfile.score_policy,
-    core_probes: generatedCoreProbes,
-    criteria: buildGeneratedCriteria(answers),
+    core_probes: mergedCoreProbes,
+    criteria: mergedCriteria,
     quality_contract: qualityContract,
     notes: uniqueList([
       ...(baseProfile.notes ?? []),
@@ -1267,9 +1338,11 @@ main().catch(async (error) => {
 `;
 
 const applyChangeTemplate = (): string => `import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import {
   finalize,
   readConfig,
+  readJsonIfExists,
   readPacket,
   readCodexSession,
   relativeToRound,
@@ -1283,11 +1356,117 @@ const main = async () => {
   const config = await readConfig();
   const packet = await readPacket();
   const ideaMarkdown = await readFile(config.idea_path, "utf8");
+  const roundContract =
+    typeof packet.round_contract_path === "string"
+      ? await readJsonIfExists(packet.round_contract_path)
+      : undefined;
+  const contractAgreement =
+    typeof packet.contract_agreement_path === "string"
+      ? await readJsonIfExists(packet.contract_agreement_path)
+      : undefined;
+  const generatorPlan =
+    typeof packet.generator_plan_path === "string"
+      ? await readJsonIfExists(packet.generator_plan_path)
+      : undefined;
+  const previousPatchRequest =
+    typeof packet.patch_request_path === "string"
+      ? await readJsonIfExists(packet.patch_request_path)
+      : undefined;
+  const previousRoundDirectory =
+    typeof packet.patch_request_path === "string"
+      ? dirname(packet.patch_request_path)
+      : undefined;
+  const previousQualityCritique = previousRoundDirectory
+    ? await readJsonIfExists(join(previousRoundDirectory, "quality-critique.json"))
+    : undefined;
+  const previousEvalReport = previousRoundDirectory
+    ? await readJsonIfExists(join(previousRoundDirectory, "eval_report.json"))
+    : undefined;
+  const remediationBrief = {
+    round_contract: roundContract
+      ? {
+          objective: roundContract.objective,
+          attempt_kind: roundContract.attempt_kind,
+          negotiation_mode: roundContract.negotiation_mode,
+          acceptance_checks: roundContract.acceptance_checks,
+          carry_over_check_ids: roundContract.carry_over_check_ids,
+          non_goals: roundContract.non_goals
+        }
+      : null,
+    contract_agreement: contractAgreement
+      ? {
+          acceptance_checks: contractAgreement.acceptance_checks,
+          release_gate_probe_ids: contractAgreement.release_gate_probe_ids,
+          required_live_verification_modes:
+            contractAgreement.required_live_verification_modes,
+          notes: contractAgreement.notes
+        }
+      : null,
+    generator_plan: generatorPlan
+      ? {
+          implementation_intent: generatorPlan.implementation_intent,
+          remediation_strategy: generatorPlan.remediation_strategy,
+          target_check_ids: generatorPlan.target_check_ids,
+          quality_focus: generatorPlan.quality_focus,
+          must_preserve: generatorPlan.must_preserve,
+          out_of_scope: generatorPlan.out_of_scope
+        }
+      : null,
+    latest_patch_request: previousPatchRequest
+      ? {
+          next_action: previousPatchRequest.next_action,
+          remediation_strategy: previousPatchRequest.remediation_strategy,
+          must_fix: Array.isArray(previousPatchRequest.must_fix)
+            ? previousPatchRequest.must_fix.map((item) => ({
+                id: item.id,
+                why: item.why,
+                expected_change: item.expected_change,
+                target_check_ids: item.target_check_ids
+              }))
+            : [],
+          must_preserve: previousPatchRequest.must_preserve,
+          forbidden_scope_expansion:
+            previousPatchRequest.forbidden_scope_expansion
+        }
+      : null,
+    latest_quality_critique: previousQualityCritique
+      ? {
+          remediation_strategy: previousQualityCritique.remediation_strategy,
+          quality_focus: previousQualityCritique.quality_focus,
+          preserve_signals: previousQualityCritique.preserve_signals,
+          findings: Array.isArray(previousQualityCritique.findings)
+            ? previousQualityCritique.findings.map((finding) => ({
+                summary: finding.summary,
+                expected_change: finding.expected_change,
+                category: finding.category,
+                severity: finding.severity,
+                axis_id: finding.axis_id,
+                probe_id: finding.probe_id,
+                target_check_ids: finding.target_check_ids
+              }))
+            : []
+        }
+      : null,
+    latest_eval_summary: previousEvalReport
+      ? {
+          release_score: previousEvalReport.release_score,
+          blockers: previousEvalReport.blockers,
+          threshold_gap_details: previousEvalReport.threshold_gap_details,
+          unresolved_check_ids: previousEvalReport.unresolved_check_ids
+        }
+      : null
+  };
+  const remediationBriefPath = await writeArtifact(
+    "generator-remediation-brief.json",
+    JSON.stringify(remediationBrief, null, 2)
+  );
   const prompt = [
     "You are the generator for a closed-loop harness.",
     "Work only inside the target root.",
     "Use the intake brief and the current round packet to decide what to build next.",
     "Prefer the smallest coherent set of changes that moves the product forward.",
+    "When remediation artifacts are present, treat them as load-bearing instructions.",
+    "Do not widen scope beyond the latest patch request unless the controller explicitly reopened contract scope.",
     "",
     "# Product brief",
     ideaMarkdown,
@@ -1296,7 +1475,10 @@ const main = async () => {
     JSON.stringify(config, null, 2),
     "",
     "# Harness packet",
-    JSON.stringify(packet, null, 2)
+    JSON.stringify(packet, null, 2),
+    "",
+    "# Active remediation brief",
+    JSON.stringify(remediationBrief, null, 2)
   ].join("\\n");
 
   const previousSession = await readCodexSession(
@@ -1312,6 +1494,11 @@ const main = async () => {
       sandbox_mode: "workspace-write",
       "sandbox_workspace_write.network_access": false
     },
+    addDirs: [
+      runtimePaths.roundDirectory,
+      dirname(config.idea_path),
+      ...(previousRoundDirectory ? [previousRoundDirectory] : [])
+    ],
     sessionId:
       typeof previousSession?.thread_id === "string" ? previousSession.thread_id : undefined,
     artifactDirectory: runtimePaths.artifactsDirectory,
@@ -1343,8 +1530,10 @@ const main = async () => {
   const stdoutPath = await writeArtifact("apply-change.stdout.log", execution.stdout);
   const stderrPath = await writeArtifact("apply-change.stderr.log", execution.stderr);
   const evidencePaths = [
+    remediationBriefPath,
     stdoutPath,
     stderrPath,
+    relativeToRound(execution.promptPath),
     relativeToRound(execution.eventsPath),
     execution.responseWritten ? relativeToRound(execution.responsePath) : undefined
   ].filter(Boolean);

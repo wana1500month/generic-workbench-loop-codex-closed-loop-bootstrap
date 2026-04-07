@@ -5,6 +5,8 @@
 - The default rubric now includes target-surface-aware release-QA dimensions, and adapters receive `round_contract_path` in their input packet so target-side tooling can read the same scoped contract the controller grades.
 - Bootstrap now turns intake answers into first-run evaluator artifacts, not just runtime config: `rubric.generated.json` and `verification-profile.generated.json` now carry intake-derived release criteria, journey probes, and `quality_contract` axes.
 - Bootstrap-generated verifier scripts now consume harness-owned `core-probe-results.json` and `target-manifest.json`, so generated `run_checks` / `grade_round` score the same release-gate probe results the controller already executed instead of duplicating probe execution.
+- Bootstrap-generated `apply_change` now inlines remediation state from `round-contract.json`, `generator-plan.json`, `patch-request.json`, `quality-critique.json`, and `eval_report.json`, so generator mutation is steered by the latest evaluator surface instead of only path references.
+- Generated evaluator bundles now preserve the selected family bundle as a floor by merging family probes, criteria, and assertion-tag minima with intake-derived overlay probes.
 - Each evaluated round now also persists `quality-critique.json`, so evaluator-side quality findings, preserve signals, and remediation strategy remain first-class controller state alongside `patch-request.json`.
 - The repo now ships an external quality-lane scaffold plus regression coverage, so stricter companion evaluator bundles can be generated and validated without bundling a product surface into this repository.
 

@@ -9,6 +9,7 @@ import {
   ensureBuild,
   importDist,
   readJsonFile,
+  repoRoot,
   runCommand,
   writeJsonFile
 } from "./testing/bootstrap-validator-helpers.mjs";
@@ -162,14 +163,31 @@ const main = async () => {
     const generatedProfile = await readJsonFile(
       fixture.paths.generatedVerificationProfilePath
     );
+    const baseProfile = await readJsonFile(
+      join(repoRoot, "evals", "verification-profiles", "api-service.profile.json")
+    );
     const releaseGateProbes = (generatedProfile.core_probes ?? []).filter(
       (probe) => (probe.role ?? "supporting") === "release_gate"
     );
-    assert(
-      releaseGateProbes.length === 3,
-      "api-service bootstrap fixture should emit exactly three release-gate probes"
+    const overlayReleaseGateProbes = releaseGateProbes.filter((probe) =>
+      String(probe.probe_id).startsWith("profile-aware-verifier-")
     );
-    const failingProbe = releaseGateProbes[releaseGateProbes.length - 1];
+    assert(
+      releaseGateProbes.length >= (baseProfile.core_probes ?? []).filter(
+        (probe) => (probe.role ?? "supporting") === "release_gate"
+      ).length,
+      "generated verifier profile should preserve the api-service release-gate floor"
+    );
+    assert(
+      overlayReleaseGateProbes.length >= 3,
+      "generated verifier profile should append intake-derived api-service overlay probes"
+    );
+    assert(
+      (generatedProfile.minimum_feature_release_assertions ?? 0) >=
+        (baseProfile.minimum_feature_release_assertions ?? 0),
+      "generated verifier profile should not lower the api-service feature assertion floor"
+    );
+    const failingProbe = overlayReleaseGateProbes[overlayReleaseGateProbes.length - 1];
     assert(
       typeof failingProbe.assertion_id === "string" && failingProbe.assertion_id,
       "synthetic failing probe must expose an assertion_id"
@@ -292,8 +310,8 @@ const main = async () => {
       "grade_round should block on the failing probe-backed assertion id"
     );
     assert(
-      typeof gradeRoundResult.score === "number" && gradeRoundResult.score < 0.8,
-      "grade_round should lower release score when release-gate probe pass rate drops"
+      typeof gradeRoundResult.score === "number" && gradeRoundResult.score < 0.95,
+      "grade_round should lower release score when any release-gate probe fails"
     );
     assert(
       Array.isArray(gradeRoundResult.criteria_results) &&

@@ -30,6 +30,7 @@ This repository is the harness core only. It owns idea intake, planning, initial
 - `adapter`: optional external capability provider for target prep, apply, and run
 - `verifier`: optional external proof provider for capture, checks, and grading under a separate trust domain
 - `Codex`: reads run artifacts and continues harness work in-session
+- `bootstrap generator`: now receives an inline remediation brief built from the current round contract, generator plan, latest patch request, latest quality critique, and latest eval threshold gaps so patch-only mutation is no longer prompt-stateless
 
 ## Round contract and dimension floors
 
@@ -95,6 +96,7 @@ This repository is the harness core only. It owns idea intake, planning, initial
 - Require successful `grade_round` evidence to reference upstream `run_checks` or `capture_evidence` proof by capability and by concrete evidence path.
 - Require hard release assertions to be covered by both verifier-owned `verification-witness.assertion_ids` and passing core-owned release-gate probes.
 - Require successful `grade_round` results to publish a `threshold_verdict`, keep `blocking_criterion_ids` aligned with failing criteria, and fail when grading contradicts earlier hard criteria without new grounded proof.
+- Generated evaluator bundles must preserve the selected family bundle as a quality floor. Intake-derived probes and criteria are layered on top of the base family profile rather than replacing its release assertions or assertion-tag minima.
 - Persist verifier command, stdout, stderr, result, and evidence hashes so proof provenance is reviewable after execution.
 - Perform generic content inspection on text, JSON, image, and binary evidence before trusting it.
 - Cap `proof_score` when skeptical proof checks fail so contradictory or weakly grounded proof cannot still look release-ready in summaries.
@@ -312,7 +314,7 @@ The deeper semantic packs now exercise more than surface liveness. API and CRUD 
 
 `validate:score-policy` proves that bundle-owned `score_policy` can change target closure outcomes for the same evidence without changing the controller's generic stop logic.
 
-`validate:quality-lift` proves that a lenient bundle can close low-score evidence, a stricter external quality lane can hold that same evidence open, intake-generated bundles publish richer `quality_contract` axes plus continuity/error-recovery probes, and patch-only remediation persists structured `quality-critique.json` alongside quality-aware patch requests.
+`validate:quality-lift` proves that a lenient bundle can close low-score evidence, a stricter external quality lane can hold that same evidence open, intake-generated bundles publish richer `quality_contract` axes plus continuity/error-recovery probes while preserving the base family floor, and patch-only remediation persists structured `quality-critique.json` alongside quality-aware patch requests.
 
 `validate:bootstrap-profile-aware-verifier` proves that bootstrap-generated `run_checks` and `grade_round` consume the already-executed core probe results, keep capability execution `ok: true` while hard criteria fail, publish `core-probe-summary.json`, and turn failing release-gate assertions into blocking grading criteria.
 

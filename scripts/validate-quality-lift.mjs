@@ -130,13 +130,43 @@ const main = async () => {
       paths
     );
     const generatedProfile = await readJsonFile(paths.generatedVerificationProfilePath);
+    const baseProfile = await readJsonFile(
+      join(repoRoot, "evals", "verification-profiles", "fullstack-app.profile.json")
+    );
     assert(
       Array.isArray(generatedProfile.quality_contract?.quality_axes) &&
         generatedProfile.quality_contract.quality_axes.length >= 4,
       "generated bootstrap profile should publish at least four quality axes"
     );
+    const baseReleaseGateProbeCount = (baseProfile.core_probes ?? []).filter(
+      (probe) => (probe.role ?? "supporting") === "release_gate"
+    ).length;
+    const generatedReleaseGateProbeCount = (generatedProfile.core_probes ?? []).filter(
+      (probe) => (probe.role ?? "supporting") === "release_gate"
+    ).length;
+    assert(
+      generatedReleaseGateProbeCount >= baseReleaseGateProbeCount,
+      "generated bootstrap profile should preserve the base fullstack release-gate floor"
+    );
+    assert(
+      (generatedProfile.criteria ?? []).length >= (baseProfile.criteria ?? []).length,
+      "generated bootstrap profile should preserve the base fullstack criteria floor"
+    );
+    assert(
+      (generatedProfile.minimum_feature_release_assertions ?? 0) >=
+        (baseProfile.minimum_feature_release_assertions ?? 0),
+      "generated bootstrap profile should not lower the base fullstack feature assertion floor"
+    );
+    for (const [tag, requiredCount] of Object.entries(
+      baseProfile.minimum_assertion_tag_counts ?? {}
+    )) {
+      assert(
+        (generatedProfile.minimum_assertion_tag_counts?.[tag] ?? 0) >= requiredCount,
+        `generated bootstrap profile should preserve the base fullstack assertion-tag floor for ${tag}`
+      );
+    }
     const continuityProbe = generatedProfile.core_probes.find(
-      (probe) => probe.quality_axis_id === "state_continuity"
+      (probe) => probe.probe_id === "quality-lift-app-state-continuity"
     );
     assert(
       continuityProbe?.mode === "browser_journey" &&
@@ -145,7 +175,7 @@ const main = async () => {
       "generated bootstrap profile should include a browser continuity probe with reload/value assertions"
     );
     const errorProbe = generatedProfile.core_probes.find(
-      (probe) => probe.quality_axis_id === "error_recovery"
+      (probe) => probe.probe_id === "quality-lift-app-error-recovery"
     );
     assert(
       errorProbe?.steps?.some((step) => step.action === "assert_not_visible"),
