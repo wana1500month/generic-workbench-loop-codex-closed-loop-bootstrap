@@ -24,6 +24,7 @@ const parseArgs = (argv) => {
   let resumeRunPath;
   let allowResumeMigration = false;
   let forceReopenTerminal = false;
+  let executorMode;
   let mode = "loop";
   let maxRounds;
   let targetScore;
@@ -63,6 +64,15 @@ const parseArgs = (argv) => {
       case "--resume-run":
         resumeRunPath = argv[++index];
         break;
+      case "--executor-mode":
+        executorMode = argv[++index];
+        if (
+          executorMode !== "harness" &&
+          executorMode !== "subagents-experimental"
+        ) {
+          throw new Error(`Invalid executor mode: ${executorMode ?? ""}`);
+        }
+        break;
       case "--allow-resume-migration":
         allowResumeMigration = true;
         break;
@@ -95,6 +105,7 @@ const parseArgs = (argv) => {
     resumeRunPath,
     allowResumeMigration,
     forceReopenTerminal,
+    executorMode,
     mode,
     maxRounds,
     targetScore
@@ -112,6 +123,7 @@ const result =
         resumeRunPath: args.resumeRunPath,
         allowResumeMigration: args.allowResumeMigration,
         forceReopenTerminal: args.forceReopenTerminal,
+        executorMode: args.executorMode,
         targetScore: args.targetScore
       })
     : await runClosedLoop({
@@ -122,6 +134,7 @@ const result =
         resumeRunPath: args.resumeRunPath,
         allowResumeMigration: args.allowResumeMigration,
         forceReopenTerminal: args.forceReopenTerminal,
+        executorMode: args.executorMode,
         maxRounds: args.maxRounds,
         targetScore: args.targetScore
       });

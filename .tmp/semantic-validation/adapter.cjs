@@ -647,31 +647,45 @@ const sleep = (milliseconds) => {
 const escapePowerShellLiteral = (value) => value.replace(/'/g, "''");
 
 const launchDetachedServer = (serverScriptPath, stateDirectory, manifestFilePath) => {
-  const command =
-    "Start-Process -FilePath '" +
-    escapePowerShellLiteral(process.execPath) +
-    "' -ArgumentList @('" +
-    escapePowerShellLiteral(serverScriptPath) +
-    "', '" +
-    escapePowerShellLiteral(stateDirectory) +
-    "', '" +
-    escapePowerShellLiteral(manifestFilePath) +
-    "') -WindowStyle Hidden";
+  if (process.platform === "win32") {
+    const command =
+      "Start-Process -FilePath '" +
+      escapePowerShellLiteral(process.execPath) +
+      "' -ArgumentList @('" +
+      escapePowerShellLiteral(serverScriptPath) +
+      "', '" +
+      escapePowerShellLiteral(stateDirectory) +
+      "', '" +
+      escapePowerShellLiteral(manifestFilePath) +
+      "') -WindowStyle Hidden";
 
-  execFileSync(
-    "powershell.exe",
-    [
-      "-NoProfile",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-Command",
-      command
-    ],
-    {
-      stdio: "ignore",
-      windowsHide: true
+    try {
+      execFileSync(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          command
+        ],
+        {
+          stdio: "ignore",
+          windowsHide: true
+        }
+      );
+      return;
+    } catch (error) {
+      // Fall through to the cross-platform detached child launch below.
     }
-  );
+  }
+
+  const child = spawn(process.execPath, [serverScriptPath, stateDirectory, manifestFilePath], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true
+  });
+  child.unref();
 };
 
 const waitForFile = (filePath, timeoutMs) => {
