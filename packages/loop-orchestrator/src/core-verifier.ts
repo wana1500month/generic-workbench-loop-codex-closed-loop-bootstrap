@@ -3,7 +3,6 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
-import { chromium } from "playwright-core";
 
 import { writeJson, writeText } from "./file-system.js";
 import type {
@@ -97,6 +96,11 @@ const classifyProbeFailureSummary = (
   summary: string
 ): ProbeFailureClassification =>
   blockedEnvironmentPattern.test(summary) ? "environment_blocked" : "probe_error";
+
+const loadChromium = async () => {
+  const playwright = await import("playwright-core");
+  return playwright.chromium;
+};
 
 const stringValueForJsonPath = (value: unknown, jsonPath: string): string | undefined => {
   const tokens = jsonPath
@@ -495,6 +499,7 @@ const executeBrowserJourneyProbe = async (input: {
   const tracePath = join(input.probeDirectory, `${input.probe.probe_id}-trace.zip`);
   const evidencePaths: string[] = [];
   const transcript: Array<Record<string, string | number | boolean | undefined>> = [];
+  const chromium = await loadChromium();
 
   const browser = await chromium.launch({
     executablePath: browserExecutable,

@@ -18,6 +18,7 @@ import type {
   QualityFindingCategory,
   QualityFindingSeverity,
   RemediationStrategy,
+  TrajectoryDecisionArtifact,
   RoundArtifacts,
   RoundContractArtifact,
   RoundResultArtifact,
@@ -39,6 +40,7 @@ const remediationRequiredArtifacts = [
   "evaluator-verdict.json",
   "patch-request.json",
   "quality-critique.json",
+  "trajectory-decision.json",
   "round-result.json",
   "eval_report.json",
   "agent_handoff/generator-brief.md",
@@ -77,6 +79,8 @@ export const artifactsForRound = (roundDirectory: string): RoundArtifacts => {
     patch_request_md_path: join(roundDirectory, "patch-request.md"),
     quality_critique_json_path: join(roundDirectory, "quality-critique.json"),
     quality_critique_md_path: join(roundDirectory, "quality-critique.md"),
+    trajectory_decision_json_path: join(roundDirectory, "trajectory-decision.json"),
+    trajectory_decision_md_path: join(roundDirectory, "trajectory-decision.md"),
     round_result_json_path: join(roundDirectory, "round-result.json"),
     eval_report_path: join(roundDirectory, "eval_report.json"),
     failure_lineage_path: join(roundDirectory, "failure-lineage.json"),
@@ -93,6 +97,7 @@ export const buildRoundContractArtifact = (input: {
   negotiationMode: RoundContractArtifact["negotiation_mode"];
   continuationAuthority: RoundContractArtifact["continuation_authority"];
   recontractReason?: RoundContractArtifact["recontract_reason"];
+  trajectory: RoundContractArtifact["trajectory"];
   contract: {
     contract_id: string;
     attempt_kind: RoundContractArtifact["attempt_kind"];
@@ -178,12 +183,15 @@ export const buildRoundContractArtifact = (input: {
   carry_over_context: [
     `Negotiation mode: ${input.negotiationMode}.`,
     `Continuation authority: ${input.continuationAuthority}.`,
+    `Trajectory mode: ${input.trajectory.mode}.`,
+    `Trajectory restart_from: ${input.trajectory.restart_from}.`,
     ...(input.contract.carry_over_patch_ids?.map((patchId) => `Carry patch id: ${patchId}`) ?? []),
     ...(input.contract.carry_over_check_ids?.map((checkId) => `Carry check id: ${checkId}`) ?? []),
     ...input.contract.notes
   ].slice(0, 8),
   carry_over_patch_ids: input.contract.carry_over_patch_ids ?? [],
   carry_over_check_ids: input.contract.carry_over_check_ids ?? [],
+  trajectory: input.trajectory,
   adapter_expectations: [
     "External adapters should expose prepare_target, apply_change, run_target, capture_evidence, run_checks, and grade_round capabilities.",
     "Target-facing adapters should let the harness select a core-owned evaluator profile through the rubric or CLI, rather than shipping target_reached policy inside adapter.json.",
@@ -196,6 +204,7 @@ export const buildGeneratorPlanArtifact = (input: {
   contractArtifact: RoundContractArtifact;
   contractAgreementArtifact: ContractAgreementArtifact;
   previousPatchRequest?: PatchRequestArtifact;
+  trajectory: GeneratorPlanArtifact["trajectory"];
   adapterAttached: boolean;
 }): GeneratorPlanArtifact => {
   const remediationStrategy = input.previousPatchRequest?.remediation_strategy;
@@ -214,22 +223,23 @@ export const buildGeneratorPlanArtifact = (input: {
   implementation_intent:
     input.contractArtifact.negotiation_mode === "patch_only"
       ? input.previousPatchRequest?.must_fix.length
-        ? `Use the ${remediationStrategy ?? "tighten"} remediation strategy. Preserve ${
+        ? `Use the ${remediationStrategy ?? "tighten"} remediation strategy from ${input.trajectory.restart_from}. Preserve ${
             mustPreserve.join("; ") || "the current contract surface"
           }. Close only the carried must-fix items from the latest patch request: ${input.previousPatchRequest.must_fix
             .map((item) => item.expected_change)
             .join(" ")}`
-        : `Close only the carried patch authority: ${input.contractArtifact.carry_over_check_ids.join(", ")}.`
+        : `Close only the carried patch authority from ${input.trajectory.restart_from}: ${input.contractArtifact.carry_over_check_ids.join(", ")}.`
       : input.contractArtifact.attempt_kind === "remediation"
       ? input.previousPatchRequest?.must_fix.length
-        ? `Use the ${remediationStrategy ?? "tighten"} remediation strategy. Preserve ${
+        ? `Use the ${remediationStrategy ?? "tighten"} remediation strategy from ${input.trajectory.restart_from}. Preserve ${
             mustPreserve.join("; ") || "the strongest passing signals"
-          }. Follow the latest patch request and QA feedback with a tight remediation scope: ${input.previousPatchRequest.must_fix
+          }. Follow the latest patch request, trajectory controller, and QA feedback with a tight remediation scope: ${input.previousPatchRequest.must_fix
             .map((item) => item.expected_change)
             .join(" ")}`
-        : `Close carried checks before expanding scope: ${input.contractArtifact.carry_over_check_ids.join(", ")}.`
+        : `Close carried checks before expanding scope from ${input.trajectory.restart_from}: ${input.contractArtifact.carry_over_check_ids.join(", ")}.`
       : "Take one long build attempt against the planner spec, then let evaluator feedback decide whether remediation is needed.",
   ...(remediationStrategy ? { remediation_strategy: remediationStrategy } : {}),
+  trajectory: input.trajectory,
   target_check_ids: unique([
     ...input.contractArtifact.carry_over_check_ids,
     ...input.contractAgreementArtifact.acceptance_checks
@@ -249,11 +259,14 @@ export const buildGeneratorPlanArtifact = (input: {
       input.contractArtifact.negotiation_mode === "patch_only"
         ? "Do not widen scope beyond the latest patch request unless the controller escalates to recontract."
         : input.contractArtifact.attempt_kind === "remediation"
-        ? "Keep remediation narrow: close carried checks and threshold gaps before expanding scope."
+        ? `Keep remediation narrow: close carried checks and threshold gaps before expanding scope. Trajectory mode: ${input.trajectory.mode}.`
         : "Use the initial build attempt to integrate against the planner spec in one long pass.",
       input.contractArtifact.negotiation_mode === "patch_only"
         ? "Treat the latest patch request and QA evidence as the load-bearing continuation surface."
         : "Treat the negotiated contract and agreement as the load-bearing continuation surface.",
+      input.trajectory.mode === "pivot" || input.trajectory.mode === "parallel_pivot"
+        ? `Restart from ${input.trajectory.restart_from}, preserve ${input.trajectory.preserve_signals.join("; ") || "the strongest contract signals"}, and discard ${input.trajectory.discardable_surface.join("; ") || "the stale failing surface"}.`
+        : `Trajectory mode '${input.trajectory.mode}' targets novelty ${input.trajectory.novelty_target.toFixed(2)} while preserving ${input.trajectory.preserve_signals.join("; ") || "the current contract surface"}.`,
       input.adapterAttached
         ? "An external adapter is attached, so adapter capability outputs should be treated as first-class evidence under a core-owned evaluator profile."
         : "No adapter is attached, so only harness-side evidence can be claimed in this attempt.",
@@ -819,6 +832,13 @@ ${input.contractArtifact.continuation_authority}
 
 ${input.contractArtifact.recontract_reason ?? "none"}
 
+## Trajectory
+
+- Mode: ${input.contractArtifact.trajectory.mode}
+- Restart from: ${input.contractArtifact.trajectory.restart_from}
+- Novelty target: ${input.contractArtifact.trajectory.novelty_target.toFixed(2)}
+- Reason: ${input.contractArtifact.trajectory.reason}
+
 ## Objective
 
 ${input.contractArtifact.objective}
@@ -878,6 +898,13 @@ ${input.generatorPlanArtifact.implementation_intent}
 ## Remediation Strategy
 
 ${input.generatorPlanArtifact.remediation_strategy ?? "tighten"}
+
+## Trajectory
+
+- Mode: ${input.generatorPlanArtifact.trajectory.mode}
+- Restart from: ${input.generatorPlanArtifact.trajectory.restart_from}
+- Novelty target: ${input.generatorPlanArtifact.trajectory.novelty_target.toFixed(2)}
+- Reason: ${input.generatorPlanArtifact.trajectory.reason}
 
 ## Target Checks
 
@@ -961,6 +988,14 @@ export const writeRoundEvaluationPlaceholders = async (input: {
       artifacts.quality_critique_md_path,
       "# Quality Critique\n\nPending final evaluation.\n"
     ),
+    writeJson(artifacts.trajectory_decision_json_path, {
+      status: "pending",
+      generated_by: "writeRoundEvaluationPlaceholders"
+    }),
+    writeText(
+      artifacts.trajectory_decision_md_path,
+      "# Trajectory Decision\n\nPending final evaluation.\n"
+    ),
     writeJson(artifacts.round_result_json_path, {
       status: "pending",
       generated_by: "writeRoundEvaluationPlaceholders"
@@ -979,6 +1014,7 @@ export const writeRoundArtifacts = async (input: {
   evaluatorVerdictArtifact: EvaluatorVerdictArtifact;
   patchRequestArtifact: PatchRequestArtifact;
   qualityCritiqueArtifact: QualityCritiqueArtifact;
+  trajectoryDecisionArtifact: TrajectoryDecisionArtifact;
   roundResultArtifact: RoundResultArtifact;
   evalReport: EvalReport;
   failureLineage?: FailureLineage;
@@ -1018,6 +1054,15 @@ export const writeRoundArtifacts = async (input: {
             `- ${finding.finding_id}: ${finding.expected_change} [${finding.category}/${finding.severity}]`
         )
         .join("\n") || "- none"}\n`
+    ),
+    writeJson(artifacts.trajectory_decision_json_path, input.trajectoryDecisionArtifact),
+    writeText(
+      artifacts.trajectory_decision_md_path,
+      `# Trajectory Decision\n\n## Mode\n\n${input.trajectoryDecisionArtifact.mode}\n\n## Restart From\n\n${input.trajectoryDecisionArtifact.restart_from}\n\n## Frontier\n\n- Current head: ${input.trajectoryDecisionArtifact.frontier.current_head}\n- Last stable: ${input.trajectoryDecisionArtifact.frontier.last_stable ?? "none"}\n- Best passing: ${input.trajectoryDecisionArtifact.frontier.best_passing ?? "none"}\n\n## Preserve Signals\n\n${bulletList(
+        input.trajectoryDecisionArtifact.preserve_signals
+      )}\n\n## Discardable Surface\n\n${bulletList(
+        input.trajectoryDecisionArtifact.discardable_surface
+      )}\n\n## Novelty Target\n\n${input.trajectoryDecisionArtifact.novelty_target.toFixed(2)}\n\n## Reason\n\n${input.trajectoryDecisionArtifact.reason}\n\n## Anchor Reason\n\n${input.trajectoryDecisionArtifact.anchor_reason}\n`
     ),
     writeJson(artifacts.round_result_json_path, input.roundResultArtifact),
     writeJson(artifacts.eval_report_path, input.evalReport),

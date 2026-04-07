@@ -1,8 +1,10 @@
 import {
   assertDecisionSource,
   assertFailurePolicySnapshot,
+  assertTrajectoryDecisionSurface,
   assertStopReason,
   extractRunDirectory,
+  readJsonFile,
   readSummary,
   runLoop
 } from "./validation-utils.mjs";
@@ -38,6 +40,11 @@ const cases = [
         expectedTriggerCodes: ["stable_patch_authority"],
         label: "stable patch authority snapshot"
       });
+      await assertTrajectoryDecisionSurface(summary.round_history?.[0], {
+        expectedMode: "refine",
+        expectedRestartFrom: "current_head",
+        label: "stable patch authority trajectory"
+      });
       assertNegotiationMode(
         summary.round_history?.[1],
         "patch_only",
@@ -68,6 +75,11 @@ const cases = [
         expectedRecommendationSource: "weighted_policy",
         expectedTriggerCodes: ["patch_entropy_spike", "stable_patch_authority"],
         label: "patch entropy snapshot"
+      });
+      await assertTrajectoryDecisionSurface(summary.round_history?.[0], {
+        expectedMode: "tighten",
+        expectedRestartFrom: "current_head",
+        label: "patch entropy trajectory"
       });
       assertNegotiationMode(
         summary.round_history?.[1],
@@ -100,6 +112,10 @@ const cases = [
         expectedTriggerCodes: ["release_gate_regression", "stable_patch_authority"],
         label: "release gate regression snapshot"
       });
+      await assertTrajectoryDecisionSurface(summary.round_history?.[1], {
+        expectedMode: "pivot",
+        label: "release gate regression trajectory"
+      });
       assertNegotiationMode(
         summary.round_history?.[2],
         "recontract",
@@ -107,7 +123,7 @@ const cases = [
       );
       assertDecisionSource(
         summary.round_history?.[2],
-        "hard_rule",
+        "trajectory_policy",
         "release gate regression decision source"
       );
     }
@@ -145,14 +161,24 @@ const cases = [
       "4"
     ],
     validate: async (summary) => {
-      const policyRecontractRound = summary.round_history?.find(
-        (roundSummary) =>
-          roundSummary?.decision_source === "policy_snapshot" &&
-          roundSummary.negotiation_mode === "recontract"
-      );
+      let policyRecontractRound;
+      for (const roundSummary of summary.round_history ?? []) {
+        if (
+          roundSummary?.decision_source !== "trajectory_policy" ||
+          roundSummary.negotiation_mode !== "recontract" ||
+          !roundSummary.failure_lineage_path
+        ) {
+          continue;
+        }
+        const failureLineage = await readJsonFile(roundSummary.failure_lineage_path);
+        if (failureLineage.policy_snapshot?.dominant_trigger_code === "plateau_without_progress") {
+          policyRecontractRound = roundSummary;
+          break;
+        }
+      }
       if (!policyRecontractRound) {
         throw new Error(
-          "Expected contradictory fixture to produce a policy-driven recontract round."
+          "Expected contradictory fixture to produce a plateau-driven trajectory recontract round."
         );
       }
       const snapshot = await assertFailurePolicySnapshot(policyRecontractRound, {
@@ -178,11 +204,15 @@ const cases = [
           `Expected policy recontract round to negotiate as 'recontract', received '${policyRecontractRound.negotiation_mode ?? "missing"}'.`
         );
       }
-      if (policyRecontractRound.decision_source !== "policy_snapshot") {
+      if (policyRecontractRound.decision_source !== "trajectory_policy") {
         throw new Error(
-          `Expected policy recontract decision source 'policy_snapshot', received '${policyRecontractRound.decision_source ?? "missing"}'.`
+          `Expected policy recontract decision source 'trajectory_policy', received '${policyRecontractRound.decision_source ?? "missing"}'.`
         );
       }
+      await assertTrajectoryDecisionSurface(policyRecontractRound, {
+        expectedMode: "parallel_pivot",
+        label: "policy plateau trajectory"
+      });
     }
   }
 ];

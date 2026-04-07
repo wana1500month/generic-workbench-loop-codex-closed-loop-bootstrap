@@ -19,6 +19,10 @@ This document defines the V2 file protocol for the harness core. The protocol st
 - `evaluator-verdict.md`
 - `patch-request.json`
 - `patch-request.md`
+- `quality-critique.json`
+- `quality-critique.md`
+- `trajectory-decision.json`
+- `trajectory-decision.md`
 - `round-result.json`
 - `round_summary.json`
 - `eval_report.json`
@@ -45,6 +49,8 @@ When an adapter is attached, skeptical evaluation now also expects criterion-lev
 |---|---|---|---|
 | `round-contract.json` | attempt boundary | core | always authoritative |
 | `patch-request.json` | remediation authority | evaluator/core | default continuation surface |
+| `quality-critique.json` | evaluator-owned quality steering | evaluator/core | explains refine vs tighten vs pivot |
+| `trajectory-decision.json` | controller-owned trajectory policy | controller/core | decides restart anchor and pivot-vs-parallel-pivot execution |
 | `eval_report.json` | evidence and threshold rationale | evaluator/core | load-bearing for reopen decisions |
 | `failure-lineage.json` | persisted failure explanation | evaluator/core | drives recontract, environment, and regression interpretation |
 | `contract-review.json` | negotiation diagnostic | evaluator | omitted in clean patch-only rounds |
@@ -270,6 +276,45 @@ Example:
     "environment_blocked": true,
     "scope_drift_detected": false
   }
+}
+```
+
+## `trajectory-decision.json`
+
+Purpose:
+The controller's explicit continuation policy for the next attempt.
+
+Notes:
+
+- `mode` is the executed policy, not commentary; `pivot` and `parallel_pivot` should reopen through `decision_source = "trajectory_policy"` on the next round
+- `restart_from` names the anchor the next attempt should treat as its baseline: `current_head`, `last_stable`, or `best_passing`
+- `preserve_signals` and `discardable_surface` should be carried into the next generator attempt alongside `patch-request.json` and `quality-critique.json`
+
+Example:
+
+```json
+{
+  "trajectory_id": "generic-harness-core-contract-round-02-trajectory-decision",
+  "contract_id": "generic-harness-core-contract-round-02",
+  "round": 2,
+  "mode": "parallel_pivot",
+  "restart_from": "best_passing",
+  "preserve_signals": [
+    "Keep the repository focused on core harness mechanics."
+  ],
+  "discardable_surface": [
+    "Raise the contract and proof surface until this dimension clears its minimum score."
+  ],
+  "novelty_target": 0.9,
+  "reason": "Score improvement plateaued for consecutive rounds, so the current line should not keep patching the same head.",
+  "decision_source": "failure_policy",
+  "selected_round": 1,
+  "frontier": {
+    "current_head": 2,
+    "last_stable": 1,
+    "best_passing": 1
+  },
+  "anchor_reason": "Restart from round 1, the strongest contract-complete baseline recorded so far."
 }
 ```
 

@@ -26,6 +26,7 @@ This repository is the harness core only. It owns idea intake, planning, initial
 - `generator`: takes a long build attempt against the negotiated attempt contract
 - `evaluator`: reviews the contract before build, then writes the verdict, eval report, and patch request after each build attempt
 - `quality critique`: turns threshold gaps, failed dimensions, and failed release-gate probes into structured quality findings while keeping patch authority carry-forward-safe
+- `trajectory controller`: turns critique, patch, and failure-lineage signals into explicit continuation policy for the next attempt
 - `subjective judge`: optional bootstrap-owned grading path inside generated `grade_round` that scores user-defined quality metrics from captured evidence, fails closed when review evidence is unavailable, and publishes structured metric results
 - `controller`: records the attempt summary and stop reason
 - `adapter`: optional external capability provider for target prep, apply, and run
@@ -38,6 +39,7 @@ This repository is the harness core only. It owns idea intake, planning, initial
 
 - Each executed round now writes `round-###/round-contract.json` and `round-###/round-contract.md` before adapter mutation begins.
 - The round contract names the implementation slice, generator deliverables, evaluator checks, release-gate probe ids, required live verification modes, pivot triggers, and numeric success thresholds.
+- Each evaluated round now also writes `trajectory-decision.json`, which records whether the next attempt should tighten, refine, pivot, or parallel-pivot, plus the restart anchor that should guide that attempt.
 - Evaluator scoring now happens as an end-pass QA step for the whole round rather than through a separate sprint artifact layer.
 - `AdapterCapabilityPacket` now includes `round_contract_path`, so adapter-side tooling can read the same scoped contract the controller is grading.
 - `eval_report.json` now also records `dimension_scores[]` plus `threshold_results.dimension_thresholds_met`.
@@ -69,9 +71,11 @@ This repository is the harness core only. It owns idea intake, planning, initial
 - Treat every build attempt as resumable from files alone.
 - Treat `patch-request.json` as the main continuation request.
 - Treat `quality-critique.json` as the evaluator-owned quality steering surface that explains why the next patch should refine, tighten, or pivot.
+- Treat `trajectory-decision.json` as the controller-owned execution surface that decides whether the next attempt stays on the current head or reopens from a stronger anchor.
 - Treat `patch-request.json.must_fix[].target_check_ids` as the structural continuation key.
 - Use full contract negotiation on the initial build attempt; keep one active contract frame after agreement and default later remediation to patch-only work centered on carried check ids, QA feedback, and `patch-request.json`.
 - Reopen contract negotiation only when no active contract frame exists, the patch request is not actionable, release-gate regressions reopen closed checks, target-manifest requirements stay broken, scope drifts beyond the active contract frame, or the persisted `policy_snapshot` concludes that repeated unresolved signatures or plateaued progress collapsed patch authority.
+- When `trajectory-decision.json` selects `pivot` or `parallel_pivot`, reopen through `decision_source = "trajectory_policy"` even if patch authority is still structurally actionable, and carry the selected restart anchor into the next generator attempt.
 - Normalize raw adapter capability failures into evaluator-known continuation checks before carrying them forward.
 - Validate adapter result schema before trusting adapter-owned success claims.
 - Require verifiable evidence paths for successful `capture_evidence`, `run_checks`, and `grade_round` claims.
@@ -139,6 +143,7 @@ This repository is the harness core only. It owns idea intake, planning, initial
 | `round-contract.json` | load-bearing attempt boundary | core | always authoritative |
 | `patch-request.json` | load-bearing remediation authority | evaluator/core | patch-only rounds continue from this file by default |
 | `quality-critique.json` | evaluator-owned quality steering | evaluator/core | persists structured findings, preserve signals, and remediation strategy |
+| `trajectory-decision.json` | controller-owned trajectory policy | controller/core | persists restart anchor, novelty target, and pivot-vs-refine branch selection |
 | `eval_report.json` | evidence and rationale bundle | evaluator/core | carries proof score, release score, and threshold gaps |
 | `failure-lineage.json` | persisted failure explanation | evaluator/core | carries regressions, unresolved signatures, and environment blockers |
 | `contract-review.json` | negotiation diagnostic | evaluator | omitted in clean patch-only rounds |
@@ -174,6 +179,8 @@ evals/runs/<run-id>/
     patch-request.md
     quality-critique.json
     quality-critique.md
+    trajectory-decision.json
+    trajectory-decision.md
     round-result.json
     round_summary.json
     eval_report.json
@@ -194,9 +201,9 @@ evals/runs/<run-id>/
 
 Each `round-###` directory is now an attempt record: the first is the initial build attempt, and later ones are patch-request-driven remediation attempts unless the controller escalates a round into recontract mode. Run directories are claimed when the controller allocates the next run id, so overlapping launches should create distinct `run-###` folders instead of racing on the same numeric suffix.
 
-Initial build attempts and recontract attempts also write `contract-review.*` and `contract-agreement.*`. Patch-only remediation attempts may omit those two files on disk unless carried checks explicitly require them, and otherwise keep the carried scope centered on `round-contract`, `generator-plan`, `patch-request`, and `eval_report`.
+Initial build attempts and recontract attempts also write `contract-review.*` and `contract-agreement.*`. Patch-only remediation attempts may omit those two files on disk unless carried checks explicitly require them, and otherwise keep the carried scope centered on `round-contract`, `generator-plan`, `patch-request`, `quality-critique`, `trajectory-decision`, and `eval_report`.
 
-`resume-decision.json` appears on resumed invocations and should be treated as the authoritative record of whether the controller continued, reopened a terminal run, or returned as a no-op. `resume-migration.json` appears only when `--allow-resume-migration` is used to override a resume identity mismatch. `failure-lineage.json` is written whenever an eval report exists and should be treated as the authoritative explanation for why the controller stayed in `patch_only`, escalated to `recontract`, or classified a lane as environment-blocked.
+`resume-decision.json` appears on resumed invocations and should be treated as the authoritative record of whether the controller continued, reopened a terminal run, or returned as a no-op. `resume-migration.json` appears only when `--allow-resume-migration` is used to override a resume identity mismatch. `failure-lineage.json` is written whenever an eval report exists and should be treated as the authoritative explanation for why the controller stayed in `patch_only`, escalated to `recontract`, or classified a lane as environment-blocked. `trajectory-decision.json` is written whenever an eval report exists and should be treated as the authoritative explanation of whether the next attempt should keep tightening the current head or reopen from a stronger anchor.
 
 `current_best.json` now points at the terminal selected round for downstream tooling and also records `best_scoring_*` fields when the highest-scoring round happened earlier.
 
@@ -207,16 +214,17 @@ Initial build attempts and recontract attempts also write `contract-review.*` an
 3. Write the full initial-build negotiation surface, including `round-contract`, `contract-review`, `contract-agreement`, and `generator-plan`, before any adapter execution.
 4. If QA reopens the run, let the controller choose between patch-only remediation and recontract. Patch-only remediation is the default when the active contract frame still holds and the patch request is actionable; only rewrite `contract-review` or `contract-agreement` when the controller escalates or carried checks explicitly require those surfaces.
 5. If an adapter is attached and the agreement is valid, execute adapter capabilities in order: prepare, apply, run, capture, check, grade.
-6. Write `evaluator-verdict`, `patch-request`, `round-result`, and attempt handoff files.
+6. Write `evaluator-verdict`, `patch-request`, `quality-critique`, `trajectory-decision`, `round-result`, and attempt handoff files.
 7. Score the attempt as `control_plane_score`, `proof_score`, and `release_score` instead of a single opaque number.
 8. Treat adapter capability failures, malformed result payloads, empty artifacts, weak evidence semantics, missing verification profiles, missing verification providers, contradictory criterion manifests, and weak generic content as release blockers that can force `revise` or `hold`.
 9. Emit `patch-request.next_action = "complete"` only when the current attempt can stop honestly. If target thresholds are still open, carry `target_signal_thresholds_met` forward instead of pretending the run is done.
 10. Let the controller distinguish `contract_completed` from `target_reached` based on rubric thresholds, adapter-backed proof, live verification artifacts, verifier provenance, and evaluator-owned release-gate probe results.
 11. Continue to the next remediation attempt until target, contract completion, plateau, or max rounds. Do not let plateau stop a blocking `revise` with explicit must-fix work.
-12. When the initial build attempt closes structurally but still misses target thresholds, keep revising through the remediation budget instead of forcing a fake terminal success.
-13. If a process stops early, reopen the same run with `--resume-run` and let the controller restore its state from `summary.json`, the latest patch request, the latest eval report, the latest `failure-lineage.json`, and the latest agreed contract frame.
-14. Reject resume attempts that change the run identity unless `--allow-resume-migration` is explicitly present, and persist that override as `resume-migration.json` for later review.
-15. Continue harness work by reading `codex-handoff.md`.
+12. When `trajectory-decision.json` chooses `pivot` or `parallel_pivot`, reopen from the selected anchor instead of treating the next attempt as a linear patch of the current head.
+13. When the initial build attempt closes structurally but still misses target thresholds, keep revising through the remediation budget instead of forcing a fake terminal success.
+14. If a process stops early, reopen the same run with `--resume-run` and let the controller restore its state from `summary.json`, the latest patch request, the latest trajectory decision, the latest eval report, the latest `failure-lineage.json`, and the latest agreed contract frame.
+15. Reject resume attempts that change the run identity unless `--allow-resume-migration` is explicitly present, and persist that override as `resume-migration.json` for later review.
+16. Continue harness work by reading `codex-handoff.md`.
 
 ## Validation commands
 
@@ -365,6 +373,7 @@ For concurrency validation, launch `loop:single` multiple times in parallel and 
 - `round_history[].target_family` and `round_history[].validation_lane`: per-attempt machine-readable bundle semantics for audit, resume migration review, and validator assertions
 - `round_history[].round_stop_reason`: per-attempt machine-readable terminal outcome (`continue`, `target_reached`, `contract_completed`, `environment_blocked`, `adapter_contract_invalid`, or other honest controller stops)
 - `round_history[].decision_source`: whether the controller followed `policy_snapshot`, a hard rule, or default patch authority for that attempt
+- `round_history[].trajectory` and `round_history[].trajectory_decision_path`: the persisted next-lineage choice and its artifact path for each attempt
 - `adapter_contract_sha256`, `evaluator_bundle_sha256`, and `rubric_sha256`: the persisted resume identity for this run
 - `resume_identity_path`: the authoritative run-level identity artifact used for fail-closed resume checks
 - `resume_decision_path`: the authoritative per-resume decision artifact for `continue`, `noop_terminal`, or `reopened_terminal`

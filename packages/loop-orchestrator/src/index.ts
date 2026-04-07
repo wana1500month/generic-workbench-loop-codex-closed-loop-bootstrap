@@ -28,6 +28,8 @@ export type {
   RoundContractArtifact,
   RoundResultArtifact,
   SingleRoundResult,
+  TrajectoryDecisionArtifact,
+  TrajectoryDirective,
   VerificationCoreProbe,
   VerificationCriterion,
   VerificationProfile

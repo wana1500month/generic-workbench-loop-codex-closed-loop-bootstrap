@@ -77,6 +77,7 @@ import {
   restoreRunState,
   scoreDeltasForHistory
 } from "./resume-state.js";
+import { buildTrajectoryDecisionArtifact } from "./trajectory-controller.js";
 import type {
   AdapterCapabilityExecution,
   AdapterCapabilityName,
@@ -93,6 +94,7 @@ import type {
   RoundSummary,
   RuntimeEvent,
   RuntimeEventCode,
+  TrajectoryDecisionArtifact,
   ValidationLane
 } from "./types.js";
 
@@ -326,6 +328,7 @@ const runAdapterCapabilities = async (input: {
   contractAgreementPath?: string;
   generatorPlanPath: string;
   previousPatchRequestPath?: string;
+  previousTrajectoryDecisionPath?: string;
   extraEnv?: Record<string, string>;
 }): Promise<AdapterCapabilityExecution[]> => {
   if (!input.loadedAdapter) {
@@ -360,7 +363,8 @@ const runAdapterCapabilities = async (input: {
           contract_review_path: input.contractReviewPath,
           contract_agreement_path: input.contractAgreementPath,
           generator_plan_path: input.generatorPlanPath,
-          patch_request_path: input.previousPatchRequestPath
+          patch_request_path: input.previousPatchRequestPath,
+          trajectory_decision_path: input.previousTrajectoryDecisionPath
         }
       })
     );
@@ -744,6 +748,10 @@ export const runClosedLoop = async (input: {
   let plateauCount = restoredRun?.plateauCount ?? 0;
   let previousPatchRequestPath: string | undefined =
     restoredRun?.previousPatchRequestPath;
+  let previousTrajectoryDecision: TrajectoryDecisionArtifact | undefined =
+    restoredRun?.previousTrajectoryDecision;
+  let previousTrajectoryDecisionPath: string | undefined =
+    restoredRun?.previousTrajectoryDecisionPath;
   let activeContractFrame: ActiveContractFrame | undefined =
     restoredRun?.activeContractFrame;
   let repeatedUnresolvedCount = restoredRun?.repeatedUnresolvedCount ?? 0;
@@ -802,6 +810,7 @@ export const runClosedLoop = async (input: {
     const lifecycleDecision = decideAttemptLifecycle({
       round,
       previousPatchRequest,
+      previousTrajectoryDecision,
       hasActiveContractFrame: Boolean(activeContractFrame),
       remediationHistory
     });
@@ -814,13 +823,21 @@ export const runClosedLoop = async (input: {
     if (lifecycleDecision.negotiation_mode === "patch_only") {
       directive = {
         ...directive,
-        label: `patch-only repair attempt ${round - 1}`
+        label:
+          lifecycleDecision.trajectory.mode === "refine"
+            ? `patch-only refine attempt ${round - 1}`
+            : `patch-only repair attempt ${round - 1}`
       };
     } else if (lifecycleDecision.negotiation_mode === "recontract") {
       directive = {
         ...directive,
-        label: `recontract attempt ${round - 1}`,
-        objective: `Re-open contract negotiation before continuing the build: ${lifecycleDecision.reason}`
+        label:
+          lifecycleDecision.trajectory.mode === "parallel_pivot"
+            ? `parallel pivot attempt ${round - 1}`
+            : lifecycleDecision.trajectory.mode === "pivot"
+              ? `pivot attempt ${round - 1}`
+              : `recontract attempt ${round - 1}`,
+        objective: `Re-open contract negotiation before continuing the build from ${lifecycleDecision.trajectory.restart_from}: ${lifecycleDecision.reason}`
       };
     }
     const artifacts = artifactsForRound(roundDirectory);
@@ -845,6 +862,7 @@ export const runClosedLoop = async (input: {
       negotiationMode: lifecycleDecision.negotiation_mode,
       continuationAuthority: lifecycleDecision.continuation_authority,
       recontractReason: lifecycleDecision.recontract_reason,
+      trajectory: lifecycleDecision.trajectory,
       contract,
       rubric: hydratedRubric,
       loadedAdapter,
@@ -897,6 +915,7 @@ export const runClosedLoop = async (input: {
       contractArtifact,
       contractAgreementArtifact,
       previousPatchRequest,
+      trajectory: lifecycleDecision.trajectory,
       adapterAttached: Boolean(loadedAdapter)
     });
     const generatorPlanEnhancement = await enhanceGeneratorPlanWithCodex({
@@ -972,7 +991,8 @@ export const runClosedLoop = async (input: {
               ? artifacts.contract_agreement_json_path
               : undefined,
             generatorPlanPath: artifacts.generator_plan_json_path,
-            previousPatchRequestPath
+            previousPatchRequestPath,
+            previousTrajectoryDecisionPath
           })
         : [];
     const targetManifest = preVerificationExecutions.find(
@@ -1014,6 +1034,7 @@ export const runClosedLoop = async (input: {
               : undefined,
             generatorPlanPath: artifacts.generator_plan_json_path,
             previousPatchRequestPath,
+            previousTrajectoryDecisionPath,
             extraEnv: {
               HARNESS_CORE_PROBE_RESULTS_PATH: coreProbeResultsPath,
               HARNESS_TARGET_MANIFEST_PATH: targetManifestPath,
@@ -1152,6 +1173,22 @@ export const runClosedLoop = async (input: {
       staticContractBlockers: contractReviewArtifact.static_blockers,
       failureLineage
     });
+    const trajectoryDecisionArtifact = buildTrajectoryDecisionArtifact({
+      round,
+      contractId: contractArtifact.contract_id,
+      history,
+      currentRound: {
+        round,
+        total_score: evalReport.total_score,
+        release_score: evalReport.release_score,
+        overall_verdict: evalReport.overall_verdict,
+        previous_patch_request_resolved: previousPatchRequestResolved,
+        threshold_results: evalReport.threshold_results
+      },
+      patchRequest: patchRequestArtifact,
+      qualityCritique: qualityCritiqueArtifact,
+      failureLineage
+    });
     const roundResultArtifact = buildRoundResultArtifact({
       roundDirectory,
       round,
@@ -1171,6 +1208,7 @@ export const runClosedLoop = async (input: {
       evaluatorVerdictArtifact,
       patchRequestArtifact,
       qualityCritiqueArtifact,
+      trajectoryDecisionArtifact,
       roundResultArtifact,
       evalReport,
       failureLineage
@@ -1202,6 +1240,7 @@ export const runClosedLoop = async (input: {
         : {}),
       label: directive?.label ?? `round ${round}`,
       controller_reason: lifecycleDecision.reason,
+      trajectory: trajectoryDecisionArtifact,
       objective: contractArtifact.objective,
       ...(resolvedTargetFamily ? { target_family: resolvedTargetFamily } : {}),
       ...(resolvedValidationLane
@@ -1224,6 +1263,7 @@ export const runClosedLoop = async (input: {
       evaluator_verdict_path: artifacts.evaluator_verdict_json_path,
       patch_request_path: artifacts.patch_request_json_path,
       quality_critique_path: artifacts.quality_critique_json_path,
+      trajectory_decision_path: artifacts.trajectory_decision_json_path,
       eval_report_path: artifacts.eval_report_path,
       failure_lineage_path: artifacts.failure_lineage_path,
       planner_context_path: artifacts.planner_context_path,
@@ -1297,6 +1337,7 @@ export const runClosedLoop = async (input: {
       evalReport,
       patchRequest: patchRequestArtifact,
       qualityCritique: qualityCritiqueArtifact,
+      trajectoryDecision: trajectoryDecisionArtifact,
       failureLineage,
       executorMode,
       targetFamily: resolvedTargetFamily,
@@ -1309,6 +1350,8 @@ export const runClosedLoop = async (input: {
 
     previousPatchRequest = patchRequestArtifact;
     previousPatchRequestPath = artifacts.patch_request_json_path;
+    previousTrajectoryDecision = trajectoryDecisionArtifact;
+    previousTrajectoryDecisionPath = artifacts.trajectory_decision_json_path;
     previousRoundSummary = roundSummary;
 
     if (stopReason) {

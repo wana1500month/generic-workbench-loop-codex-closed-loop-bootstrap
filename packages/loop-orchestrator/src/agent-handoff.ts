@@ -11,6 +11,7 @@ import type {
   LoopScenario,
   PatchRequestArtifact,
   QualityCritiqueArtifact,
+  TrajectoryDecisionArtifact,
   RoundArtifacts
 } from "./types.js";
 import { writeText } from "./file-system.js";
@@ -90,6 +91,7 @@ export const writeRoundHandoff = async (input: {
   evalReport: EvalReport;
   patchRequest: PatchRequestArtifact;
   qualityCritique: QualityCritiqueArtifact;
+  trajectoryDecision: TrajectoryDecisionArtifact;
   failureLineage?: FailureLineage;
   executorMode?: LoopRunSummary["executor_mode"];
   targetFamily?: LoopRunSummary["target_family"];
@@ -126,6 +128,7 @@ ${input.scenario.description}
 - Validation lane: ${input.validationLane ?? "none"}
 - Decision source: ${input.decisionSource ?? "none"}
 - Quality critique: ${artifacts.quality_critique_json_path}
+- Trajectory decision: ${artifacts.trajectory_decision_json_path}
 - Round contract: ${artifacts.contract_json_path}
 - Control-plane score: ${input.evalReport.control_plane_score.toFixed(3)}
 - Proof score: ${input.evalReport.proof_score.toFixed(3)}
@@ -149,6 +152,8 @@ ${bulletList(input.contractAgreement.generator_must_deliver)}
 - Target-eligible: ${input.evalReport.threshold_results.target_reached_eligible ? "yes" : "no"}
 - Dimension thresholds met: ${input.evalReport.threshold_results.dimension_thresholds_met ? "yes" : "no"}
 - Remediation strategy: ${input.patchRequest.remediation_strategy ?? input.qualityCritique.remediation_strategy}
+- Trajectory mode: ${input.trajectoryDecision.mode}
+- Restart from: ${input.trajectoryDecision.restart_from}
 - Quality critique: ${artifacts.quality_critique_json_path}
 
 ## Immediate patch request
@@ -162,6 +167,14 @@ ${bulletList(input.patchRequest.must_preserve)}
 ## Quality Focus
 
 ${bulletList(input.qualityCritique.quality_focus)}
+
+## Trajectory
+
+- Mode: ${input.trajectoryDecision.mode}
+- Restart from: ${input.trajectoryDecision.restart_from}
+- Novelty target: ${input.trajectoryDecision.novelty_target.toFixed(2)}
+- Reason: ${input.trajectoryDecision.reason}
+- Discardable surface: ${input.trajectoryDecision.discardable_surface.join("; ") || "none"}
 
 ## Bundle semantics
 
@@ -216,6 +229,13 @@ ${bulletList(
         )
       )}
 
+## Trajectory
+
+- Mode: ${input.trajectoryDecision.mode}
+- Restart from: ${input.trajectoryDecision.restart_from}
+- Selected round: ${input.trajectoryDecision.selected_round ?? "current_head"}
+- Frontier: current=${input.trajectoryDecision.frontier.current_head}, last_stable=${input.trajectoryDecision.frontier.last_stable ?? "none"}, best_passing=${input.trajectoryDecision.frontier.best_passing ?? "none"}
+
 ## Failure Lineage
 
 - Classification: ${input.failureLineage?.failure_classification ?? "none"}
@@ -245,6 +265,9 @@ ${bulletList(input.contractReview.concerns)}
 - Target eligible: ${input.evalReport.threshold_results.target_reached_eligible ? "yes" : "no"}
 - Dimension thresholds met: ${input.evalReport.threshold_results.dimension_thresholds_met ? "yes" : "no"}
 - Remediation strategy: ${input.patchRequest.remediation_strategy ?? input.qualityCritique.remediation_strategy}
+- Trajectory mode: ${input.trajectoryDecision.mode}
+- Restart from: ${input.trajectoryDecision.restart_from}
+- Trajectory decision: ${artifacts.trajectory_decision_json_path}
 - Round contract: ${artifacts.contract_json_path}
 - Quality critique: ${artifacts.quality_critique_json_path}
 - Failure classification: ${input.failureLineage?.failure_classification ?? "none"}
@@ -277,6 +300,8 @@ export const writeRunControllerSummary = async (input: {
   summary: LoopRunSummary;
 }): Promise<string> => {
   const path = join(input.runDirectory, "controller-summary.md");
+  const latestRound =
+    input.summary.round_history?.[input.summary.round_history.length - 1];
   await writeText(
     path,
       `# Controller Summary
@@ -291,6 +316,8 @@ export const writeRunControllerSummary = async (input: {
 - Stop reason: ${input.summary.stop_reason ?? "none"}
 - Terminal attempt: ${input.summary.terminal_round ?? "none"}
 - Best-scoring attempt: ${input.summary.best_round ?? "none"}
+- Terminal trajectory: ${latestRound?.trajectory.mode ?? "none"}
+- Terminal restart_from: ${latestRound?.trajectory.restart_from ?? "none"}
 - Terminal control-plane score: ${input.summary.control_plane_score.toFixed(3)}
 - Terminal proof score: ${input.summary.proof_score.toFixed(3)}
 - Terminal release score: ${input.summary.release_score.toFixed(3)}

@@ -1,6 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
+const { execFileSync, spawn } = require("node:child_process");
 const mode = process.argv[2] || "truth";
 const capability = process.env.HARNESS_CAPABILITY;
 const inputPath = process.env.HARNESS_INPUT_PATH;
@@ -644,6 +644,36 @@ const sleep = (milliseconds) => {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 };
 
+const escapePowerShellLiteral = (value) => value.replace(/'/g, "''");
+
+const launchDetachedServer = (serverScriptPath, stateDirectory, manifestFilePath) => {
+  const command =
+    "Start-Process -FilePath '" +
+    escapePowerShellLiteral(process.execPath) +
+    "' -ArgumentList @('" +
+    escapePowerShellLiteral(serverScriptPath) +
+    "', '" +
+    escapePowerShellLiteral(stateDirectory) +
+    "', '" +
+    escapePowerShellLiteral(manifestFilePath) +
+    "') -WindowStyle Hidden";
+
+  execFileSync(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      command
+    ],
+    {
+      stdio: "ignore",
+      windowsHide: true
+    }
+  );
+};
+
 const waitForFile = (filePath, timeoutMs) => {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -882,12 +912,7 @@ if (capability === "run_target" && !isLying) {
     fs.unlinkSync(targetManifestPath);
   }
   const serverScriptPath = path.join(__dirname, "target-server.cjs");
-  const child = spawn(process.execPath, [serverScriptPath, targetStateDir, targetManifestPath], {
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true
-  });
-  child.unref();
+  launchDetachedServer(serverScriptPath, targetStateDir, targetManifestPath);
   targetManifest = JSON.parse(waitForFile(targetManifestPath, 5000));
   if (isHiddenAppUrl) {
     delete targetManifest.app_url;

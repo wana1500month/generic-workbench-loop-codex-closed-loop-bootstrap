@@ -67,7 +67,8 @@ export type LifecycleDecisionSource =
   | "no_actionable_patch_ids"
   | "hard_rule"
   | "policy_snapshot"
-  | "default_patch_authority";
+  | "default_patch_authority"
+  | "trajectory_policy";
 
 export type AdapterCapabilityName =
   | "prepare_target"
@@ -99,6 +100,19 @@ export type QualityFindingCategory =
   | "proof_signal"
   | "subjective_quality";
 export type RemediationStrategy = "tighten" | "refine" | "pivot";
+export type TrajectoryMode =
+  | "tighten"
+  | "refine"
+  | "pivot"
+  | "parallel_pivot";
+export type TrajectoryRestartFrom =
+  | "current_head"
+  | "last_stable"
+  | "best_passing";
+export type TrajectoryDecisionSource =
+  | "quality_critique"
+  | "failure_policy"
+  | "terminal_complete";
 
 export type LiveVerificationMode = "browser" | "api" | "db" | "shell";
 export type CoreVerificationProbeMode =
@@ -250,6 +264,7 @@ export interface AttemptLifecycleDecision {
   decision_source: LifecycleDecisionSource;
   reason: string;
   recontract_reason?: RecontractReason;
+  trajectory: TrajectoryDirective;
 }
 
 export interface FailureLineage {
@@ -471,6 +486,7 @@ export interface AdapterCapabilityPacket {
   contract_agreement_path?: string;
   generator_plan_path: string;
   patch_request_path?: string;
+  trajectory_decision_path?: string;
   eval_report_path?: string;
 }
 
@@ -682,6 +698,15 @@ export interface QualityFinding {
   axis_id?: string;
 }
 
+export interface TrajectoryDirective {
+  mode: TrajectoryMode;
+  restart_from: TrajectoryRestartFrom;
+  preserve_signals: string[];
+  discardable_surface: string[];
+  novelty_target: number;
+  reason: string;
+}
+
 export interface QualityCritiqueArtifact {
   critique_id: string;
   contract_id: string;
@@ -691,6 +716,20 @@ export interface QualityCritiqueArtifact {
   preserve_signals: string[];
   findings: QualityFinding[];
   notes: string[];
+}
+
+export interface TrajectoryDecisionArtifact extends TrajectoryDirective {
+  trajectory_id: string;
+  contract_id: string;
+  round: number;
+  decision_source: TrajectoryDecisionSource;
+  selected_round?: number;
+  frontier: {
+    current_head: number;
+    last_stable?: number;
+    best_passing?: number;
+  };
+  anchor_reason: string;
 }
 
 export interface RoundArtifacts {
@@ -709,6 +748,8 @@ export interface RoundArtifacts {
   patch_request_md_path: string;
   quality_critique_json_path: string;
   quality_critique_md_path: string;
+  trajectory_decision_json_path: string;
+  trajectory_decision_md_path: string;
   round_result_json_path: string;
   eval_report_path: string;
   failure_lineage_path: string;
@@ -746,6 +787,7 @@ export interface RoundContractArtifact {
   carry_over_context: string[];
   carry_over_patch_ids: string[];
   carry_over_check_ids: string[];
+  trajectory: TrajectoryDirective;
   adapter_expectations: string[];
 }
 
@@ -787,6 +829,7 @@ export interface GeneratorPlanArtifact {
   generator_plan_id: string;
   implementation_intent: string;
   remediation_strategy?: RemediationStrategy;
+  trajectory: TrajectoryDirective;
   target_check_ids: string[];
   quality_focus?: string[];
   must_preserve?: string[];
@@ -864,6 +907,7 @@ export interface RoundSummary {
   recontract_reason?: RecontractReason;
   label: string;
   controller_reason: string;
+  trajectory: TrajectoryDirective;
   objective: string;
   target_family?: TargetFamily;
   validation_lane?: ValidationLane;
@@ -881,6 +925,7 @@ export interface RoundSummary {
   evaluator_verdict_path: string;
   patch_request_path: string;
   quality_critique_path?: string;
+  trajectory_decision_path: string;
   eval_report_path: string;
   failure_lineage_path?: string;
   planner_context_path: string;

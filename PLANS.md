@@ -244,6 +244,8 @@ Reshape:
 - `recontract` should also open on richer evidence-based triggers such as release-gate regression, manifest-contract breakage, or scope drift rather than only on bare plateau counters.
 - The controller should persist those reopen signals in `failure-lineage.json` so later resume, handoff, and review surfaces can explain why a round stayed patch-only or escalated to recontract.
 - The controller should also persist `decision_source` alongside those signals so reviewers can distinguish weighted-policy decisions from hard rules or explicit legacy overrides.
+- The controller should also persist `trajectory-decision.json` and promote `tighten`, `refine`, `pivot`, and `parallel_pivot` into explicit continuation policy rather than leaving pivot as critique-only metadata.
+- `pivot` and `parallel_pivot` should reopen through `decision_source = "trajectory_policy"` and carry restart anchors such as `current_head`, `last_stable`, or `best_passing` into the next generator attempt.
 - Remediation attempts stay patch-request-led and may advertise a lighter required-artifact surface than the first build attempt.
 - Required target-closure probes must include assertion-based `release_gate` probes using `http_json` or `browser_journey` rather than relying only on target-root markers, `http` liveness checks, or `shell_command` diagnostics.
 - `target_reached` policy ownership should live in the evaluator bundle, not in adapter.json.

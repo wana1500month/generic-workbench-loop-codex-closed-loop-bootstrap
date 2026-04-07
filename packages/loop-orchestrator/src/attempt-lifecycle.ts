@@ -6,8 +6,10 @@ import type {
   RoundContractArtifact,
   ContractAgreementArtifact,
   FailureLineageTriggerCode,
-  RecontractReason
+  RecontractReason,
+  TrajectoryDecisionArtifact
 } from "./types.js";
+import { fallbackTrajectoryDirective } from "./trajectory-controller.js";
 
 const unique = <T>(values: readonly T[]): T[] => [...new Set(values)];
 
@@ -61,9 +63,17 @@ export const unresolvedSignatureFor = (
 export const decideAttemptLifecycle = (input: {
   round: number;
   previousPatchRequest?: PatchRequestArtifact;
+  previousTrajectoryDecision?: TrajectoryDecisionArtifact;
   hasActiveContractFrame: boolean;
   remediationHistory?: RemediationHistory;
 }): AttemptLifecycleDecision => {
+  const trajectory =
+    input.previousTrajectoryDecision ??
+    fallbackTrajectoryDirective({
+      previousPatchRequest: input.previousPatchRequest,
+      remediationHistory: input.remediationHistory
+    });
+
   if (input.round === 1) {
     return {
       negotiation_mode: "full_negotiation",
@@ -72,7 +82,8 @@ export const decideAttemptLifecycle = (input: {
       persist_contract_agreement: true,
       reopen_contract: true,
       decision_source: "initial_round",
-      reason: "Round 1 establishes the active contract frame through full negotiation."
+      reason: "Round 1 establishes the active contract frame through full negotiation.",
+      trajectory
     };
   }
 
@@ -85,7 +96,8 @@ export const decideAttemptLifecycle = (input: {
       reopen_contract: true,
       decision_source: "missing_active_contract_frame",
       reason: "No active contract frame is locked, so remediation cannot stay patch-only yet.",
-      recontract_reason: "missing_active_contract_frame"
+      recontract_reason: "missing_active_contract_frame",
+      trajectory
     };
   }
 
@@ -99,7 +111,25 @@ export const decideAttemptLifecycle = (input: {
       reopen_contract: true,
       decision_source: "no_actionable_patch_ids",
       reason: "The previous patch request has no actionable target_check_ids to drive patch-only repair.",
-      recontract_reason: "no_actionable_patch_ids"
+      recontract_reason: "no_actionable_patch_ids",
+      trajectory
+    };
+  }
+
+  if (trajectory.mode === "pivot" || trajectory.mode === "parallel_pivot") {
+    return {
+      negotiation_mode: "recontract",
+      continuation_authority: "planner_contract",
+      persist_contract_review: true,
+      persist_contract_agreement: true,
+      reopen_contract: true,
+      decision_source: "trajectory_policy",
+      reason: `Trajectory controller selected ${trajectory.mode} from ${trajectory.restart_from}. ${trajectory.reason}`,
+      recontract_reason: recontractReasonForTrigger(
+        input.remediationHistory?.policy_snapshot?.dominant_trigger_code,
+        input.remediationHistory
+      ),
+      trajectory
     };
   }
 
@@ -113,7 +143,8 @@ export const decideAttemptLifecycle = (input: {
       decision_source: "hard_rule",
       reason:
         `Release-gate target manifest keys are still missing: ${input.remediationHistory?.target_manifest_keys_missing.join(", ")}.`,
-      recontract_reason: "manifest_contract_broken"
+      recontract_reason: "manifest_contract_broken",
+      trajectory
     };
   }
 
@@ -126,7 +157,8 @@ export const decideAttemptLifecycle = (input: {
       reopen_contract: true,
       decision_source: "hard_rule",
       reason: `Release-gate regression reopened the contract boundary: ${input.remediationHistory?.regression_check_ids.join(", ")}.`,
-      recontract_reason: "release_gate_regression"
+      recontract_reason: "release_gate_regression",
+      trajectory
     };
   }
 
@@ -140,7 +172,8 @@ export const decideAttemptLifecycle = (input: {
       decision_source: "hard_rule",
       reason:
         "The latest patch request widened scope beyond the active contract frame, so remediation should re-contract before continuing.",
-      recontract_reason: "scope_drift"
+      recontract_reason: "scope_drift",
+      trajectory
     };
   }
 
@@ -163,7 +196,8 @@ export const decideAttemptLifecycle = (input: {
       recontract_reason: recontractReasonForTrigger(
         dominantTrigger,
         input.remediationHistory
-      )
+      ),
+      trajectory
     };
   }
 
@@ -177,7 +211,8 @@ export const decideAttemptLifecycle = (input: {
       ? "policy_snapshot"
       : "default_patch_authority",
     reason:
-      "An active contract frame exists and the latest patch request has actionable check ids, so remediation stays patch-only."
+      "An active contract frame exists and the latest patch request has actionable check ids, so remediation stays patch-only.",
+    trajectory
   };
 };
 

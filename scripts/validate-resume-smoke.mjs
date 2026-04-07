@@ -10,6 +10,7 @@ import {
   assertRuntimeWarningMissing,
   assertStopReason,
   assertTargetFamily,
+  assertTrajectoryDecisionSurface,
   assertValidationLane,
   extractRunDirectory,
   readJsonFile,
@@ -424,12 +425,12 @@ assertDecisionSource(
 );
 const weightedRecontractRound = policySummary.round_history?.find(
   (roundSummary) =>
-    roundSummary?.decision_source === "policy_snapshot" &&
+    roundSummary?.decision_source === "trajectory_policy" &&
     roundSummary.negotiation_mode === "recontract"
 );
 if (!weightedRecontractRound) {
   throw new Error(
-    "Expected weighted-policy resume run to record a policy-driven recontract decision."
+    "Expected weighted-policy resume run to record a trajectory-driven recontract decision."
   );
 }
 if (weightedRecontractRound.negotiation_mode !== "recontract") {
@@ -455,6 +456,13 @@ await assertFailurePolicySnapshot(weightedRecontractRound, {
   ],
   label: "weighted-policy recontract snapshot"
 });
+await assertTrajectoryDecisionSurface(
+  policySummary.round_history?.[(weightedRecontractRound.round ?? 1) - 2],
+  {
+    expectedMode: "parallel_pivot",
+    label: "weighted-policy recontract trajectory"
+  }
+);
 const weightedRecontractSnapshot = await readJsonFile(
   weightedRecontractRound.failure_lineage_path
 );

@@ -11,11 +11,13 @@
 - Runtime profile loading now preserves `quality_contract`, per-criterion and per-probe `quality_axis_id`, and generated `subjective_metrics`, so intake-authored quality metadata survives into grading, critique, and patch requests.
 - Bootstrap-generated `grade_round` now supports user-defined subjective metrics with minimum `x/10` thresholds, fail-closed scoring, and structured `subjective_metric_results` linked through `subjective-quality-review.json`.
 - Each evaluated round now also persists `quality-critique.json`, so evaluator-side quality findings, preserve signals, and remediation strategy remain first-class controller state alongside `patch-request.json`.
+- Each evaluated round now also persists `trajectory-decision.json`, and the controller now turns `tighten` / `refine` / `pivot` / `parallel_pivot` into explicit continuation policy instead of leaving `pivot` as metadata only.
+- `pivot` and `parallel_pivot` now reopen the next attempt through `decision_source = "trajectory_policy"`, and generator/remediation prompts now receive restart anchors (`current_head`, `last_stable`, `best_passing`) plus preserve/discard signals as first-class input.
 - The repo now ships an external quality-lane scaffold plus regression coverage, so stricter companion evaluator bundles can be generated and validated without bundling a product surface into this repository.
 
 ## Current phase
 
-- Date: 2026-04-07
+- Date: 2026-04-08
 - Phase: harness-controlled quality-lift mainline
 - Bundled adapter: none
 - Latest required validations: `npm run build`, `npm run validate:lifecycle-api`, `npm run validate:family-browser-semantic`, `npm run validate:family-fullstack-semantic`, `npm run validate:failure-policy`, `npm run validate:score-policy`, `npm run validate:quality-lift`, `npm run validate:bootstrap-generator-fail-closed`, `npm run validate:bootstrap-evidence-integrity`, `npm run validate:bootstrap-deep-intake`, `npm run validate:bootstrap-custom-quality-metrics`, `npm run validate:bootstrap-profile-aware-verifier`, `npm run validate:codex-profile-wiring`, `npm run validate:end-pass-qa`, `npm run validate:codex-executor-mode`, `npm run validate:resume-smoke`, `npm run validate:reference-adapter:check`, `npm run validate:reference-adapter:canonical`, `npm run validate:reference-adapter:canonical:patch-only`, `npm run validate:reference-adapter:canonical:recontract`, `npm run validate:reference-adapter:canonical:crud`, `npm run validate:reference-adapter:canonical:crud:patch-only`, `npm run validate:reference-adapter:canonical:crud:recontract`, `npm run validate:reference-adapter:canonical:chat`, `npm run validate:reference-adapter:canonical:chat:patch-only`, `npm run validate:reference-adapter:canonical:chat:recontract`, `npm run validate:codex-auth-preflight`, trusted self-hosted CI `npm run validate:codex:real-smoke:strict`
@@ -32,6 +34,7 @@
 - The planner now emits one long-build strategy plus remediation policy instead of a fixed multi-round playbook
 - Remediation attempts now advertise patch-request-driven carry-forward work instead of pretending each attempt restarts from a fresh micro-decomposition
 - The controller now keeps an active contract frame, chooses `full_negotiation`, `patch_only`, or `recontract` per round, and defaults post-build remediation to patch-only carry-forward work
+- The controller now also persists `trajectory-decision.json` per round and promotes `pivot` from critique metadata into an executed recontract branch with restart guidance
 - Round contracts now distinguish `initial_build` from `remediation`, and remediation attempts carry a lighter required-artifact surface than the first build pass
 - Clean remediation attempts now omit `contract-review.*` and `contract-agreement.*` on disk unless negotiation blocks and those files are needed diagnostically
 - V2 round protocol artifacts:
@@ -142,6 +145,7 @@
 - `reference-adapter:install-ci` now installs a strict harness validation workflow into an external companion repository so real adapter repos can run the same validator in their own CI
 - `reference-adapter:install-ci` now derives the harness repository and branch from the current git checkout by default, with `--harness-repo` and `--harness-ref` reserved for explicit overrides
 - `quality-critique.json` now records structured evaluator findings even when only threshold gaps remain, while `patch-request.json.must_fix` only promotes carry-forward-safe targets so patch-only remediation does not false-escalate into scope drift or recontract
+- `trajectory-decision.json` now records the controller's next-lineage choice, frontier anchors, and novelty target so resume and Codex handoff can reopen from more than the current head
 - `reference-adapter:scaffold-quality-lane` now generates stricter companion evaluator bundles by tightening only the release assertions that the source bundle actually configures, and `validate:quality-lift` locks that behavior against baseline lenient bundles and intake-generated bundles
 
 ## What was removed
@@ -165,6 +169,7 @@
 - Remediation attempts are now patch-request-led semantically, and the runtime drops clean review/agreement rewrites, but the control plane still preserves generator-plan compatibility artifacts because the harness is optimized for resumable file handoff.
 - Fresh-process resume smoke now exists, terminal-success resume defaults to no-op closure, and multiple canonical external companion adapters are available, but no real independently evolving external production companion repo is attached by default.
 - Resume identity migration is explicit and reviewable now, and failure-lineage now persists a controller policy snapshot, but recontract escalation is still a rule-driven policy rather than a learned one.
+- Trajectory control now exists at the control-plane level, but `parallel_pivot` is still a single-lineage policy artifact here; the harness does not yet create challenger worktrees or multi-branch execution on its own.
 - Browser/fullstack/controller semantics are now deterministic in semantic lanes and have a standard preflight environment package, but live realism still depends on running inside that browser-ready host or CI environment.
 - Editor/dashboard now have parity preflight artifacts, but live realism still depends on the same class of browser-ready host or CI environment.
 - Score policy is now directly testable, but bundle depth is still shallow compared with a real target-family QA stack.
@@ -174,4 +179,4 @@
 
 1. Attach a real production companion adapter beyond the canonical scaffold so deep intake, subjective metrics, and the stricter external quality lane can be exercised on a non-synthetic target.
 2. Add benchmark and component-ablation reporting so planner, critique, subjective grading, and external-quality-lane lift are measurable per change.
-3. Deepen target-family acceptance packs and generated probe synthesis so intake hints produce richer multi-step journeys instead of mostly baseline persistence and error-path semantics.
+3. Add frontier memory beyond best score, especially `best_novel`, so trajectory control can revive qualitatively stronger earlier candidates instead of only stable or passing anchors.

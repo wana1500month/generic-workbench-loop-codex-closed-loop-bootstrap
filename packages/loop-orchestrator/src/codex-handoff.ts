@@ -39,6 +39,8 @@ Continue work on the harness itself. This repository does not ship a bundled ada
 - Resume identity: ${rel(input.summary.resume_identity_path)}
 - Terminal attempt: ${input.summary.terminal_round ?? "unknown"}
 - Best-scoring attempt: ${input.summary.best_round ?? "unknown"}
+- Latest trajectory mode: ${latestRound?.trajectory.mode ?? "none"}
+- Latest trajectory restart_from: ${latestRound?.trajectory.restart_from ?? "none"}
 - Terminal control-plane score: ${input.summary.control_plane_score.toFixed(3)}
 - Terminal proof score: ${input.summary.proof_score.toFixed(3)}
 - Terminal release score: ${input.summary.release_score.toFixed(3)}
@@ -60,6 +62,7 @@ Continue work on the harness itself. This repository does not ship a bundled ada
 - Latest generator plan: ${rel(latestRound?.generator_plan_path)}
 - Latest evaluator verdict: ${rel(latestRound?.evaluator_verdict_path)}
 - Latest patch request: ${rel(latestRound?.patch_request_path)}
+- Latest trajectory decision: ${rel(latestRound?.trajectory_decision_path)}
 - Latest eval report: ${rel(latestRound?.eval_report_path)}
 - Latest QA review: ${rel(latestRound?.qa_review_path)}
 

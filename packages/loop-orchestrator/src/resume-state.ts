@@ -24,7 +24,8 @@ import type {
   RemediationHistory,
   RoundContractArtifact,
   RoundSummary,
-  ContractAgreementArtifact
+  ContractAgreementArtifact,
+  TrajectoryDecisionArtifact
 } from "./types.js";
 
 export interface RestoredRunState {
@@ -39,6 +40,8 @@ export interface RestoredRunState {
   plannerBriefPath: string;
   previousPatchRequest?: PatchRequestArtifact;
   previousPatchRequestPath?: string;
+  previousTrajectoryDecision?: TrajectoryDecisionArtifact;
+  previousTrajectoryDecisionPath?: string;
   activeContractFrame?: ActiveContractFrame;
   latestEvalReport?: EvalReport;
   latestFailureLineage?: FailureLineage;
@@ -189,6 +192,10 @@ export const restoreRunState = async (
   const previousPatchRequest = previousPatchRequestPath
     ? await loadJson<PatchRequestArtifact>(previousPatchRequestPath)
     : undefined;
+  const previousTrajectoryDecisionPath = latestRoundSummary?.trajectory_decision_path;
+  const previousTrajectoryDecision = previousTrajectoryDecisionPath
+    ? await loadJson<TrajectoryDecisionArtifact>(previousTrajectoryDecisionPath)
+    : undefined;
   const latestEvalReport = latestRoundSummary?.eval_report_path
     ? await loadJson<EvalReport>(latestRoundSummary.eval_report_path)
     : undefined;
@@ -222,6 +229,8 @@ export const restoreRunState = async (
     plannerBriefPath,
     previousPatchRequest,
     previousPatchRequestPath,
+    previousTrajectoryDecision,
+    previousTrajectoryDecisionPath,
     activeContractFrame: await activeContractFrameForHistory(history),
     latestEvalReport,
     latestFailureLineage,

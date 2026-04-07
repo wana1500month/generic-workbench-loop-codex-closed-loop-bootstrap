@@ -1811,6 +1811,9 @@ const main = async () => {
   const previousQualityCritique = previousRoundDirectory
     ? await readJsonIfExists(join(previousRoundDirectory, "quality-critique.json"))
     : undefined;
+  const previousTrajectoryDecision = previousRoundDirectory
+    ? await readJsonIfExists(join(previousRoundDirectory, "trajectory-decision.json"))
+    : undefined;
   const previousEvalReport = previousRoundDirectory
     ? await readJsonIfExists(join(previousRoundDirectory, "eval_report.json"))
     : undefined;
@@ -1879,6 +1882,18 @@ const main = async () => {
             : []
         }
       : null,
+    latest_trajectory_decision: previousTrajectoryDecision
+      ? {
+          mode: previousTrajectoryDecision.mode,
+          restart_from: previousTrajectoryDecision.restart_from,
+          preserve_signals: previousTrajectoryDecision.preserve_signals,
+          discardable_surface: previousTrajectoryDecision.discardable_surface,
+          novelty_target: previousTrajectoryDecision.novelty_target,
+          reason: previousTrajectoryDecision.reason,
+          selected_round: previousTrajectoryDecision.selected_round,
+          frontier: previousTrajectoryDecision.frontier
+        }
+      : null,
     latest_eval_summary: previousEvalReport
       ? {
           release_score: previousEvalReport.release_score,
@@ -1898,6 +1913,7 @@ const main = async () => {
     "Use the intake brief and the current round packet to decide what to build next.",
     "Prefer the smallest coherent set of changes that moves the product forward.",
     "When remediation artifacts are present, treat them as load-bearing instructions.",
+    "When a trajectory decision says pivot or parallel_pivot, do not keep sanding the same head. Re-open from the selected anchor and replace the discardable surface.",
     "Do not widen scope beyond the latest patch request unless the controller explicitly reopened contract scope.",
     "",
     "# Product brief",

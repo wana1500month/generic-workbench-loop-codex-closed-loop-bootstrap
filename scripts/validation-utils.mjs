@@ -7,7 +7,7 @@ export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 export const runLoop = async (args, options = {}) =>
   new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(process.execPath, ["./scripts/loop-runner.mjs", ...args], {
+    const child = spawn(process.execPath, ["./scripts/testing/run-validation-loop.mjs", ...args], {
       cwd: repoRoot,
       env: {
         ...process.env,
@@ -468,6 +468,7 @@ export const assertPatchOnlyArtifactSurface = async (
     "generator_plan_path",
     "patch_request_path",
     "quality_critique_path",
+    "trajectory_decision_path",
     "eval_report_path",
     "failure_lineage_path"
   ]) {
@@ -496,6 +497,7 @@ export const assertRecontractArtifactSurface = async (
     "generator_plan_path",
     "patch_request_path",
     "quality_critique_path",
+    "trajectory_decision_path",
     "eval_report_path",
     "failure_lineage_path"
   ]) {
@@ -576,6 +578,37 @@ export const assertPatchRequestQualitySurface = async (
     throw new Error(`Expected ${label} to include must_preserve signals.`);
   }
   return patchRequest;
+};
+
+export const assertTrajectoryDecisionSurface = async (
+  roundSummary,
+  {
+    expectedMode,
+    expectedRestartFrom,
+    label = "trajectory decision"
+  } = {}
+) => {
+  if (!roundSummary?.trajectory_decision_path) {
+    throw new Error(`Expected ${label} to persist trajectory_decision_path.`);
+  }
+  const trajectoryDecision = await readJsonFile(roundSummary.trajectory_decision_path);
+  if (expectedMode && trajectoryDecision.mode !== expectedMode) {
+    throw new Error(
+      `Expected ${label} mode '${expectedMode}', received '${trajectoryDecision.mode ?? "missing"}'.`
+    );
+  }
+  if (
+    expectedRestartFrom &&
+    trajectoryDecision.restart_from !== expectedRestartFrom
+  ) {
+    throw new Error(
+      `Expected ${label} restart_from '${expectedRestartFrom}', received '${trajectoryDecision.restart_from ?? "missing"}'.`
+    );
+  }
+  if (!(trajectoryDecision.preserve_signals ?? []).length) {
+    throw new Error(`Expected ${label} to include preserve_signals.`);
+  }
+  return trajectoryDecision;
 };
 
 export const environmentPreflightChecklist = (targetFamily) => [
