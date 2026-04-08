@@ -1,12 +1,13 @@
 ---
 name: harness-run-attempt
-description: Execute a scoped harness attempt from negotiated artifacts. Use when a run is active and the next step is to implement, remediate, or verify inside the current round boundary.
+description: Compatibility alias for `run-attempt`. Execute a scoped harness attempt from negotiated artifacts when older automation still references `harness-run-attempt`.
 ---
 
-# Harness Run Attempt
+# Harness Run Attempt (Compatibility Alias)
 
-Use this skill once the lane is already known and the work should happen inside
-the current harness attempt rather than through new intake.
+Use this skill only when older automation or notes still reference
+`harness-run-attempt`. Otherwise prefer `run-attempt` as the operator-facing
+entry.
 
 ## Workflow
 

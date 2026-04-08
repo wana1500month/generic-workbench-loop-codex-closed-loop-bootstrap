@@ -10,6 +10,7 @@ if ! npm run build; then
 fi
 
 cat <<'EOF'
+Workbench identity: generic Codex workbench with a closed-loop harness engine.
 Ready commands:
   npm run loop:intent -- --json "<request>"
   npm run loop:intake -- --json "<product request>"

@@ -22,6 +22,13 @@
     "expect_route": "harness_design"
   },
   {
+    "id": "korean-harness-design-actual-prompt",
+    "request": "https://www.anthropic.com/engineering/harness-design-long-running-apps의 최신 버전 기준에 영감을 받아서 진행중. 범용 닫힌 루프 하네스. https://www.anthropic.com/engineering/harness-design-long-running-apps의 최신 버전은 스프린트 구조를 없앴다고 나옴. REPO는 깃허브 REPO의 이전 버전들을 말함. 이 조언들을 적용",
+    "expect_intent": "harness_design",
+    "expect_status": "ask_harness_questions",
+    "expect_route": "harness_design"
+  },
+  {
     "id": "product-build-with-evaluator-context",
     "request": "Build a dashboard app for evaluator calibration. The first version should help operators review false positives and compare heavy-lane thresholds.",
     "expect_intent": "product_build",

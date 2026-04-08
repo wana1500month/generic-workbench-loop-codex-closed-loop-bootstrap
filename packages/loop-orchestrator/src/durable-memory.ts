@@ -121,7 +121,7 @@ export const buildProgressMarkdown = (input: DurableMemoryContext): string =>
     "## Current State",
     "",
     "- Status: bootstrapped",
-    "- Latest decision: planner should start from the current intake and durable memory files.",
+    "- Latest decision: planner should start from the current intake and durable memory files, and the workbench identity should stay aligned across them.",
     "- Rounds executed: 0",
     "",
     "## Recent Decisions",
@@ -137,6 +137,7 @@ export const buildProgressMarkdown = (input: DurableMemoryContext): string =>
     "- Keep `feature_list.generated.json` updated as workflows move from planned to done or blocked.",
     "- Append the latest blocker, failed check, or next action after each round in `progress.md` and `progress.jsonl`.",
     "- Keep `done_when.md` aligned with the actual stop condition before closeout.",
+    "- Keep the workbench identity sentence aligned across `AGENTS.md`, `IDEA.md`, `SPEC.md`, and the durable memory files.",
     "- Use `init.sh` to rehydrate the workbench before assuming the environment drifted.",
     "",
     "## Latest Blocker",
@@ -155,9 +156,10 @@ export const buildProgressJsonl = (input: DurableMemoryContext): string =>
     target_score: input.targetScore ?? null,
     max_rounds: input.maxRounds ?? null,
     next_actions: [
-      "Keep feature_list.generated.json aligned with real completion state.",
+      "Keep feature_list.generated.json aligned with real completion state and the workbench identity.",
       "Append the latest blocker, decision, or next step after each run.",
-      "Keep done_when.md honest before closeout."
+      "Keep done_when.md honest before closeout.",
+      "Keep the workbench identity sentence aligned across the durable memory files."
     ]
   })}\n`;
 
@@ -191,6 +193,7 @@ export const buildDoneWhenMarkdown = (input: DurableMemoryContext): string =>
     "",
     ...(input.targetScore !== undefined ? [`- Target score: ${input.targetScore}`] : []),
     ...(input.maxRounds !== undefined ? [`- Max rounds: ${input.maxRounds}`] : []),
+    "- Keep the generic front door lane-oriented; `product_build` is one route, not the repository identity.",
     "- If no adapter is attached, do not overclaim end-to-end product proof.",
     ""
   ].join("\n");
@@ -209,6 +212,7 @@ export const buildInitScript = (): string =>
     "fi",
     "",
     "cat <<'EOF'",
+    "Workbench identity: generic Codex workbench with a closed-loop harness engine.",
     "Ready commands:",
     "  npm run loop:intent -- --json \"<request>\"",
     "  npm run loop:intake -- --json \"<product request>\"",

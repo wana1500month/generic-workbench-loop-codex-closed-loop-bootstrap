@@ -65,6 +65,8 @@ export interface LoopIntentResult {
 
 const harnessSurfaceSignals: IntentSignal[] = [
   { label: "harness", pattern: /\bharness\b/i },
+  { label: "closed-loop harness", pattern: /\bclosed-?\s*loop\s+harness\b/i },
+  { label: "generic closed-loop harness", pattern: /\bgeneric\s+closed-?\s*loop\s+harness\b/i },
   { label: "generic workbench", pattern: /\bgeneric(?:\s+codex)?\s+workbench\b/i },
   { label: "Codex workbench", pattern: /\bcodex\s+workbench\b/i },
   { label: "closed-loop", pattern: /\bclosed-?\s*loop\b/i },
@@ -97,12 +99,20 @@ const harnessSurfaceSignals: IntentSignal[] = [
   { label: "제어면", pattern: /\uC81C\uC5B4\uBA74/u },
   { label: "플래너", pattern: /\uD50C\uB798\uB108/u },
   { label: "평가기", pattern: /\uD3C9\uAC00\uAE30/u }
+  , { label: "closed-loop harness (ko)", pattern: /\uB2EB\uD78C\s*\uB8E8\uD504.{0,4}\uD558\uB124\uC2A4/u },
+  {
+    label: "generic closed-loop harness (ko)",
+    pattern: /\uBC94\uC6A9.{0,8}\uB2EB\uD78C\s*\uB8E8\uD504.{0,4}\uD558\uB124\uC2A4/u
+  }
 ];
 
 const harnessChangeSignals: IntentSignal[] = [
   { label: "add", pattern: /\badd\b/i },
+  { label: "apply", pattern: /\bapply\b/i },
+  { label: "adopt", pattern: /\badopt\b/i },
   { label: "change", pattern: /\bchange\b/i },
   { label: "refactor", pattern: /\brefactor\b/i },
+  { label: "integrate", pattern: /\bintegrate\b/i },
   { label: "split", pattern: /\bsplit\b/i },
   { label: "route", pattern: /\broute\b/i },
   { label: "promote", pattern: /\bpromote\b/i },
@@ -114,6 +124,8 @@ const harnessChangeSignals: IntentSignal[] = [
   { label: "rewrite", pattern: /\brewrite\b/i },
   { label: "keep", pattern: /\bkeep\b/i },
   { label: "maintain", pattern: /\bmaintain\b/i },
+  { label: "in progress", pattern: /\bin\s+progress\b/i },
+  { label: "inspired by", pattern: /\binspired\s+by\b/i },
   { label: "추가", pattern: /\uCD94\uAC00/u },
   { label: "변경", pattern: /\uBCC0\uACBD/u },
   { label: "분리", pattern: /\uBD84\uB9AC/u },
@@ -125,6 +137,13 @@ const harnessChangeSignals: IntentSignal[] = [
   { label: "재작성", pattern: /\uC7AC\uC791\uC131/u },
   { label: "유지", pattern: /\uC720\uC9C0/u },
   { label: "고정", pattern: /\uACE0\uC815/u }
+  , { label: "apply (ko)", pattern: /\uC801\uC6A9/u }
+  , { label: "reflect (ko)", pattern: /\uBC18\uC601/u }
+  , { label: "in progress (ko)", pattern: /\uC9C4\uD589\s*\uC911/u }
+  , { label: "building now (ko)", pattern: /\uB9CC\uB4DC\uB294\s*\uC911/u }
+  , { label: "inspiration (ko)", pattern: /\uC601\uAC10/u }
+  , { label: "influenced by (ko)", pattern: /\uC601\uD5A5.{0,4}\uBC1B/u }
+  , { label: "aiming for (ko)", pattern: /\uBAA9\uD45C.{0,4}\uC911/u }
 ];
 
 const gapSignals: IntentSignal[] = [

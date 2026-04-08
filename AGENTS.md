@@ -1,6 +1,7 @@
 # Repository Rules
 
 This repository exists to build a generic Codex workbench for closed-loop harness work.
+The closed-loop harness is the core runtime engine, and `product_build` is only one routed lane rather than the repository identity.
 
 ## Scope
 
@@ -22,6 +23,7 @@ This repository exists to build a generic Codex workbench for closed-loop harnes
 - `loop:intent` may route requests into `product_build`, `harness_design`, `run_resume`, or `evaluator_tuning`.
 - If `loop:intent` routes to `product_build`, continue to use `npm run loop:intake -- "<user request>"` as the authoritative staged intake gate.
 - Prefer lane-centric skills such as `intent-router`, `product-intake`, `harness-design`, `run-resume`, `evaluator-tuning`, `run-attempt`, and `closeout`.
+- Compatibility aliases may remain for older automation, but the operator-facing surface should stay centered on that lane-centric set.
 - If a user asks this repo to build or design an app, service, editor, dashboard, API, agent, or product feature, the first response must follow the intake protocol in `INTAKE_PROTOCOL.md`.
 - Do not jump straight to adapter analysis, family classification, MVP breakdown, UX proposals, wireframes, architecture advice, or stack recommendations before the intake is complete.
 - Treat missing intake fields as a hard block. This should fail closed: ask questions instead of guessing.

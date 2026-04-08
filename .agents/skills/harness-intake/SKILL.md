@@ -1,12 +1,13 @@
 ---
 name: harness-intake
-description: Route generic closed-loop harness requests into the correct operator lane before work starts. Use when the user is asking for product build intake, harness design, run resume, or evaluator tuning inside this repository.
+description: Compatibility alias for `intent-router`. Route generic Codex workbench requests into the correct operator lane before work starts when older automation still references `harness-intake`.
 ---
 
-# Harness Intake
+# Harness Intake (Compatibility Alias)
 
-Use this skill in the harness repository when the next step is ambiguous and you
-need to classify the request before planning or implementation.
+Use this skill only when older automation or notes still reference
+`harness-intake`. Otherwise prefer `intent-router` as the operator-facing front
+door.
 
 ## Workflow
 

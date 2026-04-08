@@ -1,13 +1,13 @@
-# Generic Closed-Loop Harness Core
+# Generic Codex Workbench
 
 ## Idea
 
-Keep this repository focused on the harness itself. It should accept a short idea, negotiate round contracts, continue across multiple rounds, and optionally cross an external adapter boundary for real target proof.
+This repository is a generic Codex workbench for closed-loop harness work. The closed-loop harness is the runtime engine; `product_build` is only one routed lane.
 
 ## Goals
 
-- Make the file protocol easy to understand.
-- Make the external adapter boundary explicit and reusable.
+- Make the generic front-door file protocol easy to understand.
+- Make the closed-loop harness engine and external adapter boundary explicit and reusable.
 - Keep continuation centered on `patch-request.json`.
 - Preserve enough run context that Codex can resume from files alone.
 
@@ -16,11 +16,11 @@ Keep this repository focused on the harness itself. It should accept a short ide
 - Do not bundle a sample app into this repo.
 - Do not hardcode a product domain.
 - Do not claim end-to-end proof without an adapter.
-- Do not collapse the core and adapter responsibilities together.
+- Do not collapse the workbench engine and adapter responsibilities together.
 
 ## Quality Bar
 
-- The harness should read clearly from its artifacts alone.
+- The workbench should read clearly from its artifacts alone.
 - The controller should be able to continue across multiple rounds before stopping.
 - The stop reason should be explicit whether an adapter is attached or not.
-- The repo structure should not distract from the harness core.
+- The repo structure should not distract from the workbench or its harness engine.

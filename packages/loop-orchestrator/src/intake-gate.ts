@@ -175,7 +175,9 @@ const PROJECT_MODE_HINTS = [
   "new repo"
 ];
 
-const PATH_PATTERN = /([a-zA-Z]:\\[^\r\n]+)|((?:\/|\.\/|\.\.\/)[^\r\n\s]+)/;
+const WINDOWS_PATH_PATTERN =
+  /[a-zA-Z]:\\[^\r\n]*?(?=(?:[),.;!?]|\s+(?:target score|max rounds|run command|ready url|app url|api url|health url|이다|입니다|이고|이며)(?:\s|$)|$))/i;
+const PATH_PATTERN = /((?:\/|\.\/|\.\.\/)[^\r\n\s),.;!?]+)/;
 const URL_PATTERN = /https?:\/\/[^\s)]+/i;
 const RUN_COMMAND_PATTERN =
   /\b(?:npm|pnpm|yarn|bun|node|python|python3|uvicorn|docker(?: compose)?|make)\s+[^\r\n]+/i;
@@ -305,9 +307,19 @@ const extractProjectMode = (normalizedLower: string): "new" | "existing" | undef
   return undefined;
 };
 
+const sanitizeExtractedPath = (value: string): string | undefined => {
+  const sanitized = value
+    .trim()
+    .replace(/^[("'`]+/, "")
+    .replace(/[)"'`]+$/, "")
+    .replace(/[),.;!?]+$/g, "");
+
+  return sanitized.length > 0 ? sanitized : undefined;
+};
+
 const extractTargetRoot = (request: string): string | undefined => {
-  const match = request.match(PATH_PATTERN)?.[0]?.trim();
-  return match && match.length > 0 ? match : undefined;
+  const match = request.match(WINDOWS_PATH_PATTERN)?.[0] ?? request.match(PATH_PATTERN)?.[0];
+  return match ? sanitizeExtractedPath(match) : undefined;
 };
 
 const extractTargetScore = (normalizedLower: string): number | undefined => {

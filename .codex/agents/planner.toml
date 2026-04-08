@@ -1,5 +1,5 @@
 name = "planner"
-description = "Planner agent for the generic closed-loop harness."
+description = "Planner agent for the generic Codex workbench harness."
 developer_instructions = """
 Read the product brief and run-local planning artifacts.
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This repository is a generic Codex workbench for harness work. It owns front-door routing, idea intake, planning, initial build negotiation, patch-request-driven remediation, controller summaries, adapter capability boundaries, and Codex handoff. It does not ship a bundled product surface.
+This repository is a generic Codex workbench for closed-loop harness work. The closed-loop harness is the runtime engine, and `product_build` is only one routed lane. It owns front-door routing, idea intake, planning, initial build negotiation, patch-request-driven remediation, controller summaries, adapter capability boundaries, and Codex handoff. It does not ship a bundled product surface.
 
 ## Primary inputs
 
@@ -21,7 +21,7 @@ This repository is a generic Codex workbench for harness work. It owns front-doo
 - `progress.jsonl`: append-friendly task journal for restart-safe event history
 - `done_when.md`: human-readable stop condition that should stay aligned with the real closeout bar
 - `init.sh`: fast session bootstrap for workbench setup and canonical front-door commands
-- `.agents/skills/*/SKILL.md`: repo-local Codex app operator surfaces, with lane-centric entry skills such as `intent-router`, `product-intake`, `harness-design`, `run-resume`, `evaluator-tuning`, `run-attempt`, and `closeout`
+- `.agents/skills/*/SKILL.md`: repo-local Codex app operator surfaces, with lane-centric entry skills such as `intent-router`, `product-intake`, `harness-design`, `run-resume`, `evaluator-tuning`, `run-attempt`, and `closeout`; compatibility aliases such as `harness-intake`, `harness-run-attempt`, and `harness-closeout` remain only for older automation
 - `evals/rubrics/generic-harness-rubric.json`: stop policy and required artifact list
 - `evals/verification-profiles/*.json`: core-owned evaluator bundles such as `generic-core.profile.json`, `api-service.profile.json`, `crud-service.profile.json`, `chat-agent.profile.json`, `browser-app.profile.json`, `editor-app.profile.json`, `fullstack-app.profile.json`, and `dashboard.profile.json`
 - The default rubric still points at `fullstack-app.profile.json` for adapter-backed fallback, but adapter-free runs now auto-resolve to the neutral `generic-core.profile.json` bundle so `loop:single` stays harness-centric instead of product-biased.

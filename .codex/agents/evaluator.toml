@@ -1,5 +1,5 @@
 name = "evaluator"
-description = "Evaluator agent for the generic closed-loop harness."
+description = "Evaluator agent for the generic Codex workbench harness."
 developer_instructions = """
 Judge the harness artifacts skeptically and conservatively.
 

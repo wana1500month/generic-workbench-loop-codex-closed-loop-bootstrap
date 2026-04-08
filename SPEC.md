@@ -1,8 +1,8 @@
-# Harness Spec
+# Workbench Spec
 
 ## Vision
 
-Build a generic closed-loop harness that can take a short idea, turn it into a concrete build strategy, and continue work through file-based contracts, QA verdicts, and patch requests.
+Build a generic Codex workbench for closed-loop harness work. The closed-loop harness is the runtime engine that takes a short idea, turns it into a concrete build strategy, and continues work through file-based contracts, QA verdicts, and patch requests.
 
 ## Execution modes
 
@@ -20,8 +20,8 @@ The mainline remains harness-controlled and Codex-assisted. The experimental exe
 
 ## Primary jobs
 
-1. Read a short idea from `IDEA.md`.
-2. Convert that idea into a run-local scenario and long-build strategy.
+1. Route the next request through the generic front door before deeper work starts.
+2. Read a short idea from `IDEA.md` and convert it into a run-local scenario and long-build strategy.
 3. Negotiate the initial build attempt, then let the evaluator reopen bounded remediation attempts through `patch-request.json` when QA says the release gate is still open.
 4. Write attempt artifacts that a generator, evaluator, controller, adapter, and Codex can all continue from.
 5. Keep the repository free of bundled product adapters.
@@ -69,6 +69,7 @@ The mainline remains harness-controlled and Codex-assisted. The experimental exe
 
 ## Done when
 
+- `loop:intent` can separate product intake, harness design, run resume, and evaluator tuning without losing the generic workbench identity.
 - A run can start from `IDEA.md` and end with complete round artifacts.
 - Another agent can continue from the run files without chat history.
 - The core can execute an initial build attempt plus evaluator-driven remediation and consume prior `patch-request.json` files.

@@ -1,12 +1,12 @@
 ---
 name: harness-closeout
-description: Close a harness run conservatively from persisted evidence. Use when a run appears done and you need to decide between target reached, contract completed, revise, or hold.
+description: Compatibility alias for `closeout`. Close a harness run conservatively from persisted evidence when older automation still references `harness-closeout`.
 ---
 
-# Harness Closeout
+# Harness Closeout (Compatibility Alias)
 
-Use this skill near the end of a run or when someone asks whether the harness
-can honestly stop.
+Use this skill only when older automation or notes still reference
+`harness-closeout`. Otherwise prefer `closeout` as the operator-facing entry.
 
 ## Workflow
 

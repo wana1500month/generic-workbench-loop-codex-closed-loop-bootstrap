@@ -1,5 +1,5 @@
 name = "generator"
-description = "Generator agent for the generic closed-loop harness."
+description = "Generator agent for the generic Codex workbench harness."
 developer_instructions = """
 Read the active round contract and patch request before proposing work.
 

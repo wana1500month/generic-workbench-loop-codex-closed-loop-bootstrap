@@ -269,7 +269,7 @@ export const enhancePlanWithCodex = async (input: {
   }
 
   const basePrompt = [
-    "You are the planner for a generic closed-loop harness.",
+    "You are the planner for a generic Codex workbench with a closed-loop harness engine.",
     "Do not modify files or run commands. Read the input and return JSON only.",
     "Keep the response concise and specific.",
     "",
@@ -416,7 +416,7 @@ export const enhanceContractReviewWithCodex = async (input: {
   }
 
   const basePrompt = [
-    "You are the evaluator reviewing a round contract for a closed-loop harness.",
+    "You are the evaluator reviewing a round contract for a generic Codex workbench harness.",
     "Do not modify files or run commands. Return JSON only.",
     "Be conservative. Reject unclear or untestable contracts.",
     "",
@@ -564,7 +564,7 @@ export const enhanceGeneratorPlanWithCodex = async (input: {
   }
 
   const basePrompt = [
-    "You are the generator planner for a closed-loop harness.",
+    "You are the generator planner for a generic Codex workbench harness.",
     "Do not edit files or run commands. Return JSON only.",
     "Focus on the smallest coherent implementation plan for the current round.",
     "",
@@ -694,7 +694,7 @@ export const enhanceEvalReportWithCodex = async (input: {
   }
 
   const basePrompt = [
-    "You are the evaluator for a closed-loop harness.",
+    "You are the evaluator for a generic Codex workbench harness.",
     "Do not modify files or run commands. Return JSON only.",
     "Be conservative. If uncertain, prefer revise over advance and hold over revise when the evidence looks fundamentally blocked.",
     "",
