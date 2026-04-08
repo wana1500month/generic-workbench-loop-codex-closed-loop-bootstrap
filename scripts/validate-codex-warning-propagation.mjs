@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,11 +6,13 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const runsDirectory = join(repoRoot, "evals", "runs");
 
-const listRunDirectories = async () =>
-  (await readdir(runsDirectory, { withFileTypes: true }))
+const listRunDirectories = async () => {
+  await mkdir(runsDirectory, { recursive: true });
+  return (await readdir(runsDirectory, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory() && /^run-\d+$/.test(entry.name))
     .map((entry) => entry.name)
     .sort();
+};
 
 const runCommand = async (command, args, env = process.env) =>
   new Promise((resolvePromise, rejectPromise) => {

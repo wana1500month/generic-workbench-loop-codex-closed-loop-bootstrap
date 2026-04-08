@@ -5,6 +5,8 @@ if [ ! -d node_modules ]; then
   npm install
 fi
 
+mkdir -p evals/runs
+
 if ! npm run build; then
   npx -p typescript@5.8.3 tsc -b --force --pretty false
 fi

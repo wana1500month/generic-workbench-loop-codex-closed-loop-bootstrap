@@ -78,6 +78,22 @@ const runCommand = async (command, args, options = {}) =>
     });
   });
 
+const runBuild = async () => {
+  const primaryExitCode = await runCommand(npmExecutable, ["run", "build", "--silent"], {
+    shell: process.platform === "win32"
+  });
+  if (primaryExitCode === 0) {
+    return 0;
+  }
+
+  // Retry with the pinned compiler when the host TypeScript binary exits abnormally.
+  return runCommand(
+    "npx",
+    ["-p", "typescript@5.8.3", "tsc", "-b", "--force", "--pretty", "false"],
+    { shell: process.platform === "win32" }
+  );
+};
+
 const rawArgs = process.argv.slice(2);
 let modeSingle = false;
 let adapterPath = readNpmConfigValue(["adapter"]);
@@ -255,9 +271,7 @@ const normalizedCliArgs = [
   ...positionalArgs
 ];
 
-const buildExitCode = await runCommand(npmExecutable, ["run", "build", "--silent"], {
-  shell: process.platform === "win32"
-});
+const buildExitCode = await runBuild();
 if (buildExitCode !== 0) {
   process.exitCode = buildExitCode;
 } else {

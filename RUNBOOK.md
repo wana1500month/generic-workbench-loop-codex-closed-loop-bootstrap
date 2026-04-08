@@ -20,7 +20,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `progress.md`: operator-facing summary of the latest decisions, blockers, and next actions
 - `progress.jsonl`: append-friendly task journal for restart-safe event history
 - `done_when.md`: human-readable stop condition that should stay aligned with the real closeout bar
-- `init.sh`: fast session bootstrap for workbench setup and canonical front-door commands
+- `init.sh`: fast session bootstrap for workbench setup, `evals/runs` storage creation, and canonical front-door commands
 - `.agents/skills/*/SKILL.md`: repo-local Codex app operator surfaces, with lane-centric entry skills such as `intent-router`, `product-intake`, `harness-design`, `run-resume`, `evaluator-tuning`, `run-attempt`, and `closeout`; compatibility aliases such as `harness-intake`, `harness-run-attempt`, and `harness-closeout` remain only for older automation
 - `evals/rubrics/generic-harness-rubric.json`: stop policy and required artifact list
 - `evals/verification-profiles/*.json`: core-owned evaluator bundles such as `generic-core.profile.json`, `api-service.profile.json`, `crud-service.profile.json`, `chat-agent.profile.json`, `browser-app.profile.json`, `editor-app.profile.json`, `fullstack-app.profile.json`, and `dashboard.profile.json`
@@ -70,6 +70,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `summary.json.round_history[]` now also persists `round_stop_reason`, so per-round terminal outcomes no longer depend on parsing handoff prose.
 - `summary.json.round_history[]` now also persists `decision_source`, so reviewers can tell whether a round followed `policy_snapshot`, a hard rule, or default patch authority without reading handoff prose.
 - `summary.json.feature_list_path`, `summary.json.progress_path`, `summary.json.progress_log_path`, `summary.json.done_when_path`, and `summary.json.init_script_path` now point at the durable memory surfaces that travel with the run.
+- The root `loop:run` and `loop:single` shim now retries the build with pinned TypeScript `5.8.3` when host `npm run build --silent` exits abnormally, matching the bootstrap fallback already used by `init.sh`.
 - Resume identity mismatches fail closed by default. Use `--allow-resume-migration` only when intentionally changing the adapter contract, bundle, rubric, or target family for an existing run, and expect the controller to write `resume-migration.json`.
 - Resuming a run that already ended with `target_reached`, `contract_completed`, `environment_blocked`, or `adapter_contract_invalid` now defaults to a no-op closure. `--allow-resume-migration` alone does not reopen a terminal run; use `--force-reopen-terminal` when you intentionally want to spend more budget, and pair it with `--allow-resume-migration` when the reopen also changes run identity.
 - `loop:single` now means a literal single executed attempt even when an adapter is attached. Use it to seed fresh-process resume smoke without spending the remediation budget up front.
@@ -346,6 +347,8 @@ The deeper semantic packs now exercise more than surface liveness. API and CRUD 
 `validate:bootstrap-deep-intake` proves that deeper quality intake fields survive into `IDEA.md`, `intake.json`, runtime config, generated quality axes, and generated `subjective_metrics`.
 
 `validate:durable-memory` proves that `feature_list.generated.json`, `progress.md`, `progress.jsonl`, `done_when.md`, and `init.sh` are scaffolded from intake context, rediscovered from disk, and restored when one of the files goes missing.
+
+`validate:codex-warning-propagation` now self-bootstraps the `evals/runs` directory on a fresh checkout before seeding `loop:single`, so it validates Codex fallback warnings without assuming prior run storage exists.
 
 `validate:bootstrap-custom-quality-metrics` proves that user-authored subjective metric thresholds are graded in `grade_round`, fail closed when the configured review falls below the requested minimum, publish `subjective-quality-review.json`, and surface as structured `subjective_quality` findings in quality critique generation.
 
