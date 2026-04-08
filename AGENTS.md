@@ -17,6 +17,9 @@ This repository exists to build a generic closed-loop harness core.
 
 ## Intake-first UX
 
+- Use `npm run loop:intent -- "<user request>"` as the generic request router when the user may be asking for harness design, run resume, or evaluator tuning rather than a product build.
+- `loop:intent` may route requests into `product_build`, `harness_design`, `run_resume`, or `evaluator_tuning`.
+- If `loop:intent` routes to `product_build`, continue to use `npm run loop:intake -- "<user request>"` as the authoritative staged intake gate.
 - If a user asks this repo to build or design an app, service, editor, dashboard, API, agent, or product feature, the first response must follow the intake protocol in `INTAKE_PROTOCOL.md`.
 - Do not jump straight to adapter analysis, family classification, MVP breakdown, UX proposals, wireframes, architecture advice, or stack recommendations before the intake is complete.
 - Treat missing intake fields as a hard block. This should fail closed: ask questions instead of guessing.
@@ -36,7 +39,7 @@ This repository exists to build a generic closed-loop harness core.
 - Keep target family as an internal working hypothesis until confirmation. Do not ask the user to pick a family unless they explicitly want to override it.
 - When the request obviously maps to a supported family such as `browser-editor`, `crud-api`, or `chat-agent`, keep that as an internal working hypothesis until the intake is complete. Do not lead with "this is a browser-editor family" as the primary response.
 - The desired UX is: product questions only -> execution questions only -> short confirmation -> internal bootstrap -> planner/generator/evaluator loop.
-- The executable front-controller for this behavior is `npm run loop:intake -- "<user request>"`. Use it when the request is a product-build prompt and follow its result. If it returns `ask_product_questions` or `ask_execution_questions`, ask those questions only.
+- The executable front-controller for generic request routing is `npm run loop:intent -- "<user request>"`. For product-build behavior, the authoritative staged gate remains `npm run loop:intake -- "<user request>"`. If it returns `ask_product_questions` or `ask_execution_questions`, ask those questions only.
 - Bad first-turn behavior for this repo:
   - classifying the family immediately
   - proposing a panel layout immediately

@@ -7,6 +7,7 @@ This repository is the harness core only. It owns idea intake, planning, initial
 ## Primary inputs
 
 - `IDEA.md`: the current harness goal or refactor request
+- `npm run loop:intent -- "<user request>"`: generic request router that separates product build, harness design, run resume, and evaluator tuning before work starts
 - `npm run loop:intake -- "<user request>"`: staged intake gate that returns product questions, execution questions, or confirmation
 - `npm run loop:bootstrap`: writes `IDEA.md`, `intake.json`, `adapter.generated.json`, `rubric.generated.json`, and `verification-profile.generated.json`, then uses the generated rubric/bundle on the first run unless the CLI explicitly overrides them. Bootstrap now also captures deeper quality intent such as must-not-break flows, failure expectations, continuity boundaries, reference signals, non-goals, probe hints, and optional user-authored subjective metrics with minimum `x/10` thresholds.
 - `npm run reference-adapter:scaffold-quality-lane -- --profile <bundle.json> --out <strict-bundle.json>`: derives a stricter companion evaluator lane from an existing bundle without demanding release assertions that the source bundle does not actually configure
@@ -15,6 +16,7 @@ This repository is the harness core only. It owns idea intake, planning, initial
 - `STATUS.md`: current state of the harness
 - `AGENT_PROTOCOL.md`: authoritative round file protocol
 - `ADAPTER_CONTRACT.md`: external adapter capability contract
+- `.agents/skills/*/SKILL.md`: repo-local Codex app operator surfaces for harness intake, run attempt, and closeout
 - `evals/rubrics/generic-harness-rubric.json`: stop policy and required artifact list
 - `evals/verification-profiles/*.json`: core-owned evaluator bundles such as `generic-core.profile.json`, `api-service.profile.json`, `crud-service.profile.json`, `chat-agent.profile.json`, `browser-app.profile.json`, `editor-app.profile.json`, `fullstack-app.profile.json`, and `dashboard.profile.json`
 - The default rubric still points at `fullstack-app.profile.json` for adapter-backed fallback, but adapter-free runs now auto-resolve to the neutral `generic-core.profile.json` bundle so `loop:single` stays harness-centric instead of product-biased.
@@ -22,6 +24,7 @@ This repository is the harness core only. It owns idea intake, planning, initial
 ## Runtime roles
 
 - `planner`: turns `IDEA.md` into a run-local scenario, build strategy, and remediation policy
+- `intent gate`: classifies whether the next request should go through product intake, harness design, run resume, or evaluator calibration
 - `intake`: keeps product questions separate from execution-control questions and confirms the intake before bootstrap
 - `generator`: takes a long build attempt against the negotiated attempt contract
 - `evaluator`: reviews the contract before build, then writes the verdict, eval report, and patch request after each build attempt
@@ -230,6 +233,8 @@ Initial build attempts and recontract attempts also write `contract-review.*` an
 
 ```powershell
 npm run build
+npm run loop:intent -- --json "Add a loop:intent router for harness design prompts"
+npm run validate:intent-gate
 npm run validate:bootstrap-deep-intake
 npm run validate:bootstrap-custom-quality-metrics
 npm run validate:bootstrap-profile-aware-verifier

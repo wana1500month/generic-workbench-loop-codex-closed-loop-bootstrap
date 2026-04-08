@@ -2,6 +2,7 @@ export { runClosedLoop } from "./loop.js";
 export { runSingleIteration } from "./run-single-iteration.js";
 export { executeAdapterCapability, loadAdapterContract } from "./adapter-runtime.js";
 export { executeCoreVerificationProbes } from "./core-verifier.js";
+export { evaluateLoopIntent, renderLoopIntentResponse } from "./intent-gate.js";
 export type {
   AdapterCapabilityExecution,
   AdapterCapabilityName,
@@ -34,3 +35,10 @@ export type {
   VerificationCriterion,
   VerificationProfile
 } from "./types.js";
+export type {
+  LoopIntent,
+  LoopIntentPhase,
+  LoopIntentResult,
+  LoopIntentRoute,
+  LoopIntentStatus
+} from "./intent-gate.js";

@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npmExecutable = "npm";
-const intakeCliImport =
-  "process.argv=[process.argv[0],'./packages/loop-orchestrator/dist/intake-gate-cli.js',...process.argv.slice(1)]; await import('./packages/loop-orchestrator/dist/intake-gate-cli.js')";
+const intentCliImport =
+  "process.argv=[process.argv[0],'./packages/loop-orchestrator/dist/intent-gate-cli.js',...process.argv.slice(1)]; await import('./packages/loop-orchestrator/dist/intent-gate-cli.js')";
 
 const runCommand = async (command, args, options = {}) =>
   new Promise((resolvePromise, rejectPromise) => {
@@ -37,7 +37,7 @@ if (buildExitCode !== 0) {
   const cliExitCode = await runCommand(process.execPath, [
     "--input-type=module",
     "--eval",
-    intakeCliImport,
+    intentCliImport,
     "--",
     ...process.argv.slice(2)
   ]);

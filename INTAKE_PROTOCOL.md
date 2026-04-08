@@ -7,6 +7,13 @@ The executable gate for this protocol is:
 
 - `npm run loop:intake -- "<user request>"`
 
+Generic request routing now lives in:
+
+- `npm run loop:intent -- "<user request>"`
+
+Only enter this protocol after the request has been classified as
+`product_build`, or when the request is obviously a product-build prompt.
+
 If that gate returns `ask_product_questions` or `ask_execution_questions`,
 the next assistant reply should contain those questions only.
 

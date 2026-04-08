@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npmExecutable = "npm";
+const runnerCliImport =
+  "process.argv=[process.argv[0],'./packages/loop-orchestrator/dist/cli.js',...process.argv.slice(1)]; await import('./packages/loop-orchestrator/dist/cli.js')";
 
 const parsePositiveNumber = (value) => {
   const parsed = Number(value);
@@ -260,7 +262,10 @@ if (buildExitCode !== 0) {
   process.exitCode = buildExitCode;
 } else {
   const cliExitCode = await runCommand(process.execPath, [
-    "./packages/loop-orchestrator/dist/cli.js",
+    "--input-type=module",
+    "--eval",
+    runnerCliImport,
+    "--",
     ...normalizedCliArgs
   ]);
   process.exitCode = cliExitCode;

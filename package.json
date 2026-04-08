@@ -8,10 +8,12 @@
   ],
   "scripts": {
     "build": "tsc -b",
+    "loop:intent": "node ./scripts/loop-intent.mjs",
     "loop:intake": "node ./scripts/loop-intake.mjs",
     "loop:run": "node ./scripts/loop-runner.mjs",
     "loop:bootstrap": "node ./scripts/loop-runner.mjs --bootstrap",
     "loop:single": "node ./scripts/loop-runner.mjs --single",
+    "validate:intent-gate": "node ./scripts/validate-intent-gate.mjs",
     "validate:lifecycle-api": "node ./scripts/validate-lifecycle-api.mjs",
     "validate:family-api": "node ./scripts/validate-lifecycle-api.mjs",
     "validate:family-crud": "node ./scripts/validate-family-crud.mjs",
