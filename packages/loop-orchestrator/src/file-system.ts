@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +13,22 @@ export const loadJson = async <T>(path: string): Promise<T> => {
   return JSON.parse(raw) as T;
 };
 
+export const loadJsonIfExists = async <T>(path: string): Promise<T | undefined> => {
+  try {
+    return await loadJson<T>(path);
+  } catch (error: unknown) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error.code === "ENOENT" || error.code === "ENOTDIR")
+    ) {
+      return undefined;
+    }
+    throw error;
+  }
+};
+
 export const writeJson = async (path: string, value: unknown): Promise<void> => {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
@@ -21,6 +37,23 @@ export const writeJson = async (path: string, value: unknown): Promise<void> => 
 export const writeText = async (path: string, value: string): Promise<void> => {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, value, "utf8");
+};
+
+export const pathExists = async (path: string): Promise<boolean> => {
+  try {
+    await stat(path);
+    return true;
+  } catch (error: unknown) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error.code === "ENOENT" || error.code === "ENOTDIR")
+    ) {
+      return false;
+    }
+    throw error;
+  }
 };
 
 export const sha256ForPath = async (path?: string): Promise<string | undefined> => {

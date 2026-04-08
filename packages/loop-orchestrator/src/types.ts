@@ -981,6 +981,9 @@ export interface LoopRunSummary {
   release_score: number;
   planner_brief_path?: string;
   idea_path?: string;
+  feature_list_path?: string;
+  progress_path?: string;
+  done_when_path?: string;
   planned_scenario_path?: string;
   plan_path?: string;
   codex_handoff_path?: string;

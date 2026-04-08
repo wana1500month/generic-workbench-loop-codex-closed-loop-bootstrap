@@ -9,13 +9,16 @@ This repository is the harness core only. It owns idea intake, planning, initial
 - `IDEA.md`: the current harness goal or refactor request
 - `npm run loop:intent -- "<user request>"`: generic request router that separates product build, harness design, run resume, and evaluator tuning before work starts
 - `npm run loop:intake -- "<user request>"`: staged intake gate that returns product questions, execution questions, or confirmation
-- `npm run loop:bootstrap`: writes `IDEA.md`, `intake.json`, `adapter.generated.json`, `rubric.generated.json`, and `verification-profile.generated.json`, then uses the generated rubric/bundle on the first run unless the CLI explicitly overrides them. Bootstrap now also captures deeper quality intent such as must-not-break flows, failure expectations, continuity boundaries, reference signals, non-goals, probe hints, and optional user-authored subjective metrics with minimum `x/10` thresholds.
+- `npm run loop:bootstrap`: writes `IDEA.md`, `intake.json`, `feature_list.generated.json`, `progress.md`, `done_when.md`, `adapter.generated.json`, `rubric.generated.json`, and `verification-profile.generated.json`, then uses the generated rubric/bundle on the first run unless the CLI explicitly overrides them. Bootstrap now also captures deeper quality intent such as must-not-break flows, failure expectations, continuity boundaries, reference signals, non-goals, probe hints, and optional user-authored subjective metrics with minimum `x/10` thresholds.
 - `npm run reference-adapter:scaffold-quality-lane -- --profile <bundle.json> --out <strict-bundle.json>`: derives a stricter companion evaluator lane from an existing bundle without demanding release assertions that the source bundle does not actually configure
 - `SPEC.md`: stable harness scope
 - `PLANS.md`: current milestone map
 - `STATUS.md`: current state of the harness
 - `AGENT_PROTOCOL.md`: authoritative round file protocol
 - `ADAPTER_CONTRACT.md`: external adapter capability contract
+- `feature_list.generated.json`: append-safe long-horizon feature ledger for what is still planned, done, or blocked
+- `progress.md`: operator-facing summary of the latest decisions, blockers, and next actions
+- `done_when.md`: human-readable stop condition that should stay aligned with the real closeout bar
 - `.agents/skills/*/SKILL.md`: repo-local Codex app operator surfaces for harness intake, run attempt, and closeout
 - `evals/rubrics/generic-harness-rubric.json`: stop policy and required artifact list
 - `evals/verification-profiles/*.json`: core-owned evaluator bundles such as `generic-core.profile.json`, `api-service.profile.json`, `crud-service.profile.json`, `chat-agent.profile.json`, `browser-app.profile.json`, `editor-app.profile.json`, `fullstack-app.profile.json`, and `dashboard.profile.json`
@@ -63,6 +66,7 @@ This repository is the harness core only. It owns idea intake, planning, initial
 - `summary.json.round_history[]` now also persists the resolved `target_family` and `validation_lane` for each attempt, so resume migrations and explicit-profile runs stay machine-auditable after the fact.
 - `summary.json.round_history[]` now also persists `round_stop_reason`, so per-round terminal outcomes no longer depend on parsing handoff prose.
 - `summary.json.round_history[]` now also persists `decision_source`, so reviewers can tell whether a round followed `policy_snapshot`, a hard rule, or default patch authority without reading handoff prose.
+- `summary.json.feature_list_path`, `summary.json.progress_path`, and `summary.json.done_when_path` now point at the durable memory surfaces that travel with the run.
 - Resume identity mismatches fail closed by default. Use `--allow-resume-migration` only when intentionally changing the adapter contract, bundle, rubric, or target family for an existing run, and expect the controller to write `resume-migration.json`.
 - Resuming a run that already ended with `target_reached`, `contract_completed`, `environment_blocked`, or `adapter_contract_invalid` now defaults to a no-op closure. `--allow-resume-migration` alone does not reopen a terminal run; use `--force-reopen-terminal` when you intentionally want to spend more budget, and pair it with `--allow-resume-migration` when the reopen also changes run identity.
 - `loop:single` now means a literal single executed attempt even when an adapter is attached. Use it to seed fresh-process resume smoke without spending the remediation budget up front.
@@ -337,6 +341,8 @@ The deeper semantic packs now exercise more than surface liveness. API and CRUD 
 `validate:quality-lift` proves that a lenient bundle can close low-score evidence, a stricter external quality lane can hold that same evidence open, intake-generated bundles publish richer `quality_contract` axes plus continuity/error-recovery probes while preserving the base family floor, and patch-only remediation persists structured `quality-critique.json` alongside quality-aware patch requests.
 
 `validate:bootstrap-deep-intake` proves that deeper quality intake fields survive into `IDEA.md`, `intake.json`, runtime config, generated quality axes, and generated `subjective_metrics`.
+
+`validate:durable-memory` proves that `feature_list.generated.json`, `progress.md`, and `done_when.md` are scaffolded from intake context, rediscovered from disk, and restored when one of the files goes missing.
 
 `validate:bootstrap-custom-quality-metrics` proves that user-authored subjective metric thresholds are graded in `grade_round`, fail closed when the configured review falls below the requested minimum, publish `subjective-quality-review.json`, and surface as structured `subjective_quality` findings in quality critique generation.
 

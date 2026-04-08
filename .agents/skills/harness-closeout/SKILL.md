@@ -17,6 +17,12 @@ can honestly stop.
 - `trajectory-decision.json`
 - `summary.json`
 
+Use the local summarizer when you want one file-grounded snapshot first:
+
+```bash
+node .agents/skills/harness-closeout/scripts/summarize-run.mjs evals/runs/run-###
+```
+
 2. Separate structural completion from target completion.
 - `contract_completed` means the negotiated contract is done.
 - `target_reached` requires the configured control-plane, proof, and release

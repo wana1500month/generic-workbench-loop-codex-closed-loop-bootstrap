@@ -2,6 +2,10 @@ import { stdin as input, stdout as output } from "node:process";
 import { join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 
+import {
+  scaffoldDurableMemoryArtifacts,
+  type DurableMemoryContext
+} from "./durable-memory.js";
 import { loadJson, repoRoot, writeJson, writeText } from "./file-system.js";
 import { inferProductTargetFamily } from "./intake-gate.js";
 import { resolveTargetFamilySelection } from "./profile-selection.js";
@@ -89,12 +93,18 @@ export type BootstrapResult = {
   maxRounds: number;
   ideaPath: string;
   intakePath: string;
+  featureListPath: string;
+  progressPath: string;
+  doneWhenPath: string;
 };
 
 export type BootstrapArtifactPaths = {
   rootDirectory: string;
   ideaPath: string;
   intakePath: string;
+  featureListPath: string;
+  progressPath: string;
+  doneWhenPath: string;
   adapterPath: string;
   generatedRubricPath: string;
   generatedVerificationProfilePath: string;
@@ -112,6 +122,9 @@ export const createBootstrapArtifactPaths = (
     rootDirectory,
     ideaPath: join(rootDirectory, "IDEA.md"),
     intakePath: join(rootDirectory, "intake.json"),
+    featureListPath: join(rootDirectory, "feature_list.generated.json"),
+    progressPath: join(rootDirectory, "progress.md"),
+    doneWhenPath: join(rootDirectory, "done_when.md"),
     adapterPath: join(rootDirectory, "adapter.generated.json"),
     generatedRubricPath: join(rootDirectory, "rubric.generated.json"),
     generatedVerificationProfilePath: join(
@@ -1486,6 +1499,21 @@ const writeIdeaMarkdown = (answers: BootstrapAnswers): string => {
 
   return `${lines.join("\n")}\n`;
 };
+
+const buildDurableMemoryContextFromAnswers = (
+  answers: BootstrapAnswers
+): DurableMemoryContext => ({
+  title: answers.title,
+  summary: answers.summary,
+  finishLine: answers.finishLine,
+  targetUsers: answers.targetUsers,
+  coreFeatures: answers.coreFeatures,
+  qualityBar: answers.qualityBar,
+  constraints: answers.constraints,
+  mustNotBreak: answers.mustNotBreak ?? [],
+  targetScore: answers.targetScore,
+  maxRounds: answers.maxRounds
+});
 
 const moduleImportPath = (fromDirectory: string, toFile: string): string =>
   (() => {
@@ -3036,6 +3064,10 @@ export const scaffoldBootstrapArtifacts = async (
   });
   await writeJson(paths.generatedVerificationProfilePath, generatedProfile);
   await writeJson(paths.generatedRubricPath, generatedRubric);
+  await scaffoldDurableMemoryArtifacts(
+    paths.rootDirectory,
+    buildDurableMemoryContextFromAnswers(answers)
+  );
   await scaffoldAdapterArtifacts(answers, paths);
 
   return {
@@ -3046,7 +3078,10 @@ export const scaffoldBootstrapArtifacts = async (
     targetScore: answers.targetScore,
     maxRounds: answers.maxRounds,
     ideaPath: paths.ideaPath,
-    intakePath: paths.intakePath
+    intakePath: paths.intakePath,
+    featureListPath: paths.featureListPath,
+    progressPath: paths.progressPath,
+    doneWhenPath: paths.doneWhenPath
   };
 };
 

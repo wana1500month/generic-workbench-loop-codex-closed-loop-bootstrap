@@ -27,6 +27,11 @@ import {
 } from "./adapter-runtime.js";
 import { executeCoreVerificationProbes } from "./core-verifier.js";
 import { writeRunCodexHandoff } from "./codex-handoff.js";
+import {
+  detectDurableMemoryPaths,
+  ensureDurableMemoryArtifacts,
+  loadDurableMemoryContext
+} from "./durable-memory.js";
 import { loadJson, nextRunId, repoRoot, writeJson } from "./file-system.js";
 import { defaultIdeaPath, readIdeaBrief } from "./idea-intake.js";
 import { defaultExecutorMode, isExecutorMode } from "./executor-mode.js";
@@ -645,6 +650,9 @@ export const runClosedLoop = async (input: {
       planner_brief_path: restoredRun.plannerBriefPath,
       planned_scenario_path: restoredRun.plannedScenarioPath,
       plan_path: restoredRun.planPath,
+      ...(await detectDurableMemoryPaths(
+        dirname(restoredRun.summary.idea_path ?? defaultIdeaPath)
+      )),
       codex_handoff_path: undefined,
       adapter_contract_path:
         loadedAdapter?.contract_path ?? restoredRun.summary.adapter_contract_path,
@@ -689,6 +697,11 @@ export const runClosedLoop = async (input: {
   }
 
   const idea = await readIdeaBrief(defaultIdeaPath);
+  const durableMemory = await loadDurableMemoryContext(idea);
+  const durableMemoryPaths = await ensureDurableMemoryArtifacts(
+    durableMemory.rootDirectory,
+    durableMemory.context
+  );
   let scenario = restoredRun?.scenario;
   let plan = restoredRun?.plan;
   const plannedScenarioPath =
@@ -1472,6 +1485,9 @@ export const runClosedLoop = async (input: {
     release_score: terminalReleaseScore,
     planner_brief_path: plannerBriefPath,
     idea_path: defaultIdeaPath,
+    feature_list_path: durableMemoryPaths.feature_list_path,
+    progress_path: durableMemoryPaths.progress_path,
+    done_when_path: durableMemoryPaths.done_when_path,
     planned_scenario_path: plannedScenarioPath,
     plan_path: planPath,
     codex_handoff_path: undefined,

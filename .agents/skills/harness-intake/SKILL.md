@@ -16,6 +16,12 @@ need to classify the request before planning or implementation.
 npm run loop:intent -- --json "<user request>"
 ```
 
+Or use the local helper when operating inside Codex:
+
+```bash
+node .agents/skills/harness-intake/scripts/route-intent.mjs "<user request>"
+```
+
 2. Follow the routed lane exactly.
 - If `intent = "product_build"`, run:
 

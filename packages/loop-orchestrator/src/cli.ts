@@ -204,6 +204,11 @@ const main = async (): Promise<void> => {
     console.log(`Idea updated: ${relative(repoRoot, bootstrap.ideaPath)}`);
     console.log(`Intake saved: ${relative(repoRoot, bootstrap.intakePath)}`);
     console.log(
+      `Feature ledger: ${relative(repoRoot, bootstrap.featureListPath)}`
+    );
+    console.log(`Progress log: ${relative(repoRoot, bootstrap.progressPath)}`);
+    console.log(`Done-when: ${relative(repoRoot, bootstrap.doneWhenPath)}`);
+    console.log(
       `Generated rubric: ${relative(repoRoot, bootstrap.rubricPath)}`
     );
     console.log(
@@ -244,6 +249,15 @@ const main = async (): Promise<void> => {
 
   console.log(`Run created: ${runPath}`);
   console.log(`Idea: ${relative(repoRoot, summary.idea_path ?? "")}`);
+  if (summary.feature_list_path) {
+    console.log(`Feature ledger: ${relative(repoRoot, summary.feature_list_path)}`);
+  }
+  if (summary.progress_path) {
+    console.log(`Progress log: ${relative(repoRoot, summary.progress_path)}`);
+  }
+  if (summary.done_when_path) {
+    console.log(`Done-when: ${relative(repoRoot, summary.done_when_path)}`);
+  }
   console.log(`Rubric: ${summary.rubric_id}`);
   console.log(`Executor mode: ${summary.executor_mode ?? executorMode}`);
   if (summary.target_family) {

@@ -58,31 +58,72 @@ export interface LoopIntentResult {
   intake_missing_fields?: string[];
 }
 
-const HARNESS_DESIGN_KEYWORDS = [
+const HARNESS_SURFACE_KEYWORDS = [
   "harness",
+  "하네스",
   "closed-loop",
+  "닫힌 루프",
   "control plane",
+  "제어면",
   "planner",
+  "플래너",
   "generator",
   "evaluator",
+  "평가기",
+  "오퍼레이터 surface",
   "operator surface",
+  "operator ux",
   "codex app",
+  "codex 앱",
   "loop:intent",
   "loop:intake",
+  "loop:run",
   ".agents/skills",
   ".codex/agents",
+  "agents.md",
+  "runbook.md",
+  "status.md",
+  "plans.md",
   "subagent",
   "subagents",
   "thread fork",
   "worktree",
   "durable memory",
   "feature ledger",
+  "feature_list.generated.json",
+  "progress.md",
+  "done_when.md",
   "quality critique",
+  "quality-critique",
   "patch-request",
   "trajectory-decision",
   "round-contract",
   "bootstrap",
-  "intake gate"
+  "router",
+  "intent gate",
+  "intake gate",
+  "control-plane",
+  "resume-identity"
+] as const;
+
+const HARNESS_PATH_KEYWORDS = [
+  "packages/loop-orchestrator",
+  "packages\\loop-orchestrator",
+  "evals/runs",
+  "evals\\runs",
+  "evals/rubrics",
+  "evals\\rubrics",
+  ".agents/skills",
+  ".codex/agents",
+  "agents.md",
+  "runbook.md",
+  "status.md",
+  "plans.md",
+  "feature_list.generated.json",
+  "progress.md",
+  "done_when.md",
+  "loop:intent",
+  "loop:intake"
 ] as const;
 
 const RUN_RESUME_KEYWORDS = [
@@ -92,6 +133,14 @@ const RUN_RESUME_KEYWORDS = [
   "continue run",
   "reopen",
   "pick up",
+  "carry on",
+  "이어",
+  "이어서",
+  "이어서 진행",
+  "이어가기",
+  "재개",
+  "재시작",
+  "다시 열기",
   "last patch request",
   "latest patch request",
   "codex-handoff",
@@ -103,21 +152,28 @@ const RUN_RESUME_KEYWORDS = [
   "terminal run"
 ] as const;
 
-const EVALUATOR_TUNING_KEYWORDS = [
+const EVALUATOR_SURFACE_KEYWORDS = [
   "evaluator tuning",
   "evaluator",
+  "평가기",
   "rubric",
   "quality lift",
   "calibration",
   "calibrate",
+  "보정",
+  "튜닝",
   "threshold",
+  "임계값",
   "few-shot",
   "golden",
   "goldens",
+  "negative exemplar",
+  "positive exemplar",
   "exemplar",
   "false positive",
-  "false negatives",
   "false negative",
+  "오탐",
+  "미탐",
   "subjective metrics",
   "quality_contract",
   "quality contract",
@@ -126,11 +182,16 @@ const EVALUATOR_TUNING_KEYWORDS = [
   "light lane",
   "heavy lane",
   "probe",
-  "target score",
+  "browser-app",
+  "dashboard",
+  "api-service",
+  "browser-editor",
+  "fullstack-app",
+  "chat-agent",
   "best_passing"
 ] as const;
 
-const HARNESS_GOAL_HINTS = [
+const NON_PRODUCT_CHANGE_HINTS = [
   "add",
   "change",
   "refactor",
@@ -143,7 +204,27 @@ const HARNESS_GOAL_HINTS = [
   "tune",
   "lift",
   "improve",
-  "upgrade"
+  "upgrade",
+  "wire",
+  "adjust",
+  "fix",
+  "introduce",
+  "support",
+  "separate",
+  "추가",
+  "분리",
+  "승격",
+  "교체",
+  "보강",
+  "개선",
+  "수정",
+  "보정",
+  "튜닝",
+  "올리기",
+  "남기기",
+  "숨기기",
+  "남긴다",
+  "바꾸기"
 ] as const;
 
 const GAP_HINTS = [
@@ -159,8 +240,23 @@ const GAP_HINTS = [
   "falls through",
   "not enough",
   "middle state",
-  "operator surface",
-  "still"
+  "still",
+  "현재",
+  "지금",
+  "빠진",
+  "빠집니다",
+  "놓칩니다",
+  "약합니다",
+  "문제",
+  "병목",
+  "부족",
+  "비어",
+  "오분류",
+  "삼켜버립니다",
+  "어렵",
+  "불안정",
+  "신뢰",
+  "앞문"
 ] as const;
 
 const SUCCESS_HINTS = [
@@ -175,7 +271,28 @@ const SUCCESS_HINTS = [
   "need",
   "acceptance",
   "outcome",
-  "lift"
+  "lift",
+  "trigger condition",
+  "trigger conditions",
+  "closeout",
+  "release closeout",
+  "우선순위",
+  "다음",
+  "목표",
+  "좋은 상태",
+  "성공",
+  "완료",
+  "끝내려면",
+  "되어야",
+  "해야",
+  "필요",
+  "한 줄로",
+  "정리하면",
+  "믿고",
+  "앞문",
+  "쓸 수 있는 상태",
+  "보강",
+  "신뢰"
 ] as const;
 
 const EVALUATOR_EXAMPLE_HINTS = [
@@ -188,7 +305,36 @@ const EVALUATOR_EXAMPLE_HINTS = [
   "exemplar",
   "plateau",
   "regression",
-  "signature repeat"
+  "signature repeat",
+  "오탐",
+  "미탐",
+  "예시",
+  "사례",
+  "골든",
+  "회귀",
+  "플래토",
+  "반복"
+] as const;
+
+const EVALUATOR_OVERRIDE_HINTS = [
+  "tune",
+  "calibrate",
+  "adjust",
+  "threshold",
+  "heavy lane",
+  "light lane",
+  "rubric",
+  "verification profile",
+  "bundle",
+  "quality contract",
+  "subjective metrics",
+  "보정",
+  "튜닝",
+  "조정",
+  "임계값",
+  "lane",
+  "프로파일",
+  "번들"
 ] as const;
 
 const RUN_STATE_HINTS = [
@@ -203,7 +349,14 @@ const RUN_STATE_HINTS = [
   "environment_blocked",
   "target_reached",
   "contract_completed",
-  "max_rounds_reached"
+  "max_rounds_reached",
+  "막힘",
+  "실패",
+  "중단",
+  "보류",
+  "라운드",
+  "패치 요청",
+  "중지 사유"
 ] as const;
 
 const RUN_ACTION_HINTS = [
@@ -216,11 +369,22 @@ const RUN_ACTION_HINTS = [
   "fix",
   "hold",
   "decide",
-  "next step"
+  "next step",
+  "재개",
+  "이어가기",
+  "다시 열기",
+  "계속",
+  "마감",
+  "닫기",
+  "보류",
+  "결정"
 ] as const;
 
 const RUN_REFERENCE_PATTERN =
   /(evals[\\/]+runs[\\/]+run-\d+|(?:[A-Za-z]:\\|\.{1,2}[\\/])?[^\r\n\s]*run-\d+[^\r\n\s]*)/i;
+
+const PRODUCT_CONTEXT_PATTERN =
+  /\b(?:build|create|ship|prototype|design)\b.{0,48}\b(?:app|service|editor|dashboard|api|agent|workspace|storyboard)\b|\b(?:app|service|editor|dashboard|api|agent|workspace|storyboard)\b.{0,48}\b(?:build|create|ship|prototype|design)\b|(?:구현|만들|개발|설계).{0,24}(?:앱|서비스|에디터|대시보드|api|agent)|(?:앱|서비스|에디터|대시보드|api|agent).{0,24}(?:구현|만들|개발|설계)/i;
 
 const normalizeText = (value: string): string => value.replace(/\s+/g, " ").trim();
 
@@ -236,12 +400,12 @@ const roundScore = (value: number): number => Number(value.toFixed(3));
 
 const buildHarnessFieldStates = (
   request: string,
-  normalizedLower: string
+  normalizedLower: string,
+  matchedKeywords: readonly string[]
 ): IntentFieldState<HarnessIntentFieldId>[] => {
   const normalized = normalizeText(request);
   const goalSignal =
-    includesAny(normalizedLower, HARNESS_GOAL_HINTS) ||
-    collectMatchedKeywords(normalizedLower, HARNESS_DESIGN_KEYWORDS).length >= 2;
+    includesAny(normalizedLower, NON_PRODUCT_CHANGE_HINTS) || matchedKeywords.length >= 2;
 
   return [
     {
@@ -289,13 +453,14 @@ const buildResumeFieldStates = (
 
 const buildEvaluatorFieldStates = (
   request: string,
-  normalizedLower: string
+  normalizedLower: string,
+  matchedKeywords: readonly string[]
 ): IntentFieldState<EvaluatorIntentFieldId>[] => [
   {
     id: "calibration_focus",
     satisfied:
-      collectMatchedKeywords(normalizedLower, EVALUATOR_TUNING_KEYWORDS).length >= 2 ||
-      /(?:browser-app|dashboard|api-service|chat-agent|fullstack-app|light lane|heavy lane)/i.test(
+      matchedKeywords.length >= 2 ||
+      /(?:browser-app|dashboard|api-service|chat-agent|fullstack-app|browser-editor|light lane|heavy lane)/i.test(
         request
       ),
     question: "Which evaluator lane, family, or rubric surface needs calibration?"
@@ -335,30 +500,80 @@ const buildIntentRationale = (label: string, matchedKeywords: readonly string[])
     return [`Matched ${label} signals from the request.`];
   }
 
-  return [
-    `Matched ${label} signals: ${matchedKeywords.slice(0, 5).join(", ")}.`
-  ];
+  return [`Matched ${label} signals: ${matchedKeywords.slice(0, 5).join(", ")}.`];
 };
+
+const buildProductResult = (
+  intake: IntakeGateResult,
+  rationale: string[]
+): LoopIntentResult => ({
+  intent: "product_build",
+  status: "route_to_product_intake",
+  phase: intake.status === "ready_for_confirmation" ? "handoff" : "intent",
+  confidence: intake.status === "ready_for_confirmation" ? 0.96 : 0.91,
+  route_target: "product_intake",
+  questions: intake.questions,
+  missing_fields: [],
+  satisfied_fields: [],
+  rationale,
+  intake,
+  intake_status: intake.status,
+  intake_phase: intake.phase,
+  intake_missing_fields: intake.missing_fields
+});
 
 export const evaluateLoopIntent = (request: string): LoopIntentResult => {
   const normalizedLower = lowerText(request);
   const runReference = extractRunReference(request);
-  const harnessMatched = collectMatchedKeywords(normalizedLower, HARNESS_DESIGN_KEYWORDS);
-  const resumeMatched = collectMatchedKeywords(normalizedLower, RUN_RESUME_KEYWORDS);
-  const evaluatorMatched = collectMatchedKeywords(normalizedLower, EVALUATOR_TUNING_KEYWORDS);
+  const intake = evaluateIntakeRequest(request);
 
-  const harnessScore =
-    harnessMatched.length +
-    (includesAny(normalizedLower, ["loop:intent", ".agents/skills", "operator surface"]) ? 2 : 0);
+  const harnessMatched = collectMatchedKeywords(normalizedLower, HARNESS_SURFACE_KEYWORDS);
+  const harnessPathMatched = collectMatchedKeywords(normalizedLower, HARNESS_PATH_KEYWORDS);
+  const resumeMatched = collectMatchedKeywords(normalizedLower, RUN_RESUME_KEYWORDS);
+  const evaluatorMatched = collectMatchedKeywords(normalizedLower, EVALUATOR_SURFACE_KEYWORDS);
+
+  const mentionsHarnessSurface = harnessMatched.length > 0 || harnessPathMatched.length > 0;
+  const mentionsRepoSurface = harnessPathMatched.length > 0;
+  const hasNonProductChangeHint = includesAny(normalizedLower, NON_PRODUCT_CHANGE_HINTS);
+  const hasGapSignal = includesAny(normalizedLower, GAP_HINTS);
+  const hasSuccessSignal =
+    includesAny(normalizedLower, SUCCESS_HINTS) || /\b1\.\s|\b2\.\s/.test(request);
+  const hasEvaluatorOverrideHint = includesAny(normalizedLower, EVALUATOR_OVERRIDE_HINTS);
+  const hasEvaluatorExampleHint = includesAny(normalizedLower, EVALUATOR_EXAMPLE_HINTS);
+  const hasProductContext = PRODUCT_CONTEXT_PATTERN.test(normalizedLower);
+
+  const productScore =
+    intake.is_product_build_request
+      ? 4 +
+        (intake.status === "ready_for_confirmation" ? 2 : 0) +
+        (intake.status === "ask_execution_questions" ? 1 : 0)
+      : 0;
+
   const resumeScore =
     resumeMatched.length +
-    (runReference !== undefined ? 2 : 0) +
-    (includesAny(normalizedLower, ["resume", "resume-run", "--resume-run"]) ? 1 : 0);
-  const evaluatorScore =
-    evaluatorMatched.length +
-    (includesAny(normalizedLower, ["false positive", "false negative", "golden", "exemplar"]) ? 2 : 0);
+    (runReference !== undefined ? 3 : 0) +
+    (includesAny(normalizedLower, ["resume", "resume-run", "--resume-run", "재개", "이어서"]) ? 1 : 0);
 
-  if (resumeScore >= harnessScore && resumeScore >= evaluatorScore && resumeScore >= 2) {
+  const explicitHarnessChange =
+    mentionsHarnessSurface && (hasNonProductChangeHint || hasGapSignal || hasSuccessSignal);
+  const harnessScore = explicitHarnessChange
+    ? harnessMatched.length +
+      harnessPathMatched.length +
+      (mentionsRepoSurface ? 2 : 0) +
+      (hasNonProductChangeHint ? 1 : 0)
+    : 0;
+
+  const explicitEvaluatorChange =
+    evaluatorMatched.length > 0 &&
+    (hasEvaluatorOverrideHint || hasEvaluatorExampleHint || hasSuccessSignal) &&
+    (!intake.is_product_build_request || mentionsRepoSurface || hasNonProductChangeHint);
+  const evaluatorScore = explicitEvaluatorChange
+    ? evaluatorMatched.length +
+      (hasEvaluatorOverrideHint ? 2 : 0) +
+      (hasEvaluatorExampleHint ? 1 : 0)
+    : 0;
+
+  if (resumeScore >= 3 && resumeScore >= productScore && resumeScore >= harnessScore && resumeScore >= evaluatorScore) {
     const states = buildResumeFieldStates(request, normalizedLower);
     const missingFields = buildMissingFields(states);
     return {
@@ -378,8 +593,34 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
     };
   }
 
+  if (intake.is_product_build_request) {
+    const productRationale = [
+      `Detected a product-build request and kept loop:intake authoritative (${intake.status}).`
+    ];
+
+    const explicitHarnessOverride =
+      explicitHarnessChange && harnessScore >= productScore + 2 && !hasProductContext;
+    const explicitEvaluatorOverride =
+      explicitEvaluatorChange &&
+      evaluatorScore >= productScore + 2 &&
+      !hasProductContext &&
+      (mentionsRepoSurface || hasNonProductChangeHint);
+
+    if (!explicitHarnessOverride && !explicitEvaluatorOverride) {
+      if (evaluatorMatched.length > 0 && !explicitEvaluatorOverride) {
+        productRationale.push(
+          "Evaluator words appeared as product context rather than as a harness-surface change."
+        );
+      }
+      return buildProductResult(intake, productRationale);
+    }
+  }
+
   if (harnessScore >= evaluatorScore && harnessScore >= 2) {
-    const states = buildHarnessFieldStates(request, normalizedLower);
+    const states = buildHarnessFieldStates(request, normalizedLower, [
+      ...harnessMatched,
+      ...harnessPathMatched
+    ]);
     const missingFields = buildMissingFields(states);
     return {
       intent: "harness_design",
@@ -390,12 +631,12 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
       questions: buildQuestions(states),
       missing_fields: missingFields,
       satisfied_fields: buildSatisfiedFields(states),
-      rationale: buildIntentRationale("harness-design", harnessMatched)
+      rationale: buildIntentRationale("harness-design", [...harnessMatched, ...harnessPathMatched])
     };
   }
 
   if (evaluatorScore >= 2) {
-    const states = buildEvaluatorFieldStates(request, normalizedLower);
+    const states = buildEvaluatorFieldStates(request, normalizedLower, evaluatorMatched);
     const missingFields = buildMissingFields(states);
     return {
       intent: "evaluator_tuning",
@@ -410,25 +651,10 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
     };
   }
 
-  const intake = evaluateIntakeRequest(request);
   if (intake.is_product_build_request) {
-    return {
-      intent: "product_build",
-      status: "route_to_product_intake",
-      phase: intake.status === "ready_for_confirmation" ? "handoff" : "intent",
-      confidence: intake.status === "ready_for_confirmation" ? 0.96 : 0.9,
-      route_target: "product_intake",
-      questions: intake.questions,
-      missing_fields: [],
-      satisfied_fields: [],
-      rationale: [
-        `Detected a product-build request and delegated to loop:intake (${intake.status}).`
-      ],
-      intake,
-      intake_status: intake.status,
-      intake_phase: intake.phase,
-      intake_missing_fields: intake.missing_fields
-    };
+    return buildProductResult(intake, [
+      `Detected a product-build request and delegated to loop:intake (${intake.status}).`
+    ]);
   }
 
   return {

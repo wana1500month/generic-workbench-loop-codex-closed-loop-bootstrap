@@ -1,0 +1,92 @@
+{
+  "format_version": "feature-ledger.v1",
+  "product_title": "Generic Closed-Loop Harness Core",
+  "summary": "Keep this repository focused on the harness itself. It should accept a short idea, negotiate round contracts, continue across multiple rounds, and optionally cross an external adapter boundary for real target proof.",
+  "finish_line": null,
+  "ledger_policy": {
+    "update_mode": "status-only",
+    "guidance": "Update item statuses and notes without rewriting the full history."
+  },
+  "items": [
+    {
+      "feature_id": "workflow-make-the-file-protocol-easy-to-understand",
+      "label": "Make the file protocol easy to understand.",
+      "kind": "core_workflow",
+      "status": "planned",
+      "source": "intake",
+      "done_when": [
+        "The workflow works in the intended product path."
+      ]
+    },
+    {
+      "feature_id": "workflow-make-the-external-adapter-boundary-explicit-and-reusable",
+      "label": "Make the external adapter boundary explicit and reusable.",
+      "kind": "core_workflow",
+      "status": "planned",
+      "source": "intake",
+      "done_when": [
+        "The workflow works in the intended product path."
+      ]
+    },
+    {
+      "feature_id": "workflow-keep-continuation-centered-on-patch-request-json",
+      "label": "Keep continuation centered on `patch-request.json`.",
+      "kind": "core_workflow",
+      "status": "planned",
+      "source": "intake",
+      "done_when": [
+        "The workflow works in the intended product path."
+      ]
+    },
+    {
+      "feature_id": "workflow-preserve-enough-run-context-that-codex-can-resume-from-files-alone",
+      "label": "Preserve enough run context that Codex can resume from files alone.",
+      "kind": "core_workflow",
+      "status": "planned",
+      "source": "intake",
+      "done_when": [
+        "The workflow works in the intended product path."
+      ]
+    },
+    {
+      "feature_id": "quality-the-harness-should-read-clearly-from-its-artifacts-alone",
+      "label": "The harness should read clearly from its artifacts alone.",
+      "kind": "quality_bar",
+      "status": "planned",
+      "source": "intake",
+      "done_when": [
+        "The harness should read clearly from its artifacts alone."
+      ]
+    },
+    {
+      "feature_id": "quality-the-controller-should-be-able-to-continue-across-multiple-rounds-before-stopping",
+      "label": "The controller should be able to continue across multiple rounds before stopping.",
+      "kind": "quality_bar",
+      "status": "planned",
+      "source": "intake",
+      "done_when": [
+        "The controller should be able to continue across multiple rounds before stopping."
+      ]
+    },
+    {
+      "feature_id": "quality-the-stop-reason-should-be-explicit-whether-an-adapter-is-attached-or-not",
+      "label": "The stop reason should be explicit whether an adapter is attached or not.",
+      "kind": "quality_bar",
+      "status": "planned",
+      "source": "intake",
+      "done_when": [
+        "The stop reason should be explicit whether an adapter is attached or not."
+      ]
+    },
+    {
+      "feature_id": "quality-the-repo-structure-should-not-distract-from-the-harness-core",
+      "label": "The repo structure should not distract from the harness core.",
+      "kind": "quality_bar",
+      "status": "planned",
+      "source": "intake",
+      "done_when": [
+        "The repo structure should not distract from the harness core."
+      ]
+    }
+  ]
+}
