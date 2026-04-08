@@ -207,7 +207,11 @@ const main = async (): Promise<void> => {
       `Feature ledger: ${relative(repoRoot, bootstrap.featureListPath)}`
     );
     console.log(`Progress log: ${relative(repoRoot, bootstrap.progressPath)}`);
+    console.log(
+      `Progress journal: ${relative(repoRoot, bootstrap.progressLogPath)}`
+    );
     console.log(`Done-when: ${relative(repoRoot, bootstrap.doneWhenPath)}`);
+    console.log(`Init script: ${relative(repoRoot, bootstrap.initScriptPath)}`);
     console.log(
       `Generated rubric: ${relative(repoRoot, bootstrap.rubricPath)}`
     );
@@ -255,8 +259,14 @@ const main = async (): Promise<void> => {
   if (summary.progress_path) {
     console.log(`Progress log: ${relative(repoRoot, summary.progress_path)}`);
   }
+  if (summary.progress_log_path) {
+    console.log(`Progress journal: ${relative(repoRoot, summary.progress_log_path)}`);
+  }
   if (summary.done_when_path) {
     console.log(`Done-when: ${relative(repoRoot, summary.done_when_path)}`);
+  }
+  if (summary.init_script_path) {
+    console.log(`Init script: ${relative(repoRoot, summary.init_script_path)}`);
   }
   console.log(`Rubric: ${summary.rubric_id}`);
   console.log(`Executor mode: ${summary.executor_mode ?? executorMode}`);

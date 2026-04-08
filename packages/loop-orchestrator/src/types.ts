@@ -983,7 +983,9 @@ export interface LoopRunSummary {
   idea_path?: string;
   feature_list_path?: string;
   progress_path?: string;
+  progress_log_path?: string;
   done_when_path?: string;
+  init_script_path?: string;
   planned_scenario_path?: string;
   plan_path?: string;
   codex_handoff_path?: string;

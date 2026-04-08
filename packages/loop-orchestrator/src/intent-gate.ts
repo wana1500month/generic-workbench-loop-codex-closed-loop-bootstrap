@@ -12,6 +12,11 @@ type IntentFieldId =
   | ResumeIntentFieldId
   | EvaluatorIntentFieldId;
 
+type IntentSignal = {
+  label: string;
+  pattern: RegExp;
+};
+
 export type LoopIntent =
   | "product_build"
   | "harness_design"
@@ -58,427 +63,231 @@ export interface LoopIntentResult {
   intake_missing_fields?: string[];
 }
 
-const HARNESS_SURFACE_KEYWORDS = [
-  "harness",
-  "하네스",
-  "closed-loop",
-  "닫힌 루프",
-  "control plane",
-  "제어면",
-  "planner",
-  "플래너",
-  "generator",
-  "evaluator",
-  "평가기",
-  "오퍼레이터 surface",
-  "operator surface",
-  "operator ux",
-  "codex app",
-  "codex 앱",
-  "loop:intent",
-  "loop:intake",
-  "loop:run",
-  ".agents/skills",
-  ".codex/agents",
-  "agents.md",
-  "runbook.md",
-  "status.md",
-  "plans.md",
-  "subagent",
-  "subagents",
-  "thread fork",
-  "worktree",
-  "durable memory",
-  "feature ledger",
-  "feature_list.generated.json",
-  "progress.md",
-  "done_when.md",
-  "quality critique",
-  "quality-critique",
-  "patch-request",
-  "trajectory-decision",
-  "round-contract",
-  "bootstrap",
-  "router",
-  "intent gate",
-  "intake gate",
-  "control-plane",
-  "resume-identity"
-] as const;
+const harnessSurfaceSignals: IntentSignal[] = [
+  { label: "harness", pattern: /\bharness\b/i },
+  { label: "generic workbench", pattern: /\bgeneric(?:\s+codex)?\s+workbench\b/i },
+  { label: "Codex workbench", pattern: /\bcodex\s+workbench\b/i },
+  { label: "closed-loop", pattern: /\bclosed-?\s*loop\b/i },
+  { label: "front door", pattern: /\bfront\s+door\b/i },
+  { label: "planner", pattern: /\bplanner\b/i },
+  { label: "control plane", pattern: /\bcontrol(?:-|\s+)plane\b/i },
+  { label: "operator surface", pattern: /\boperator(?:-|\s+)surface\b/i },
+  { label: "operator UX", pattern: /\boperator\s+ux\b/i },
+  { label: "Codex app", pattern: /\bcodex\s+app\b/i },
+  { label: "skills", pattern: /\.agents\/skills|\.codex\/agents|\bskills\b/i },
+  { label: "loop:intent", pattern: /\bloop:intent\b/i },
+  { label: "loop:intake", pattern: /\bloop:intake\b/i },
+  { label: "loop:run", pattern: /\bloop:run\b/i },
+  { label: "AGENTS.md", pattern: /\bagents\.md\b/i },
+  { label: "RUNBOOK.md", pattern: /\brunbook\.md\b/i },
+  { label: "feature_list.generated.json", pattern: /\bfeature_list\.generated\.json\b/i },
+  { label: "progress.md", pattern: /\bprogress\.md\b/i },
+  { label: "progress.jsonl", pattern: /\bprogress\.jsonl\b/i },
+  { label: "done_when.md", pattern: /\bdone_when\.md\b/i },
+  { label: "init.sh", pattern: /\binit\.sh\b/i },
+  { label: "patch-request", pattern: /\bpatch-request\b/i },
+  { label: "trajectory-decision", pattern: /\btrajectory-decision\b/i },
+  { label: "round-contract", pattern: /\bround-contract\b/i },
+  { label: "quality-critique", pattern: /\bquality-critique\b/i },
+  { label: "resume-identity", pattern: /\bresume-identity\b/i },
+  { label: "하네스", pattern: /\uD558\uB124\uC2A4/u },
+  { label: "범용 워크벤치", pattern: /\uBC94\uC6A9.{0,4}\uC6CC\uD06C\uBCA4\uCE58/u },
+  { label: "닫힌 루프", pattern: /\uB2EB\uD78C\s*\uB8E8\uD504/u },
+  { label: "앞문", pattern: /\uC55E\uBB38/u },
+  { label: "제어면", pattern: /\uC81C\uC5B4\uBA74/u },
+  { label: "플래너", pattern: /\uD50C\uB798\uB108/u },
+  { label: "평가기", pattern: /\uD3C9\uAC00\uAE30/u }
+];
 
-const HARNESS_PATH_KEYWORDS = [
-  "packages/loop-orchestrator",
-  "packages\\loop-orchestrator",
-  "evals/runs",
-  "evals\\runs",
-  "evals/rubrics",
-  "evals\\rubrics",
-  ".agents/skills",
-  ".codex/agents",
-  "agents.md",
-  "runbook.md",
-  "status.md",
-  "plans.md",
-  "feature_list.generated.json",
-  "progress.md",
-  "done_when.md",
-  "loop:intent",
-  "loop:intake"
-] as const;
+const harnessChangeSignals: IntentSignal[] = [
+  { label: "add", pattern: /\badd\b/i },
+  { label: "change", pattern: /\bchange\b/i },
+  { label: "refactor", pattern: /\brefactor\b/i },
+  { label: "split", pattern: /\bsplit\b/i },
+  { label: "route", pattern: /\broute\b/i },
+  { label: "promote", pattern: /\bpromote\b/i },
+  { label: "replace", pattern: /\breplace\b/i },
+  { label: "remove", pattern: /\bremove\b/i },
+  { label: "upgrade", pattern: /\bupgrade\b/i },
+  { label: "improve", pattern: /\bimprove\b/i },
+  { label: "harden", pattern: /\bharden\b/i },
+  { label: "rewrite", pattern: /\brewrite\b/i },
+  { label: "keep", pattern: /\bkeep\b/i },
+  { label: "maintain", pattern: /\bmaintain\b/i },
+  { label: "추가", pattern: /\uCD94\uAC00/u },
+  { label: "변경", pattern: /\uBCC0\uACBD/u },
+  { label: "분리", pattern: /\uBD84\uB9AC/u },
+  { label: "승격", pattern: /\uC2B9\uACA9/u },
+  { label: "교체", pattern: /\uAD50\uCCB4/u },
+  { label: "개선", pattern: /\uAC1C\uC120/u },
+  { label: "수정", pattern: /\uC218\uC815/u },
+  { label: "보강", pattern: /\uBCF4\uAC15/u },
+  { label: "재작성", pattern: /\uC7AC\uC791\uC131/u },
+  { label: "유지", pattern: /\uC720\uC9C0/u },
+  { label: "고정", pattern: /\uACE0\uC815/u }
+];
 
-const RUN_RESUME_KEYWORDS = [
-  "resume",
-  "resume-run",
-  "--resume-run",
-  "continue run",
-  "reopen",
-  "pick up",
-  "carry on",
-  "이어",
-  "이어서",
-  "이어서 진행",
-  "이어가기",
-  "재개",
-  "재시작",
-  "다시 열기",
-  "last patch request",
-  "latest patch request",
-  "codex-handoff",
-  "controller-summary",
-  "summary.json",
-  "resume-identity",
-  "resume-migration",
-  "force-reopen-terminal",
-  "terminal run"
-] as const;
+const gapSignals: IntentSignal[] = [
+  { label: "missing", pattern: /\bmissing\b/i },
+  { label: "gap", pattern: /\bgap\b/i },
+  { label: "weak", pattern: /\bweak\b/i },
+  { label: "problem", pattern: /\bproblem\b/i },
+  { label: "pain", pattern: /\bpain\b/i },
+  { label: "falls through", pattern: /\bfalls?\s+through\b/i },
+  { label: "still", pattern: /\bstill\b/i },
+  { label: "unknown", pattern: /\bunknown\b/i },
+  { label: "noise", pattern: /\bnoise\b/i },
+  { label: "취약", pattern: /\uCDE8\uC57D/u },
+  { label: "문제", pattern: /\uBB38\uC81C/u },
+  { label: "병목", pattern: /\uBCD1\uBAA9/u },
+  { label: "놓친다", pattern: /\uB193\uCE58/u },
+  { label: "빠진다", pattern: /\uBE60\uC9C0/u },
+  { label: "약하다", pattern: /\uC57D\uD558/u },
+  { label: "어렵다", pattern: /\uC5B4\uB835/u },
+  { label: "신뢰도", pattern: /\uC2E0\uB8B0/u }
+];
 
-const EVALUATOR_SURFACE_KEYWORDS = [
-  "evaluator tuning",
-  "evaluator",
-  "평가기",
-  "rubric",
-  "quality lift",
-  "calibration",
-  "calibrate",
-  "보정",
-  "튜닝",
-  "threshold",
-  "임계값",
-  "few-shot",
-  "golden",
-  "goldens",
-  "negative exemplar",
-  "positive exemplar",
-  "exemplar",
-  "false positive",
-  "false negative",
-  "오탐",
-  "미탐",
-  "subjective metrics",
-  "quality_contract",
-  "quality contract",
-  "verification profile",
-  "release gate",
-  "light lane",
-  "heavy lane",
-  "probe",
-  "browser-app",
-  "dashboard",
-  "api-service",
-  "browser-editor",
-  "fullstack-app",
-  "chat-agent",
-  "best_passing"
-] as const;
+const successSignals: IntentSignal[] = [
+  { label: "priority", pattern: /\bpriority\b/i },
+  { label: "goal", pattern: /\bgoal\b/i },
+  { label: "outcome", pattern: /\boutcome\b/i },
+  { label: "acceptance", pattern: /\bacceptance\b/i },
+  { label: "done when", pattern: /\bdone\s+when\b/i },
+  { label: "success means", pattern: /\bsuccess\s+means\b/i },
+  { label: "must", pattern: /\bmust\b/i },
+  { label: "should", pattern: /\bshould\b/i },
+  { label: "good enough", pattern: /\bgood\s+enough\b/i },
+  { label: "trigger conditions", pattern: /\btrigger\s+conditions?\b/i },
+  { label: "우선순위", pattern: /\uC6B0\uC120\uC21C\uC704/u },
+  { label: "목표", pattern: /\uBAA9\uD45C/u },
+  { label: "성공", pattern: /\uC131\uACF5/u },
+  { label: "완료", pattern: /\uC644\uB8CC/u },
+  { label: "완료 기준", pattern: /\uC644\uB8CC.{0,4}\uAE30\uC900/u },
+  { label: "여야", pattern: /\uC5EC\uC57C/u },
+  { label: "되어야", pattern: /\uB418\uC5B4\uC57C/u },
+  { label: "해야", pattern: /\uD574\uC57C/u },
+  { label: "한 줄로 정리", pattern: /\uD55C\s*\uC904\uB85C.{0,4}\uC815\uB9AC/u }
+];
 
-const NON_PRODUCT_CHANGE_HINTS = [
-  "add",
-  "change",
-  "refactor",
-  "split",
-  "route",
-  "promote",
-  "remove",
-  "replace",
-  "design",
-  "tune",
-  "lift",
-  "improve",
-  "upgrade",
-  "wire",
-  "adjust",
-  "fix",
-  "introduce",
-  "support",
-  "separate",
-  "추가",
-  "분리",
-  "승격",
-  "교체",
-  "보강",
-  "개선",
-  "수정",
-  "보정",
-  "튜닝",
-  "올리기",
-  "남기기",
-  "숨기기",
-  "남긴다",
-  "바꾸기"
-] as const;
+const resumeSignals: IntentSignal[] = [
+  { label: "resume", pattern: /\bresume(?:-run)?\b/i },
+  { label: "continue", pattern: /\bcontinue\b/i },
+  { label: "reopen", pattern: /\breopen\b/i },
+  { label: "pick up", pattern: /\bpick\s+up\b/i },
+  { label: "codex-handoff", pattern: /\bcodex-handoff\b/i },
+  { label: "summary.json", pattern: /\bsummary\.json\b/i },
+  { label: "evals/runs", pattern: /evals[\\/]+runs[\\/]+run-\d+/i },
+  { label: "이어", pattern: /\uC774\uC5B4/u },
+  { label: "재개", pattern: /\uC7AC\uAC1C/u },
+  { label: "다시 열기", pattern: /\uB2E4\uC2DC.{0,4}\uC5F4\uAE30/u }
+];
 
-const GAP_HINTS = [
-  "current",
-  "today",
-  "now",
-  "missing",
-  "gap",
-  "weak",
-  "lack",
-  "problem",
-  "pain",
-  "falls through",
-  "not enough",
-  "middle state",
-  "still",
-  "현재",
-  "지금",
-  "빠진",
-  "빠집니다",
-  "놓칩니다",
-  "약합니다",
-  "문제",
-  "병목",
-  "부족",
-  "비어",
-  "오분류",
-  "삼켜버립니다",
-  "어렵",
-  "불안정",
-  "신뢰",
-  "앞문"
-] as const;
+const runStateSignals: IntentSignal[] = [
+  { label: "blocked", pattern: /\bblocked\b/i },
+  { label: "failed", pattern: /\bfailed\b/i },
+  { label: "hold", pattern: /\bhold(?:ing)?\b/i },
+  { label: "round", pattern: /\bround\b/i },
+  { label: "patch request", pattern: /\bpatch\s+request\b/i },
+  { label: "stop reason", pattern: /\bstop\s+reason\b/i },
+  { label: "environment_blocked", pattern: /\benvironment_blocked\b/i },
+  { label: "target_reached", pattern: /\btarget_reached\b/i },
+  { label: "중단", pattern: /\uC911\uB2E8/u },
+  { label: "보류", pattern: /\uBCF4\uB958/u },
+  { label: "멈춤", pattern: /\uBA48/u }
+];
 
-const SUCCESS_HINTS = [
-  "priority",
-  "first",
-  "next",
-  "goal",
-  "good enough",
-  "done when",
-  "should",
-  "must",
-  "need",
-  "acceptance",
-  "outcome",
-  "lift",
-  "trigger condition",
-  "trigger conditions",
-  "closeout",
-  "release closeout",
-  "우선순위",
-  "다음",
-  "목표",
-  "좋은 상태",
-  "성공",
-  "완료",
-  "끝내려면",
-  "되어야",
-  "해야",
-  "필요",
-  "한 줄로",
-  "정리하면",
-  "믿고",
-  "앞문",
-  "쓸 수 있는 상태",
-  "보강",
-  "신뢰"
-] as const;
+const runActionSignals: IntentSignal[] = [
+  { label: "resume", pattern: /\bresume\b/i },
+  { label: "continue", pattern: /\bcontinue\b/i },
+  { label: "reopen", pattern: /\breopen\b/i },
+  { label: "advance", pattern: /\badvance\b/i },
+  { label: "close out", pattern: /\bclose\s*out\b/i },
+  { label: "next step", pattern: /\bnext\s+step\b/i },
+  { label: "이어가기", pattern: /\uC774\uC5B4\uAC00\uAE30/u },
+  { label: "재개", pattern: /\uC7AC\uAC1C/u },
+  { label: "결정", pattern: /\uACB0\uC815/u },
+  { label: "닫기", pattern: /\uB2EB\uAE30/u }
+];
 
-const EVALUATOR_EXAMPLE_HINTS = [
-  "false positive",
-  "false negative",
-  "example",
-  "examples",
-  "golden",
-  "goldens",
-  "exemplar",
-  "plateau",
-  "regression",
-  "signature repeat",
-  "오탐",
-  "미탐",
-  "예시",
-  "사례",
-  "골든",
-  "회귀",
-  "플래토",
-  "반복"
-] as const;
+const evaluatorSurfaceSignals: IntentSignal[] = [
+  { label: "evaluator", pattern: /\bevaluator\b/i },
+  { label: "rubric", pattern: /\brubric\b/i },
+  { label: "calibration", pattern: /\bcalibration\b/i },
+  { label: "threshold", pattern: /\bthresholds?\b/i },
+  { label: "few-shot", pattern: /\bfew-?shot\b/i },
+  { label: "golden", pattern: /\bgoldens?\b/i },
+  { label: "exemplar", pattern: /\bexemplar\b/i },
+  { label: "false positive", pattern: /\bfalse\s+positives?\b/i },
+  { label: "false negative", pattern: /\bfalse\s+negatives?\b/i },
+  { label: "subjective metrics", pattern: /\bsubjective\s+metrics?\b/i },
+  { label: "quality contract", pattern: /\bquality(?:_|-|\s+)contract\b/i },
+  { label: "verification profile", pattern: /\bverification\s+profile\b/i },
+  { label: "release gate", pattern: /\brelease\s+gate\b/i },
+  { label: "light lane", pattern: /\blight\s+lane\b/i },
+  { label: "heavy lane", pattern: /\bheavy\s+lane\b/i },
+  { label: "browser-app", pattern: /\bbrowser-app\b/i },
+  { label: "dashboard", pattern: /\bdashboard\b/i },
+  { label: "api-service", pattern: /\bapi-service\b/i },
+  { label: "평가기", pattern: /\uD3C9\uAC00\uAE30/u },
+  { label: "보정", pattern: /\uBCF4\uC815/u },
+  { label: "튜닝", pattern: /\uD29C\uB2DD/u },
+  { label: "임계값", pattern: /\uC784\uACC4\uAC12/u },
+  { label: "오탐", pattern: /\uC624\uD0D0/u },
+  { label: "미탐", pattern: /\uBBF8\uD0D0/u }
+];
 
-const EVALUATOR_OVERRIDE_HINTS = [
-  "tune",
-  "calibrate",
-  "adjust",
-  "threshold",
-  "heavy lane",
-  "light lane",
-  "rubric",
-  "verification profile",
-  "bundle",
-  "quality contract",
-  "subjective metrics",
-  "보정",
-  "튜닝",
-  "조정",
-  "임계값",
-  "lane",
-  "프로파일",
-  "번들"
-] as const;
+const evaluatorChangeSignals: IntentSignal[] = [
+  { label: "tune", pattern: /\btune\b/i },
+  { label: "calibrate", pattern: /\bcalibrate\b/i },
+  { label: "adjust", pattern: /\badjust\b/i },
+  { label: "threshold", pattern: /\bthresholds?\b/i },
+  { label: "bundle", pattern: /\bbundle\b/i },
+  { label: "profile", pattern: /\bprofile\b/i },
+  { label: "보정", pattern: /\uBCF4\uC815/u },
+  { label: "튜닝", pattern: /\uD29C\uB2DD/u },
+  { label: "조정", pattern: /\uC870\uC815/u },
+  { label: "프로파일", pattern: /\uD504\uB85C\uD30C\uC77C/u }
+];
 
-const RUN_STATE_HINTS = [
-  "blocked",
-  "failed",
-  "holding",
-  "hold",
-  "stopped",
-  "round",
-  "patch request",
-  "stop reason",
-  "environment_blocked",
-  "target_reached",
-  "contract_completed",
-  "max_rounds_reached",
-  "막힘",
-  "실패",
-  "중단",
-  "보류",
-  "라운드",
-  "패치 요청",
-  "중지 사유"
-] as const;
+const evaluatorExampleSignals: IntentSignal[] = [
+  { label: "false positive", pattern: /\bfalse\s+positives?\b/i },
+  { label: "false negative", pattern: /\bfalse\s+negatives?\b/i },
+  { label: "golden", pattern: /\bgoldens?\b/i },
+  { label: "example", pattern: /\bexamples?\b/i },
+  { label: "regression", pattern: /\bregression\b/i },
+  { label: "plateau", pattern: /\bplateau\b/i },
+  { label: "오탐", pattern: /\uC624\uD0D0/u },
+  { label: "미탐", pattern: /\uBBF8\uD0D0/u },
+  { label: "예시", pattern: /\uC608\uC2DC/u },
+  { label: "사례", pattern: /\uC0AC\uB840/u },
+  { label: "회귀", pattern: /\uD68C\uADC0/u }
+];
 
-const RUN_ACTION_HINTS = [
-  "resume",
-  "continue",
-  "reopen",
-  "advance",
-  "close out",
-  "closeout",
-  "fix",
-  "hold",
-  "decide",
-  "next step",
-  "재개",
-  "이어가기",
-  "다시 열기",
-  "계속",
-  "마감",
-  "닫기",
-  "보류",
-  "결정"
-] as const;
+const productContextPattern =
+  /\b(?:build|create|ship|prototype|design)\b.{0,48}\b(?:app|service|editor|dashboard|api|agent|workspace|storyboard)\b|\b(?:app|service|editor|dashboard|api|agent|workspace|storyboard)\b.{0,48}\b(?:build|create|ship|prototype|design)\b|(?:\uAD6C\uD604|\uB9CC\uB4E4|\uAC1C\uBC1C|\uC124\uACC4).{0,24}(?:\uC571|\uC11C\uBE44\uC2A4|\uC5D0\uB514\uD130|\uB300\uC2DC\uBCF4\uB4DC|api|agent)|(?:\uC571|\uC11C\uBE44\uC2A4|\uC5D0\uB514\uD130|\uB300\uC2DC\uBCF4\uB4DC|api|agent).{0,24}(?:\uAD6C\uD604|\uB9CC\uB4E4|\uAC1C\uBC1C|\uC124\uACC4)/i;
 
-const RUN_REFERENCE_PATTERN =
+const runReferencePattern =
   /(evals[\\/]+runs[\\/]+run-\d+|(?:[A-Za-z]:\\|\.{1,2}[\\/])?[^\r\n\s]*run-\d+[^\r\n\s]*)/i;
-
-const PRODUCT_CONTEXT_PATTERN =
-  /\b(?:build|create|ship|prototype|design)\b.{0,48}\b(?:app|service|editor|dashboard|api|agent|workspace|storyboard)\b|\b(?:app|service|editor|dashboard|api|agent|workspace|storyboard)\b.{0,48}\b(?:build|create|ship|prototype|design)\b|(?:구현|만들|개발|설계).{0,24}(?:앱|서비스|에디터|대시보드|api|agent)|(?:앱|서비스|에디터|대시보드|api|agent).{0,24}(?:구현|만들|개발|설계)/i;
 
 const normalizeText = (value: string): string => value.replace(/\s+/g, " ").trim();
 
-const lowerText = (value: string): string => normalizeText(value).toLowerCase();
+const sanitizeIntentRequest = (value: string): string =>
+  normalizeText(
+    value
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, "$1")
+      .replace(/\[([^\]]+)\]\[[^\]]+\]/g, "$1")
+      .replace(/^\[[^\]]+\]:\s+https?:\/\/\S+\s*$/gm, " ")
+      .replace(/https?:\/\/\S+/g, " ")
+      .replace(/`+/g, " ")
+  );
 
-const includesAny = (value: string, keywords: readonly string[]): boolean =>
-  keywords.some((keyword) => value.includes(keyword));
-
-const collectMatchedKeywords = (value: string, keywords: readonly string[]): string[] =>
-  keywords.filter((keyword) => value.includes(keyword));
+const matchSignals = (value: string, signals: readonly IntentSignal[]): string[] =>
+  signals.filter((signal) => signal.pattern.test(value)).map((signal) => signal.label);
 
 const roundScore = (value: number): number => Number(value.toFixed(3));
 
-const buildHarnessFieldStates = (
-  request: string,
-  normalizedLower: string,
-  matchedKeywords: readonly string[]
-): IntentFieldState<HarnessIntentFieldId>[] => {
-  const normalized = normalizeText(request);
-  const goalSignal =
-    includesAny(normalizedLower, NON_PRODUCT_CHANGE_HINTS) || matchedKeywords.length >= 2;
-
-  return [
-    {
-      id: "change_goal",
-      satisfied: normalized.length >= 32 && goalSignal,
-      question: "What harness surface or operator path should change first?"
-    },
-    {
-      id: "current_gap",
-      satisfied: includesAny(normalizedLower, GAP_HINTS),
-      question: "What concrete gap, failure mode, or operator pain exists in the current flow?"
-    },
-    {
-      id: "success_criteria",
-      satisfied: includesAny(normalizedLower, SUCCESS_HINTS) || /\b1\.\s|\b2\.\s/.test(request),
-      question: "What outcome would tell us the harness change worked?"
-    }
-  ];
-};
-
-const buildResumeFieldStates = (
-  request: string,
-  normalizedLower: string
-): IntentFieldState<ResumeIntentFieldId>[] => {
-  const runReference = extractRunReference(request);
-
-  return [
-    {
-      id: "run_reference",
-      satisfied: runReference !== undefined,
-      question: "Which run should be resumed? Provide the run directory or run id."
-    },
-    {
-      id: "current_state",
-      satisfied: includesAny(normalizedLower, RUN_STATE_HINTS),
-      question: "What is the current run state, stop reason, or latest patch status?"
-    },
-    {
-      id: "next_step",
-      satisfied: includesAny(normalizedLower, RUN_ACTION_HINTS),
-      question: "What should happen next: reopen, continue, hold, or close out?"
-    }
-  ];
-};
-
-const buildEvaluatorFieldStates = (
-  request: string,
-  normalizedLower: string,
-  matchedKeywords: readonly string[]
-): IntentFieldState<EvaluatorIntentFieldId>[] => [
-  {
-    id: "calibration_focus",
-    satisfied:
-      matchedKeywords.length >= 2 ||
-      /(?:browser-app|dashboard|api-service|chat-agent|fullstack-app|browser-editor|light lane|heavy lane)/i.test(
-        request
-      ),
-    question: "Which evaluator lane, family, or rubric surface needs calibration?"
-  },
-  {
-    id: "failure_examples",
-    satisfied: includesAny(normalizedLower, EVALUATOR_EXAMPLE_HINTS),
-    question: "What examples show the evaluator getting it wrong today?"
-  },
-  {
-    id: "success_criteria",
-    satisfied: includesAny(normalizedLower, SUCCESS_HINTS),
-    question: "What lift or calibration outcome should count as a successful evaluator change?"
-  }
-];
-
 const extractRunReference = (request: string): string | undefined => {
-  const match = request.match(RUN_REFERENCE_PATTERN)?.[0]?.trim();
+  const match = request.match(runReferencePattern)?.[0]?.trim();
   return match && match.length > 0 ? match : undefined;
 };
 
@@ -495,13 +304,105 @@ const buildSatisfiedFields = <TFieldId extends IntentFieldId>(
   states: IntentFieldState<TFieldId>[]
 ): TFieldId[] => states.filter((field) => field.satisfied).map((field) => field.id);
 
-const buildIntentRationale = (label: string, matchedKeywords: readonly string[]): string[] => {
-  if (matchedKeywords.length === 0) {
-    return [`Matched ${label} signals from the request.`];
+const buildIntentRationale = (
+  label: string,
+  matchedKeywords: readonly string[],
+  extraRationale?: readonly string[]
+): string[] => {
+  const rationale: string[] = [];
+  if (matchedKeywords.length > 0) {
+    rationale.push(`Matched ${label} signals: ${matchedKeywords.slice(0, 6).join(", ")}.`);
+  } else {
+    rationale.push(`Matched ${label} signals from the request.`);
   }
-
-  return [`Matched ${label} signals: ${matchedKeywords.slice(0, 5).join(", ")}.`];
+  if (extraRationale) {
+    rationale.push(...extraRationale);
+  }
+  return rationale;
 };
+
+const buildHarnessFieldStates = (
+  request: string,
+  matchedHarnessSignals: readonly string[],
+  matchedGapSignals: readonly string[],
+  matchedSuccessSignals: readonly string[],
+  matchedChangeSignals: readonly string[]
+): IntentFieldState<HarnessIntentFieldId>[] => {
+  const normalized = normalizeText(request);
+  return [
+    {
+      id: "change_goal",
+      satisfied: normalized.length >= 32 && (matchedChangeSignals.length > 0 || matchedHarnessSignals.length >= 2),
+      question: "What harness surface or operator path should change first?"
+    },
+    {
+      id: "current_gap",
+      satisfied:
+        matchedGapSignals.length > 0 ||
+        (matchedHarnessSignals.length >= 4 &&
+          matchedChangeSignals.length > 0 &&
+          matchedSuccessSignals.length > 0),
+      question: "What concrete gap, failure mode, or operator pain exists in the current flow?"
+    },
+    {
+      id: "success_criteria",
+      satisfied: matchedSuccessSignals.length > 0 || /\b1\.\s|\b2\.\s/.test(request),
+      question: "What outcome would tell us the harness change worked?"
+    }
+  ];
+};
+
+const buildResumeFieldStates = (
+  request: string,
+  matchedRunStateSignals: readonly string[],
+  matchedRunActionSignals: readonly string[]
+): IntentFieldState<ResumeIntentFieldId>[] => {
+  const runReference = extractRunReference(request);
+  return [
+    {
+      id: "run_reference",
+      satisfied: runReference !== undefined,
+      question: "Which run should be resumed? Provide the run directory or run id."
+    },
+    {
+      id: "current_state",
+      satisfied: matchedRunStateSignals.length > 0,
+      question: "What is the current run state, stop reason, or latest patch status?"
+    },
+    {
+      id: "next_step",
+      satisfied: matchedRunActionSignals.length > 0,
+      question: "What should happen next: reopen, continue, hold, or close out?"
+    }
+  ];
+};
+
+const buildEvaluatorFieldStates = (
+  request: string,
+  matchedEvaluatorSignals: readonly string[],
+  matchedEvaluatorExampleSignals: readonly string[],
+  matchedSuccessSignals: readonly string[]
+): IntentFieldState<EvaluatorIntentFieldId>[] => [
+  {
+    id: "calibration_focus",
+    satisfied:
+      matchedEvaluatorSignals.length >= 2 ||
+      /(?:browser-app|dashboard|api-service|chat-agent|fullstack-app|browser-editor|light lane|heavy lane)/i.test(
+        request
+      ),
+    question: "Which evaluator lane, family, or rubric surface needs calibration?"
+  },
+  {
+    id: "failure_examples",
+    satisfied: matchedEvaluatorExampleSignals.length > 0,
+    question: "What examples show the evaluator getting it wrong today?"
+  },
+  {
+    id: "success_criteria",
+    satisfied: matchedSuccessSignals.length > 0,
+    question: "What lift or calibration outcome should count as a successful evaluator change?"
+  }
+];
 
 const buildProductResult = (
   intake: IntakeGateResult,
@@ -523,58 +424,94 @@ const buildProductResult = (
 });
 
 export const evaluateLoopIntent = (request: string): LoopIntentResult => {
-  const normalizedLower = lowerText(request);
-  const runReference = extractRunReference(request);
-  const intake = evaluateIntakeRequest(request);
+  const normalizedRequest = normalizeText(request);
+  const sanitizedRequest = sanitizeIntentRequest(normalizedRequest);
+  const runReference = extractRunReference(normalizedRequest);
+  const intake = evaluateIntakeRequest(sanitizedRequest);
 
-  const harnessMatched = collectMatchedKeywords(normalizedLower, HARNESS_SURFACE_KEYWORDS);
-  const harnessPathMatched = collectMatchedKeywords(normalizedLower, HARNESS_PATH_KEYWORDS);
-  const resumeMatched = collectMatchedKeywords(normalizedLower, RUN_RESUME_KEYWORDS);
-  const evaluatorMatched = collectMatchedKeywords(normalizedLower, EVALUATOR_SURFACE_KEYWORDS);
+  const matchedHarnessSignals = matchSignals(sanitizedRequest, harnessSurfaceSignals);
+  const matchedHarnessChangeSignals = matchSignals(sanitizedRequest, harnessChangeSignals);
+  const matchedGapSignals = matchSignals(sanitizedRequest, gapSignals);
+  const matchedSuccessSignals = matchSignals(sanitizedRequest, successSignals);
+  const matchedResumeSignals = matchSignals(sanitizedRequest, resumeSignals);
+  const matchedRunStateSignals = matchSignals(sanitizedRequest, runStateSignals);
+  const matchedRunActionSignals = matchSignals(sanitizedRequest, runActionSignals);
+  const matchedEvaluatorSignals = matchSignals(sanitizedRequest, evaluatorSurfaceSignals);
+  const matchedEvaluatorChangeSignals = matchSignals(sanitizedRequest, evaluatorChangeSignals);
+  const matchedEvaluatorExampleSignals = matchSignals(sanitizedRequest, evaluatorExampleSignals);
 
-  const mentionsHarnessSurface = harnessMatched.length > 0 || harnessPathMatched.length > 0;
-  const mentionsRepoSurface = harnessPathMatched.length > 0;
-  const hasNonProductChangeHint = includesAny(normalizedLower, NON_PRODUCT_CHANGE_HINTS);
-  const hasGapSignal = includesAny(normalizedLower, GAP_HINTS);
-  const hasSuccessSignal =
-    includesAny(normalizedLower, SUCCESS_HINTS) || /\b1\.\s|\b2\.\s/.test(request);
-  const hasEvaluatorOverrideHint = includesAny(normalizedLower, EVALUATOR_OVERRIDE_HINTS);
-  const hasEvaluatorExampleHint = includesAny(normalizedLower, EVALUATOR_EXAMPLE_HINTS);
-  const hasProductContext = PRODUCT_CONTEXT_PATTERN.test(normalizedLower);
+  const hasProductContext = productContextPattern.test(sanitizedRequest);
+  const hasReferenceNoise = sanitizedRequest !== normalizedRequest;
+  const hasHarnessSurface = matchedHarnessSignals.length > 0;
+  const hasRepoSurface = matchedHarnessSignals.some((signal) =>
+    [
+      "skills",
+      "loop:intent",
+      "loop:intake",
+      "loop:run",
+      "AGENTS.md",
+      "RUNBOOK.md",
+      "feature_list.generated.json",
+      "progress.md",
+      "progress.jsonl",
+      "done_when.md",
+      "init.sh",
+      "patch-request",
+      "trajectory-decision",
+      "round-contract",
+      "quality-critique",
+      "resume-identity"
+    ].includes(signal)
+  );
 
   const productScore =
-    intake.is_product_build_request
-      ? 4 +
-        (intake.status === "ready_for_confirmation" ? 2 : 0) +
-        (intake.status === "ask_execution_questions" ? 1 : 0)
-      : 0;
+    (intake.is_product_build_request ? 4 : 0) +
+    (hasProductContext ? 2 : 0) +
+    (intake.status === "ready_for_confirmation" ? 1 : 0);
 
   const resumeScore =
-    resumeMatched.length +
-    (runReference !== undefined ? 3 : 0) +
-    (includesAny(normalizedLower, ["resume", "resume-run", "--resume-run", "재개", "이어서"]) ? 1 : 0);
+    matchedResumeSignals.length +
+    matchedRunStateSignals.length +
+    matchedRunActionSignals.length +
+    (runReference !== undefined ? 3 : 0);
 
   const explicitHarnessChange =
-    mentionsHarnessSurface && (hasNonProductChangeHint || hasGapSignal || hasSuccessSignal);
+    hasHarnessSurface &&
+    (matchedHarnessChangeSignals.length > 0 ||
+      matchedGapSignals.length > 0 ||
+      matchedSuccessSignals.length > 0);
   const harnessScore = explicitHarnessChange
-    ? harnessMatched.length +
-      harnessPathMatched.length +
-      (mentionsRepoSurface ? 2 : 0) +
-      (hasNonProductChangeHint ? 1 : 0)
+    ? matchedHarnessSignals.length +
+      matchedHarnessChangeSignals.length * 2 +
+      matchedGapSignals.length +
+      matchedSuccessSignals.length +
+      (hasRepoSurface ? 2 : 0)
     : 0;
 
   const explicitEvaluatorChange =
-    evaluatorMatched.length > 0 &&
-    (hasEvaluatorOverrideHint || hasEvaluatorExampleHint || hasSuccessSignal) &&
-    (!intake.is_product_build_request || mentionsRepoSurface || hasNonProductChangeHint);
+    matchedEvaluatorSignals.length > 0 &&
+    (matchedEvaluatorChangeSignals.length > 0 ||
+      matchedEvaluatorExampleSignals.length > 0 ||
+      matchedSuccessSignals.length > 0);
   const evaluatorScore = explicitEvaluatorChange
-    ? evaluatorMatched.length +
-      (hasEvaluatorOverrideHint ? 2 : 0) +
-      (hasEvaluatorExampleHint ? 1 : 0)
+    ? matchedEvaluatorSignals.length +
+      matchedEvaluatorChangeSignals.length * 2 +
+      matchedEvaluatorExampleSignals.length +
+      matchedSuccessSignals.length +
+      (hasRepoSurface ? 1 : 0)
     : 0;
 
-  if (resumeScore >= 3 && resumeScore >= productScore && resumeScore >= harnessScore && resumeScore >= evaluatorScore) {
-    const states = buildResumeFieldStates(request, normalizedLower);
+  if (
+    resumeScore >= 4 &&
+    resumeScore >= productScore &&
+    resumeScore >= harnessScore &&
+    resumeScore >= evaluatorScore
+  ) {
+    const states = buildResumeFieldStates(
+      normalizedRequest,
+      matchedRunStateSignals,
+      matchedRunActionSignals
+    );
     const missingFields = buildMissingFields(states);
     return {
       intent: "run_resume",
@@ -586,41 +523,49 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
       missing_fields: missingFields,
       satisfied_fields: buildSatisfiedFields(states),
       rationale: buildIntentRationale("run-resume", [
-        ...resumeMatched,
+        ...matchedResumeSignals,
         ...(runReference ? [runReference] : [])
       ]),
       extracted_run_reference: runReference
     };
   }
 
-  if (intake.is_product_build_request) {
-    const productRationale = [
-      `Detected a product-build request and kept loop:intake authoritative (${intake.status}).`
-    ];
-
+  if (productScore > 0) {
     const explicitHarnessOverride =
-      explicitHarnessChange && harnessScore >= productScore + 2 && !hasProductContext;
+      explicitHarnessChange &&
+      !hasProductContext &&
+      (hasRepoSurface || harnessScore >= productScore + 1);
     const explicitEvaluatorOverride =
       explicitEvaluatorChange &&
-      evaluatorScore >= productScore + 2 &&
       !hasProductContext &&
-      (mentionsRepoSurface || hasNonProductChangeHint);
+      (hasRepoSurface || evaluatorScore >= productScore + 1);
 
     if (!explicitHarnessOverride && !explicitEvaluatorOverride) {
-      if (evaluatorMatched.length > 0 && !explicitEvaluatorOverride) {
-        productRationale.push(
-          "Evaluator words appeared as product context rather than as a harness-surface change."
-        );
-      }
-      return buildProductResult(intake, productRationale);
+      return buildProductResult(
+        intake,
+        buildIntentRationale("product-build", [], [
+          `Detected a product-build request and kept loop:intake authoritative (${intake.status}).`,
+          ...(matchedEvaluatorSignals.length > 0 && !explicitEvaluatorOverride
+            ? [
+                "Evaluator language appeared as product context rather than as a workbench-lane override."
+              ]
+            : []),
+          ...(hasReferenceNoise
+            ? ["Reference URLs were ignored while scoring the lane."]
+            : [])
+        ])
+      );
     }
   }
 
-  if (harnessScore >= evaluatorScore && harnessScore >= 2) {
-    const states = buildHarnessFieldStates(request, normalizedLower, [
-      ...harnessMatched,
-      ...harnessPathMatched
-    ]);
+  if (harnessScore >= evaluatorScore && harnessScore >= 4) {
+    const states = buildHarnessFieldStates(
+      sanitizedRequest,
+      matchedHarnessSignals,
+      matchedGapSignals,
+      matchedSuccessSignals,
+      matchedHarnessChangeSignals
+    );
     const missingFields = buildMissingFields(states);
     return {
       intent: "harness_design",
@@ -631,12 +576,19 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
       questions: buildQuestions(states),
       missing_fields: missingFields,
       satisfied_fields: buildSatisfiedFields(states),
-      rationale: buildIntentRationale("harness-design", [...harnessMatched, ...harnessPathMatched])
+      rationale: buildIntentRationale("harness-design", matchedHarnessSignals, [
+        ...(hasReferenceNoise ? ["Reference URLs were ignored while scoring the lane."] : [])
+      ])
     };
   }
 
-  if (evaluatorScore >= 2) {
-    const states = buildEvaluatorFieldStates(request, normalizedLower, evaluatorMatched);
+  if (evaluatorScore >= 4) {
+    const states = buildEvaluatorFieldStates(
+      sanitizedRequest,
+      matchedEvaluatorSignals,
+      matchedEvaluatorExampleSignals,
+      matchedSuccessSignals
+    );
     const missingFields = buildMissingFields(states);
     return {
       intent: "evaluator_tuning",
@@ -647,14 +599,20 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
       questions: buildQuestions(states),
       missing_fields: missingFields,
       satisfied_fields: buildSatisfiedFields(states),
-      rationale: buildIntentRationale("evaluator-tuning", evaluatorMatched)
+      rationale: buildIntentRationale("evaluator-tuning", matchedEvaluatorSignals, [
+        ...(hasReferenceNoise ? ["Reference URLs were ignored while scoring the lane."] : [])
+      ])
     };
   }
 
   if (intake.is_product_build_request) {
-    return buildProductResult(intake, [
-      `Detected a product-build request and delegated to loop:intake (${intake.status}).`
-    ]);
+    return buildProductResult(
+      intake,
+      buildIntentRationale("product-build", [], [
+        `Detected a product-build request and delegated to loop:intake (${intake.status}).`,
+        ...(hasReferenceNoise ? ["Reference URLs were ignored while scoring the lane."] : [])
+      ])
+    );
   }
 
   return {
@@ -665,11 +623,13 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
     route_target: "clarify",
     questions: [
       "Is this a product-build, harness-design, run-resume, or evaluator-tuning request?",
-      "What concrete output should the harness produce next?"
+      "What concrete output should the workbench produce next?"
     ],
     missing_fields: [],
     satisfied_fields: [],
-    rationale: ["The request did not contain enough stable signals to classify a lane."]
+    rationale: [
+      "The request did not contain enough stable lane signals after stripping URL and reference noise."
+    ]
   };
 };
 

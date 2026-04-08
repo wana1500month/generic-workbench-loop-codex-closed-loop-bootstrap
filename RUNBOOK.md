@@ -2,14 +2,14 @@
 
 ## Purpose
 
-This repository is the harness core only. It owns idea intake, planning, initial build negotiation, patch-request-driven remediation, controller summaries, adapter capability boundaries, and Codex handoff. It does not ship a bundled product surface.
+This repository is a generic Codex workbench for harness work. It owns front-door routing, idea intake, planning, initial build negotiation, patch-request-driven remediation, controller summaries, adapter capability boundaries, and Codex handoff. It does not ship a bundled product surface.
 
 ## Primary inputs
 
 - `IDEA.md`: the current harness goal or refactor request
-- `npm run loop:intent -- "<user request>"`: generic request router that separates product build, harness design, run resume, and evaluator tuning before work starts
+- `npm run loop:intent -- "<user request>"`: generic front door that separates product build, harness design, run resume, and evaluator tuning before work starts
 - `npm run loop:intake -- "<user request>"`: staged intake gate that returns product questions, execution questions, or confirmation
-- `npm run loop:bootstrap`: writes `IDEA.md`, `intake.json`, `feature_list.generated.json`, `progress.md`, `done_when.md`, `adapter.generated.json`, `rubric.generated.json`, and `verification-profile.generated.json`, then uses the generated rubric/bundle on the first run unless the CLI explicitly overrides them. Bootstrap now also captures deeper quality intent such as must-not-break flows, failure expectations, continuity boundaries, reference signals, non-goals, probe hints, and optional user-authored subjective metrics with minimum `x/10` thresholds.
+- `npm run loop:bootstrap`: writes `IDEA.md`, `intake.json`, `feature_list.generated.json`, `progress.md`, `progress.jsonl`, `done_when.md`, `init.sh`, `adapter.generated.json`, `rubric.generated.json`, and `verification-profile.generated.json`, then uses the generated rubric/bundle on the first run unless the CLI explicitly overrides them. Bootstrap now also captures deeper quality intent such as must-not-break flows, failure expectations, continuity boundaries, reference signals, non-goals, probe hints, and optional user-authored subjective metrics with minimum `x/10` thresholds.
 - `npm run reference-adapter:scaffold-quality-lane -- --profile <bundle.json> --out <strict-bundle.json>`: derives a stricter companion evaluator lane from an existing bundle without demanding release assertions that the source bundle does not actually configure
 - `SPEC.md`: stable harness scope
 - `PLANS.md`: current milestone map
@@ -18,8 +18,10 @@ This repository is the harness core only. It owns idea intake, planning, initial
 - `ADAPTER_CONTRACT.md`: external adapter capability contract
 - `feature_list.generated.json`: append-safe long-horizon feature ledger for what is still planned, done, or blocked
 - `progress.md`: operator-facing summary of the latest decisions, blockers, and next actions
+- `progress.jsonl`: append-friendly task journal for restart-safe event history
 - `done_when.md`: human-readable stop condition that should stay aligned with the real closeout bar
-- `.agents/skills/*/SKILL.md`: repo-local Codex app operator surfaces for harness intake, run attempt, and closeout
+- `init.sh`: fast session bootstrap for workbench setup and canonical front-door commands
+- `.agents/skills/*/SKILL.md`: repo-local Codex app operator surfaces, with lane-centric entry skills such as `intent-router`, `product-intake`, `harness-design`, `run-resume`, `evaluator-tuning`, `run-attempt`, and `closeout`
 - `evals/rubrics/generic-harness-rubric.json`: stop policy and required artifact list
 - `evals/verification-profiles/*.json`: core-owned evaluator bundles such as `generic-core.profile.json`, `api-service.profile.json`, `crud-service.profile.json`, `chat-agent.profile.json`, `browser-app.profile.json`, `editor-app.profile.json`, `fullstack-app.profile.json`, and `dashboard.profile.json`
 - The default rubric still points at `fullstack-app.profile.json` for adapter-backed fallback, but adapter-free runs now auto-resolve to the neutral `generic-core.profile.json` bundle so `loop:single` stays harness-centric instead of product-biased.
@@ -38,6 +40,7 @@ This repository is the harness core only. It owns idea intake, planning, initial
 - `adapter`: optional external capability provider for target prep, apply, and run
 - `verifier`: optional external proof provider for capture, checks, and grading under a separate trust domain
 - `Codex`: reads run artifacts and continues harness work in-session
+- Default operation is a single agent and one worktree per lane or run. Reach for worktrees or subagents only when the request explicitly needs parallel exploration or comparator work.
 - `bootstrap generator`: now receives an inline remediation brief built from the current round contract, generator plan, latest patch request, latest quality critique, and latest eval threshold gaps so patch-only mutation is no longer prompt-stateless
 - `bootstrap grader`: now preserves `quality_contract`, `quality_axis_id`, and `subjective_metrics` through runtime loading, so intake-authored quality semantics reach grading, critique, and patch-request generation intact
 
@@ -66,7 +69,7 @@ This repository is the harness core only. It owns idea intake, planning, initial
 - `summary.json.round_history[]` now also persists the resolved `target_family` and `validation_lane` for each attempt, so resume migrations and explicit-profile runs stay machine-auditable after the fact.
 - `summary.json.round_history[]` now also persists `round_stop_reason`, so per-round terminal outcomes no longer depend on parsing handoff prose.
 - `summary.json.round_history[]` now also persists `decision_source`, so reviewers can tell whether a round followed `policy_snapshot`, a hard rule, or default patch authority without reading handoff prose.
-- `summary.json.feature_list_path`, `summary.json.progress_path`, and `summary.json.done_when_path` now point at the durable memory surfaces that travel with the run.
+- `summary.json.feature_list_path`, `summary.json.progress_path`, `summary.json.progress_log_path`, `summary.json.done_when_path`, and `summary.json.init_script_path` now point at the durable memory surfaces that travel with the run.
 - Resume identity mismatches fail closed by default. Use `--allow-resume-migration` only when intentionally changing the adapter contract, bundle, rubric, or target family for an existing run, and expect the controller to write `resume-migration.json`.
 - Resuming a run that already ended with `target_reached`, `contract_completed`, `environment_blocked`, or `adapter_contract_invalid` now defaults to a no-op closure. `--allow-resume-migration` alone does not reopen a terminal run; use `--force-reopen-terminal` when you intentionally want to spend more budget, and pair it with `--allow-resume-migration` when the reopen also changes run identity.
 - `loop:single` now means a literal single executed attempt even when an adapter is attached. Use it to seed fresh-process resume smoke without spending the remediation budget up front.
@@ -342,7 +345,7 @@ The deeper semantic packs now exercise more than surface liveness. API and CRUD 
 
 `validate:bootstrap-deep-intake` proves that deeper quality intake fields survive into `IDEA.md`, `intake.json`, runtime config, generated quality axes, and generated `subjective_metrics`.
 
-`validate:durable-memory` proves that `feature_list.generated.json`, `progress.md`, and `done_when.md` are scaffolded from intake context, rediscovered from disk, and restored when one of the files goes missing.
+`validate:durable-memory` proves that `feature_list.generated.json`, `progress.md`, `progress.jsonl`, `done_when.md`, and `init.sh` are scaffolded from intake context, rediscovered from disk, and restored when one of the files goes missing.
 
 `validate:bootstrap-custom-quality-metrics` proves that user-authored subjective metric thresholds are graded in `grade_round`, fail closed when the configured review falls below the requested minimum, publish `subjective-quality-review.json`, and surface as structured `subjective_quality` findings in quality critique generation.
 

@@ -9,7 +9,14 @@
   },
   {
     "id": "korean-harness-design",
-    "request": "이번 버전은 generic router를 도입한 상태까지는 왔지만 아직 앞문으로 쓰기 어렵습니다. 가장 중요한 남은 문제는 네 가지입니다. `product_build`를 fallback이 아니라 1급 scored lane으로 올리고, bilingual regression set과 `feature_list.generated.json`, `progress.md`, `done_when.md`를 추가해 durable memory를 보강하세요. 우선순위는 라우팅 보정과 기억 장치 추가입니다.",
+    "request": "이 repo의 정체성은 product-building harness가 아니라, 범용 Codex workbench여야 합니다. `product_build`는 여러 lane 중 하나고, 앞문은 항상 범용이어야 합니다. `loop:intent`와 `.agents/skills`, `AGENTS.md`, `feature_list.generated.json`, `progress.jsonl`, `done_when.md`, `init.sh`를 workbench 앞문으로 유지하세요.",
+    "expect_intent": "harness_design",
+    "expect_status": "ready_for_handoff",
+    "expect_route": "harness_design"
+  },
+  {
+    "id": "korean-harness-design-with-links",
+    "request": "이 repo의 정체성은 product-building harness가 아니라, 범용 Codex workbench여야 합니다. `product_build`는 여러 lane 중 하나고, 앞문은 항상 범용이어야 합니다. `loop:intent` + `.agents/skills` + Codex-friendly `AGENTS.md`를 앞문으로 유지하고, `feature_list.generated.json`, `progress.jsonl`, `done_when.md`, `init.sh`를 추가해야 합니다. [1]: https://developers.openai.com/codex/app [2]: https://www.anthropic.com/engineering/harness-design-long-running-apps",
     "expect_intent": "harness_design",
     "expect_status": "ready_for_handoff",
     "expect_route": "harness_design"

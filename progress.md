@@ -14,8 +14,9 @@
 ## Next Actions
 
 - Keep `feature_list.generated.json` updated as workflows move from planned to done or blocked.
-- Append the latest blocker, failed check, or next action after each round.
+- Append the latest blocker, failed check, or next action after each round in `progress.md` and `progress.jsonl`.
 - Keep `done_when.md` aligned with the actual stop condition before closeout.
+- Use `init.sh` to rehydrate the workbench before assuming the environment drifted.
 
 ## Latest Blocker
 

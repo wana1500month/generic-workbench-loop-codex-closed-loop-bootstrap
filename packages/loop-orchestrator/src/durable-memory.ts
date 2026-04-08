@@ -19,7 +19,9 @@ type DurableMemoryIntakeSnapshot = {
 export interface DurableMemoryPaths {
   feature_list_path: string;
   progress_path: string;
+  progress_log_path: string;
   done_when_path: string;
+  init_script_path: string;
 }
 
 export interface DurableMemoryContext {
@@ -58,7 +60,9 @@ const featureIdFor = (prefix: string, index: number, label: string): string =>
 export const createDurableMemoryPaths = (rootDirectory: string): DurableMemoryPaths => ({
   feature_list_path: join(rootDirectory, "feature_list.generated.json"),
   progress_path: join(rootDirectory, "progress.md"),
-  done_when_path: join(rootDirectory, "done_when.md")
+  progress_log_path: join(rootDirectory, "progress.jsonl"),
+  done_when_path: join(rootDirectory, "done_when.md"),
+  init_script_path: join(rootDirectory, "init.sh")
 });
 
 const buildFeatureItems = (input: DurableMemoryContext): DurableFeatureItem[] => {
@@ -131,14 +135,31 @@ export const buildProgressMarkdown = (input: DurableMemoryContext): string =>
     "## Next Actions",
     "",
     "- Keep `feature_list.generated.json` updated as workflows move from planned to done or blocked.",
-    "- Append the latest blocker, failed check, or next action after each round.",
+    "- Append the latest blocker, failed check, or next action after each round in `progress.md` and `progress.jsonl`.",
     "- Keep `done_when.md` aligned with the actual stop condition before closeout.",
+    "- Use `init.sh` to rehydrate the workbench before assuming the environment drifted.",
     "",
     "## Latest Blocker",
     "",
     "- none yet",
     ""
   ].join("\n");
+
+export const buildProgressJsonl = (input: DurableMemoryContext): string =>
+  `${JSON.stringify({
+    timestamp: "bootstrap",
+    event: "memory_scaffolded",
+    status: "bootstrapped",
+    product_title: input.title,
+    summary: input.summary,
+    target_score: input.targetScore ?? null,
+    max_rounds: input.maxRounds ?? null,
+    next_actions: [
+      "Keep feature_list.generated.json aligned with real completion state.",
+      "Append the latest blocker, decision, or next step after each run.",
+      "Keep done_when.md honest before closeout."
+    ]
+  })}\n`;
 
 export const buildDoneWhenMarkdown = (input: DurableMemoryContext): string =>
   [
@@ -171,6 +192,28 @@ export const buildDoneWhenMarkdown = (input: DurableMemoryContext): string =>
     ...(input.targetScore !== undefined ? [`- Target score: ${input.targetScore}`] : []),
     ...(input.maxRounds !== undefined ? [`- Max rounds: ${input.maxRounds}`] : []),
     "- If no adapter is attached, do not overclaim end-to-end product proof.",
+    ""
+  ].join("\n");
+
+export const buildInitScript = (): string =>
+  [
+    "#!/usr/bin/env bash",
+    "set -euo pipefail",
+    "",
+    "if [ ! -d node_modules ]; then",
+    "  npm install",
+    "fi",
+    "",
+    "if ! npm run build; then",
+    "  npx -p typescript@5.8.3 tsc -b --force --pretty false",
+    "fi",
+    "",
+    "cat <<'EOF'",
+    "Ready commands:",
+    "  npm run loop:intent -- --json \"<request>\"",
+    "  npm run loop:intake -- --json \"<product request>\"",
+    "  npm run loop:run -- --resume-run evals/runs/run-###",
+    "EOF",
     ""
   ].join("\n");
 
@@ -219,7 +262,9 @@ export const scaffoldDurableMemoryArtifacts = async (
   await Promise.all([
     writeJson(paths.feature_list_path, buildFeatureLedger(context)),
     writeText(paths.progress_path, buildProgressMarkdown(context)),
-    writeText(paths.done_when_path, buildDoneWhenMarkdown(context))
+    writeText(paths.progress_log_path, buildProgressJsonl(context)),
+    writeText(paths.done_when_path, buildDoneWhenMarkdown(context)),
+    writeText(paths.init_script_path, buildInitScript())
   ]);
   return paths;
 };
@@ -235,8 +280,14 @@ export const ensureDurableMemoryArtifacts = async (
   if (!(await pathExists(paths.progress_path))) {
     await writeText(paths.progress_path, buildProgressMarkdown(context));
   }
+  if (!(await pathExists(paths.progress_log_path))) {
+    await writeText(paths.progress_log_path, buildProgressJsonl(context));
+  }
   if (!(await pathExists(paths.done_when_path))) {
     await writeText(paths.done_when_path, buildDoneWhenMarkdown(context));
+  }
+  if (!(await pathExists(paths.init_script_path))) {
+    await writeText(paths.init_script_path, buildInitScript());
   }
   return paths;
 };
@@ -250,6 +301,13 @@ export const detectDurableMemoryPaths = async (
       ? { feature_list_path: paths.feature_list_path }
       : {}),
     ...(await pathExists(paths.progress_path) ? { progress_path: paths.progress_path } : {}),
+    ...(await pathExists(paths.progress_log_path)
+      ? { progress_log_path: paths.progress_log_path }
+      : {}),
     ...(await pathExists(paths.done_when_path) ? { done_when_path: paths.done_when_path } : {})
+    ,
+    ...(await pathExists(paths.init_script_path)
+      ? { init_script_path: paths.init_script_path }
+      : {})
   };
 };

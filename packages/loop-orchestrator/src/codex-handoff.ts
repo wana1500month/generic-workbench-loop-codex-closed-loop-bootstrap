@@ -55,7 +55,9 @@ Continue work on the harness itself. This repository does not ship a bundled ada
 - Idea: ${rel(input.summary.idea_path)}
 - Feature ledger: ${rel(input.summary.feature_list_path)}
 - Progress log: ${rel(input.summary.progress_path)}
+- Progress journal: ${rel(input.summary.progress_log_path)}
 - Done-when: ${rel(input.summary.done_when_path)}
+- Init script: ${rel(input.summary.init_script_path)}
 - Planned scenario: ${rel(input.summary.planned_scenario_path)}
 - Plan: ${rel(input.summary.plan_path)}
 - Planner brief: ${rel(input.summary.planner_brief_path)}

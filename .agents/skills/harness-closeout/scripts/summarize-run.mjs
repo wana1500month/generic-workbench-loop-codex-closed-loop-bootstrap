@@ -61,7 +61,9 @@ if (!runDirectoryArg) {
       durable_memory: {
         feature_list_path: summary?.feature_list_path,
         progress_path: summary?.progress_path,
-        done_when_path: summary?.done_when_path
+        progress_log_path: summary?.progress_log_path,
+        done_when_path: summary?.done_when_path,
+        init_script_path: summary?.init_script_path
       },
       patch_request: patchRequest
         ? {

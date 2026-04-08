@@ -95,7 +95,9 @@ export type BootstrapResult = {
   intakePath: string;
   featureListPath: string;
   progressPath: string;
+  progressLogPath: string;
   doneWhenPath: string;
+  initScriptPath: string;
 };
 
 export type BootstrapArtifactPaths = {
@@ -104,7 +106,9 @@ export type BootstrapArtifactPaths = {
   intakePath: string;
   featureListPath: string;
   progressPath: string;
+  progressLogPath: string;
   doneWhenPath: string;
+  initScriptPath: string;
   adapterPath: string;
   generatedRubricPath: string;
   generatedVerificationProfilePath: string;
@@ -124,7 +128,9 @@ export const createBootstrapArtifactPaths = (
     intakePath: join(rootDirectory, "intake.json"),
     featureListPath: join(rootDirectory, "feature_list.generated.json"),
     progressPath: join(rootDirectory, "progress.md"),
+    progressLogPath: join(rootDirectory, "progress.jsonl"),
     doneWhenPath: join(rootDirectory, "done_when.md"),
+    initScriptPath: join(rootDirectory, "init.sh"),
     adapterPath: join(rootDirectory, "adapter.generated.json"),
     generatedRubricPath: join(rootDirectory, "rubric.generated.json"),
     generatedVerificationProfilePath: join(
@@ -3081,7 +3087,9 @@ export const scaffoldBootstrapArtifacts = async (
     intakePath: paths.intakePath,
     featureListPath: paths.featureListPath,
     progressPath: paths.progressPath,
-    doneWhenPath: paths.doneWhenPath
+    progressLogPath: paths.progressLogPath,
+    doneWhenPath: paths.doneWhenPath,
+    initScriptPath: paths.initScriptPath
   };
 };
 

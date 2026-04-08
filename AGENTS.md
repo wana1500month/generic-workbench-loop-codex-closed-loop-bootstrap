@@ -1,6 +1,6 @@
 # Repository Rules
 
-This repository exists to build a generic closed-loop harness core.
+This repository exists to build a generic Codex workbench for closed-loop harness work.
 
 ## Scope
 
@@ -14,12 +14,14 @@ This repository exists to build a generic closed-loop harness core.
 - Treat `evals/rubrics` as harness scoring policy.
 - Treat `evals/runs` as persisted run artifacts and controller history.
 - Keep long-running state in files, not chat history.
+- Treat `feature_list.generated.json`, `progress.md`, `progress.jsonl`, `done_when.md`, and `init.sh` as durable task memory rather than disposable notes.
 
 ## Intake-first UX
 
-- Use `npm run loop:intent -- "<user request>"` as the generic request router when the user may be asking for harness design, run resume, or evaluator tuning rather than a product build.
+- Use `npm run loop:intent -- "<user request>"` as the generic front door. `product_build` is only one routed lane, not the repository identity.
 - `loop:intent` may route requests into `product_build`, `harness_design`, `run_resume`, or `evaluator_tuning`.
 - If `loop:intent` routes to `product_build`, continue to use `npm run loop:intake -- "<user request>"` as the authoritative staged intake gate.
+- Prefer lane-centric skills such as `intent-router`, `product-intake`, `harness-design`, `run-resume`, `evaluator-tuning`, `run-attempt`, and `closeout`.
 - If a user asks this repo to build or design an app, service, editor, dashboard, API, agent, or product feature, the first response must follow the intake protocol in `INTAKE_PROTOCOL.md`.
 - Do not jump straight to adapter analysis, family classification, MVP breakdown, UX proposals, wireframes, architecture advice, or stack recommendations before the intake is complete.
 - Treat missing intake fields as a hard block. This should fail closed: ask questions instead of guessing.
@@ -53,6 +55,7 @@ This repository exists to build a generic closed-loop harness core.
 ## Priorities
 
 - File-based handoff must remain clear and resumable.
+- Keep the generic front door stable and lane-oriented before adding deeper loop complexity.
 - Generator/evaluator contract negotiation must happen before a round is executed.
 - Every executed round should write a scoped `round-contract.json` before mutation starts.
 - `patch-request.json` should stay central to continuation logic.
@@ -63,6 +66,7 @@ This repository exists to build a generic closed-loop harness core.
 ## Evaluation expectations
 
 - Prefer explicit protocol artifacts over implicit state.
+- Planner and evaluator should remain available, but evaluator lift should stay selective rather than always-on.
 - Do not claim end-to-end proof when no adapter is attached.
 - Use scaffold rounds to test control-plane coherence, not fake product quality.
 
