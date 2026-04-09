@@ -57,6 +57,15 @@ type PendingThreadClosure = {
   timeout: NodeJS.Timeout;
 };
 
+type PersistedTransportStatus =
+  | "configured"
+  | "live"
+  | "idle"
+  | "completed"
+  | "interrupted"
+  | "blocked"
+  | "closed";
+
 export interface AppServerTransportController {
   syncPhase: (input: {
     round: number;
@@ -128,10 +137,12 @@ class LiveAppServerTransport implements AppServerTransportController {
   private readonly rl;
   private readonly pending = new Map<number, PendingRequest>();
   private readonly pendingTurnCompletions = new Map<string, PendingTurnCompletion>();
+  private readonly pendingLineHandlers = new Set<Promise<void>>();
   private pendingThreadClosure?: PendingThreadClosure;
   private readonly snapshotState: AppServerTransportSnapshot;
   private nextRequestId = 1;
   private persistQueue: Promise<void> = Promise.resolve();
+  private terminalTransportStatus?: PersistedTransportStatus;
   private closed = false;
 
   constructor(input: {
@@ -204,7 +215,20 @@ class LiveAppServerTransport implements AppServerTransportController {
     this.snapshotState.server_pid = this.child.pid;
     this.rl = readline.createInterface({ input: this.child.stdout });
     this.rl.on("line", (line) => {
-      void this.handleLine(line);
+      const pendingLine = this.handleLine(line)
+        .catch((error) => {
+          void appendFile(
+            this.errorsPath,
+            `App Server line handler failed: ${
+              error instanceof Error ? error.message : String(error)
+            }\n`,
+            "utf8"
+          );
+        })
+        .finally(() => {
+          this.pendingLineHandlers.delete(pendingLine);
+        });
+      this.pendingLineHandlers.add(pendingLine);
     });
     this.child.stderr.on("data", (chunk) => {
       void appendFile(this.errorsPath, chunk.toString(), "utf8");
@@ -428,6 +452,7 @@ class LiveAppServerTransport implements AppServerTransportController {
 
     let explicitStatus: "completed" | "closed" | "blocked" =
       input?.stopReason ? "completed" : "closed";
+    this.terminalTransportStatus = explicitStatus;
     try {
       if (
         this.snapshotState.thread_id &&
@@ -468,6 +493,7 @@ class LiveAppServerTransport implements AppServerTransportController {
       }
     } catch (error) {
       explicitStatus = "blocked";
+      this.terminalTransportStatus = explicitStatus;
       await this.persistState(
         error instanceof Error ? error.message : String(error),
         explicitStatus
@@ -487,6 +513,7 @@ class LiveAppServerTransport implements AppServerTransportController {
       }
       this.rl.close();
       this.child.kill();
+      await this.flushPendingLineHandlers();
       await this.persistState(undefined, explicitStatus);
     }
   }
@@ -745,6 +772,14 @@ class LiveAppServerTransport implements AppServerTransportController {
     this.pendingThreadClosure = undefined;
   }
 
+  private async flushPendingLineHandlers(): Promise<void> {
+    if (this.pendingLineHandlers.size === 0) {
+      return;
+    }
+
+    await Promise.allSettled([...this.pendingLineHandlers]);
+  }
+
   private extractThreadId(
     result: Record<string, unknown>,
     fallback?: string
@@ -860,9 +895,9 @@ class LiveAppServerTransport implements AppServerTransportController {
   }
 
   private deriveTransportStatus(
-    explicitStatus?: "configured" | "live" | "idle" | "completed" | "interrupted" | "blocked" | "closed",
+    explicitStatus?: PersistedTransportStatus,
     hasError = false
-  ): "configured" | "live" | "idle" | "completed" | "interrupted" | "blocked" | "closed" {
+  ): PersistedTransportStatus {
     if (explicitStatus) {
       return explicitStatus;
     }
@@ -896,8 +931,9 @@ class LiveAppServerTransport implements AppServerTransportController {
 
   private async persistState(
     lastError?: string,
-    explicitStatus?: "configured" | "live" | "idle" | "completed" | "interrupted" | "blocked" | "closed"
+    explicitStatus?: PersistedTransportStatus
   ): Promise<void> {
+    const effectiveStatus = explicitStatus ?? this.terminalTransportStatus;
     const notes = unique([
       "App Server transport keeps a live thread/turn container through codex app-server.",
       `Request log: ${this.requestsPath}`,
@@ -914,7 +950,7 @@ class LiveAppServerTransport implements AppServerTransportController {
           executorMode: this.executorMode,
           summaryPath: this.summaryPath,
           protocolPath: this.protocolPath,
-          status: this.deriveTransportStatus(explicitStatus, Boolean(lastError)),
+          status: this.deriveTransportStatus(effectiveStatus, Boolean(lastError)),
           notes,
           ...(lastError ? { lastError } : {}),
           appServer: this.snapshot()

@@ -141,6 +141,33 @@ const expectInvalidCombination = async (args, expectedMessage) => {
   );
 };
 
+const runAttachedAppServerValidation = async (fakeAppServerPath, attempt) => {
+  const appServerExecution = await runLoop(
+    ["--single", "--controller-mode", "attached", "--transport", "app-server"],
+    {
+      silent: true,
+      env: {
+        ...process.env,
+        HARNESS_APP_SERVER_BIN: process.execPath,
+        HARNESS_APP_SERVER_BIN_ARGS: JSON.stringify([fakeAppServerPath])
+      }
+    }
+  );
+  if (appServerExecution.code !== 0) {
+    throw new Error(
+      `Attached app-server validation run ${attempt} failed.\n${appServerExecution.stdout}\n${appServerExecution.stderr}`
+    );
+  }
+  const appServerRunDirectory = extractRunDirectory(appServerExecution.stdout);
+  await assertTransportSurface(appServerRunDirectory, {
+    expectedControllerMode: "attached",
+    expectedTransportMode: "app-server",
+    expectedTransportStatus: "completed",
+    expectedWarning: "App Server transport keeps a live thread/turn container through codex app-server.",
+    expectAppServerLive: true
+  });
+};
+
 const main = async () => {
   const fakeAppServerPath = join(process.cwd(), "scripts", "testing", "fake-app-server.mjs");
   const currentThreadExecution = await runLoop(
@@ -162,30 +189,9 @@ const main = async () => {
     expectAppServerLive: false
   });
 
-  const appServerExecution = await runLoop(
-    ["--single", "--controller-mode", "attached", "--transport", "app-server"],
-    {
-      silent: true,
-      env: {
-        ...process.env,
-        HARNESS_APP_SERVER_BIN: process.execPath,
-        HARNESS_APP_SERVER_BIN_ARGS: JSON.stringify([fakeAppServerPath])
-      }
-    }
-  );
-  if (appServerExecution.code !== 0) {
-    throw new Error(
-      `Attached app-server validation run failed.\n${appServerExecution.stdout}\n${appServerExecution.stderr}`
-    );
+  for (const attempt of [1, 2, 3]) {
+    await runAttachedAppServerValidation(fakeAppServerPath, attempt);
   }
-  const appServerRunDirectory = extractRunDirectory(appServerExecution.stdout);
-  await assertTransportSurface(appServerRunDirectory, {
-    expectedControllerMode: "attached",
-    expectedTransportMode: "app-server",
-    expectedTransportStatus: "completed",
-    expectedWarning: "App Server transport keeps a live thread/turn container through codex app-server.",
-    expectAppServerLive: true
-  });
 
   await expectInvalidCombination(
     ["--single", "--controller-mode", "detached", "--transport", "current-thread"],
