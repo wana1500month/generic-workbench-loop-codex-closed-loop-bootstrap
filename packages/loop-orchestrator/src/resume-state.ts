@@ -15,6 +15,7 @@ import {
   readControllerLeaseArtifact,
   readRuntimeLiveStateArtifact,
   readRuntimeRoundPhaseArtifact,
+  readTransportStateArtifact,
   runtimeStatePathsForRun
 } from "./runtime-state.js";
 import type {
@@ -36,6 +37,7 @@ import type {
   RuntimeRoundPhaseArtifact,
   RoundContractArtifact,
   RoundSummary,
+  TransportStateArtifact,
   TrajectoryDecisionArtifact
 } from "./types.js";
 
@@ -75,6 +77,7 @@ export interface RestoredRunState {
   runtimeLiveState?: RuntimeLiveStateArtifact;
   runtimeRoundPhase?: RuntimeRoundPhaseArtifact;
   controllerLease?: ControllerLeaseArtifact;
+  transportState?: TransportStateArtifact;
   interruptedRound?: {
     round: number;
     roundDirectory: string;
@@ -258,6 +261,7 @@ const hydrateSummaryFromHistory = (input: {
   runtimeLiveState?: RuntimeLiveStateArtifact;
   runtimeRoundPhase?: RuntimeRoundPhaseArtifact;
   controllerLease?: ControllerLeaseArtifact;
+  transportState?: TransportStateArtifact;
 }): LoopRunSummary => {
   const latestRoundSummary = input.history[input.history.length - 1];
   const bestRoundSummary = bestRoundSummaryFromHistory(input.history);
@@ -290,6 +294,11 @@ const hydrateSummaryFromHistory = (input: {
           : input.controllerLease?.transport_mode
             ? { transport_mode: input.controllerLease.transport_mode }
             : {}),
+    ...(input.summary?.transport_protocol_path
+      ? {}
+      : input.transportState?.protocol_path
+        ? { transport_protocol_path: input.transportState.protocol_path }
+        : {}),
     total_score: latestRoundSummary?.total_score ?? input.summary?.total_score ?? 0,
     control_plane_score:
       latestRoundSummary?.control_plane_score ?? input.summary?.control_plane_score ?? 0,
@@ -371,6 +380,7 @@ export const restoreRunState = async (
     runtimeLiveState,
     runtimeRoundPhase,
     controllerLease,
+    transportState,
     diskHistory
   ] = await Promise.all([
     loadJsonIfExists<LoopRunSummary>(summaryPath),
@@ -380,6 +390,7 @@ export const restoreRunState = async (
     readRuntimeLiveStateArtifact(runtimePaths.liveStatePath),
     readRuntimeRoundPhaseArtifact(runtimePaths.roundPhasePath),
     readControllerLeaseArtifact(runtimePaths.controllerLeasePath),
+    readTransportStateArtifact(runtimePaths.transportStatePath),
     loadRoundSummariesFromDisk(runDirectory)
   ]);
 
@@ -392,7 +403,8 @@ export const restoreRunState = async (
     history,
     runtimeLiveState,
     runtimeRoundPhase,
-    controllerLease
+    controllerLease,
+    transportState
   });
   hydratedSummary.runtime_live_state_path ??= runtimePaths.liveStatePath;
   hydratedSummary.runtime_round_phase_path ??= runtimePaths.roundPhasePath;
@@ -510,6 +522,7 @@ export const restoreRunState = async (
     runtimeLiveState,
     runtimeRoundPhase,
     controllerLease,
+    transportState,
     interruptedRound
   };
 };

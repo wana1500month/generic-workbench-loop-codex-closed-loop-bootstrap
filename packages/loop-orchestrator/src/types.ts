@@ -1023,6 +1023,7 @@ export interface LoopRunSummary {
   runtime_round_phase_path?: string;
   controller_lease_path?: string;
   transport_state_path?: string;
+  transport_protocol_path?: string;
   stop_reason?: RunStopReason;
   selection_basis?: "terminal_round";
   best_round?: number;
@@ -1116,13 +1117,34 @@ export interface TransportStateArtifact {
   transport_mode: TransportMode;
   executor_mode?: ExecutorMode;
   updated_at: string;
-  status: "configured" | "scaffold_only";
+  status: "configured" | "live" | "blocked";
   summary_path?: string;
+  protocol_path?: string;
   notes?: string[];
+  last_error?: string;
   app_server?: {
-    implemented: false;
-    thread_status: "not_started";
-    turn_status: "not_started";
+    implemented: boolean;
+    transport: "stdio";
+    initialized: boolean;
+    command: string;
+    args: string[];
+    server_pid?: number;
+    thread_id?: string;
+    thread_status: "not_started" | "loaded" | "closed" | "archived" | "error";
+    turn_id?: string;
+    turn_status:
+      | "not_started"
+      | "inProgress"
+      | "completed"
+      | "interrupted"
+      | "failed"
+      | "error";
+    last_request_method?: string;
+    last_event_method?: string;
+    last_event_at?: string;
+    event_cursor?: number;
+    requests_path?: string;
+    events_path?: string;
     required_methods: string[];
     expected_event_types: string[];
   };

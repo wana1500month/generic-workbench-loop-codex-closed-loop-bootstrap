@@ -59,11 +59,12 @@ Acceptance:
 - Per-round summaries should also persist `decision_source`, so policy-snapshot decisions, hard rules, and default patch authority stay reviewable after resume.
 - The runtime should separate `controller_mode = detached|attached` from `transport_mode = codex-exec|current-thread|app-server`, with detached currently reserved for crash-safe `codex-exec` execution and attached reserved for same-thread transports.
 - Same-thread transports should fail closed at the shared Codex runtime boundary so no nested `runCodexCommand()` path can bypass policy, including subjective-quality review.
-- `current-thread` should remain the stock Codex attached surface, while `app-server` should persist a distinct scaffold for future thread/start, thread/resume, turn/start, and turn/steer orchestration instead of becoming another meaning of CLI `attached`.
+- `current-thread` should remain the stock Codex attached surface with an explicit manual protocol file, while `app-server` should persist live `thread/start`, `thread/resume`, `turn/start`, `turn/steer`, and `turn/interrupt` state instead of becoming another meaning of CLI `attached`.
 
 Validation:
 - Inspect the latest run under `evals/runs`
 - `npm run validate:transport-mode`
+- `npm run validate:attached-resume-smoke`
 - `npm run validate:resume-smoke`
 
 ## M3. External adapter boundary

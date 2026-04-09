@@ -58,6 +58,10 @@ import {
   validateTransportMode
 } from "./transport-mode.js";
 import {
+  startAppServerTransport,
+  type AppServerTransportController
+} from "./app-server-runtime.js";
+import {
   buildPatchCarryForwardContract,
   buildSyntheticPatchCarryForwardAgreement,
   buildSyntheticPatchCarryForwardReview
@@ -110,6 +114,7 @@ import {
   writeRuntimeRoundPhaseArtifact,
   writeTransportStateArtifact
 } from "./runtime-state.js";
+import { transportProtocolPathForRun, writeTransportProtocol } from "./transport-protocol.js";
 import { buildTrajectoryDecisionArtifact } from "./trajectory-controller.js";
 import type {
   AdapterCapabilityExecution,
@@ -502,6 +507,7 @@ const buildCheckpointSummary = (input: {
   runtimeRoundPhasePath: string;
   controllerLeasePath: string;
   transportStatePath: string;
+  transportProtocolPath?: string;
   stopReason?: LoopRunSummary["stop_reason"];
   bestRound?: number;
   bestScore?: number;
@@ -587,6 +593,9 @@ const buildCheckpointSummary = (input: {
     runtime_round_phase_path: input.runtimeRoundPhasePath,
     controller_lease_path: input.controllerLeasePath,
     transport_state_path: input.transportStatePath,
+    ...(input.transportProtocolPath
+      ? { transport_protocol_path: input.transportProtocolPath }
+      : {}),
     ...(input.stopReason ? { stop_reason: input.stopReason } : {}),
     ...(terminalRound !== undefined
       ? {
@@ -776,6 +785,10 @@ export const runClosedLoop = async (input: {
   const runtimeStatePaths = runtimeStatePathsForRun(runDirectory);
   const runRuntimeDirectory = runtimeStatePaths.runtimeDirectory;
   const summaryPath = join(runDirectory, "summary.json");
+  const transportProtocolPath = transportProtocolPathForRun(
+    runDirectory,
+    transportMode
+  );
   const codexSessionRegistryPath = join(runRuntimeDirectory, "codex-sessions.json");
   await mkdir(runRuntimeDirectory, { recursive: true });
   await ensureJsonFile(codexSessionRegistryPath, {});
@@ -996,10 +1009,18 @@ export const runClosedLoop = async (input: {
       transportMode,
       executorMode,
       summaryPath,
+      protocolPath: transportProtocolPath,
+      status: transportMode === "app-server" ? "blocked" : "configured",
       notes: transportRuntimeWarningsForMode({
         controllerMode,
         transportMode
-      })
+      }),
+      ...(transportMode === "app-server"
+        ? {
+            lastError:
+              "App Server transport was not opened because this invocation may return before the live controller session starts."
+          }
+        : {})
     })
   );
 
@@ -1009,6 +1030,31 @@ export const runClosedLoop = async (input: {
     resumeIdentityMismatches.length === 0 &&
     isResumeNoopTerminalStopReason(restoredStopReason)
   ) {
+    const noopTransportProtocolPath = await writeTransportProtocol({
+      runDirectory,
+      transportMode,
+      summary: {
+        run_id: runId,
+        controller_mode: controllerMode,
+        transport_mode: transportMode,
+        transport_state_path: runtimeStatePaths.transportStatePath,
+        resume_identity_path: currentResumeIdentityPath,
+        runtime_round_phase_path: runtimeStatePaths.roundPhasePath
+      },
+      activeRound: restoredRun.interruptedRound?.round,
+      activePhase: input.resumePhase ?? restoredRun.interruptedRound?.resumeFromPhase,
+      activeStatus: restoredRun.interruptedRound?.phaseStatus,
+      latestPatchRequestPath: restoredRun.previousPatchRequestPath,
+      latestRoundContractPath: restoredRun.latestRoundSummary?.contract_path,
+      notes: [
+        ...restoredRun.repairNotes,
+        ...(transportMode === "current-thread"
+          ? [
+              "Use the attached-loop skill and keep the current thread as the generator/controller surface."
+            ]
+          : [])
+      ]
+    });
     const noopRuntimeEvents = mergeRuntimeEvents([
       ...currentRuntimeEvents,
       buildRuntimeEvent(
@@ -1080,6 +1126,7 @@ export const runClosedLoop = async (input: {
       runtime_round_phase_path: runtimeStatePaths.roundPhasePath,
       controller_lease_path: runtimeStatePaths.controllerLeasePath,
       transport_state_path: runtimeStatePaths.transportStatePath,
+      transport_protocol_path: noopTransportProtocolPath,
       runtime_events: noopRuntimeEvents,
       ...(resumeDecisionPath ? { resume_decision_path: resumeDecisionPath } : {}),
       ...(runtimeWarnings.length > 0 ? { runtime_warnings: runtimeWarnings } : {}),
@@ -1247,20 +1294,73 @@ export const runClosedLoop = async (input: {
       : undefined;
   let latestEvalReportPath = restoredRun?.latestRoundSummary?.eval_report_path;
   const heartbeatNotes = [...(restoredRun?.repairNotes ?? [])];
-  await writeTransportStateArtifact(
-    runtimeStatePaths.transportStatePath,
-    buildTransportStateArtifact({
+  let transportProtocolCurrentPath =
+    restoredRun?.summary.transport_protocol_path ?? transportProtocolPath;
+  const writeLiveTransportProtocol = async (): Promise<void> => {
+    transportProtocolCurrentPath = await writeTransportProtocol({
+      runDirectory,
+      transportMode,
+      summary: {
+        run_id: runId,
+        controller_mode: controllerMode,
+        transport_mode: transportMode,
+        transport_state_path: runtimeStatePaths.transportStatePath,
+        resume_identity_path: currentResumeIdentityPath,
+        runtime_round_phase_path: runtimeStatePaths.roundPhasePath
+      },
+      activeRound: activeHeartbeatRound,
+      activePhase: activeHeartbeatPhase,
+      activeStatus: activeHeartbeatPhaseStatus,
+      latestPatchRequestPath: previousPatchRequestPath,
+      latestRoundContractPath: history[history.length - 1]?.contract_path,
+      notes: [
+        ...heartbeatNotes,
+        ...(transportMode === "current-thread"
+          ? [
+              "Use the attached-loop skill and keep the current thread as the generator/controller surface."
+            ]
+          : [])
+      ]
+    });
+  };
+  let appServerTransport: AppServerTransportController | undefined;
+  await writeLiveTransportProtocol();
+  if (transportMode === "app-server") {
+    appServerTransport = await startAppServerTransport({
       runId,
       controllerMode,
-      transportMode,
       executorMode,
+      transportStatePath: runtimeStatePaths.transportStatePath,
       summaryPath,
-      notes: transportRuntimeWarningsForMode({
+      protocolPath: transportProtocolCurrentPath,
+      restoredThreadId: restoredRun?.transportState?.app_server?.thread_id,
+      initialRound: activeHeartbeatRound ?? restoredRun?.roundStart ?? history.length + 1,
+      initialPhase: activeHeartbeatPhase ?? "negotiation",
+      initialStatus: activeHeartbeatPhaseStatus ?? "in_progress",
+      initialNotes: heartbeatNotes
+    });
+    runtimeWarnings = unique([
+      ...runtimeWarnings,
+      "App Server transport keeps a live thread/turn container through codex app-server."
+    ]);
+  } else {
+    await writeTransportStateArtifact(
+      runtimeStatePaths.transportStatePath,
+      buildTransportStateArtifact({
+        runId,
         controllerMode,
-        transportMode
+        transportMode,
+        executorMode,
+        summaryPath,
+        protocolPath: transportProtocolCurrentPath,
+        status: "configured",
+        notes: transportRuntimeWarningsForMode({
+          controllerMode,
+          transportMode
+        })
       })
-    })
-  );
+    );
+  }
   const heartbeat = startRuntimeHeartbeat({
     runId,
     controllerMode,
@@ -1324,9 +1424,21 @@ export const runClosedLoop = async (input: {
       ...(inputPhase.status === "completed"
         ? { phase_completed_at: now }
         : {}),
+      ...(appServerTransport?.snapshot().thread_id
+        ? { session: { thread_id: appServerTransport.snapshot().thread_id } }
+        : {}),
       ...(inputPhase.artifacts ? { artifacts: inputPhase.artifacts } : {}),
       ...(heartbeatNotes.length > 0 ? { notes: heartbeatNotes } : {})
     });
+    await writeLiveTransportProtocol();
+    if (appServerTransport) {
+      await appServerTransport.syncPhase({
+        round: inputPhase.round,
+        phase: inputPhase.phase,
+        status: inputPhase.status,
+        notes: heartbeatNotes
+      });
+    }
     await heartbeat.tick();
   };
   const writeCheckpoint = async (
@@ -1365,6 +1477,7 @@ export const runClosedLoop = async (input: {
       runtimeRoundPhasePath: runtimeStatePaths.roundPhasePath,
       controllerLeasePath: runtimeStatePaths.controllerLeasePath,
       transportStatePath: runtimeStatePaths.transportStatePath,
+      transportProtocolPath: transportProtocolCurrentPath,
       stopReason,
       bestRound,
       bestScore,
@@ -1427,6 +1540,12 @@ export const runClosedLoop = async (input: {
     : undefined;
   if (input.repairOnly && !repairRoundLimit) {
     const repairedSummary = await writeCheckpoint(restoredRun?.summary.stop_reason);
+    if (appServerTransport) {
+      await appServerTransport.stop({
+        stopReason: repairedSummary.stop_reason,
+        notes: heartbeatNotes
+      });
+    }
     await heartbeat.stop("stopped");
     return {
       plan,
@@ -2372,6 +2491,12 @@ export const runClosedLoop = async (input: {
       }
     });
     if (repairRoundLimit === round) {
+      if (appServerTransport) {
+        await appServerTransport.stop({
+          stopReason: roundCheckpointSummary.stop_reason,
+          notes: heartbeatNotes
+        });
+      }
       await heartbeat.stop("stopped");
       return {
         plan,
@@ -2504,6 +2629,7 @@ export const runClosedLoop = async (input: {
     runtimeRoundPhasePath: runtimeStatePaths.roundPhasePath,
     controllerLeasePath: runtimeStatePaths.controllerLeasePath,
     transportStatePath: runtimeStatePaths.transportStatePath,
+    transportProtocolPath: transportProtocolCurrentPath,
     stopReason: finalStopReason ?? resolvedStopReason,
     bestRound,
     bestScore: bestScore ?? terminalTotalScore,
@@ -2587,6 +2713,12 @@ export const runClosedLoop = async (input: {
       codex_handoff_path: codexHandoffPath
     }
   });
+  if (appServerTransport) {
+    await appServerTransport.stop({
+      stopReason: summary.stop_reason,
+      notes: heartbeatNotes
+    });
+  }
   await heartbeat.stop("stopped");
 
   return {

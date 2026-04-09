@@ -40,6 +40,7 @@ Continue work on the harness itself. This repository does not ship a bundled ada
 - Evaluator bundle: ${rel(input.summary.evaluator_profile_path)}
 - Resume identity: ${rel(input.summary.resume_identity_path)}
 - Transport state: ${rel(input.summary.transport_state_path)}
+- Transport protocol: ${rel(input.summary.transport_protocol_path)}
 - Terminal attempt: ${input.summary.terminal_round ?? "unknown"}
 - Best-scoring attempt: ${input.summary.best_round ?? "unknown"}
 - Latest trajectory mode: ${latestRound?.trajectory.mode ?? "none"}
@@ -97,7 +98,11 @@ ${bulletList([
 
 1. Keep the harness generic and file-driven.
 2. Treat the latest patch request as the highest-priority follow-up.
-3. If adapter proof is desired, configure the external adapter boundary rather than rebuilding a sample app inside this repo.
+3. ${input.summary.transport_mode === "current-thread"
+      ? "Stay on the current Codex thread and follow the persisted transport protocol instead of launching child Codex sessions."
+      : input.summary.transport_mode === "app-server"
+        ? "Resume the live App Server thread/turn from transport-state.json before steering more work."
+        : "If adapter proof is desired, configure the external adapter boundary rather than rebuilding a sample app inside this repo."}
 
 ## Runtime Warnings
 

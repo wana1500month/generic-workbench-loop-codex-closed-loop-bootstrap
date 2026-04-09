@@ -66,7 +66,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
   - `detached` currently requires `--transport codex-exec`
   - `attached` currently allows `--transport current-thread` or `--transport app-server`
 - Use `--transport current-thread` for the stock Codex current-thread protocol.
-- Use `--transport app-server` only to persist the App Server thread/turn contract scaffold. The CLI records expected `thread/start`, `thread/resume`, `turn/start`, and `turn/steer` surfaces, but it does not create a live App Server thread container.
+- Use `--transport app-server` to open a live `codex app-server` stdio session. The runtime initializes the server, starts or resumes a thread, opens a turn, and steers that turn at phase boundaries while persisting `thread_id`, `turn_id`, and the event cursor.
 - `current-thread` and `app-server` are same-thread transports. Both forbid nested `codex exec` calls from shared runtime paths.
 - Use `--repair` with `--resume-run` when the controller should repair persisted state and stop instead of opening additional rounds.
 - Use `--resume-phase <phase>` to force repair or resume from a known persisted controller phase such as `evaluation` or `round_commit`.
@@ -76,7 +76,8 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Every run now persists that identity in `resume-identity.json`, and `summary.json.resume_identity_path` points to it directly.
 - Resumed invocations now also persist `resume-decision.json`, and `summary.json.resume_decision_path` points at the authoritative reopen or no-op decision for that invocation.
 - Every run now also persists `runtime/live-state.json`, `runtime/round-phase.json`, and `runtime/controller-lease.json`, and `summary.json` carries those paths so recovery can inspect controller state without trusting chat memory.
-- Every run now also persists `runtime/transport-state.json`, and `summary.json.transport_state_path` points at the active transport contract and scaffold status.
+- Every run now also persists `runtime/transport-state.json`, and `summary.json.transport_state_path` points at the active transport contract and live thread/turn state.
+- Same-thread runs now also persist `runtime/current-thread-protocol.md` or `runtime/app-server-protocol.md`, and `summary.json.transport_protocol_path` points at that operator surface.
 - The controller now checkpoints `summary.json`, `current_best.json`, and `controller-summary.md` after each committed round instead of only at final closeout, so committed rounds survive parent-controller crashes.
 - Resume now merges `summary.json.round_history[]` with committed `round-###/round_summary.json` files and can rebuild missing run summaries or repair interrupted rounds directly from runtime journals.
 - Interrupted-round repair now reconstructs missing pre/post capability aggregates from `round-###/adapter/*-result.json` plus core probe aggregates from `round-###/core-probes/*-result.json`, then reruns only the missing capability or probe slices when persisted aggregates are stale or absent.
@@ -200,6 +201,8 @@ evals/runs/<run-id>/
     round-phase.json
     controller-lease.json
     transport-state.json
+    current-thread-protocol.md
+    app-server-protocol.md
     codex-sessions.json
   round-001/
     round-contract.json
@@ -284,10 +287,23 @@ npm run loop:run -- --resume-run ./evals/runs/run-### --repair --resume-phase ev
 npm run loop:run -- --controller-mode attached --transport current-thread --max-rounds 1
 ```
 
-Persist the App Server transport scaffold without claiming a live thread container:
+Run with a live App Server transport:
 
 ```bash
 npm run loop:single -- --controller-mode attached --transport app-server
+```
+
+If the host does not expose a real `codex app-server`, point the runtime at a compatible override:
+
+```powershell
+$env:HARNESS_APP_SERVER_BIN="node"
+$env:HARNESS_APP_SERVER_BIN_ARGS='["C:\\path\\to\\compatible-app-server.mjs"]'
+npm run loop:single -- --controller-mode attached --transport app-server
+```
+
+Useful validation and companion commands:
+
+```bash
 npm run loop:run -- --resume-run ./evals/runs/run-### --target-family crud-api --allow-resume-migration --max-rounds 3
 npm run validate:lifecycle-api
 npm run validate:family-crud

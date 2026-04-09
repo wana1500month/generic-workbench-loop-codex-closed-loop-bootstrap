@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import {
   assertRoundCount,
   assertRuntimeWarningContains,
@@ -20,7 +22,7 @@ const assertTransportSurface = async (
     expectedTransportMode,
     expectedTransportStatus,
     expectedWarning,
-    expectAppServerScaffold
+    expectAppServerLive
   }
 ) => {
   const summary = await readSummary(runDirectory);
@@ -37,6 +39,10 @@ const assertTransportSurface = async (
   assert(
     typeof summary.transport_state_path === "string",
     "Expected summary.transport_state_path to be present."
+  );
+  assert(
+    typeof summary.transport_protocol_path === "string",
+    "Expected summary.transport_protocol_path to be present."
   );
 
   const [transportState, resumeIdentity] = await Promise.all([
@@ -64,20 +70,38 @@ const assertTransportSurface = async (
     `Expected round_history[0].transport_mode '${expectedTransportMode}', received '${summary.round_history?.[0]?.transport_mode ?? "missing"}'.`
   );
 
-  if (expectAppServerScaffold) {
+  if (expectAppServerLive) {
     assert(
-      transportState.app_server?.implemented === false,
-      "Expected app-server transport state to remain scaffold-only."
+      transportState.app_server?.implemented === true,
+      "Expected app-server transport state to be implemented."
     );
     assert(
-      transportState.app_server?.thread_status === "not_started",
-      `Expected app-server thread_status 'not_started', received '${transportState.app_server?.thread_status ?? "missing"}'.`
+      transportState.app_server?.thread_status === "closed",
+      `Expected app-server thread_status 'closed', received '${transportState.app_server?.thread_status ?? "missing"}'.`
     );
     assert(
-      transportState.app_server?.turn_status === "not_started",
-      `Expected app-server turn_status 'not_started', received '${transportState.app_server?.turn_status ?? "missing"}'.`
+      transportState.app_server?.turn_status === "interrupted",
+      `Expected app-server turn_status 'interrupted', received '${transportState.app_server?.turn_status ?? "missing"}'.`
     );
-    for (const method of ["thread/start", "thread/resume", "turn/start", "turn/steer"]) {
+    assert(
+      typeof transportState.app_server?.thread_id === "string",
+      "Expected app-server transport to persist thread_id."
+    );
+    assert(
+      typeof transportState.app_server?.turn_id === "string",
+      "Expected app-server transport to persist turn_id."
+    );
+    assert(
+      (transportState.app_server?.event_cursor ?? 0) > 0,
+      "Expected app-server transport to advance an event cursor."
+    );
+    for (const method of [
+      "thread/start",
+      "thread/resume",
+      "turn/start",
+      "turn/steer",
+      "turn/interrupt"
+    ]) {
       assert(
         transportState.app_server?.required_methods?.includes(method),
         `Expected app-server required_methods to include '${method}'.`
@@ -107,6 +131,7 @@ const expectInvalidCombination = async (args, expectedMessage) => {
 };
 
 const main = async () => {
+  const fakeAppServerPath = join(process.cwd(), "scripts", "testing", "fake-app-server.mjs");
   const currentThreadExecution = await runLoop(
     ["--single", "--controller-mode", "attached", "--transport", "current-thread"],
     { silent: true }
@@ -123,12 +148,19 @@ const main = async () => {
     expectedTransportStatus: "configured",
     expectedWarning:
       "Current-thread transport keeps the stock Codex session as the operator surface",
-    expectAppServerScaffold: false
+    expectAppServerLive: false
   });
 
   const appServerExecution = await runLoop(
     ["--single", "--controller-mode", "attached", "--transport", "app-server"],
-    { silent: true }
+    {
+      silent: true,
+      env: {
+        ...process.env,
+        HARNESS_APP_SERVER_BIN: process.execPath,
+        HARNESS_APP_SERVER_BIN_ARGS: JSON.stringify([fakeAppServerPath])
+      }
+    }
   );
   if (appServerExecution.code !== 0) {
     throw new Error(
@@ -139,9 +171,9 @@ const main = async () => {
   await assertTransportSurface(appServerRunDirectory, {
     expectedControllerMode: "attached",
     expectedTransportMode: "app-server",
-    expectedTransportStatus: "scaffold_only",
-    expectedWarning: "App Server transport is scaffolded only.",
-    expectAppServerScaffold: true
+    expectedTransportStatus: "live",
+    expectedWarning: "App Server transport keeps a live thread/turn container through codex app-server.",
+    expectAppServerLive: true
   });
 
   await expectInvalidCombination(

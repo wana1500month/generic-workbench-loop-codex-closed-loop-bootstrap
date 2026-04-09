@@ -5,6 +5,10 @@ import type {
   TransportStateArtifact
 } from "./types.js";
 
+export type AppServerTransportSnapshot = NonNullable<
+  TransportStateArtifact["app_server"]
+>;
+
 export const transportModes = [
   "codex-exec",
   "current-thread",
@@ -46,12 +50,6 @@ export const transportRuntimeWarningsForMode = (input: {
   controllerMode: ControllerMode;
   transportMode: TransportMode;
 }): string[] => {
-  if (input.transportMode === "app-server") {
-    return [
-      "App Server transport is scaffolded only. This CLI run records the expected thread/start, thread/resume, turn/start, and turn/steer contract but does not create a live App Server thread container."
-    ];
-  }
-
   if (input.transportMode === "current-thread") {
     return [
       "Current-thread transport keeps the stock Codex session as the operator surface and forbids nested codex exec calls."
@@ -71,35 +69,54 @@ export const buildTransportStateArtifact = (input: {
   transportMode: TransportMode;
   executorMode?: ExecutorMode;
   summaryPath?: string;
+  protocolPath?: string;
+  status?: TransportStateArtifact["status"];
   notes?: string[];
+  lastError?: string;
+  appServer?: AppServerTransportSnapshot;
 }): TransportStateArtifact => ({
   run_id: input.runId,
   controller_mode: input.controllerMode,
   transport_mode: input.transportMode,
   ...(input.executorMode ? { executor_mode: input.executorMode } : {}),
   updated_at: new Date().toISOString(),
-  status: input.transportMode === "app-server" ? "scaffold_only" : "configured",
+  status:
+    input.status ??
+    (input.transportMode === "app-server" ? "blocked" : "configured"),
   ...(input.summaryPath ? { summary_path: input.summaryPath } : {}),
+  ...(input.protocolPath ? { protocol_path: input.protocolPath } : {}),
   ...(input.notes?.length ? { notes: input.notes } : {}),
-  ...(input.transportMode === "app-server"
+  ...(input.lastError ? { last_error: input.lastError } : {}),
+  ...(input.transportMode === "app-server" || input.appServer
     ? {
-        app_server: {
-          implemented: false,
-          thread_status: "not_started",
-          turn_status: "not_started",
-          required_methods: [
-            "thread/start",
-            "thread/resume",
-            "turn/start",
-            "turn/steer"
-          ],
-          expected_event_types: [
-            "item/agentMessage/delta",
-            "item/completed",
-            "turn/completed",
-            "turn/plan/updated"
-          ]
-        }
+        app_server:
+          input.appServer ?? {
+            implemented: false,
+            transport: "stdio",
+            initialized: false,
+            command: process.env.HARNESS_APP_SERVER_BIN ??
+              process.env.HARNESS_CODEX_BIN ??
+              "codex",
+            args: [],
+            thread_status: "not_started",
+            turn_status: "not_started",
+            required_methods: [
+              "thread/start",
+              "thread/resume",
+              "turn/start",
+              "turn/steer",
+              "turn/interrupt"
+            ],
+            expected_event_types: [
+              "thread/started",
+              "thread/status/changed",
+              "turn/started",
+              "item/started",
+              "item/completed",
+              "item/agentMessage/delta",
+              "turn/completed"
+            ]
+          }
       }
     : {})
 });

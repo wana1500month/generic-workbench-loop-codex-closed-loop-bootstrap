@@ -316,6 +316,7 @@ export const writeRunControllerSummary = async (input: {
 - Evaluator bundle: ${input.summary.evaluator_profile_path ?? "none"}
 - Resume identity: ${input.summary.resume_identity_path ?? "none"}
 - Transport state: ${input.summary.transport_state_path ?? "none"}
+- Transport protocol: ${input.summary.transport_protocol_path ?? "none"}
 - Stop reason: ${input.summary.stop_reason ?? "none"}
 - Terminal attempt: ${input.summary.terminal_round ?? "none"}
 - Best-scoring attempt: ${input.summary.best_round ?? "none"}
@@ -336,6 +337,14 @@ ${dimensionScoreList(input.summary.dimension_scores ?? [])}
 ## Runtime Warnings
 
 ${bulletList(input.summary.runtime_warnings ?? [])}
+
+## Operator Surface
+
+- ${input.summary.transport_mode === "current-thread"
+        ? "Stay on the current Codex thread and follow the persisted manual protocol."
+        : input.summary.transport_mode === "app-server"
+          ? "Resume the live App Server thread/turn from transport-state.json before steering further work."
+          : "Use detached codex-exec orchestration and rely on persisted runtime checkpoints for recovery."}
 
 ## Resume Migration
 
