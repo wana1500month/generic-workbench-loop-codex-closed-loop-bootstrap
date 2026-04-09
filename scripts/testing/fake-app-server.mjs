@@ -1,5 +1,5 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import readline from "node:readline";
 
 const recordPath = process.env.FAKE_APP_SERVER_RECORD_PATH
@@ -13,6 +13,11 @@ let currentTurnId;
 let turnStatus = "not_started";
 let eventCursor = 0;
 let turnCounter = 0;
+
+const extractDirective = (text, key) => {
+  const match = text.match(new RegExp(`${key}:\\s*(.+)`));
+  return match ? match[1].trim() : undefined;
+};
 
 const appendRecord = async (entry) => {
   if (!recordPath) {
@@ -55,6 +60,65 @@ const notify = async (method, params = {}) => {
     method,
     params
   });
+};
+
+const maybeCompleteTaskTurn = async ({ text, turnId, itemId }) => {
+  const responsePath =
+    extractDirective(text, "ATTACHED_GENERATOR_RESPONSE_PATH") ??
+    extractDirective(text, "APP_SERVER_SMOKE_RESPONSE_PATH");
+  if (!responsePath) {
+    return false;
+  }
+
+  const simulatedFile =
+    extractDirective(text, "ATTACHED_GENERATOR_SIMULATED_FILE") ??
+    extractDirective(text, "APP_SERVER_SMOKE_FILE_PATH");
+  const simulatedContent =
+    extractDirective(text, "ATTACHED_GENERATOR_SIMULATED_CONTENT") ??
+    extractDirective(text, "APP_SERVER_SMOKE_FILE_CONTENT") ??
+    "fake app-server wrote this file";
+
+  if (simulatedFile) {
+    await mkdir(dirname(simulatedFile), { recursive: true });
+    await writeFile(simulatedFile, `${simulatedContent}\n`, "utf8");
+  }
+
+  await mkdir(dirname(responsePath), { recursive: true });
+  await writeFile(
+    responsePath,
+    JSON.stringify(
+      {
+        status: "applied",
+        summary: "fake app-server applied the requested task",
+        changed_files: simulatedFile ? [simulatedFile] : [],
+        notes: ["fake-app-server auto-completed the task turn"],
+        generated_at: new Date().toISOString()
+      },
+      null,
+      2
+    ) + "\n",
+    "utf8"
+  );
+
+  turnStatus = "completed";
+  await notify("item/completed", {
+    threadId: currentThreadId,
+    turnId,
+    item: {
+      id: itemId,
+      type: "agentMessage"
+    },
+    cursor: eventCursor
+  });
+  await notify("turn/completed", {
+    threadId: currentThreadId,
+    turn: {
+      id: turnId,
+      status: turnStatus
+    },
+    cursor: eventCursor
+  });
+  return true;
 };
 
 const rl = readline.createInterface({
@@ -132,6 +196,11 @@ for await (const line of rl) {
     turnCounter += 1;
     currentTurnId = `turn_fake_${turnCounter}`;
     turnStatus = "inProgress";
+    const itemId = `item_started_${turnCounter}`;
+    const text =
+      Array.isArray(params.input) && params.input[0]?.type === "text"
+        ? params.input[0].text ?? ""
+        : "";
     await respond(id, {
       turn: {
         id: currentTurnId,
@@ -150,7 +219,7 @@ for await (const line of rl) {
       threadId: currentThreadId,
       turnId: currentTurnId,
       item: {
-        id: `item_started_${turnCounter}`,
+        id: itemId,
         type: "agentMessage"
       },
       cursor: eventCursor
@@ -158,10 +227,20 @@ for await (const line of rl) {
     await notify("item/agentMessage/delta", {
       threadId: currentThreadId,
       turnId: currentTurnId,
-      itemId: `item_started_${turnCounter}`,
+      itemId,
       delta: "transport attached",
       cursor: eventCursor
     });
+    if (typeof text === "string" && text.trim().length > 0) {
+      const completed = await maybeCompleteTaskTurn({
+        text,
+        turnId: currentTurnId,
+        itemId
+      });
+      if (completed) {
+        continue;
+      }
+    }
     continue;
   }
 

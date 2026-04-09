@@ -60,11 +60,16 @@ Acceptance:
 - The runtime should separate `controller_mode = detached|attached` from `transport_mode = codex-exec|current-thread|app-server`, with detached currently reserved for crash-safe `codex-exec` execution and attached reserved for same-thread transports.
 - Same-thread transports should fail closed at the shared Codex runtime boundary so no nested `runCodexCommand()` path can bypass policy, including subjective-quality review.
 - `current-thread` should remain the stock Codex attached surface with an explicit manual protocol file, while `app-server` should persist live `thread/start`, `thread/resume`, `turn/start`, `turn/steer`, and `turn/interrupt` state instead of becoming another meaning of CLI `attached`.
+- Same-thread bootstrap generator work should flow through persisted `attached-generator-task.json`, `attached-generator-prompt.md`, and `attached-generator-response.json` artifacts so current-thread and App Server surfaces can mutate without nested child Codex processes.
+- Outer-timeout prevention should live in a separate supervisor surface that can restart the controller from `--resume-run` state and survive launcher-shell death when detached.
+- Trusted environments should have a real `app-server` smoke validator in addition to the existing `codex exec` smoke, while developer hosts without a usable `codex` binary should remain `environment_blocked`.
 
 Validation:
 - Inspect the latest run under `evals/runs`
 - `npm run validate:transport-mode`
 - `npm run validate:attached-resume-smoke`
+- `npm run validate:app-server-generator-mainline`
+- `npm run validate:supervisor-timeout-prevention`
 - `npm run validate:resume-smoke`
 
 ## M3. External adapter boundary

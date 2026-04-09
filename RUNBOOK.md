@@ -43,7 +43,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Default operation is a single agent and one worktree per lane or run. Reach for worktrees or subagents only when the request explicitly needs parallel exploration or comparator work.
 - `bootstrap generator`: now receives an inline remediation brief built from the current round contract, generator plan, latest patch request, latest quality critique, and latest eval threshold gaps so patch-only mutation is no longer prompt-stateless
 - `bootstrap grader`: now preserves `quality_contract`, `quality_axis_id`, and `subjective_metrics` through runtime loading, so intake-authored quality semantics reach grading, critique, and patch-request generation intact
-- `same-thread transport`: keeps the active operator surface on the same thread or turn, skips nested planner/contract/eval Codex enhancements, and fail-closes any nested `runCodexCommand()` path, including bootstrap `apply_change` and subjective-quality review, when that path would need to spawn `codex exec`
+- `same-thread transport`: keeps the active operator surface on the same thread or turn, skips nested planner/contract/eval Codex enhancements, fails closed on hidden `runCodexCommand()` paths, and routes bootstrap `apply_change` through attached generator task/response artifacts instead of nested `codex exec`
 
 ## Round contract and dimension floors
 
@@ -68,6 +68,8 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Use `--transport current-thread` for the stock Codex current-thread protocol.
 - Use `--transport app-server` to open a live `codex app-server` stdio session. The runtime initializes the server, starts or resumes a thread, opens a turn, and steers that turn at phase boundaries while persisting `thread_id`, `turn_id`, and the event cursor.
 - `current-thread` and `app-server` are same-thread transports. Both forbid nested `codex exec` calls from shared runtime paths.
+- Bootstrap-generated `apply_change` now accepts same-thread generator work through `runtime/attached-generator-prompt.md` and `runtime/attached-generator-response.json` instead of insisting on nested `codex exec`.
+- Use `npm run loop:watch -- ...` when the controller should survive outer shell timeouts. The supervisor watches the child controller, restarts from `--resume-run` when needed, and persists `runtime/supervisor-state.json` once the run exists.
 - Use `--repair` with `--resume-run` when the controller should repair persisted state and stop instead of opening additional rounds.
 - Use `--resume-phase <phase>` to force repair or resume from a known persisted controller phase such as `evaluation` or `round_commit`.
 - Use `--force-reopen-terminal` only when you intentionally want to reopen a run that already ended with `target_reached`, `contract_completed`, `environment_blocked`, or `adapter_contract_invalid`.
@@ -78,6 +80,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Every run now also persists `runtime/live-state.json`, `runtime/round-phase.json`, and `runtime/controller-lease.json`, and `summary.json` carries those paths so recovery can inspect controller state without trusting chat memory.
 - Every run now also persists `runtime/transport-state.json`, and `summary.json.transport_state_path` points at the active transport contract and live thread/turn state.
 - Same-thread runs now also persist `runtime/current-thread-protocol.md` or `runtime/app-server-protocol.md`, and `summary.json.transport_protocol_path` points at that operator surface.
+- Same-thread bootstrap generator rounds now also persist `runtime/attached-generator-task.json`, `runtime/attached-generator-prompt.md`, and `runtime/attached-generator-response.json`, so attached mutation can be resumed from files alone.
 - The controller now checkpoints `summary.json`, `current_best.json`, and `controller-summary.md` after each committed round instead of only at final closeout, so committed rounds survive parent-controller crashes.
 - Resume now merges `summary.json.round_history[]` with committed `round-###/round_summary.json` files and can rebuild missing run summaries or repair interrupted rounds directly from runtime journals.
 - Interrupted-round repair now reconstructs missing pre/post capability aggregates from `round-###/adapter/*-result.json` plus core probe aggregates from `round-###/core-probes/*-result.json`, then reruns only the missing capability or probe slices when persisted aggregates are stale or absent.
@@ -201,8 +204,12 @@ evals/runs/<run-id>/
     round-phase.json
     controller-lease.json
     transport-state.json
+    supervisor-state.json
     current-thread-protocol.md
     app-server-protocol.md
+    attached-generator-task.json
+    attached-generator-prompt.md
+    attached-generator-response.json
     codex-sessions.json
   round-001/
     round-contract.json
@@ -285,6 +292,7 @@ npm run loop:single -- --adapter ./.tmp/semantic-validation/patch-only-success/a
 npm run loop:run -- --resume-run ./evals/runs/run-### --max-rounds 3
 npm run loop:run -- --resume-run ./evals/runs/run-### --repair --resume-phase evaluation
 npm run loop:run -- --controller-mode attached --transport current-thread --max-rounds 1
+npm run loop:watch -- --adapter ./.tmp/semantic-validation/patch-only-success/adapter.json --target-family api-service --max-rounds 3
 ```
 
 Run with a live App Server transport:
@@ -320,6 +328,10 @@ npm run validate:family-dashboard:preflight
 npm run validate:family-dashboard:positive
 npm run validate:family-fullstack-semantic
 npm run validate:family-fullstack:preflight
+npm run validate:attached-resume-smoke
+npm run validate:app-server-generator-mainline
+npm run validate:supervisor-timeout-prevention
+npm run validate:app-server:real-smoke
 npm run validate:family-fullstack
 npm run validate:family-fullstack:positive
 npm run validate:family-editor-semantic

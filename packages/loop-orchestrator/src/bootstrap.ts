@@ -1951,24 +1951,80 @@ const main = async () => {
       : controllerMode === "attached"
         ? "current-thread"
         : "codex-exec";
+  const attachedGeneratorTaskPath =
+    typeof process.env.HARNESS_ATTACHED_GENERATOR_TASK_PATH === "string"
+      ? process.env.HARNESS_ATTACHED_GENERATOR_TASK_PATH
+      : undefined;
+  const attachedGeneratorResponsePath =
+    typeof process.env.HARNESS_GENERATOR_RESPONSE_PATH === "string"
+      ? process.env.HARNESS_GENERATOR_RESPONSE_PATH
+      : undefined;
   if (transportMode === "current-thread" || transportMode === "app-server") {
+    const attachedGeneratorResponse =
+      attachedGeneratorResponsePath
+        ? await readJsonIfExists(attachedGeneratorResponsePath)
+        : undefined;
     const attachedNotePath = await writeArtifact(
       "apply-change.attached-controller.txt",
       [
-        "Current-thread transports forbid nested Codex execution from bootstrap apply_change.",
-        "Run generator work in the current Codex thread and keep adapter commands phase-local instead of invoking codex exec here."
+        "Same-thread transports forbid nested Codex execution from bootstrap apply_change.",
+        "Use the current Codex thread or App Server turn to perform generator work, then write the attached generator response artifact before apply_change resumes."
       ].join("\\n")
     );
+    if (
+      attachedGeneratorResponse &&
+      (attachedGeneratorResponse.status === "applied" ||
+        attachedGeneratorResponse.status === "noop") &&
+      typeof attachedGeneratorResponse.summary === "string" &&
+      attachedGeneratorResponse.summary.trim().length > 0
+    ) {
+      await finalize({
+        capability: "apply_change",
+        ok: true,
+        summary:
+          transportMode === "app-server"
+            ? "App Server attached generator completed the round mutation."
+            : "Current-thread attached generator completed the round mutation.",
+        findings: [
+          attachedGeneratorResponse.summary,
+          ...(Array.isArray(attachedGeneratorResponse.notes)
+            ? attachedGeneratorResponse.notes
+            : [])
+        ],
+        evidence_paths: [
+          remediationBriefPath,
+          attachedNotePath,
+          attachedGeneratorTaskPath ? relativeToRound(attachedGeneratorTaskPath) : undefined,
+          attachedGeneratorResponsePath
+            ? relativeToRound(attachedGeneratorResponsePath)
+            : undefined,
+          ...(Array.isArray(attachedGeneratorResponse.evidence_paths)
+            ? attachedGeneratorResponse.evidence_paths
+            : [])
+        ].filter(Boolean)
+      });
+      return;
+    }
     await finalize({
       capability: "apply_change",
       ok: false,
-      summary: "Transport '" + transportMode + "' refused nested Codex generator execution.",
+      summary:
+        "Transport '" +
+        transportMode +
+        "' requires an attached generator response before bootstrap apply_change can continue.",
       findings: [
         "HARNESS_TRANSPORT=" +
           transportMode +
-          " requires generator work to stay on the active thread or App Server turn instead of spawning codex exec from bootstrap apply_change."
+          " requires generator work to stay on the active thread or App Server turn instead of spawning codex exec from bootstrap apply_change.",
+        attachedGeneratorResponsePath
+          ? "Expected attached generator response at " + attachedGeneratorResponsePath + "."
+          : "HARNESS_GENERATOR_RESPONSE_PATH was not provided."
       ],
-      evidence_paths: [remediationBriefPath, attachedNotePath]
+      evidence_paths: [
+        remediationBriefPath,
+        attachedNotePath,
+        attachedGeneratorTaskPath ? relativeToRound(attachedGeneratorTaskPath) : undefined
+      ].filter(Boolean)
     });
     process.exitCode = 1;
     return;

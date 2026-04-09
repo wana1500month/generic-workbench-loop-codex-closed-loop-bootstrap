@@ -773,11 +773,43 @@ export interface RoundArtifacts {
   post_verification_executions_path: string;
   adapter_executions_path: string;
   negotiation_state_path: string;
+  attached_generator_task_path: string;
+  attached_generator_prompt_path: string;
+  attached_generator_response_path: string;
   planner_context_path: string;
   generator_brief_path: string;
   qa_review_path: string;
   controller_decision_path: string;
   adapter_directory: string;
+}
+
+export interface AttachedGeneratorTaskArtifact {
+  run_id: string;
+  round: number;
+  controller_mode: ControllerMode;
+  transport_mode: Extract<TransportMode, "current-thread" | "app-server">;
+  target_root: string;
+  prompt_path: string;
+  response_path: string;
+  round_contract_path: string;
+  generator_plan_path: string;
+  patch_request_path?: string;
+  transport_protocol_path?: string;
+  summary: string;
+  must_deliver: string[];
+  must_fix: string[];
+  must_preserve: string[];
+  notes?: string[];
+  created_at: string;
+}
+
+export interface AttachedGeneratorResponseArtifact {
+  status: "applied" | "noop" | "blocked";
+  summary: string;
+  changed_files?: string[];
+  notes?: string[];
+  evidence_paths?: string[];
+  generated_at: string;
 }
 
 export interface RoundContractArtifact {
@@ -1148,6 +1180,32 @@ export interface TransportStateArtifact {
     required_methods: string[];
     expected_event_types: string[];
   };
+}
+
+export interface SupervisorStateArtifact {
+  status:
+    | "launching"
+    | "watching"
+    | "restarting"
+    | "completed"
+    | "failed"
+    | "detached";
+  launched_at: string;
+  updated_at: string;
+  owner_pid: number;
+  controller_mode?: ControllerMode;
+  transport_mode?: TransportMode;
+  run_id?: string;
+  run_directory?: string;
+  resume_run_path?: string;
+  child_pid?: number;
+  restart_count: number;
+  max_restarts: number;
+  last_exit_code?: number;
+  last_error?: string;
+  log_path?: string;
+  summary_path?: string;
+  stop_reason?: RunStopReason;
 }
 
 export interface ResumeDecisionArtifact {

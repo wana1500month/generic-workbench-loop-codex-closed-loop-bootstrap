@@ -320,4 +320,139 @@ await assertAttachedTransportSurface(appServerResumedSummary, {
   expectedRoundCount: 2
 });
 
+console.log("[validate-attached-resume-smoke] attached app-server interrupted-round repair");
+const appServerRepairSeed = await runLoop(
+  [
+    "--single",
+    "--controller-mode",
+    "attached",
+    "--transport",
+    "app-server",
+    "--adapter",
+    "./.tmp/semantic-validation/patch-only-success/adapter.json",
+    "--target-family",
+    "api-service"
+  ],
+  {
+    env: fakeAppServerEnv()
+  }
+);
+if (appServerRepairSeed.code !== 0) {
+  throw new Error("Attached app-server repair seed failed.");
+}
+const appServerRepairRunDirectory = extractRunDirectory(appServerRepairSeed.stdout);
+const appServerRoundOneDirectory = join(appServerRepairRunDirectory, "round-001");
+const appServerRoundTwoDirectory = join(appServerRepairRunDirectory, "round-002");
+const appServerRuntimeDirectory = join(appServerRepairRunDirectory, "runtime");
+const appServerRoundTwoRuntimeDirectory = join(appServerRoundTwoDirectory, "runtime");
+await cp(appServerRoundOneDirectory, appServerRoundTwoDirectory, {
+  recursive: true
+});
+await Promise.all([
+  rm(join(appServerRoundTwoDirectory, "round_summary.json")),
+  rm(join(appServerRoundTwoDirectory, "target-manifest.json"), { force: true }),
+  rm(join(appServerRoundTwoDirectory, "core-probe-results.json"), { force: true }),
+  rm(join(appServerRoundTwoRuntimeDirectory, "pre-verification-executions.json"), {
+    force: true
+  }),
+  rm(join(appServerRoundTwoRuntimeDirectory, "post-verification-executions.json"), {
+    force: true
+  }),
+  rm(join(appServerRoundTwoRuntimeDirectory, "adapter-executions.json"), {
+    force: true
+  })
+]);
+const [appServerLiveState, appServerRoundPhase] = await Promise.all([
+  readJson(join(appServerRuntimeDirectory, "live-state.json")),
+  readJson(join(appServerRuntimeDirectory, "round-phase.json"))
+]);
+await Promise.all([
+  writeJson(join(appServerRuntimeDirectory, "live-state.json"), {
+    ...appServerLiveState,
+    round_count: 1,
+    active_round: 2,
+    active_phase: "post_verification",
+    active_phase_status: "in_progress",
+    updated_at: staleHeartbeat,
+    heartbeat_at: staleHeartbeat
+  }),
+  writeJson(join(appServerRuntimeDirectory, "round-phase.json"), {
+    ...appServerRoundPhase,
+    round: 2,
+    phase: "post_verification",
+    status: "in_progress",
+    updated_at: staleHeartbeat,
+    heartbeat_at: staleHeartbeat,
+    phase_started_at: staleHeartbeat,
+    artifacts: {
+      target_manifest_path: join(appServerRoundTwoDirectory, "target-manifest.json"),
+      core_probe_results_path: join(appServerRoundTwoDirectory, "core-probe-results.json"),
+      post_verification_executions_path: join(
+        appServerRoundTwoRuntimeDirectory,
+        "post-verification-executions.json"
+      ),
+      adapter_executions_path: join(
+        appServerRoundTwoRuntimeDirectory,
+        "adapter-executions.json"
+      )
+    }
+  }),
+  writeJson(join(appServerRuntimeDirectory, "controller-lease.json"), {
+    run_id: "attached-app-server-repair",
+    controller_mode: "attached",
+    transport_mode: "app-server",
+    status: "running",
+    updated_at: staleHeartbeat,
+    heartbeat_at: staleHeartbeat,
+    owner_pid: 99999,
+    round: 2,
+    phase: "post_verification",
+    phase_status: "in_progress",
+    summary_path: join(appServerRepairRunDirectory, "summary.json"),
+    live_state_path: join(appServerRuntimeDirectory, "live-state.json")
+  })
+]);
+const appServerRepair = await runLoop(
+  [
+    "--resume-run",
+    appServerRepairRunDirectory,
+    "--repair",
+    "--resume-phase",
+    "post_verification",
+    "--controller-mode",
+    "attached",
+    "--transport",
+    "app-server",
+    "--adapter",
+    "./.tmp/semantic-validation/patch-only-success/adapter.json",
+    "--target-family",
+    "api-service",
+    "--max-rounds",
+    "3"
+  ],
+  {
+    env: fakeAppServerEnv()
+  }
+);
+if (appServerRepair.code !== 0) {
+  throw new Error("Attached app-server repair failed.");
+}
+const appServerRepairedSummary = await readSummary(appServerRepairRunDirectory);
+assertRuntimeEventCode(appServerRepairedSummary, "resume.repaired_interrupted_round");
+assertRuntimeWarningContains(
+  appServerRepairedSummary,
+  "Reconstructed pre_verification capability aggregate from adapter result files for round 2."
+);
+await assertAttachedTransportSurface(appServerRepairedSummary, {
+  expectedTransportMode: "app-server",
+  expectedRoundCount: 2
+});
+const appServerRepairedTransportState = await readJsonFile(
+  appServerRepairedSummary.transport_state_path
+);
+assert(
+  typeof appServerRepairedTransportState.app_server?.thread_id === "string",
+  "Expected repaired app-server run to preserve a thread id."
+);
+
 console.log("[validate-attached-resume-smoke] complete");

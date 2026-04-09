@@ -18,12 +18,13 @@ Keep the current Codex thread attached to the run while still honoring the harne
 - Do not spawn nested `codex exec` or `codex exec resume`.
 - Treat the current Codex thread as the controller and generator surface.
 - Treat this as the stock Codex current-thread mainline, not an App Server thread/turn implementation.
-- Remember that `controller_mode` and `transport_mode` are separate: this skill is for `transport_mode = current-thread`, while `transport_mode = app-server` is a separate future transport surface.
+- Remember that `controller_mode` and `transport_mode` are separate: this skill is for `transport_mode = current-thread`, while `transport_mode = app-server` is a separate live transport surface.
 - Keep shell usage phase-local and short-lived.
 - Update persisted protocol artifacts before and after each phase boundary.
 - Prefer repairing from `runtime/live-state.json`, `runtime/round-phase.json`, and committed `round_summary.json` files instead of guessing from chat history.
 - Be explicit when attached mode must refuse a path that would require detached child Codex execution.
 - Read `runtime/current-thread-protocol.md` when it exists and treat it as the operator checklist for the active run.
+- When `runtime/attached-generator-prompt.md` exists, complete that generator task on the current thread and write `runtime/attached-generator-response.json` before resuming `pre_verification`.
 
 ## Expected flow
 
@@ -40,4 +41,5 @@ Keep the current Codex thread attached to the run while still honoring the harne
 2. Read the latest `round-contract.json` and `patch-request.json` before acting.
 3. Complete only one controller phase at a time.
 4. After each phase, write the updated protocol artifacts before moving on.
-5. If a step would require nested Codex execution, fail closed and leave a persisted note instead of bypassing the transport policy.
+5. If `runtime/attached-generator-prompt.md` exists, finish that task first and write `runtime/attached-generator-response.json` with the summary and changed files.
+6. If a step would require nested Codex execution, fail closed and leave a persisted note instead of bypassing the transport policy.

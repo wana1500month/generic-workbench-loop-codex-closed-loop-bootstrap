@@ -98,6 +98,12 @@ export const artifactsForRound = (roundDirectory: string): RoundArtifacts => {
     ),
     adapter_executions_path: join(runtimeDirectory, "adapter-executions.json"),
     negotiation_state_path: join(runtimeDirectory, "negotiation-state.json"),
+    attached_generator_task_path: join(runtimeDirectory, "attached-generator-task.json"),
+    attached_generator_prompt_path: join(runtimeDirectory, "attached-generator-prompt.md"),
+    attached_generator_response_path: join(
+      runtimeDirectory,
+      "attached-generator-response.json"
+    ),
     planner_context_path: join(handoffDirectory, "planner-context.md"),
     generator_brief_path: join(handoffDirectory, "generator-brief.md"),
     qa_review_path: join(handoffDirectory, "qa-review.md"),

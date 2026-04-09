@@ -66,7 +66,8 @@ ${(input.notes ?? []).length > 0 ? input.notes!.map((note) => `- ${note}`).join(
 2. Work phase-by-phase. Update persisted protocol artifacts before and after each controller phase.
 3. Keep shell usage short-lived and local to the current phase.
 4. Treat \`round-contract.json\`, \`patch-request.json\`, and \`runtime/round-phase.json\` as authoritative over chat memory.
-5. If the route would require child Codex execution, fail closed and leave a persisted note instead of faking attached behavior.
+5. When the bootstrap generator surface is active, complete \`runtime/attached-generator-prompt.md\` and write \`runtime/attached-generator-response.json\` before resuming pre_verification.
+6. If the route would require child Codex execution, fail closed and leave a persisted note instead of faking attached behavior.
 
 ## Manual Phase Loop
 
@@ -81,7 +82,8 @@ ${(input.notes ?? []).length > 0 ? input.notes!.map((note) => `- ${note}`).join(
 2. Resume the persisted \`thread_id\` when available before opening a new turn.
 3. Use \`turn/steer\` while the active turn is in progress; otherwise start a fresh turn on the same thread.
 4. Keep \`transport-state.json\` aligned with the latest \`thread_id\`, \`turn_id\`, and event cursor.
-5. Keep the controller state machine authoritative for file mutation and checkpointing.
+5. Use dedicated App Server task turns for attached generator work and require \`runtime/attached-generator-response.json\` before apply_change resumes.
+6. Keep the controller state machine authoritative for file mutation and checkpointing.
 `;
 
   await writeText(path, `${common}\n${modeSpecific}\n`);

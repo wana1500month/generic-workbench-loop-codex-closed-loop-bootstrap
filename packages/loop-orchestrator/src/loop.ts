@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import {
@@ -27,6 +27,12 @@ import {
   loadVerificationProfile
 } from "./adapter-runtime.js";
 import {
+  isAttachedGeneratorTransport,
+  isBootstrapGeneratedAdapter,
+  readAttachedGeneratorResponse,
+  writeAttachedGeneratorTask
+} from "./attached-generator.js";
+import {
   executeCoreVerificationProbes,
   restoreCoreVerificationProbeExecutions
 } from "./core-verifier.js";
@@ -40,8 +46,10 @@ import {
   loadJson,
   loadJsonIfExists,
   nextRunId,
+  pathExists,
   repoRoot,
-  writeJson
+  writeJson,
+  writeText
 } from "./file-system.js";
 import { defaultIdeaPath, readIdeaBrief } from "./idea-intake.js";
 import {
@@ -177,6 +185,9 @@ const postVerificationCapabilities: AdapterCapabilityName[] = [
 
 const roundDirectoryFor = (runDirectory: string, round: number): string =>
   join(runDirectory, `round-${String(round).padStart(3, "0")}`);
+
+const crashAfterCheckpointEnabled = (): boolean =>
+  process.env.HARNESS_TEST_CRASH_AFTER_CHECKPOINT_ONCE === "1";
 
 const ensureJsonFile = async (
   path: string,
@@ -1530,6 +1541,21 @@ export const runClosedLoop = async (input: {
         bestScoringEvalReportPath: bestEvalReportPath
       }
     });
+    if (crashAfterCheckpointEnabled() && history.length > 0) {
+      const crashMarkerPath = join(
+        runtimeStatePaths.runtimeDirectory,
+        "test-crash-after-checkpoint.marker"
+      );
+      if (!(await pathExists(crashMarkerPath))) {
+        await writeText(
+          crashMarkerPath,
+          `Triggered after round ${history[history.length - 1]?.round ?? 0}.\n`
+        );
+        throw new Error(
+          `HARNESS_TEST_CRASH_AFTER_CHECKPOINT_ONCE triggered after round ${history[history.length - 1]?.round ?? 0}.`
+        );
+      }
+    }
     currentCheckpointStopReason = summary.stop_reason;
     await heartbeat.tick();
     return summary;
@@ -1810,6 +1836,43 @@ export const runClosedLoop = async (input: {
       previousPatchTargetCheckIds.every((checkId) =>
         contractArtifact.carry_over_check_ids.includes(checkId)
       );
+    const attachedGeneratorEligible =
+      currentThreadTransport &&
+      contractAgreementArtifact.status === "agreed" &&
+      isBootstrapGeneratedAdapter(loadedAdapter);
+    const attachedGeneratorTargetRoot =
+      loadedAdapter &&
+      attachedGeneratorEligible
+        ? join(loadedAdapter.base_directory, loadedAdapter.contract.target_root)
+        : undefined;
+    if (attachedGeneratorEligible && attachedGeneratorTargetRoot) {
+      await writeAttachedGeneratorTask({
+        runId,
+        round,
+        controllerMode: "attached",
+        transportMode: isAttachedGeneratorTransport(transportMode)
+          ? transportMode
+          : "current-thread",
+        targetRoot: attachedGeneratorTargetRoot,
+        transportProtocolPath: transportProtocolCurrentPath,
+        artifacts,
+        contract: contractArtifact,
+        agreement: contractAgreementArtifact,
+        generatorPlan: generatorPlanArtifact,
+        previousPatchRequest,
+        notes: [
+          transportMode === "current-thread"
+            ? "Complete the generator work on the current Codex thread, then write the response JSON before resuming the controller."
+            : "The App Server generator turn will write the response JSON before the controller resumes adapter verification."
+        ]
+      });
+    }
+    let attachedGeneratorResponse =
+      attachedGeneratorEligible
+        ? await readAttachedGeneratorResponse(
+            artifacts.attached_generator_response_path
+          )
+        : undefined;
     const persistedPreVerificationExecutions =
       await loadJsonIfExists<AdapterCapabilityExecution[]>(
         artifacts.pre_verification_executions_path
@@ -1852,7 +1915,17 @@ export const runClosedLoop = async (input: {
       await recordRoundPhase({
         round,
         phase: "pre_verification",
-        status: "in_progress"
+        status: "in_progress",
+        ...(attachedGeneratorEligible
+          ? {
+              artifacts: {
+                attached_generator_task_path:
+                  artifacts.attached_generator_task_path,
+                attached_generator_response_path:
+                  artifacts.attached_generator_response_path
+              }
+            }
+          : {})
       });
       const repairedPreVerificationCapabilities = new Set(
         preVerificationExecutions.map((execution) => execution.capability)
@@ -1860,6 +1933,44 @@ export const runClosedLoop = async (input: {
       const missingPreVerificationCapabilities = preVerificationCapabilities.filter(
         (capability) => !repairedPreVerificationCapabilities.has(capability)
       );
+      if (
+        attachedGeneratorEligible &&
+        attachedGeneratorTargetRoot &&
+        missingPreVerificationCapabilities.includes("apply_change") &&
+        !attachedGeneratorResponse
+      ) {
+        const attachedGeneratorPrompt = await readFile(
+          artifacts.attached_generator_prompt_path,
+          "utf8"
+        );
+        if (transportMode === "app-server" && appServerTransport) {
+          await appServerTransport.runTask({
+            round,
+            phase: "pre_verification",
+            prompt: attachedGeneratorPrompt,
+            taskLabel: `attached generator round ${round}`
+          });
+          attachedGeneratorResponse = await readAttachedGeneratorResponse(
+            artifacts.attached_generator_response_path
+          );
+          if (
+            !attachedGeneratorResponse ||
+            attachedGeneratorResponse.status === "blocked"
+          ) {
+            throw new Error(
+              `App Server attached generator did not write a usable response artifact for round ${round}. Expected ${artifacts.attached_generator_response_path}.`
+            );
+          }
+          runtimeWarnings = unique([
+            ...runtimeWarnings,
+            `App Server attached generator completed for round ${round} and wrote ${artifacts.attached_generator_response_path}.`
+          ]);
+        } else if (transportMode === "current-thread") {
+          throw new Error(
+            `Current-thread attached generator requires a response artifact at ${artifacts.attached_generator_response_path}. Complete the task from ${artifacts.attached_generator_prompt_path} and resume the run.`
+          );
+        }
+      }
       const resumedPreVerificationExecutions =
         loadedAdapter &&
         contractAgreementArtifact.status === "agreed" &&
@@ -1887,6 +1998,18 @@ export const runClosedLoop = async (input: {
               previousPatchRequestPath,
               previousTrajectoryDecisionPath,
               extraEnv: {
+                ...(attachedGeneratorEligible
+                  ? {
+                      HARNESS_ATTACHED_GENERATOR_TASK_PATH:
+                        artifacts.attached_generator_task_path,
+                      HARNESS_GENERATOR_PROMPT_PATH:
+                        artifacts.attached_generator_prompt_path,
+                      HARNESS_GENERATOR_RESPONSE_PATH:
+                        artifacts.attached_generator_response_path,
+                      HARNESS_TRANSPORT_PROTOCOL_PATH:
+                        transportProtocolCurrentPath
+                    }
+                  : {}),
                 HARNESS_CONTROLLER_MODE: controllerMode,
                 HARNESS_TRANSPORT: transportMode,
                 HARNESS_EXECUTOR_MODE: executorMode
@@ -1914,7 +2037,15 @@ export const runClosedLoop = async (input: {
         artifacts: {
           pre_verification_executions_path:
             artifacts.pre_verification_executions_path,
-          target_manifest_path: artifacts.target_manifest_path
+          target_manifest_path: artifacts.target_manifest_path,
+          ...(attachedGeneratorEligible
+            ? {
+                attached_generator_task_path:
+                  artifacts.attached_generator_task_path,
+                attached_generator_response_path:
+                  artifacts.attached_generator_response_path
+              }
+            : {})
         }
       });
     }

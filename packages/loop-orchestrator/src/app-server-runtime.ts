@@ -40,6 +40,16 @@ type PendingRequest = {
   timeout: NodeJS.Timeout;
 };
 
+type PendingTurnCompletion = {
+  resolve: (value: {
+    turnId: string;
+    status: "completed" | "interrupted" | "failed";
+    eventCursor?: number;
+  }) => void;
+  reject: (error: Error) => void;
+  timeout: NodeJS.Timeout;
+};
+
 export interface AppServerTransportController {
   syncPhase: (input: {
     round: number;
@@ -47,6 +57,17 @@ export interface AppServerTransportController {
     status: ControllerPhaseStatus;
     notes?: string[];
   }) => Promise<void>;
+  runTask: (input: {
+    round: number;
+    phase: ControllerRoundPhase;
+    prompt: string;
+    taskLabel: string;
+    completionTimeoutMs?: number;
+  }) => Promise<{
+    turnId: string;
+    status: "completed" | "interrupted" | "failed";
+    eventCursor?: number;
+  }>;
   stop: (input?: { stopReason?: string; notes?: string[] }) => Promise<void>;
   snapshot: () => AppServerTransportSnapshot;
 }
@@ -105,6 +126,7 @@ class LiveAppServerTransport implements AppServerTransportController {
   private readonly child;
   private readonly rl;
   private readonly pending = new Map<number, PendingRequest>();
+  private readonly pendingTurnCompletions = new Map<string, PendingTurnCompletion>();
   private readonly snapshotState: AppServerTransportSnapshot;
   private nextRequestId = 1;
   private persistQueue: Promise<void> = Promise.resolve();
@@ -284,6 +306,69 @@ class LiveAppServerTransport implements AppServerTransportController {
     await this.startTurn(input);
   }
 
+  public async runTask(input: {
+    round: number;
+    phase: ControllerRoundPhase;
+    prompt: string;
+    taskLabel: string;
+    completionTimeoutMs?: number;
+  }): Promise<{
+    turnId: string;
+    status: "completed" | "interrupted" | "failed";
+    eventCursor?: number;
+  }> {
+    if (!this.snapshotState.thread_id) {
+      throw new Error("App Server transport has no active thread.");
+    }
+
+    if (
+      this.snapshotState.turn_id &&
+      this.snapshotState.turn_status === "inProgress"
+    ) {
+      await this.request("turn/interrupt", {
+        threadId: this.snapshotState.thread_id,
+        turnId: this.snapshotState.turn_id
+      });
+      this.snapshotState.last_request_method = "turn/interrupt";
+      await this.persistState();
+    }
+
+    const result = await this.request("turn/start", {
+      threadId: this.snapshotState.thread_id,
+      input: [
+        {
+          type: "text",
+          text: input.prompt
+        }
+      ],
+      cwd: this.cwd,
+      approvalPolicy: "never",
+      sandboxPolicy: {
+        type: "workspaceWrite",
+        access: { type: "fullAccess" },
+        networkAccess: false
+      },
+      model: this.model,
+      effort: "medium",
+      summary: "concise"
+    });
+    const turn = result.turn as { id?: string; status?: string } | undefined;
+    if (!turn?.id) {
+      throw new Error(`App Server ${input.taskLabel} task did not return a turn id.`);
+    }
+    this.snapshotState.turn_id = turn.id;
+    this.snapshotState.turn_status =
+      turn.status === "completed" ||
+      turn.status === "failed" ||
+      turn.status === "interrupted"
+        ? turn.status
+        : "inProgress";
+    this.snapshotState.last_request_method = "turn/start";
+    await this.persistState();
+
+    return this.waitForTurnCompletion(turn.id, input.completionTimeoutMs ?? 120_000);
+  }
+
   public async stop(input?: {
     stopReason?: string;
     notes?: string[];
@@ -332,6 +417,13 @@ class LiveAppServerTransport implements AppServerTransportController {
       );
     } finally {
       this.closed = true;
+      for (const pendingTurn of this.pendingTurnCompletions.values()) {
+        clearTimeout(pendingTurn.timeout);
+        pendingTurn.reject(
+          new Error("App Server transport stopped before turn completion.")
+        );
+      }
+      this.pendingTurnCompletions.clear();
       this.rl.close();
       this.child.kill();
       await this.persistState();
@@ -484,10 +576,65 @@ class LiveAppServerTransport implements AppServerTransportController {
         turn?.status === "failed"
       ) {
         this.snapshotState.turn_status = turn.status;
+        if (turn?.id) {
+          this.resolveTurnCompletion(turn.id, turn.status);
+        }
       }
     }
 
     await this.persistState();
+  }
+
+  private waitForTurnCompletion(
+    turnId: string,
+    timeoutMs: number
+  ): Promise<{
+    turnId: string;
+    status: "completed" | "interrupted" | "failed";
+    eventCursor?: number;
+  }> {
+    if (
+      this.snapshotState.turn_id === turnId &&
+      (this.snapshotState.turn_status === "completed" ||
+        this.snapshotState.turn_status === "interrupted" ||
+        this.snapshotState.turn_status === "failed")
+    ) {
+      return Promise.resolve({
+        turnId,
+        status: this.snapshotState.turn_status,
+        eventCursor: this.snapshotState.event_cursor
+      });
+    }
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingTurnCompletions.delete(turnId);
+        reject(new Error(`App Server turn '${turnId}' did not complete in time.`));
+      }, timeoutMs);
+      this.pendingTurnCompletions.set(turnId, {
+        resolve,
+        reject,
+        timeout
+      });
+    });
+  }
+
+  private resolveTurnCompletion(
+    turnId: string,
+    status: "completed" | "interrupted" | "failed"
+  ): void {
+    const pending = this.pendingTurnCompletions.get(turnId);
+    if (!pending) {
+      return;
+    }
+
+    clearTimeout(pending.timeout);
+    this.pendingTurnCompletions.delete(turnId);
+    pending.resolve({
+      turnId,
+      status,
+      eventCursor: this.snapshotState.event_cursor
+    });
   }
 
   private extractThreadId(

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
@@ -95,6 +95,64 @@ const main = async () => {
       await readFile(join(fixture.roundDirectory, "artifacts", "generator-metadata.json"), "utf8")
     );
     assert(disabledMetadata.disabled === true, "disabled metadata should record disabled=true");
+
+    const attachedFixture = await createBootstrapFixture(join(tempRoot, "attached-current-thread"));
+    const attachedResponsePath = join(
+      attachedFixture.roundDirectory,
+      "runtime",
+      "attached-generator-response.json"
+    );
+    const attachedTaskPath = join(
+      attachedFixture.roundDirectory,
+      "runtime",
+      "attached-generator-task.json"
+    );
+    await mkdir(join(attachedFixture.roundDirectory, "runtime"), { recursive: true });
+    await Promise.all([
+      writeFile(
+        attachedTaskPath,
+        JSON.stringify(
+          {
+            run_id: "attached-bootstrap",
+            round: 1,
+            transport_mode: "current-thread"
+          },
+          null,
+          2
+        ) + "\n",
+        "utf8"
+      ),
+      writeFile(
+        attachedResponsePath,
+        JSON.stringify(
+          {
+            status: "applied",
+            summary: "manual attached generator applied the change",
+            generated_at: new Date().toISOString()
+          },
+          null,
+          2
+        ) + "\n",
+        "utf8"
+      )
+    ]);
+    const attachedRun = await runApplyChange(
+      attachedFixture,
+      applyChangeEnv(attachedFixture, {
+        HARNESS_CONTROLLER_MODE: "attached",
+        HARNESS_TRANSPORT: "current-thread",
+        HARNESS_ATTACHED_GENERATOR_TASK_PATH: attachedTaskPath,
+        HARNESS_GENERATOR_RESPONSE_PATH: attachedResponsePath
+      })
+    );
+    assert(attachedRun.code === 0, "attached generator response run should succeed");
+
+    const attachedResult = await readJsonFile(attachedFixture.outputPath);
+    assert(attachedResult.ok === true, "attached generator response run must report success");
+    assert(
+      String(attachedResult.summary).includes("attached generator completed"),
+      "attached generator summary should mention same-thread completion"
+    );
 
     console.log("Validated bootstrap generator fail-closed behavior.");
   } finally {
