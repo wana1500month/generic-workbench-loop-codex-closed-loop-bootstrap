@@ -95,6 +95,16 @@ const runBuild = async () => {
 };
 
 const rawArgs = process.argv.slice(2);
+if (rawArgs.includes("--supervised")) {
+  const delegatedArgs = rawArgs.filter((value) => value !== "--supervised");
+  const exitCode = await runCommand(
+    process.execPath,
+    ["./scripts/loop-supervisor.mjs", ...delegatedArgs],
+    { shell: false }
+  );
+  process.exitCode = exitCode;
+  process.exit();
+}
 let modeSingle = false;
 let adapterPath = readNpmConfigValue(["adapter"]);
 let rubricPath = readNpmConfigValue(["rubric"]);

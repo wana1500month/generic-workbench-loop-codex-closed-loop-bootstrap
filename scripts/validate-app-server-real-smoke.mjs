@@ -155,7 +155,10 @@ const main = async () => {
       initialRound: 1,
       initialPhase: "pre_verification",
       initialStatus: "in_progress",
-      initialNotes: ["Real app-server smoke validation."]
+      initialNotes: ["Real app-server smoke validation."],
+      threadName: "real-app-server-smoke · attached-loop",
+      defaultTaskTimeoutMs: 180_000,
+      requestTimeoutMs: 30_000
     });
 
     try {
@@ -164,6 +167,9 @@ const main = async () => {
         phase: "pre_verification",
         taskLabel: "real app-server smoke",
         completionTimeoutMs: 180_000,
+        taskCwd: targetRoot,
+        writableRoots: [targetRoot, runDirectory],
+        networkAccess: false,
         prompt: [
           "Use the live App Server turn to mutate the workspace.",
           `APP_SERVER_SMOKE_RESPONSE_PATH: ${responsePath}`,
@@ -193,7 +199,10 @@ const main = async () => {
       readFile(targetFilePath, "utf8")
     ]);
 
-    assert(transportState.status === "live", "Expected App Server transport state to be live.");
+    assert(
+      transportState.status === "completed",
+      `Expected App Server transport state to be completed after shutdown, received '${transportState.status ?? "missing"}'.`
+    );
     assert(
       transportState.app_server?.implemented === true,
       "Expected App Server transport state to record implemented=true."
@@ -205,6 +214,10 @@ const main = async () => {
     assert(
       typeof transportState.app_server?.turn_id === "string",
       "Expected App Server transport state to persist a turn id."
+    );
+    assert(
+      transportState.app_server?.thread_lifecycle === "closed",
+      `Expected App Server thread lifecycle 'closed', received '${transportState.app_server?.thread_lifecycle ?? "missing"}'.`
     );
     assert(
       (transportState.app_server?.event_cursor ?? 0) > 0,

@@ -46,6 +46,10 @@ const promptText = (input: {
     `Round: ${input.task.round}`,
     `Transport: ${input.task.transport_mode}`,
     `Target root: ${input.targetRoot}`,
+    `Task cwd: ${input.task.task_cwd}`,
+    `Writable roots: ${input.task.writable_roots.join(", ")}`,
+    `Network access: ${input.task.network_access ? "enabled" : "disabled"}`,
+    `Completion timeout: ${input.task.completion_timeout_ms} ms`,
     "",
     "Keep the generator work on the same attached transport. Do not spawn nested `codex exec` calls.",
     "Apply the smallest coherent mutation that satisfies the active round contract and write the response JSON before finishing.",
@@ -91,6 +95,10 @@ export const writeAttachedGeneratorTask = async (input: {
   controllerMode: "attached";
   transportMode: Extract<TransportMode, "current-thread" | "app-server">;
   targetRoot: string;
+  taskCwd: string;
+  writableRoots: string[];
+  networkAccess: boolean;
+  completionTimeoutMs: number;
   transportProtocolPath?: string;
   artifacts: RoundArtifacts;
   contract: RoundContractArtifact;
@@ -106,6 +114,10 @@ export const writeAttachedGeneratorTask = async (input: {
     controller_mode: input.controllerMode,
     transport_mode: input.transportMode,
     target_root: input.targetRoot,
+    task_cwd: input.taskCwd,
+    writable_roots: input.writableRoots,
+    network_access: input.networkAccess,
+    completion_timeout_ms: input.completionTimeoutMs,
     prompt_path: input.artifacts.attached_generator_prompt_path,
     response_path: input.artifacts.attached_generator_response_path,
     round_contract_path: input.artifacts.contract_json_path,

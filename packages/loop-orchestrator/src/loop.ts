@@ -212,6 +212,39 @@ const isImproved = (nextScore: number, currentBest: number | undefined): boolean
 
 const unique = <T>(values: readonly T[]): T[] => [...new Set(values)];
 
+const parsePositiveTimeoutMs = (value: string | undefined): number | undefined => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+};
+
+const parsePhaseTimeoutOverrides = (
+  value: string | undefined
+): Partial<Record<ControllerRoundPhase, number>> => {
+  if (!value?.trim()) {
+    return {};
+  }
+
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .reduce<Partial<Record<ControllerRoundPhase, number>>>((acc, entry) => {
+      const [phaseCandidate, timeoutCandidate] = entry.split("=", 2);
+      if (!phaseCandidate || !timeoutCandidate) {
+        return acc;
+      }
+      if (!controllerPhaseOrder.includes(phaseCandidate as ControllerRoundPhase)) {
+        return acc;
+      }
+      const timeoutMs = parsePositiveTimeoutMs(timeoutCandidate.trim());
+      if (!timeoutMs) {
+        return acc;
+      }
+      acc[phaseCandidate as ControllerRoundPhase] = timeoutMs;
+      return acc;
+    }, {});
+};
+
 const ephemeralRuntimeEventCodes = new Set<RuntimeEventCode>([
   "run.resumed_from_history",
   "resume.migration_override",
@@ -748,6 +781,9 @@ export const runClosedLoop = async (input: {
   repairOnly?: boolean;
   resumePhase?: ControllerRoundPhase;
   executorMode?: "harness" | "subagents-experimental";
+  phaseTimeouts?: Partial<Record<ControllerRoundPhase, number>>;
+  appServerTaskTimeoutMs?: number;
+  appServerRequestTimeoutMs?: number;
 }): Promise<ClosedLoopResult> => {
   const includeRemediationBudget = input.includeRemediationBudget ?? true;
   const restoredRun = input.resumeRunPath
@@ -785,6 +821,18 @@ export const runClosedLoop = async (input: {
     throw new Error(transportValidationError);
   }
   const currentThreadTransport = isCurrentThreadTransport(transportMode);
+  const phaseTimeouts = {
+    ...parsePhaseTimeoutOverrides(process.env.HARNESS_PHASE_TIMEOUT_MS),
+    ...(input.phaseTimeouts ?? {})
+  };
+  const appServerTaskTimeoutMs =
+    input.appServerTaskTimeoutMs ??
+    parsePositiveTimeoutMs(process.env.HARNESS_APP_SERVER_TASK_TIMEOUT_MS) ??
+    1_800_000;
+  const appServerRequestTimeoutMs =
+    input.appServerRequestTimeoutMs ??
+    parsePositiveTimeoutMs(process.env.HARNESS_APP_SERVER_REQUEST_TIMEOUT_MS) ??
+    30_000;
   const executorMode =
     input.executorMode ??
     (isExecutorMode(process.env.HARNESS_EXECUTOR_MODE)
@@ -793,6 +841,17 @@ export const runClosedLoop = async (input: {
     restoredRun?.summary.executor_mode ??
     defaultExecutorMode;
   await mkdir(runDirectory, { recursive: true });
+  const runDiscoveryMarkerPath = process.env.HARNESS_RUN_DISCOVERY_MARKER;
+  if (runDiscoveryMarkerPath) {
+    await writeJson(runDiscoveryMarkerPath, {
+      run_id: runId,
+      run_directory: runDirectory,
+      controller_mode: controllerMode,
+      transport_mode: transportMode,
+      supervisor_session_id: process.env.HARNESS_SUPERVISOR_SESSION_ID,
+      written_at: new Date().toISOString()
+    });
+  }
   const runtimeStatePaths = runtimeStatePathsForRun(runDirectory);
   const runRuntimeDirectory = runtimeStatePaths.runtimeDirectory;
   const summaryPath = join(runDirectory, "summary.json");
@@ -1021,17 +1080,11 @@ export const runClosedLoop = async (input: {
       executorMode,
       summaryPath,
       protocolPath: transportProtocolPath,
-      status: transportMode === "app-server" ? "blocked" : "configured",
+      status: "configured",
       notes: transportRuntimeWarningsForMode({
         controllerMode,
         transportMode
-      }),
-      ...(transportMode === "app-server"
-        ? {
-            lastError:
-              "App Server transport was not opened because this invocation may return before the live controller session starts."
-          }
-        : {})
+      })
     })
   );
 
@@ -1348,7 +1401,10 @@ export const runClosedLoop = async (input: {
       initialRound: activeHeartbeatRound ?? restoredRun?.roundStart ?? history.length + 1,
       initialPhase: activeHeartbeatPhase ?? "negotiation",
       initialStatus: activeHeartbeatPhaseStatus ?? "in_progress",
-      initialNotes: heartbeatNotes
+      initialNotes: heartbeatNotes,
+      threadName: `${runId} · ${resolvedTargetFamily ?? "attached-loop"}`,
+      defaultTaskTimeoutMs: appServerTaskTimeoutMs,
+      requestTimeoutMs: appServerRequestTimeoutMs
     });
     runtimeWarnings = unique([
       ...runtimeWarnings,
@@ -1559,6 +1615,32 @@ export const runClosedLoop = async (input: {
     currentCheckpointStopReason = summary.stop_reason;
     await heartbeat.tick();
     return summary;
+  };
+
+  const finalizeRunAsManualHandoff = async (input: {
+    stopReason: Extract<
+      LoopRunSummary["stop_reason"],
+      "awaiting_current_thread_handoff" | "awaiting_manual_generator"
+    >;
+    notes: string[];
+  }): Promise<ClosedLoopResult> => {
+    runtimeWarnings = unique([...runtimeWarnings, ...input.notes]);
+    heartbeatNotes.splice(0, heartbeatNotes.length, ...unique([...heartbeatNotes, ...input.notes]));
+    await writeLiveTransportProtocol();
+    const summary = await writeCheckpoint(input.stopReason);
+    if (appServerTransport) {
+      await appServerTransport.stop({
+        stopReason: summary.stop_reason,
+        notes: heartbeatNotes
+      });
+    }
+    await heartbeat.stop("stopped");
+    return {
+      plan,
+      summary,
+      runDirectory,
+      plannedScenarioPath
+    };
   };
   await writeCheckpoint(restoredRun?.summary.stop_reason);
   const repairRoundLimit = input.repairOnly
@@ -1843,8 +1925,16 @@ export const runClosedLoop = async (input: {
     const attachedGeneratorTargetRoot =
       loadedAdapter &&
       attachedGeneratorEligible
-        ? join(loadedAdapter.base_directory, loadedAdapter.contract.target_root)
+        ? resolve(
+            loadedAdapter.base_directory,
+            loadedAdapter.contract.target_root
+          )
         : undefined;
+    const attachedGeneratorWritableRoots = attachedGeneratorTargetRoot
+      ? unique([attachedGeneratorTargetRoot, runDirectory])
+      : [];
+    const attachedGeneratorTaskTimeoutMs =
+      phaseTimeouts.pre_verification ?? appServerTaskTimeoutMs;
     if (attachedGeneratorEligible && attachedGeneratorTargetRoot) {
       await writeAttachedGeneratorTask({
         runId,
@@ -1854,6 +1944,10 @@ export const runClosedLoop = async (input: {
           ? transportMode
           : "current-thread",
         targetRoot: attachedGeneratorTargetRoot,
+        taskCwd: attachedGeneratorTargetRoot,
+        writableRoots: attachedGeneratorWritableRoots,
+        networkAccess: false,
+        completionTimeoutMs: attachedGeneratorTaskTimeoutMs,
         transportProtocolPath: transportProtocolCurrentPath,
         artifacts,
         contract: contractArtifact,
@@ -1948,7 +2042,11 @@ export const runClosedLoop = async (input: {
             round,
             phase: "pre_verification",
             prompt: attachedGeneratorPrompt,
-            taskLabel: `attached generator round ${round}`
+            taskLabel: `attached generator round ${round}`,
+            taskCwd: attachedGeneratorTargetRoot,
+            writableRoots: attachedGeneratorWritableRoots,
+            networkAccess: false,
+            completionTimeoutMs: attachedGeneratorTaskTimeoutMs
           });
           attachedGeneratorResponse = await readAttachedGeneratorResponse(
             artifacts.attached_generator_response_path
@@ -1966,9 +2064,14 @@ export const runClosedLoop = async (input: {
             `App Server attached generator completed for round ${round} and wrote ${artifacts.attached_generator_response_path}.`
           ]);
         } else if (transportMode === "current-thread") {
-          throw new Error(
-            `Current-thread attached generator requires a response artifact at ${artifacts.attached_generator_response_path}. Complete the task from ${artifacts.attached_generator_prompt_path} and resume the run.`
-          );
+          return finalizeRunAsManualHandoff({
+            stopReason: "awaiting_current_thread_handoff",
+            notes: [
+              `Current-thread attached generator is paused for round ${round}.`,
+              `Complete ${artifacts.attached_generator_prompt_path} on the current Codex thread.`,
+              `Write ${artifacts.attached_generator_response_path}, then resume the run.`
+            ]
+          });
         }
       }
       const resumedPreVerificationExecutions =

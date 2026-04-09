@@ -28,6 +28,31 @@ const controllerRoundPhases = new Set([
   "run_finalize"
 ]);
 
+const parsePositiveTimeoutMs = (value) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+};
+
+const parsePhaseTimeouts = (value) => {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return undefined;
+  }
+
+  const overrides = {};
+  for (const entry of value.split(",")) {
+    const [phase, timeout] = entry.split("=", 2).map((token) => token?.trim());
+    if (!controllerRoundPhases.has(phase)) {
+      throw new Error(`Invalid resume phase: ${phase ?? ""}`);
+    }
+    const timeoutMs = parsePositiveTimeoutMs(timeout);
+    if (timeoutMs === undefined) {
+      throw new Error(`Invalid phase timeout: ${timeout ?? ""}`);
+    }
+    overrides[phase] = timeoutMs;
+  }
+  return overrides;
+};
+
 const parseArgs = (argv) => {
   let adapterPath;
   let rubricPath;
@@ -38,6 +63,9 @@ const parseArgs = (argv) => {
   let forceReopenTerminal = false;
   let controllerMode;
   let transportMode;
+  let appServerTaskTimeoutMs;
+  let appServerRequestTimeoutMs;
+  let phaseTimeouts;
   let repairOnly = false;
   let resumePhase;
   let executorMode;
@@ -101,6 +129,21 @@ const parseArgs = (argv) => {
           throw new Error(`Invalid transport mode: ${transportMode ?? ""}`);
         }
         break;
+      case "--app-server-task-timeout-ms":
+        appServerTaskTimeoutMs = parsePositiveTimeoutMs(argv[++index]);
+        if (appServerTaskTimeoutMs === undefined) {
+          throw new Error(`Invalid app-server task timeout: ${argv[index] ?? ""}`);
+        }
+        break;
+      case "--app-server-request-timeout-ms":
+        appServerRequestTimeoutMs = parsePositiveTimeoutMs(argv[++index]);
+        if (appServerRequestTimeoutMs === undefined) {
+          throw new Error(`Invalid app-server request timeout: ${argv[index] ?? ""}`);
+        }
+        break;
+      case "--phase-timeout-ms":
+        phaseTimeouts = parsePhaseTimeouts(argv[++index]);
+        break;
       case "--repair":
         repairOnly = true;
         break;
@@ -144,6 +187,9 @@ const parseArgs = (argv) => {
     forceReopenTerminal,
     controllerMode,
     transportMode,
+    appServerTaskTimeoutMs,
+    appServerRequestTimeoutMs,
+    phaseTimeouts,
     repairOnly,
     resumePhase,
     executorMode,
@@ -166,6 +212,9 @@ const result =
         forceReopenTerminal: args.forceReopenTerminal,
         controllerMode: args.controllerMode,
         transportMode: args.transportMode,
+        phaseTimeouts: args.phaseTimeouts,
+        appServerTaskTimeoutMs: args.appServerTaskTimeoutMs,
+        appServerRequestTimeoutMs: args.appServerRequestTimeoutMs,
         repairOnly: args.repairOnly,
         resumePhase: args.resumePhase,
         executorMode: args.executorMode,
@@ -181,6 +230,9 @@ const result =
         forceReopenTerminal: args.forceReopenTerminal,
         controllerMode: args.controllerMode,
         transportMode: args.transportMode,
+        phaseTimeouts: args.phaseTimeouts,
+        appServerTaskTimeoutMs: args.appServerTaskTimeoutMs,
+        appServerRequestTimeoutMs: args.appServerRequestTimeoutMs,
         repairOnly: args.repairOnly,
         resumePhase: args.resumePhase,
         executorMode: args.executorMode,

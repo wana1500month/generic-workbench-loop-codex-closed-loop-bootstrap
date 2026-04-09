@@ -65,11 +65,14 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `controller_mode` and `transport_mode` are separate axes:
   - `detached` currently requires `--transport codex-exec`
   - `attached` currently allows `--transport current-thread` or `--transport app-server`
-- Use `--transport current-thread` for the stock Codex current-thread protocol.
-- Use `--transport app-server` to open a live `codex app-server` stdio session. The runtime initializes the server, starts or resumes a thread, opens a turn, and steers that turn at phase boundaries while persisting `thread_id`, `turn_id`, and the event cursor.
+- `npm run loop:run -- ...` now routes through the supervisor by default. Use `npm run loop:run:raw -- ...` only for direct controller debugging, and use `npm run loop:watch -- ...` to keep the supervisor detached from the launching shell.
+- Attached runs now default to `--transport app-server`. Use `--transport current-thread` only when you intentionally want the manual same-thread handoff protocol instead of live App Server automation.
+- Use `--transport current-thread` for the stock Codex current-thread protocol. Current-thread attached generator work is an honest manual pause surface that writes `attached-generator-prompt.md` / `attached-generator-response.json` and stops with `awaiting_current_thread_handoff`.
+- Use `--transport app-server` to open a live `codex app-server` stdio session. The runtime initializes the server, starts or resumes a thread, names it, reads runtime state through `thread/read`, opens a turn, and steers that turn at phase boundaries while persisting `thread_id`, `turn_id`, the event cursor, and thread runtime status.
 - `current-thread` and `app-server` are same-thread transports. Both forbid nested `codex exec` calls from shared runtime paths.
 - Bootstrap-generated `apply_change` now accepts same-thread generator work through `runtime/attached-generator-prompt.md` and `runtime/attached-generator-response.json` instead of insisting on nested `codex exec`.
-- Use `npm run loop:watch -- ...` when the controller should survive outer shell timeouts. The supervisor watches the child controller, restarts from `--resume-run` when needed, and persists `runtime/supervisor-state.json` once the run exists.
+- App Server attached generator turns now honor per-task `cwd`, writable roots, request timeout, and task completion timeout. Use `--app-server-task-timeout-ms`, `--app-server-request-timeout-ms`, and `--phase-timeout-ms phase=value,...` to tune long-running attached work without abusing `turn/steer` as a heartbeat.
+- Use `npm run loop:watch -- ...` when the controller should survive outer shell timeouts. The supervisor watches the child controller, restarts from `--resume-run` when needed, persists `runtime/supervisor-state.json` once the run exists, and discovers the owned run through a supervisor marker instead of guessing from the newest run directory.
 - Use `--repair` with `--resume-run` when the controller should repair persisted state and stop instead of opening additional rounds.
 - Use `--resume-phase <phase>` to force repair or resume from a known persisted controller phase such as `evaluation` or `round_commit`.
 - Use `--force-reopen-terminal` only when you intentionally want to reopen a run that already ended with `target_reached`, `contract_completed`, `environment_blocked`, or `adapter_contract_invalid`.
@@ -90,7 +93,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `summary.json.round_history[]` now also persists `round_stop_reason`, so per-round terminal outcomes no longer depend on parsing handoff prose.
 - `summary.json.round_history[]` now also persists `decision_source`, so reviewers can tell whether a round followed `policy_snapshot`, a hard rule, or default patch authority without reading handoff prose.
 - `summary.json.feature_list_path`, `summary.json.progress_path`, `summary.json.progress_log_path`, `summary.json.done_when_path`, and `summary.json.init_script_path` now point at the durable memory surfaces that travel with the run.
-- The root `build`, `loop:run`, and `loop:single` entrypoints now retry the TypeScript build with pinned `5.8.3` when the host compiler exits abnormally, matching the bootstrap fallback already used by `init.sh`.
+- The root `build`, `loop:run`, `loop:run:raw`, and `loop:single` entrypoints now retry the TypeScript build with pinned `5.8.3` when the host compiler exits abnormally, matching the bootstrap fallback already used by `init.sh`.
 - Resume identity mismatches fail closed by default. Use `--allow-resume-migration` only when intentionally changing the adapter contract, bundle, rubric, or target family for an existing run, and expect the controller to write `resume-migration.json`.
 - Resuming a run that already ended with `target_reached`, `contract_completed`, `environment_blocked`, or `adapter_contract_invalid` now defaults to a no-op closure. `--allow-resume-migration` alone does not reopen a terminal run; use `--force-reopen-terminal` when you intentionally want to spend more budget, and pair it with `--allow-resume-migration` when the reopen also changes run identity.
 - `loop:single` now means a literal single executed attempt even when an adapter is attached. Use it to seed fresh-process resume smoke without spending the remediation budget up front.
@@ -286,13 +289,16 @@ npm run validate:bootstrap-custom-quality-metrics
 npm run validate:bootstrap-profile-aware-verifier
 npm run loop:single
 npm run loop:run -- 3
+npm run loop:run:raw -- --max-rounds 1
 npm run loop:run -- --adapter ./adapter.example.json --max-rounds 3
 npm run loop:run -- --adapter ./.tmp/semantic-validation/patch-only-success/adapter.json --target-family api-service --max-rounds 3
 npm run loop:single -- --adapter ./.tmp/semantic-validation/patch-only-success/adapter.json --target-family api-service
 npm run loop:run -- --resume-run ./evals/runs/run-### --max-rounds 3
 npm run loop:run -- --resume-run ./evals/runs/run-### --repair --resume-phase evaluation
+npm run loop:run -- --controller-mode attached --max-rounds 1
 npm run loop:run -- --controller-mode attached --transport current-thread --max-rounds 1
 npm run loop:watch -- --adapter ./.tmp/semantic-validation/patch-only-success/adapter.json --target-family api-service --max-rounds 3
+npm run loop:ui -- ./evals/runs/run-###
 ```
 
 Run with a live App Server transport:
@@ -330,6 +336,7 @@ npm run validate:family-fullstack-semantic
 npm run validate:family-fullstack:preflight
 npm run validate:attached-resume-smoke
 npm run validate:app-server-generator-mainline
+npm run validate:app-server-interrupted-generator
 npm run validate:supervisor-timeout-prevention
 npm run validate:app-server:real-smoke
 npm run validate:family-fullstack

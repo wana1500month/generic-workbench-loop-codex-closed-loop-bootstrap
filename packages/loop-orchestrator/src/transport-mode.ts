@@ -18,7 +18,7 @@ export const transportModes = [
 export const defaultTransportModeForControllerMode = (
   controllerMode: ControllerMode
 ): TransportMode =>
-  controllerMode === "attached" ? "current-thread" : "codex-exec";
+  controllerMode === "attached" ? "app-server" : "codex-exec";
 
 export const isTransportMode = (
   value: string | undefined
@@ -52,7 +52,13 @@ export const transportRuntimeWarningsForMode = (input: {
 }): string[] => {
   if (input.transportMode === "current-thread") {
     return [
-      "Current-thread transport keeps the stock Codex session as the operator surface and forbids nested codex exec calls."
+      "Current-thread transport is a manual same-thread protocol for the stock Codex session and forbids nested codex exec calls."
+    ];
+  }
+
+  if (input.transportMode === "app-server") {
+    return [
+      "App Server transport keeps a live attached thread/turn container through codex app-server."
     ];
   }
 
@@ -80,11 +86,22 @@ export const buildTransportStateArtifact = (input: {
   transport_mode: input.transportMode,
   ...(input.executorMode ? { executor_mode: input.executorMode } : {}),
   updated_at: new Date().toISOString(),
-  status:
-    input.status ??
-    (input.transportMode === "app-server" ? "blocked" : "configured"),
+  status: input.status ?? "configured",
   ...(input.summaryPath ? { summary_path: input.summaryPath } : {}),
   ...(input.protocolPath ? { protocol_path: input.protocolPath } : {}),
+  ui_binding_mode:
+    input.transportMode === "app-server"
+      ? "embedded-app-server"
+      : input.transportMode === "current-thread"
+        ? "stock-current-thread"
+        : "none",
+  ...(input.transportMode === "app-server" && input.appServer?.thread_name
+    ? {
+        ui_surface: {
+          thread_name: input.appServer.thread_name
+        }
+      }
+    : {}),
   ...(input.notes?.length ? { notes: input.notes } : {}),
   ...(input.lastError ? { last_error: input.lastError } : {}),
   ...(input.transportMode === "app-server" || input.appServer
@@ -98,10 +115,12 @@ export const buildTransportStateArtifact = (input: {
               process.env.HARNESS_CODEX_BIN ??
               "codex",
             args: [],
-            thread_status: "not_started",
+            thread_lifecycle: "not_started",
             turn_status: "not_started",
             required_methods: [
               "thread/start",
+              "thread/read",
+              "thread/name/set",
               "thread/resume",
               "turn/start",
               "turn/steer",

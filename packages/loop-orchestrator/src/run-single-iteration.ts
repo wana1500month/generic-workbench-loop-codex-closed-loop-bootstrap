@@ -18,6 +18,9 @@ export const runSingleIteration = async (input: {
   forceReopenTerminal?: boolean;
   controllerMode?: ControllerMode;
   transportMode?: TransportMode;
+  phaseTimeouts?: Partial<Record<ControllerRoundPhase, number>>;
+  appServerTaskTimeoutMs?: number;
+  appServerRequestTimeoutMs?: number;
   repairOnly?: boolean;
   resumePhase?: ControllerRoundPhase;
   executorMode?: "harness" | "subagents-experimental";
@@ -33,6 +36,9 @@ export const runSingleIteration = async (input: {
     forceReopenTerminal: input.forceReopenTerminal,
     controllerMode: input.controllerMode,
     transportMode: input.transportMode,
+    phaseTimeouts: input.phaseTimeouts,
+    appServerTaskTimeoutMs: input.appServerTaskTimeoutMs,
+    appServerRequestTimeoutMs: input.appServerRequestTimeoutMs,
     repairOnly: input.repairOnly,
     resumePhase: input.resumePhase,
     executorMode: input.executorMode,

@@ -68,7 +68,10 @@ const main = async () => {
       initialRound: 1,
       initialPhase: "pre_verification",
       initialStatus: "in_progress",
-      initialNotes: ["App Server generator mainline validation."]
+      initialNotes: ["App Server generator mainline validation."],
+      threadName: "validate-app-server-generator-mainline · attached-loop",
+      defaultTaskTimeoutMs: 30_000,
+      requestTimeoutMs: 5_000
     });
 
     try {
@@ -76,6 +79,9 @@ const main = async () => {
         round: 1,
         phase: "pre_verification",
         taskLabel: "attached generator",
+        taskCwd: targetRoot,
+        writableRoots: [targetRoot, runDirectory],
+        networkAccess: false,
         prompt: [
           "Perform attached generator work on the live App Server turn.",
           `ATTACHED_GENERATOR_RESPONSE_PATH: ${responsePath}`,

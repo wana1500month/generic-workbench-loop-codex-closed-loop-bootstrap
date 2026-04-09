@@ -76,12 +76,21 @@ const assertTransportSurface = async (
       "Expected app-server transport state to be implemented."
     );
     assert(
-      transportState.app_server?.thread_status === "closed",
-      `Expected app-server thread_status 'closed', received '${transportState.app_server?.thread_status ?? "missing"}'.`
+      transportState.app_server?.thread_lifecycle === "closed",
+      `Expected app-server thread_lifecycle 'closed', received '${transportState.app_server?.thread_lifecycle ?? "missing"}'.`
     );
     assert(
-      transportState.app_server?.turn_status === "interrupted",
-      `Expected app-server turn_status 'interrupted', received '${transportState.app_server?.turn_status ?? "missing"}'.`
+      transportState.app_server?.thread_runtime_status === "notLoaded",
+      `Expected app-server thread_runtime_status 'notLoaded', received '${transportState.app_server?.thread_runtime_status ?? "missing"}'.`
+    );
+    assert(
+      transportState.status === "completed",
+      `Expected completed top-level transport status after shutdown, received '${transportState.status ?? "missing"}'.`
+    );
+    assert(
+      transportState.app_server?.turn_status === "interrupted" ||
+        transportState.app_server?.turn_status === "completed",
+      `Expected app-server turn_status 'interrupted' or 'completed', received '${transportState.app_server?.turn_status ?? "missing"}'.`
     );
     assert(
       typeof transportState.app_server?.thread_id === "string",
@@ -97,6 +106,8 @@ const assertTransportSurface = async (
     );
     for (const method of [
       "thread/start",
+      "thread/read",
+      "thread/name/set",
       "thread/resume",
       "turn/start",
       "turn/steer",
@@ -147,7 +158,7 @@ const main = async () => {
     expectedTransportMode: "current-thread",
     expectedTransportStatus: "configured",
     expectedWarning:
-      "Current-thread transport keeps the stock Codex session as the operator surface",
+      "Current-thread transport is a manual same-thread protocol",
     expectAppServerLive: false
   });
 
@@ -171,7 +182,7 @@ const main = async () => {
   await assertTransportSurface(appServerRunDirectory, {
     expectedControllerMode: "attached",
     expectedTransportMode: "app-server",
-    expectedTransportStatus: "live",
+    expectedTransportStatus: "completed",
     expectedWarning: "App Server transport keeps a live thread/turn container through codex app-server.",
     expectAppServerLive: true
   });

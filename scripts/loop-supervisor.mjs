@@ -18,6 +18,10 @@ const parsePositiveNumber = (value, fallback) => {
 const pathForRunState = (runDirectory) =>
   join(runDirectory, "runtime", "supervisor-state.json");
 const runsDirectory = join(repoRoot, "evals", "runs");
+const pausedStopReasons = new Set([
+  "awaiting_current_thread_handoff",
+  "awaiting_manual_generator"
+]);
 
 const readJsonIfExists = async (path) => {
   try {
@@ -27,18 +31,24 @@ const readJsonIfExists = async (path) => {
   }
 };
 
-const discoverNewestRunDirectory = async () => {
+const listRunDirectories = async () => {
   try {
     const entries = await readdir(runsDirectory, { withFileTypes: true });
-    const runIds = entries
+    return entries
       .filter((entry) => entry.isDirectory() && /^run-\d+$/.test(entry.name))
-      .map((entry) => entry.name)
+      .map((entry) => join(runsDirectory, entry.name))
       .sort();
-    const newest = runIds[runIds.length - 1];
-    return newest ? join(runsDirectory, newest) : undefined;
   } catch {
-    return undefined;
+    return [];
   }
+};
+
+const discoverNewRunDirectory = async (knownRunDirectories) => {
+  const known = new Set(knownRunDirectories);
+  const createdRuns = (await listRunDirectories()).filter(
+    (runDirectory) => !known.has(runDirectory)
+  );
+  return createdRuns.at(-1);
 };
 
 const writeJsonFile = async (path, value) => {
@@ -114,6 +124,7 @@ const parseSupervisorArgs = (argv) => {
   let maxRestarts = 3;
   let restartDelayMs = 1_000;
   let logPath;
+  let noSupervisor = false;
   const controllerArgs = [];
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -141,6 +152,10 @@ const parseSupervisorArgs = (argv) => {
       index += 1;
       continue;
     }
+    if (value === "--no-supervisor") {
+      noSupervisor = true;
+      continue;
+    }
     controllerArgs.push(value);
   }
 
@@ -150,18 +165,19 @@ const parseSupervisorArgs = (argv) => {
     maxRestarts,
     restartDelayMs,
     logPath,
+    noSupervisor,
     controllerArgs
   };
 };
 
-const spawnController = ({ controllerArgs, onRunDirectory }) =>
+const spawnController = ({ controllerArgs, onRunDirectory, env }) =>
   new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(
       process.execPath,
       ["--input-type=module", "--eval", runnerCliImport, "--", ...controllerArgs],
       {
         cwd: repoRoot,
-        env: process.env,
+        env,
         shell: false
       }
     );
@@ -203,12 +219,22 @@ const spawnController = ({ controllerArgs, onRunDirectory }) =>
 const runSupervisor = async (options) => {
   const controllerMode = findOptionValue(options.controllerArgs, "--controller-mode");
   const transportMode = findOptionValue(options.controllerArgs, "--transport");
+  const supervisorSessionId = `supervisor-${process.pid}-${Date.now()}`;
+  const discoveryMarkerPath = join(
+    repoRoot,
+    ".tmp",
+    `${supervisorSessionId}.run.json`
+  );
   let runDirectory = (() => {
     const configuredRun = findOptionValue(options.controllerArgs, "--resume-run");
     return configuredRun ? resolve(repoRoot, configuredRun) : undefined;
   })();
   let restartCount = 0;
   let lastExitCode;
+  await writeJsonFile(discoveryMarkerPath, {
+    supervisor_session_id: supervisorSessionId,
+    created_at: new Date().toISOString()
+  });
 
   const writeState = async (input) => {
     if (!runDirectory) {
@@ -239,29 +265,44 @@ const runSupervisor = async (options) => {
   const launchedAt = new Date().toISOString();
   while (true) {
     const previousKnownRunDirectory = runDirectory;
-    const newestRunBeforeStart =
-      restartCount === 0 && !runDirectory
-        ? await discoverNewestRunDirectory()
-        : undefined;
+    const runDirectoriesBeforeStart =
+      restartCount === 0 && !runDirectory ? await listRunDirectories() : [];
     const childArgs =
       restartCount === 0 || !runDirectory
         ? options.controllerArgs
         : ensureResumeArgs(options.controllerArgs, runDirectory);
+    const childEnv = {
+      ...process.env,
+      HARNESS_RUN_DISCOVERY_MARKER: discoveryMarkerPath,
+      HARNESS_SUPERVISOR_SESSION_ID: supervisorSessionId
+    };
     const execution = await spawnController({
       controllerArgs: childArgs,
+      env: childEnv,
       onRunDirectory: (nextRunDirectory) => {
         runDirectory = nextRunDirectory;
       }
     });
     lastExitCode = execution.code;
     if (!runDirectory) {
-      const newestRunAfterExit = await discoverNewestRunDirectory();
+      const discoveryMarker = await readJsonIfExists(discoveryMarkerPath);
+      const markerRunDirectory =
+        typeof discoveryMarker?.run_directory === "string"
+          ? resolve(repoRoot, discoveryMarker.run_directory)
+          : undefined;
+      if (markerRunDirectory) {
+        runDirectory = markerRunDirectory;
+      }
+    }
+    if (!runDirectory) {
+      const createdRunDirectory = await discoverNewRunDirectory(
+        runDirectoriesBeforeStart
+      );
       if (
-        newestRunAfterExit &&
-        newestRunAfterExit !== newestRunBeforeStart &&
-        newestRunAfterExit !== previousKnownRunDirectory
+        createdRunDirectory &&
+        createdRunDirectory !== previousKnownRunDirectory
       ) {
-        runDirectory = newestRunAfterExit;
+        runDirectory = createdRunDirectory;
       }
     }
 
@@ -272,7 +313,7 @@ const runSupervisor = async (options) => {
 
     if (terminal) {
       await writeState({
-        status: "completed",
+        status: pausedStopReasons.has(summary.stop_reason) ? "paused" : "completed",
         launchedAt,
         childPid: execution.pid
       });
@@ -345,6 +386,16 @@ const main = async () => {
   const buildExitCode = await runBuild();
   if (buildExitCode !== 0) {
     process.exitCode = buildExitCode;
+    return;
+  }
+
+  if (options.noSupervisor) {
+    const execution = await spawnController({
+      controllerArgs: options.controllerArgs,
+      env: process.env,
+      onRunDirectory: () => {}
+    });
+    process.exitCode = execution.code;
     return;
   }
 

@@ -15,6 +15,42 @@ import {
   isTransportMode
 } from "./transport-mode.js";
 
+const parsePositiveTimeoutMs = (value: string | undefined): number | undefined => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+};
+
+const parsePhaseTimeouts = (
+  value: string | undefined
+): Partial<Record<
+  | "negotiation"
+  | "pre_verification"
+  | "core_probes"
+  | "post_verification"
+  | "evaluation"
+  | "round_commit"
+  | "run_finalize",
+  number
+>> | undefined => {
+  if (!value?.trim()) {
+    return undefined;
+  }
+
+  const overrides: Record<string, number> = {};
+  for (const entry of value.split(",")) {
+    const [phase, timeout] = entry.split("=", 2).map((token) => token?.trim());
+    if (!phase || !timeout || !isControllerRoundPhase(phase)) {
+      return undefined;
+    }
+    const timeoutMs = parsePositiveTimeoutMs(timeout);
+    if (!timeoutMs) {
+      return undefined;
+    }
+    overrides[phase] = timeoutMs;
+  }
+  return overrides;
+};
+
 const parseArgs = (
   argv: readonly string[]
 ): {
@@ -28,6 +64,20 @@ const parseArgs = (
   forceReopenTerminal?: boolean;
   controllerMode?: "attached" | "detached";
   transportMode?: "codex-exec" | "current-thread" | "app-server";
+  appServerTaskTimeoutMs?: number;
+  appServerRequestTimeoutMs?: number;
+  phaseTimeouts?: Partial<Record<
+    | "negotiation"
+    | "pre_verification"
+    | "core_probes"
+    | "post_verification"
+    | "evaluation"
+    | "round_commit"
+    | "run_finalize",
+    number
+  >>;
+  supervised?: boolean;
+  noSupervisor?: boolean;
   repairOnly?: boolean;
   resumePhase?: 
     | "negotiation"
@@ -53,6 +103,22 @@ const parseArgs = (
   let forceReopenTerminal = false;
   let controllerMode: "attached" | "detached" | undefined;
   let transportMode: "codex-exec" | "current-thread" | "app-server" | undefined;
+  let appServerTaskTimeoutMs: number | undefined;
+  let appServerRequestTimeoutMs: number | undefined;
+  let phaseTimeouts:
+    | Partial<Record<
+        | "negotiation"
+        | "pre_verification"
+        | "core_probes"
+        | "post_verification"
+        | "evaluation"
+        | "round_commit"
+        | "run_finalize",
+        number
+      >>
+    | undefined;
+  let supervised = false;
+  let noSupervisor = false;
   let repairOnly = false;
   let resumePhase:
     | "negotiation"
@@ -149,6 +215,49 @@ const parseArgs = (
       continue;
     }
 
+    if (value === "--app-server-task-timeout-ms") {
+      const parsed = parsePositiveTimeoutMs(argv[index + 1]);
+      if (parsed) {
+        appServerTaskTimeoutMs = parsed;
+      } else {
+        errors.push(`Invalid app-server task timeout: ${argv[index + 1] ?? ""}`);
+      }
+      index += 1;
+      continue;
+    }
+
+    if (value === "--app-server-request-timeout-ms") {
+      const parsed = parsePositiveTimeoutMs(argv[index + 1]);
+      if (parsed) {
+        appServerRequestTimeoutMs = parsed;
+      } else {
+        errors.push(`Invalid app-server request timeout: ${argv[index + 1] ?? ""}`);
+      }
+      index += 1;
+      continue;
+    }
+
+    if (value === "--phase-timeout-ms") {
+      const parsed = parsePhaseTimeouts(argv[index + 1]);
+      if (parsed) {
+        phaseTimeouts = parsed;
+      } else {
+        errors.push(`Invalid phase timeout map: ${argv[index + 1] ?? ""}`);
+      }
+      index += 1;
+      continue;
+    }
+
+    if (value === "--supervised") {
+      supervised = true;
+      continue;
+    }
+
+    if (value === "--no-supervisor") {
+      noSupervisor = true;
+      continue;
+    }
+
     if (value === "--repair") {
       repairOnly = true;
       continue;
@@ -217,6 +326,11 @@ const parseArgs = (
     forceReopenTerminal,
     controllerMode,
     transportMode,
+    appServerTaskTimeoutMs,
+    appServerRequestTimeoutMs,
+    phaseTimeouts,
+    supervised,
+    noSupervisor,
     repairOnly,
     resumePhase,
     executorMode,
@@ -240,7 +354,7 @@ const main = async (): Promise<void> => {
       "       npm run loop:run -- --adapter <path> --target-family <family> --rubric <path> --evaluator-profile <path> --executor-mode harness --max-rounds 2"
     );
     console.error(
-      "       node ./packages/loop-orchestrator/dist/cli.js --controller-mode attached --transport current-thread --single"
+      "       node ./packages/loop-orchestrator/dist/cli.js --controller-mode attached --transport app-server --app-server-task-timeout-ms 1800000 --single"
     );
     console.error(
       "       node ./packages/loop-orchestrator/dist/cli.js --resume-run <run-dir> --max-rounds 3"
@@ -326,6 +440,9 @@ const main = async (): Promise<void> => {
           forceReopenTerminal: args.forceReopenTerminal,
           controllerMode,
           transportMode,
+          appServerTaskTimeoutMs: args.appServerTaskTimeoutMs,
+          appServerRequestTimeoutMs: args.appServerRequestTimeoutMs,
+          phaseTimeouts: args.phaseTimeouts,
           repairOnly: args.repairOnly,
           resumePhase: args.resumePhase,
           executorMode,
@@ -341,6 +458,9 @@ const main = async (): Promise<void> => {
           forceReopenTerminal: args.forceReopenTerminal,
           controllerMode,
           transportMode,
+          appServerTaskTimeoutMs: args.appServerTaskTimeoutMs,
+          appServerRequestTimeoutMs: args.appServerRequestTimeoutMs,
+          phaseTimeouts: args.phaseTimeouts,
           repairOnly: args.repairOnly,
           resumePhase: args.resumePhase,
           executorMode,

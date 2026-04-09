@@ -58,10 +58,12 @@ Acceptance:
 - Resumed invocations should persist machine-readable `runtime_events[]` and `resume-decision.json`, so noop, continue, and reopen policy can be audited without parsing warning prose.
 - Per-round summaries should also persist `decision_source`, so policy-snapshot decisions, hard rules, and default patch authority stay reviewable after resume.
 - The runtime should separate `controller_mode = detached|attached` from `transport_mode = codex-exec|current-thread|app-server`, with detached currently reserved for crash-safe `codex-exec` execution and attached reserved for same-thread transports.
+- Attached should default to `app-server`, while `current-thread` remains an explicit manual same-thread protocol surface.
 - Same-thread transports should fail closed at the shared Codex runtime boundary so no nested `runCodexCommand()` path can bypass policy, including subjective-quality review.
-- `current-thread` should remain the stock Codex attached surface with an explicit manual protocol file, while `app-server` should persist live `thread/start`, `thread/resume`, `turn/start`, `turn/steer`, and `turn/interrupt` state instead of becoming another meaning of CLI `attached`.
-- Same-thread bootstrap generator work should flow through persisted `attached-generator-task.json`, `attached-generator-prompt.md`, and `attached-generator-response.json` artifacts so current-thread and App Server surfaces can mutate without nested child Codex processes.
-- Outer-timeout prevention should live in a separate supervisor surface that can restart the controller from `--resume-run` state and survive launcher-shell death when detached.
+- `current-thread` should remain the stock Codex attached surface with an explicit manual protocol file and manual-pause stop reasons, while `app-server` should persist live `thread/start`, `thread/read`, `thread/resume`, `thread/name/set`, `turn/start`, `turn/steer`, and `turn/interrupt` state instead of becoming another meaning of CLI `attached`.
+- Same-thread bootstrap generator work should flow through persisted `attached-generator-task.json`, `attached-generator-prompt.md`, and `attached-generator-response.json` artifacts so current-thread and App Server surfaces can mutate without nested child Codex processes. App Server generator turns should honor task-local cwd, writable roots, and timeout budgets.
+- Outer-timeout prevention should live in a separate supervisor surface that can restart the controller from `--resume-run` state, survive launcher-shell death when detached, and discover the owned run through an explicit supervisor marker instead of newest-run guessing.
+- The repo should expose a lightweight runtime dashboard for attached monitoring through `loop:ui`.
 - Trusted environments should have a real `app-server` smoke validator in addition to the existing `codex exec` smoke, while developer hosts without a usable `codex` binary should remain `environment_blocked`.
 
 Validation:
@@ -69,6 +71,7 @@ Validation:
 - `npm run validate:transport-mode`
 - `npm run validate:attached-resume-smoke`
 - `npm run validate:app-server-generator-mainline`
+- `npm run validate:app-server-interrupted-generator`
 - `npm run validate:supervisor-timeout-prevention`
 - `npm run validate:resume-smoke`
 

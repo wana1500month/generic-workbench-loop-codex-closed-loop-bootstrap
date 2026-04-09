@@ -5,14 +5,65 @@ import readline from "node:readline";
 const recordPath = process.env.FAKE_APP_SERVER_RECORD_PATH
   ? resolve(process.env.FAKE_APP_SERVER_RECORD_PATH)
   : undefined;
-const threadId = process.env.FAKE_APP_SERVER_THREAD_ID ?? "thread_app_server_fake_123";
+const statePath = process.env.FAKE_APP_SERVER_STATE_PATH
+  ? resolve(process.env.FAKE_APP_SERVER_STATE_PATH)
+  : undefined;
+const defaultThreadId = process.env.FAKE_APP_SERVER_THREAD_ID ?? "thread_app_server_fake_123";
 
-let currentThreadId = threadId;
-let threadStatus = "not_started";
-let currentTurnId;
-let turnStatus = "not_started";
-let eventCursor = 0;
-let turnCounter = 0;
+const loadPersistedState = async () => {
+  if (!statePath) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(await readFile(statePath, "utf8"));
+  } catch {
+    return undefined;
+  }
+};
+
+const persistedState = await loadPersistedState();
+
+let currentThreadId = persistedState?.currentThreadId ?? defaultThreadId;
+let threadName = persistedState?.threadName ?? "fake attached loop";
+let threadLifecycle = persistedState?.threadLifecycle ?? "not_started";
+let threadRuntimeStatus = persistedState?.threadRuntimeStatus ?? "notLoaded";
+let threadActiveFlags = Array.isArray(persistedState?.threadActiveFlags)
+  ? persistedState.threadActiveFlags
+  : [];
+let currentTurnId = persistedState?.currentTurnId;
+let turnStatus = persistedState?.turnStatus ?? "not_started";
+let eventCursor = Number.isFinite(persistedState?.eventCursor)
+  ? persistedState.eventCursor
+  : 0;
+let turnCounter = Number.isFinite(persistedState?.turnCounter)
+  ? persistedState.turnCounter
+  : 0;
+
+const persistState = async () => {
+  if (!statePath) {
+    return;
+  }
+  await mkdir(dirname(statePath), { recursive: true });
+  await writeFile(
+    statePath,
+    JSON.stringify(
+      {
+        currentThreadId,
+        threadName,
+        threadLifecycle,
+        threadRuntimeStatus,
+        threadActiveFlags,
+        currentTurnId,
+        turnStatus,
+        eventCursor,
+        turnCounter
+      },
+      null,
+      2
+    ) + "\n",
+    "utf8"
+  );
+};
 
 const extractDirective = (text, key) => {
   const match = text.match(new RegExp(`${key}:\\s*(.+)`));
@@ -41,6 +92,7 @@ const send = async (message) => {
   process.stdout.write(`${JSON.stringify(message)}\n`);
   if ("method" in message) {
     eventCursor += 1;
+    await persistState();
   }
   await appendRecord({
     direction: "out",
@@ -55,6 +107,11 @@ const respond = async (id, result) => {
   });
 };
 
+const runtimeStatusPayload = () => ({
+  type: threadRuntimeStatus,
+  activeFlags: threadActiveFlags
+});
+
 const notify = async (method, params = {}) => {
   await send({
     method,
@@ -62,7 +119,20 @@ const notify = async (method, params = {}) => {
   });
 };
 
+const setThreadRuntimeStatus = async (type, activeFlags = []) => {
+  threadRuntimeStatus = type;
+  threadActiveFlags = activeFlags;
+  await persistState();
+};
+
 const maybeCompleteTaskTurn = async ({ text, turnId, itemId }) => {
+  const leaveTurnActive =
+    process.env.FAKE_APP_SERVER_LEAVE_TURN_ACTIVE === "1" ||
+    extractDirective(text, "FAKE_APP_SERVER_LEAVE_TURN_ACTIVE") === "1";
+  if (leaveTurnActive) {
+    return true;
+  }
+
   const responsePath =
     extractDirective(text, "ATTACHED_GENERATOR_RESPONSE_PATH") ??
     extractDirective(text, "APP_SERVER_SMOKE_RESPONSE_PATH");
@@ -101,6 +171,7 @@ const maybeCompleteTaskTurn = async ({ text, turnId, itemId }) => {
   );
 
   turnStatus = "completed";
+  await setThreadRuntimeStatus("idle");
   await notify("item/completed", {
     threadId: currentThreadId,
     turnId,
@@ -153,40 +224,76 @@ for await (const line of rl) {
   }
 
   if (method === "thread/start") {
-    threadStatus = "loaded";
+    threadLifecycle = "subscribed";
+    await setThreadRuntimeStatus("idle");
     await respond(id, {
       thread: {
         id: currentThreadId,
-        status: threadStatus
+        name: threadName
       }
     });
     await notify("thread/started", {
       thread: {
         id: currentThreadId,
-        status: threadStatus
+        name: threadName
       },
       cursor: eventCursor
     });
     await notify("thread/status/changed", {
       threadId: currentThreadId,
-      status: threadStatus,
+      status: runtimeStatusPayload(),
       cursor: eventCursor
+    });
+    continue;
+  }
+
+  if (method === "thread/read") {
+    currentThreadId = params.threadId ?? currentThreadId;
+    await respond(id, {
+      thread: {
+        id: currentThreadId,
+        name: threadName,
+        runtimeStatus: runtimeStatusPayload()
+      },
+      turns: currentTurnId
+        ? [
+            {
+              id: currentTurnId,
+              status: turnStatus
+            }
+          ]
+        : []
+    });
+    continue;
+  }
+
+  if (method === "thread/name/set") {
+    threadName = params.name ?? threadName;
+    await persistState();
+    await respond(id, {
+      thread: {
+        id: currentThreadId,
+        name: threadName
+      }
     });
     continue;
   }
 
   if (method === "thread/resume") {
     currentThreadId = params.threadId ?? currentThreadId;
-    threadStatus = "loaded";
+    threadLifecycle = "subscribed";
+    if (threadRuntimeStatus === "notLoaded") {
+      await setThreadRuntimeStatus(turnStatus === "inProgress" ? "active" : "idle");
+    }
     await respond(id, {
       thread: {
         id: currentThreadId,
-        status: threadStatus
+        name: threadName
       }
     });
     await notify("thread/status/changed", {
       threadId: currentThreadId,
-      status: threadStatus,
+      status: runtimeStatusPayload(),
       cursor: eventCursor
     });
     continue;
@@ -201,6 +308,7 @@ for await (const line of rl) {
       Array.isArray(params.input) && params.input[0]?.type === "text"
         ? params.input[0].text ?? ""
         : "";
+    await setThreadRuntimeStatus("active", ["turnInProgress"]);
     await respond(id, {
       turn: {
         id: currentTurnId,
@@ -213,6 +321,11 @@ for await (const line of rl) {
         id: currentTurnId,
         status: turnStatus
       },
+      cursor: eventCursor
+    });
+    await notify("thread/status/changed", {
+      threadId: currentThreadId,
+      status: runtimeStatusPayload(),
       cursor: eventCursor
     });
     await notify("item/started", {
@@ -264,6 +377,7 @@ for await (const line of rl) {
   if (method === "turn/interrupt") {
     currentTurnId = params.turnId ?? currentTurnId;
     turnStatus = "interrupted";
+    await setThreadRuntimeStatus("idle");
     await respond(id, {
       turn: {
         id: currentTurnId,
@@ -287,23 +401,31 @@ for await (const line of rl) {
       },
       cursor: eventCursor
     });
+    await notify("thread/status/changed", {
+      threadId: currentThreadId,
+      status: runtimeStatusPayload(),
+      cursor: eventCursor
+    });
     continue;
   }
 
   if (method === "thread/unsubscribe") {
     currentThreadId = params.threadId ?? currentThreadId;
-    threadStatus = "closed";
+    threadLifecycle = "unsubscribed";
+    await setThreadRuntimeStatus("notLoaded");
     await respond(id, {
       thread: {
         id: currentThreadId,
-        status: threadStatus
+        name: threadName
       }
     });
     await notify("thread/status/changed", {
       threadId: currentThreadId,
-      status: threadStatus,
+      status: runtimeStatusPayload(),
       cursor: eventCursor
     });
+    threadLifecycle = "closed";
+    await persistState();
     await notify("thread/closed", {
       threadId: currentThreadId,
       cursor: eventCursor

@@ -28,6 +28,8 @@ export type RunStopReason =
   | "contract_completed"
   | "environment_blocked"
   | "adapter_contract_invalid"
+  | "awaiting_current_thread_handoff"
+  | "awaiting_manual_generator"
   | "plateau_limit_reached"
   | "max_rounds_reached";
 export type RoundStopReason = RunStopReason | "continue";
@@ -46,6 +48,10 @@ export type ValidationLane =
 export type ExecutorMode = "harness" | "subagents-experimental";
 export type ControllerMode = "attached" | "detached";
 export type TransportMode = "codex-exec" | "current-thread" | "app-server";
+export type UiBindingMode =
+  | "embedded-app-server"
+  | "stock-current-thread"
+  | "none";
 export type ControllerRoundPhase =
   | "negotiation"
   | "pre_verification"
@@ -789,6 +795,10 @@ export interface AttachedGeneratorTaskArtifact {
   controller_mode: ControllerMode;
   transport_mode: Extract<TransportMode, "current-thread" | "app-server">;
   target_root: string;
+  task_cwd: string;
+  writable_roots: string[];
+  network_access: boolean;
+  completion_timeout_ms: number;
   prompt_path: string;
   response_path: string;
   round_contract_path: string;
@@ -1149,9 +1159,21 @@ export interface TransportStateArtifact {
   transport_mode: TransportMode;
   executor_mode?: ExecutorMode;
   updated_at: string;
-  status: "configured" | "live" | "blocked";
+  status:
+    | "configured"
+    | "live"
+    | "idle"
+    | "completed"
+    | "interrupted"
+    | "blocked"
+    | "closed";
   summary_path?: string;
   protocol_path?: string;
+  ui_binding_mode?: UiBindingMode;
+  ui_surface?: {
+    thread_name?: string;
+    dashboard_path?: string;
+  };
   notes?: string[];
   last_error?: string;
   app_server?: {
@@ -1162,7 +1184,16 @@ export interface TransportStateArtifact {
     args: string[];
     server_pid?: number;
     thread_id?: string;
-    thread_status: "not_started" | "loaded" | "closed" | "archived" | "error";
+    thread_name?: string;
+    thread_lifecycle:
+      | "not_started"
+      | "subscribed"
+      | "unsubscribed"
+      | "closed"
+      | "archived"
+      | "error";
+    thread_runtime_status?: "notLoaded" | "idle" | "active" | "systemError";
+    thread_active_flags?: string[];
     turn_id?: string;
     turn_status:
       | "not_started"
@@ -1187,6 +1218,7 @@ export interface SupervisorStateArtifact {
     | "launching"
     | "watching"
     | "restarting"
+    | "paused"
     | "completed"
     | "failed"
     | "detached";

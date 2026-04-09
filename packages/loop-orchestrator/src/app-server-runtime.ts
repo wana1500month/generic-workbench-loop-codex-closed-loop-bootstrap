@@ -50,6 +50,12 @@ type PendingTurnCompletion = {
   timeout: NodeJS.Timeout;
 };
 
+type PendingThreadClosure = {
+  resolve: () => void;
+  reject: (error: Error) => void;
+  timeout: NodeJS.Timeout;
+};
+
 export interface AppServerTransportController {
   syncPhase: (input: {
     round: number;
@@ -63,6 +69,9 @@ export interface AppServerTransportController {
     prompt: string;
     taskLabel: string;
     completionTimeoutMs?: number;
+    taskCwd?: string;
+    writableRoots?: string[];
+    networkAccess?: boolean;
   }) => Promise<{
     turnId: string;
     status: "completed" | "interrupted" | "failed";
@@ -119,7 +128,10 @@ class LiveAppServerTransport implements AppServerTransportController {
   private readonly command: string;
   private readonly args: string[];
   private readonly cwd: string;
+  private readonly threadName: string;
   private readonly model: string;
+  private readonly defaultTaskTimeoutMs: number;
+  private readonly requestTimeoutMs: number;
   private readonly requestsPath: string;
   private readonly eventsPath: string;
   private readonly errorsPath: string;
@@ -127,6 +139,7 @@ class LiveAppServerTransport implements AppServerTransportController {
   private readonly rl;
   private readonly pending = new Map<number, PendingRequest>();
   private readonly pendingTurnCompletions = new Map<string, PendingTurnCompletion>();
+  private pendingThreadClosure?: PendingThreadClosure;
   private readonly snapshotState: AppServerTransportSnapshot;
   private nextRequestId = 1;
   private persistQueue: Promise<void> = Promise.resolve();
@@ -140,6 +153,9 @@ class LiveAppServerTransport implements AppServerTransportController {
     summaryPath: string;
     protocolPath: string;
     restoredThreadId?: string;
+    threadName: string;
+    defaultTaskTimeoutMs: number;
+    requestTimeoutMs: number;
   }) {
     const { command, args } = appServerCommand();
     this.runId = input.runId;
@@ -151,7 +167,10 @@ class LiveAppServerTransport implements AppServerTransportController {
     this.command = command;
     this.args = args;
     this.cwd = repoRoot;
+    this.threadName = input.threadName;
     this.model = process.env.HARNESS_APP_SERVER_MODEL ?? "gpt-5.4";
+    this.defaultTaskTimeoutMs = input.defaultTaskTimeoutMs;
+    this.requestTimeoutMs = input.requestTimeoutMs;
     const runtimeDirectory = join(this.cwd, "evals", "runs", this.runId, "runtime");
     this.requestsPath = join(runtimeDirectory, "app-server-requests.jsonl");
     this.eventsPath = join(runtimeDirectory, "app-server-events.jsonl");
@@ -163,12 +182,15 @@ class LiveAppServerTransport implements AppServerTransportController {
       command,
       args,
       thread_id: input.restoredThreadId,
-      thread_status: input.restoredThreadId ? "loaded" : "not_started",
+      thread_name: input.threadName,
+      thread_lifecycle: input.restoredThreadId ? "subscribed" : "not_started",
       turn_status: "not_started",
       requests_path: this.requestsPath,
       events_path: this.eventsPath,
       required_methods: [
         "thread/start",
+        "thread/read",
+        "thread/name/set",
         "thread/resume",
         "turn/start",
         "turn/steer",
@@ -199,7 +221,8 @@ class LiveAppServerTransport implements AppServerTransportController {
       void appendFile(this.errorsPath, chunk.toString(), "utf8");
     });
     this.child.on("error", (error) => {
-      this.snapshotState.thread_status = "error";
+      this.snapshotState.thread_lifecycle = "error";
+      this.snapshotState.thread_runtime_status = "systemError";
       this.snapshotState.turn_status = "error";
       void this.persistState(
         `App Server transport failed to start: ${error instanceof Error ? error.message : String(error)}`
@@ -207,6 +230,13 @@ class LiveAppServerTransport implements AppServerTransportController {
     });
     this.child.on("close", () => {
       this.closed = true;
+      if (this.pendingThreadClosure) {
+        clearTimeout(this.pendingThreadClosure.timeout);
+        this.pendingThreadClosure.reject(
+          new Error("App Server transport closed before thread shutdown was observed.")
+        );
+        this.pendingThreadClosure = undefined;
+      }
     });
   }
 
@@ -248,6 +278,13 @@ class LiveAppServerTransport implements AppServerTransportController {
     this.send({ method: "initialized", params: {} });
     this.snapshotState.initialized = true;
 
+    if (input.restoredThreadId) {
+      const priorThreadState = await this.tryReadThread(input.restoredThreadId);
+      if (priorThreadState) {
+        this.applyThreadRead(priorThreadState, input.restoredThreadId);
+      }
+    }
+
     const threadResult = input.restoredThreadId
       ? await this.request("thread/resume", {
           threadId: input.restoredThreadId
@@ -258,14 +295,28 @@ class LiveAppServerTransport implements AppServerTransportController {
 
     const threadId = this.extractThreadId(threadResult, input.restoredThreadId);
     this.snapshotState.thread_id = threadId;
-    this.snapshotState.thread_status = "loaded";
+    this.snapshotState.thread_lifecycle = "subscribed";
+    this.snapshotState.thread_runtime_status ??= "idle";
+    await this.trySetThreadName(threadId);
 
-    await this.startTurn({
-      round: input.initialRound,
-      phase: input.initialPhase,
-      status: input.initialStatus,
-      notes: input.initialNotes
-    });
+    if (input.restoredThreadId) {
+      const resumedThreadState = await this.tryReadThread(threadId);
+      if (resumedThreadState) {
+        this.applyThreadRead(resumedThreadState, threadId);
+      }
+    }
+
+    if (this.snapshotState.turn_status !== "inProgress") {
+      await this.startTurn({
+        round: input.initialRound,
+        phase: input.initialPhase,
+        status: input.initialStatus,
+        notes: input.initialNotes
+      });
+      return;
+    }
+
+    await this.persistState();
   }
 
   public async syncPhase(input: {
@@ -312,6 +363,9 @@ class LiveAppServerTransport implements AppServerTransportController {
     prompt: string;
     taskLabel: string;
     completionTimeoutMs?: number;
+    taskCwd?: string;
+    writableRoots?: string[];
+    networkAccess?: boolean;
   }): Promise<{
     turnId: string;
     status: "completed" | "interrupted" | "failed";
@@ -333,6 +387,9 @@ class LiveAppServerTransport implements AppServerTransportController {
       await this.persistState();
     }
 
+    const cwd = input.taskCwd ?? this.cwd;
+    const writableRoots = unique(input.writableRoots?.length ? input.writableRoots : [cwd]);
+
     const result = await this.request("turn/start", {
       threadId: this.snapshotState.thread_id,
       input: [
@@ -341,12 +398,12 @@ class LiveAppServerTransport implements AppServerTransportController {
           text: input.prompt
         }
       ],
-      cwd: this.cwd,
+      cwd,
       approvalPolicy: "never",
       sandboxPolicy: {
         type: "workspaceWrite",
-        access: { type: "fullAccess" },
-        networkAccess: false
+        writableRoots,
+        networkAccess: input.networkAccess ?? false
       },
       model: this.model,
       effort: "medium",
@@ -366,7 +423,10 @@ class LiveAppServerTransport implements AppServerTransportController {
     this.snapshotState.last_request_method = "turn/start";
     await this.persistState();
 
-    return this.waitForTurnCompletion(turn.id, input.completionTimeoutMs ?? 120_000);
+    return this.waitForTurnCompletion(
+      turn.id,
+      input.completionTimeoutMs ?? this.defaultTaskTimeoutMs
+    );
   }
 
   public async stop(input?: {
@@ -377,6 +437,8 @@ class LiveAppServerTransport implements AppServerTransportController {
       return;
     }
 
+    let explicitStatus: "completed" | "closed" | "blocked" =
+      input?.stopReason ? "completed" : "closed";
     try {
       if (
         this.snapshotState.thread_id &&
@@ -410,10 +472,16 @@ class LiveAppServerTransport implements AppServerTransportController {
           threadId: this.snapshotState.thread_id
         });
         this.snapshotState.last_request_method = "thread/unsubscribe";
+        this.snapshotState.thread_lifecycle = "unsubscribed";
+        await this.waitForThreadClosed(2_000).catch(() => {});
+        this.snapshotState.thread_lifecycle = "closed";
+        this.snapshotState.thread_runtime_status = "notLoaded";
       }
     } catch (error) {
+      explicitStatus = "blocked";
       await this.persistState(
-        error instanceof Error ? error.message : String(error)
+        error instanceof Error ? error.message : String(error),
+        explicitStatus
       );
     } finally {
       this.closed = true;
@@ -424,9 +492,13 @@ class LiveAppServerTransport implements AppServerTransportController {
         );
       }
       this.pendingTurnCompletions.clear();
+      if (this.pendingThreadClosure) {
+        clearTimeout(this.pendingThreadClosure.timeout);
+        this.pendingThreadClosure = undefined;
+      }
       this.rl.close();
       this.child.kill();
-      await this.persistState();
+      await this.persistState(undefined, explicitStatus);
     }
   }
 
@@ -498,7 +570,7 @@ class LiveAppServerTransport implements AppServerTransportController {
       const timeout = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`App Server request '${method}' timed out.`));
-      }, 10_000);
+      }, this.requestTimeoutMs);
       this.pending.set(id, {
         method,
         resolve,
@@ -549,16 +621,21 @@ class LiveAppServerTransport implements AppServerTransportController {
     if (parsed.method === "thread/started") {
       const threadId = this.extractThreadId(params, this.snapshotState.thread_id);
       this.snapshotState.thread_id = threadId;
-      this.snapshotState.thread_status = "loaded";
+      this.snapshotState.thread_lifecycle = "subscribed";
+      this.snapshotState.thread_runtime_status ??= "idle";
     } else if (parsed.method === "thread/status/changed") {
-      const status = params.status;
-      if (status === "loaded" || status === "closed" || status === "archived") {
-        this.snapshotState.thread_status = status;
+      const status = this.normalizeThreadRuntimeStatus(params.status);
+      if (status.type) {
+        this.snapshotState.thread_runtime_status = status.type;
+        this.snapshotState.thread_active_flags = status.activeFlags;
       }
     } else if (parsed.method === "thread/closed") {
-      this.snapshotState.thread_status = "closed";
+      this.snapshotState.thread_lifecycle = "closed";
+      this.snapshotState.thread_runtime_status = "notLoaded";
+      this.resolveThreadClosed();
     } else if (parsed.method === "thread/archived") {
-      this.snapshotState.thread_status = "archived";
+      this.snapshotState.thread_lifecycle = "archived";
+      this.resolveThreadClosed();
     } else if (parsed.method === "turn/started") {
       const turn = params.turn as { id?: string; status?: string } | undefined;
       if (turn?.id) {
@@ -637,6 +714,48 @@ class LiveAppServerTransport implements AppServerTransportController {
     });
   }
 
+  private waitForThreadClosed(timeoutMs: number): Promise<void> {
+    if (
+      this.snapshotState.thread_lifecycle === "closed" ||
+      this.snapshotState.thread_lifecycle === "archived"
+    ) {
+      return Promise.resolve();
+    }
+
+    if (this.pendingThreadClosure) {
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingThreadClosure = undefined;
+        reject(new Error("App Server thread did not close in time."));
+      }, timeoutMs);
+      this.pendingThreadClosure = {
+        resolve: () => {
+          clearTimeout(timeout);
+          this.pendingThreadClosure = undefined;
+          resolve();
+        },
+        reject: (error) => {
+          clearTimeout(timeout);
+          this.pendingThreadClosure = undefined;
+          reject(error);
+        },
+        timeout
+      };
+    });
+  }
+
+  private resolveThreadClosed(): void {
+    if (!this.pendingThreadClosure) {
+      return;
+    }
+    clearTimeout(this.pendingThreadClosure.timeout);
+    this.pendingThreadClosure.resolve();
+    this.pendingThreadClosure = undefined;
+  }
+
   private extractThreadId(
     result: Record<string, unknown>,
     fallback?: string
@@ -651,7 +770,141 @@ class LiveAppServerTransport implements AppServerTransportController {
     return threadId;
   }
 
-  private async persistState(lastError?: string): Promise<void> {
+  private normalizeThreadRuntimeStatus(status: unknown): {
+    type?: "notLoaded" | "idle" | "active" | "systemError";
+    activeFlags: string[];
+  } {
+    if (!status || typeof status !== "object") {
+      return { activeFlags: [] };
+    }
+
+    const candidate = status as {
+      type?: unknown;
+      activeFlags?: unknown;
+    };
+    const type =
+      candidate.type === "notLoaded" ||
+      candidate.type === "idle" ||
+      candidate.type === "active" ||
+      candidate.type === "systemError"
+        ? candidate.type
+        : undefined;
+    const activeFlags = Array.isArray(candidate.activeFlags)
+      ? candidate.activeFlags.filter((value): value is string => typeof value === "string")
+      : [];
+    return { type, activeFlags };
+  }
+
+  private applyThreadRead(
+    result: Record<string, unknown>,
+    fallbackThreadId?: string
+  ): void {
+    const thread = result.thread as
+      | {
+          id?: string;
+          name?: string;
+          runtimeStatus?: unknown;
+        }
+      | undefined;
+    const threadId = thread?.id ?? fallbackThreadId;
+    if (threadId) {
+      this.snapshotState.thread_id = threadId;
+      this.snapshotState.thread_lifecycle = "subscribed";
+    }
+    if (typeof thread?.name === "string" && thread.name.trim().length > 0) {
+      this.snapshotState.thread_name = thread.name;
+    }
+
+    const runtimeStatus = this.normalizeThreadRuntimeStatus(
+      thread?.runtimeStatus ?? result.status
+    );
+    if (runtimeStatus.type) {
+      this.snapshotState.thread_runtime_status = runtimeStatus.type;
+      this.snapshotState.thread_active_flags = runtimeStatus.activeFlags;
+    }
+
+    const turns = Array.isArray(result.turns)
+      ? (result.turns as Array<{ id?: string; status?: string }>)
+      : [];
+    const lastTurn = turns.at(-1);
+    if (lastTurn?.id) {
+      this.snapshotState.turn_id = lastTurn.id;
+      if (
+        lastTurn.status === "completed" ||
+        lastTurn.status === "interrupted" ||
+        lastTurn.status === "failed"
+      ) {
+        this.snapshotState.turn_status = lastTurn.status;
+      } else {
+        this.snapshotState.turn_status = "inProgress";
+      }
+    }
+  }
+
+  private async tryReadThread(
+    threadId: string
+  ): Promise<Record<string, unknown> | undefined> {
+    try {
+      return await this.request("thread/read", {
+        threadId,
+        includeTurns: true
+      });
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async trySetThreadName(threadId: string): Promise<void> {
+    try {
+      await this.request("thread/name/set", {
+        threadId,
+        name: this.threadName
+      });
+      this.snapshotState.thread_name = this.threadName;
+    } catch {
+      this.snapshotState.thread_name = this.threadName;
+    }
+  }
+
+  private deriveTransportStatus(
+    explicitStatus?: "configured" | "live" | "idle" | "completed" | "interrupted" | "blocked" | "closed",
+    hasError = false
+  ): "configured" | "live" | "idle" | "completed" | "interrupted" | "blocked" | "closed" {
+    if (explicitStatus) {
+      return explicitStatus;
+    }
+    if (hasError) {
+      return "blocked";
+    }
+    if (
+      this.snapshotState.thread_lifecycle === "closed" ||
+      this.snapshotState.thread_lifecycle === "archived" ||
+      this.snapshotState.thread_lifecycle === "unsubscribed"
+    ) {
+      return "closed";
+    }
+    if (this.snapshotState.turn_status === "interrupted") {
+      return "interrupted";
+    }
+    if (this.snapshotState.turn_status === "completed") {
+      return "completed";
+    }
+    if (
+      this.snapshotState.thread_runtime_status === "active" ||
+      this.snapshotState.turn_status === "inProgress"
+    ) {
+      return "live";
+    }
+    if (this.snapshotState.thread_runtime_status === "idle") {
+      return "idle";
+    }
+    return "configured";
+  }
+
+  private async persistState(
+    lastError?: string,
+    explicitStatus?: "configured" | "live" | "idle" | "completed" | "interrupted" | "blocked" | "closed"
+  ): Promise<void> {
     const notes = unique([
       "App Server transport keeps a live thread/turn container through codex app-server.",
       `Request log: ${this.requestsPath}`,
@@ -668,7 +921,7 @@ class LiveAppServerTransport implements AppServerTransportController {
           executorMode: this.executorMode,
           summaryPath: this.summaryPath,
           protocolPath: this.protocolPath,
-          status: lastError ? "blocked" : "live",
+          status: this.deriveTransportStatus(explicitStatus, Boolean(lastError)),
           notes,
           ...(lastError ? { lastError } : {}),
           appServer: this.snapshot()
@@ -691,6 +944,9 @@ export const startAppServerTransport = async (input: {
   initialPhase: ControllerRoundPhase;
   initialStatus: ControllerPhaseStatus;
   initialNotes?: string[];
+  threadName: string;
+  defaultTaskTimeoutMs: number;
+  requestTimeoutMs: number;
 }): Promise<AppServerTransportController> => {
   const controller = new LiveAppServerTransport({
     runId: input.runId,
@@ -699,7 +955,10 @@ export const startAppServerTransport = async (input: {
     transportStatePath: input.transportStatePath,
     summaryPath: input.summaryPath,
     protocolPath: input.protocolPath,
-    restoredThreadId: input.restoredThreadId
+    restoredThreadId: input.restoredThreadId,
+    threadName: input.threadName,
+    defaultTaskTimeoutMs: input.defaultTaskTimeoutMs,
+    requestTimeoutMs: input.requestTimeoutMs
   });
   try {
     await controller.initialize({
