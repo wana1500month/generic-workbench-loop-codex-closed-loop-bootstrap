@@ -71,6 +71,8 @@ export type CodexAuthPreflight = {
 };
 
 const unique = <T>(values: readonly T[]): T[] => [...new Set(values)];
+const attachedControllerBlockedReason =
+  "Attached controller mode forbids nested Codex command execution. Use the current Codex thread as the operator surface instead of spawning codex exec.";
 
 const tomlLiteral = (value: string | number | boolean): string => {
   if (typeof value === "string") {
@@ -376,6 +378,52 @@ export const runCodexCommand = async (
       })
     ]);
     return disabledResult;
+  }
+
+  if (process.env.HARNESS_CONTROLLER_MODE === "attached") {
+    const blockedResult: CodexCommandResult = {
+      code: 0,
+      stdout: "",
+      stderr: "",
+      eventsText: "",
+      error: attachedControllerBlockedReason,
+      promptPath,
+      responsePath,
+      stdoutPath,
+      stderrPath,
+      eventsPath,
+      metadataPath,
+      ...(schemaPath ? { schemaPath } : {}),
+      ...(input.profile ? { profile: input.profile } : {}),
+      responseWritten: false,
+      usedResume: Boolean(input.sessionId),
+      disabled: true
+    };
+    await Promise.all([
+      writeText(stdoutPath, ""),
+      writeText(stderrPath, ""),
+      writeText(eventsPath, ""),
+      writeJson(metadataPath, {
+        name: input.name,
+        cwd: input.cwd,
+        used_resume: blockedResult.usedResume,
+        disabled: true,
+        attached_controller_blocked: true,
+        error: blockedResult.error,
+        prompt_path: promptPath,
+        response_path: responsePath,
+        stdout_path: stdoutPath,
+        stderr_path: stderrPath,
+        events_path: eventsPath,
+        response_written: false,
+        codex_command: getCodexCommand(),
+        ...(schemaPath ? { schema_path: schemaPath } : {}),
+        ...(input.profile ? { profile: input.profile } : {}),
+        ...(input.configOverrides ? { config_overrides: input.configOverrides } : {}),
+        ...(input.metadata ? { metadata: input.metadata } : {})
+      })
+    ]);
+    return blockedResult;
   }
 
   const command = getCodexCommand();

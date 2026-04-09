@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 
-import { writeJson, writeText } from "./file-system.js";
+import { loadJsonIfExists, writeJson, writeText } from "./file-system.js";
 import type {
   CoreProbeAttestation,
   ProbeFailureClassification,
@@ -801,6 +801,7 @@ export const executeCoreVerificationProbes = async (input: {
   runDirectory: string;
   roundDirectory: string;
   targetManifest?: TargetManifest;
+  probeIds?: string[];
 }): Promise<CoreVerificationProbeExecution[]> => {
   const profile = input.loadedAdapter?.verification_profile?.profile;
   if (!input.loadedAdapter || !profile?.core_probes || profile.core_probes.length === 0) {
@@ -810,8 +811,12 @@ export const executeCoreVerificationProbes = async (input: {
   const probeDirectory = join(input.roundDirectory, "core-probes");
   await mkdir(probeDirectory, { recursive: true });
   const executions: CoreVerificationProbeExecution[] = [];
+  const probes =
+    input.probeIds && input.probeIds.length > 0
+      ? profile.core_probes.filter((probe) => input.probeIds?.includes(probe.probe_id))
+      : profile.core_probes;
 
-  for (const probe of profile.core_probes) {
+  for (const probe of probes) {
     const startedAt = new Date();
     const resultPath = join(probeDirectory, `${probe.probe_id}-result.json`);
     const required = probe.required ?? true;
@@ -986,4 +991,78 @@ export const executeCoreVerificationProbes = async (input: {
   }
 
   return executions;
+};
+
+export const restoreCoreVerificationProbeExecutions = async (input: {
+  loadedAdapter?: LoadedAdapterContract;
+  roundDirectory: string;
+}): Promise<CoreVerificationProbeExecution[]> => {
+  const profile = input.loadedAdapter?.verification_profile?.profile;
+  if (!input.loadedAdapter || !profile?.core_probes || profile.core_probes.length === 0) {
+    return [];
+  }
+
+  const probeDirectory = join(input.roundDirectory, "core-probes");
+  const restored: CoreVerificationProbeExecution[] = [];
+  for (const probe of profile.core_probes) {
+    const resultPath = join(probeDirectory, `${probe.probe_id}-result.json`);
+    const storedResult =
+      await loadJsonIfExists<Partial<CoreVerificationProbeExecution>>(resultPath);
+    if (!storedResult) {
+      continue;
+    }
+
+    const role = storedResult.role ?? probe.role ?? defaultProbeRoleForMode(probe.mode);
+    const semanticLevel =
+      storedResult.semantic_level ??
+      probe.semantic_level ??
+      defaultSemanticLevelForMode(probe.mode);
+    const evidencePaths = Array.isArray(storedResult.evidence_paths)
+      ? storedResult.evidence_paths.filter((path): path is string => typeof path === "string")
+      : [];
+    const restoredEvidencePaths = [resultPath, ...evidencePaths];
+    const resultStats = await stat(resultPath);
+    const attestationTimestamp = resultStats.mtime;
+    const target =
+      typeof storedResult.target === "string" ? storedResult.target : probe.target ?? "";
+    restored.push({
+      probe_id: probe.probe_id,
+      label:
+        typeof storedResult.label === "string" && storedResult.label.trim().length > 0
+          ? storedResult.label
+          : probe.label,
+      mode: probe.mode,
+      role,
+      ...(probe.assertion_id ? { assertion_id: probe.assertion_id } : {}),
+      ...(probe.assertion_tags?.length ? { assertion_tags: probe.assertion_tags } : {}),
+      ...(probe.quality_axis_id ? { quality_axis_id: probe.quality_axis_id } : {}),
+      semantic_level: semanticLevel,
+      required:
+        typeof storedResult.required === "boolean"
+          ? storedResult.required
+          : probe.required ?? true,
+      ok: storedResult.ok === true,
+      summary:
+        typeof storedResult.summary === "string" && storedResult.summary.trim().length > 0
+          ? storedResult.summary
+          : `Restored core verification probe '${probe.probe_id}'.`,
+      target,
+      evidence_paths: restoredEvidencePaths,
+      ...(typeof storedResult.observed_value === "string"
+        ? { observed_value: storedResult.observed_value }
+        : {}),
+      ...(storedResult.failure_classification
+        ? { failure_classification: storedResult.failure_classification }
+        : {}),
+      attestation: await buildAttestation({
+        startedAt: attestationTimestamp,
+        finishedAt: attestationTimestamp,
+        target,
+        resultPath,
+        evidencePaths: restoredEvidencePaths
+      })
+    });
+  }
+
+  return restored;
 };

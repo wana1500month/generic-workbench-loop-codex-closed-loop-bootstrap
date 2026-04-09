@@ -43,7 +43,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Default operation is a single agent and one worktree per lane or run. Reach for worktrees or subagents only when the request explicitly needs parallel exploration or comparator work.
 - `bootstrap generator`: now receives an inline remediation brief built from the current round contract, generator plan, latest patch request, latest quality critique, and latest eval threshold gaps so patch-only mutation is no longer prompt-stateless
 - `bootstrap grader`: now preserves `quality_contract`, `quality_axis_id`, and `subjective_metrics` through runtime loading, so intake-authored quality semantics reach grading, critique, and patch-request generation intact
-- `attached controller`: keeps the current Codex thread as the operator surface, skips nested planner/contract/eval Codex enhancements, and refuses bootstrap `apply_change` when that path would need to spawn a nested `codex exec`
+- `attached controller`: keeps the current Codex thread as the operator surface, skips nested planner/contract/eval Codex enhancements, and fail-closes any nested `runCodexCommand()` path, including bootstrap `apply_change` and subjective-quality review, when that path would need to spawn `codex exec`
 
 ## Round contract and dimension floors
 
@@ -62,6 +62,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Use `--target-family <family>` when the harness should resolve a bundled evaluator pack for a known family such as `generic-core`, `api-service`, `crud-api`, `chat-agent`, `browser-app`, `browser-editor`, `fullstack-app`, or `dashboard`.
 - Use `--resume-run <evals/runs/run-###>` to reopen an existing run from file state alone.
 - Use `--controller-mode detached` for the default crash-safe supervisor path and `--controller-mode attached` only when the current Codex thread is expected to stay in control without nested `codex exec`.
+- CLI `attached` mode is the stock Codex current-thread protocol. It is not an App Server thread/turn implementation and it does not keep a custom thread container alive outside the current Codex session.
 - Use `--repair` with `--resume-run` when the controller should repair persisted state and stop instead of opening additional rounds.
 - Use `--resume-phase <phase>` to force repair or resume from a known persisted controller phase such as `evaluation` or `round_commit`.
 - Use `--force-reopen-terminal` only when you intentionally want to reopen a run that already ended with `target_reached`, `contract_completed`, `environment_blocked`, or `adapter_contract_invalid`.
@@ -72,6 +73,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Every run now also persists `runtime/live-state.json`, `runtime/round-phase.json`, and `runtime/controller-lease.json`, and `summary.json` carries those paths so recovery can inspect controller state without trusting chat memory.
 - The controller now checkpoints `summary.json`, `current_best.json`, and `controller-summary.md` after each committed round instead of only at final closeout, so committed rounds survive parent-controller crashes.
 - Resume now merges `summary.json.round_history[]` with committed `round-###/round_summary.json` files and can rebuild missing run summaries or repair interrupted rounds directly from runtime journals.
+- Interrupted-round repair now reconstructs missing pre/post capability aggregates from `round-###/adapter/*-result.json` plus core probe aggregates from `round-###/core-probes/*-result.json`, then reruns only the missing capability or probe slices when persisted aggregates are stale or absent.
 - `summary.json.runtime_events[]` now carries machine-readable event codes such as `resume.noop_terminal`, `resume.reopened_terminal`, `resume.continued`, `resume.migration_override`, and `validation.environment_lane_hint`, so validators no longer depend on warning-string matching.
 - `summary.json.runtime_events[]` now also carries `resume.recovered_round_checkpoint` and `resume.repaired_interrupted_round`, so repaired controller state is explicitly reviewable.
 - `summary.json.round_history[]` now also persists the resolved `target_family` and `validation_lane` for each attempt, so resume migrations and explicit-profile runs stay machine-auditable after the fact.
@@ -214,6 +216,11 @@ evals/runs/<run-id>/
       generator-brief.md
       qa-review.md
       controller-decision.md
+    runtime/
+      negotiation-state.json
+      pre-verification-executions.json
+      post-verification-executions.json
+      adapter-executions.json
     adapter/
       <capability>-input.json
       <capability>-result.json
@@ -223,7 +230,7 @@ evals/runs/<run-id>/
       <probe-id>-result.json
 ```
 
-Each `round-###` directory is now an attempt record: the first is the initial build attempt, and later ones are patch-request-driven remediation attempts unless the controller escalates a round into recontract mode. Run directories are claimed when the controller allocates the next run id, so overlapping launches should create distinct `run-###` folders instead of racing on the same numeric suffix.
+Each `round-###` directory is now an attempt record: the first is the initial build attempt, and later ones are patch-request-driven remediation attempts unless the controller escalates a round into recontract mode. The per-round `runtime/` subtree carries round-local negotiation and capability aggregates, while run-level controller journals stay under the top-level `runtime/` directory. Run directories are claimed when the controller allocates the next run id, so overlapping launches should create distinct `run-###` folders instead of racing on the same numeric suffix.
 
 Initial build attempts and recontract attempts also write `contract-review.*` and `contract-agreement.*`. Patch-only remediation attempts may omit those two files on disk unless carried checks explicitly require them, and otherwise keep the carried scope centered on `round-contract`, `generator-plan`, `patch-request`, `quality-critique`, `trajectory-decision`, and `eval_report`.
 

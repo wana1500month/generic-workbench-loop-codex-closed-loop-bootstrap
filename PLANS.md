@@ -49,6 +49,7 @@ Acceptance:
 - Every run should persist `runtime/live-state.json`, `runtime/round-phase.json`, and `runtime/controller-lease.json`, and every committed round should checkpoint `summary.json` plus `current_best.json`.
 - Resume should merge committed `round_summary.json` files back into controller history so missing or stale run summaries can be rebuilt from disk.
 - `--repair` plus `--resume-phase <phase>` should repair interrupted rounds from persisted controller journals without forcing the controller to open extra rounds.
+- Repair should also reconstruct missing pre/post capability aggregates from `round-###/adapter/*-result.json` plus missing core probe aggregates from `round-###/core-probes/*-result.json`, then rerun only the missing capability or probe slices.
 - Resume identity mismatches fail closed by default when adapter contract, evaluator bundle, rubric fingerprint, target family, or validation lane changes.
 - Each run persists `resume-identity.json`, and resume checks should prefer that artifact over reconstructed summary state when it exists.
 - `--allow-resume-migration` writes a reviewable `resume-migration.json` plus summary fingerprints when a mismatch is intentionally accepted.
@@ -56,7 +57,9 @@ Acceptance:
 - Each evaluated attempt persists `failure-lineage.json`, and resumed runs restore that lineage instead of reconstructing controller state from patch requests alone.
 - Resumed invocations should persist machine-readable `runtime_events[]` and `resume-decision.json`, so noop, continue, and reopen policy can be audited without parsing warning prose.
 - Per-round summaries should also persist `decision_source`, so policy-snapshot decisions, hard rules, and default patch authority stay reviewable after resume.
-- The runtime should separate `controller_mode = detached|attached`, with detached reserved for crash-safe supervisor execution and attached reserved for current-thread Codex operation without nested `codex exec`.
+- The runtime should separate `controller_mode = detached|attached`, with detached reserved for crash-safe supervisor execution and attached reserved for the stock Codex current-thread protocol without nested `codex exec`.
+- Attached mode should fail closed at the shared Codex runtime boundary so no nested `runCodexCommand()` path can bypass policy, including subjective-quality review.
+- App Server thread/turn orchestration should remain a separate future surface rather than another meaning of CLI `attached`.
 
 Validation:
 - Inspect the latest run under `evals/runs`

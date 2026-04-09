@@ -10,6 +10,7 @@ import {
   assertRoundStopReason,
   assertRuntimeEventCode,
   assertRuntimeEventCodeMissing,
+  assertRuntimeWarningContains,
   assertRuntimeWarningMissing,
   assertStopReason,
   assertTargetFamily,
@@ -173,8 +174,20 @@ const repairSummarySeed = await readSummary(repairRunDirectory);
 const roundOneDirectory = join(repairRunDirectory, "round-001");
 const roundTwoDirectory = join(repairRunDirectory, "round-002");
 const runtimeDirectory = join(repairRunDirectory, "runtime");
+const roundTwoRuntimeDirectory = join(roundTwoDirectory, "runtime");
 await cp(roundOneDirectory, roundTwoDirectory, { recursive: true });
-await rm(join(roundTwoDirectory, "round_summary.json"));
+await Promise.all([
+  rm(join(roundTwoDirectory, "round_summary.json")),
+  rm(join(roundTwoDirectory, "target-manifest.json"), { force: true }),
+  rm(join(roundTwoDirectory, "core-probe-results.json"), { force: true }),
+  rm(join(roundTwoRuntimeDirectory, "pre-verification-executions.json"), {
+    force: true
+  }),
+  rm(join(roundTwoRuntimeDirectory, "post-verification-executions.json"), {
+    force: true
+  }),
+  rm(join(roundTwoRuntimeDirectory, "adapter-executions.json"), { force: true })
+]);
 const [runtimeLiveState, runtimeRoundPhase] = await Promise.all([
   readJson(join(runtimeDirectory, "live-state.json")),
   readJson(join(runtimeDirectory, "round-phase.json"))
@@ -185,28 +198,38 @@ await Promise.all([
     ...runtimeLiveState,
     round_count: 1,
     active_round: 2,
-    active_phase: "evaluation",
-    active_phase_status: "completed",
-    latest_eval_report_path: join(roundTwoDirectory, "eval_report.json"),
+    active_phase: "post_verification",
+    active_phase_status: "in_progress",
+    latest_eval_report_path: undefined,
+    latest_target_manifest_path: join(roundTwoDirectory, "target-manifest.json"),
     latest_round_summary_path: join(roundOneDirectory, "round_summary.json"),
     updated_at: staleHeartbeat,
     heartbeat_at: staleHeartbeat,
-    notes: ["Synthetic interrupted round for resume repair validation."]
+    notes: [
+      "Synthetic interrupted round for capability-level resume repair validation."
+    ]
   }),
   writeJson(join(runtimeDirectory, "round-phase.json"), {
     ...runtimeRoundPhase,
     round: 2,
-    phase: "evaluation",
-    status: "completed",
+    phase: "post_verification",
+    status: "in_progress",
     updated_at: staleHeartbeat,
     heartbeat_at: staleHeartbeat,
     phase_started_at: staleHeartbeat,
-    phase_completed_at: staleHeartbeat,
+    phase_completed_at: undefined,
     artifacts: {
-      negotiation_state_path: join(roundTwoDirectory, "negotiation-state.json"),
-      eval_report_path: join(roundTwoDirectory, "eval_report.json"),
-      patch_request_path: join(roundTwoDirectory, "patch-request.json"),
-      round_result_path: join(roundTwoDirectory, "round-result.json")
+      negotiation_state_path: join(roundTwoRuntimeDirectory, "negotiation-state.json"),
+      target_manifest_path: join(roundTwoDirectory, "target-manifest.json"),
+      core_probe_results_path: join(roundTwoDirectory, "core-probe-results.json"),
+      post_verification_executions_path: join(
+        roundTwoRuntimeDirectory,
+        "post-verification-executions.json"
+      ),
+      adapter_executions_path: join(
+        roundTwoRuntimeDirectory,
+        "adapter-executions.json"
+      )
     }
   }),
   writeJson(join(runtimeDirectory, "controller-lease.json"), {
@@ -218,8 +241,8 @@ await Promise.all([
     heartbeat_at: staleHeartbeat,
     owner_pid: 99999,
     round: 2,
-    phase: "evaluation",
-    phase_status: "completed",
+    phase: "post_verification",
+    phase_status: "in_progress",
     summary_path: join(repairRunDirectory, "summary.json"),
     live_state_path: join(runtimeDirectory, "live-state.json")
   })
@@ -230,7 +253,7 @@ const repairResult = await runLoop([
   repairRunDirectory,
   "--repair",
   "--resume-phase",
-  "evaluation",
+  "post_verification",
   "--max-rounds",
   "3"
 ]);
@@ -245,6 +268,18 @@ assertRoundCount(repairedSummary, 2);
 await assertRuntimeCheckpointSurface(repairedSummary, { expectedRoundCount: 2 });
 assertRuntimeEventCode(repairedSummary, "run.resumed_from_history");
 assertRuntimeEventCode(repairedSummary, "resume.repaired_interrupted_round");
+assertRuntimeWarningContains(
+  repairedSummary,
+  "Reconstructed pre_verification capability aggregate from adapter result files for round 2."
+);
+assertRuntimeWarningContains(
+  repairedSummary,
+  "Reconstructed core_probes aggregate from probe result files for round 2."
+);
+assertRuntimeWarningContains(
+  repairedSummary,
+  "Reconstructed post_verification capability aggregate from adapter result files for round 2."
+);
 assertRuntimeWarningMissing(
   repairedSummary,
   "Resume returned without opening a new round."
@@ -259,6 +294,34 @@ if (repairedRoundSummary.round !== 2) {
   throw new Error(
     `Expected repaired round_summary.json to record round 2, received '${repairedRoundSummary.round ?? "missing"}'.`
   );
+}
+const [
+  repairedPreVerificationExecutions,
+  repairedCoreProbeResults,
+  repairedPostVerificationExecutions,
+  repairedAdapterExecutions,
+  repairedTargetManifest
+] = await Promise.all([
+  readJson(join(roundTwoRuntimeDirectory, "pre-verification-executions.json")),
+  readJson(join(roundTwoDirectory, "core-probe-results.json")),
+  readJson(join(roundTwoRuntimeDirectory, "post-verification-executions.json")),
+  readJson(join(roundTwoRuntimeDirectory, "adapter-executions.json")),
+  readJson(join(roundTwoDirectory, "target-manifest.json"))
+]);
+if ((repairedPreVerificationExecutions?.length ?? 0) === 0) {
+  throw new Error("Expected repaired pre-verification aggregate to be reconstructed.");
+}
+if ((repairedCoreProbeResults?.length ?? 0) === 0) {
+  throw new Error("Expected repaired core probe aggregate to be reconstructed.");
+}
+if ((repairedPostVerificationExecutions?.length ?? 0) === 0) {
+  throw new Error("Expected repaired post-verification aggregate to be reconstructed.");
+}
+if ((repairedAdapterExecutions?.length ?? 0) < 2) {
+  throw new Error("Expected repaired adapter aggregate to include restored executions.");
+}
+if (!repairedTargetManifest?.api_base_url && !repairedTargetManifest?.health_url) {
+  throw new Error("Expected repaired target-manifest.json to be reconstructed from run_target.");
 }
 
 console.log("[validate-resume-smoke] seed migration candidate");

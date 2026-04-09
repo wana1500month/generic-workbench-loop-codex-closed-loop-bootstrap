@@ -23,9 +23,13 @@ import {
 import {
   executeAdapterCapability,
   loadAdapterContract,
+  restoreAdapterCapabilityExecutions,
   loadVerificationProfile
 } from "./adapter-runtime.js";
-import { executeCoreVerificationProbes } from "./core-verifier.js";
+import {
+  executeCoreVerificationProbes,
+  restoreCoreVerificationProbeExecutions
+} from "./core-verifier.js";
 import { writeRunCodexHandoff } from "./codex-handoff.js";
 import {
   detectDurableMemoryPaths,
@@ -404,6 +408,21 @@ const runAdapterCapabilities = async (input: {
   }
 
   return executions;
+};
+
+const orderedAdapterExecutions = (
+  capabilities: readonly AdapterCapabilityName[],
+  executions: readonly AdapterCapabilityExecution[]
+): AdapterCapabilityExecution[] => {
+  const capabilityOrder = new Map(
+    capabilities.map((capability, index) => [capability, index] as const)
+  );
+  return [...new Map(executions.map((execution) => [execution.capability, execution] as const)).values()]
+    .sort(
+      (left, right) =>
+        (capabilityOrder.get(left.capability) ?? Number.MAX_SAFE_INTEGER) -
+        (capabilityOrder.get(right.capability) ?? Number.MAX_SAFE_INTEGER)
+    );
 };
 
 const controllerPhaseOrder: readonly ControllerRoundPhase[] = [
@@ -926,6 +945,11 @@ export const runClosedLoop = async (input: {
 
   let runtimeWarnings = unique([
     ...previousPersistentWarnings,
+    ...(controllerMode === "attached"
+      ? [
+          "Attached controller mode follows the stock Codex current-thread protocol. It skips nested codex exec calls and does not implement App Server thread/turn orchestration."
+        ]
+      : []),
     ...(bundleSelection.runtimeWarnings ?? []),
     ...(loadedAdapter?.runtime_warnings ?? []),
     ...(executorMode === "subagents-experimental"
@@ -1603,26 +1627,63 @@ export const runClosedLoop = async (input: {
       previousPatchTargetCheckIds.every((checkId) =>
         contractArtifact.carry_over_check_ids.includes(checkId)
       );
-    let preVerificationExecutions =
-      (await loadJsonIfExists<AdapterCapabilityExecution[]>(
+    const persistedPreVerificationExecutions =
+      await loadJsonIfExists<AdapterCapabilityExecution[]>(
         artifacts.pre_verification_executions_path
-      )) ?? [];
+      );
+    let preVerificationExecutions =
+      persistedPreVerificationExecutions ??
+      orderedAdapterExecutions(
+        preVerificationCapabilities,
+        await restoreAdapterCapabilityExecutions({
+          loadedAdapter,
+          capabilities: preVerificationCapabilities,
+          roundDirectory
+        })
+      );
+    const restoredPreVerificationExecutions =
+      !persistedPreVerificationExecutions && preVerificationExecutions.length > 0;
+    const persistedTargetManifest =
+      await loadJsonIfExists<TargetManifest>(artifacts.target_manifest_path);
     let targetManifest =
-      (await loadJsonIfExists<TargetManifest>(artifacts.target_manifest_path)) ??
+      persistedTargetManifest ??
       preVerificationExecutions.find(
         (execution) => execution.capability === "run_target" && execution.result.ok
       )?.result.target_manifest;
+    if (restoredPreVerificationExecutions) {
+      runtimeWarnings = unique([
+        ...runtimeWarnings,
+        `Reconstructed pre_verification capability aggregate from adapter result files for round ${round}.`
+      ]);
+      await Promise.all([
+        writeJson(
+          artifacts.pre_verification_executions_path,
+          preVerificationExecutions
+        ),
+        writeJson(artifacts.target_manifest_path, targetManifest ?? {})
+      ]);
+    } else if (!persistedTargetManifest) {
+      await writeJson(artifacts.target_manifest_path, targetManifest ?? {});
+    }
     if (!phaseCompletedAtOrBeyond(resumedRoundPhase, "pre_verification")) {
       await recordRoundPhase({
         round,
         phase: "pre_verification",
         status: "in_progress"
       });
-      preVerificationExecutions =
-        loadedAdapter && contractAgreementArtifact.status === "agreed"
+      const repairedPreVerificationCapabilities = new Set(
+        preVerificationExecutions.map((execution) => execution.capability)
+      );
+      const missingPreVerificationCapabilities = preVerificationCapabilities.filter(
+        (capability) => !repairedPreVerificationCapabilities.has(capability)
+      );
+      const resumedPreVerificationExecutions =
+        loadedAdapter &&
+        contractAgreementArtifact.status === "agreed" &&
+        missingPreVerificationCapabilities.length > 0
           ? await runAdapterCapabilities({
               loadedAdapter,
-              capabilities: preVerificationCapabilities,
+              capabilities: missingPreVerificationCapabilities,
               runId,
               round,
               runDirectory,
@@ -1648,6 +1709,10 @@ export const runClosedLoop = async (input: {
               }
             })
           : [];
+      preVerificationExecutions = orderedAdapterExecutions(
+        preVerificationCapabilities,
+        [...preVerificationExecutions, ...resumedPreVerificationExecutions]
+      );
       targetManifest = preVerificationExecutions.find(
         (execution) => execution.capability === "run_target" && execution.result.ok
       )?.result.target_manifest;
@@ -1669,25 +1734,58 @@ export const runClosedLoop = async (input: {
         }
       });
     }
-    let coreProbeResults =
-      (await loadJsonIfExists<CoreVerificationProbeExecution[]>(
+    const persistedCoreProbeResults =
+      await loadJsonIfExists<CoreVerificationProbeExecution[]>(
         artifacts.core_probe_results_path
-      )) ?? [];
+      );
+    let coreProbeResults =
+      persistedCoreProbeResults ??
+      (await restoreCoreVerificationProbeExecutions({
+        loadedAdapter,
+        roundDirectory
+      }));
+    const restoredCoreProbeResults =
+      !persistedCoreProbeResults && coreProbeResults.length > 0;
+    if (restoredCoreProbeResults) {
+      runtimeWarnings = unique([
+        ...runtimeWarnings,
+        `Reconstructed core_probes aggregate from probe result files for round ${round}.`
+      ]);
+      await writeJson(artifacts.core_probe_results_path, coreProbeResults);
+    }
     if (!phaseCompletedAtOrBeyond(resumedRoundPhase, "core_probes")) {
       await recordRoundPhase({
         round,
         phase: "core_probes",
         status: "in_progress"
       });
-      coreProbeResults =
-        loadedAdapter && contractAgreementArtifact.status === "agreed"
+      const restoredProbeIds = new Set(
+        coreProbeResults.map((probeExecution) => probeExecution.probe_id)
+      );
+      const missingCoreProbeIds =
+        loadedAdapter?.verification_profile?.profile.core_probes
+          ?.map((probe) => probe.probe_id)
+          .filter((probeId) => !restoredProbeIds.has(probeId)) ?? [];
+      const resumedCoreProbeResults =
+        loadedAdapter &&
+        contractAgreementArtifact.status === "agreed" &&
+        missingCoreProbeIds.length > 0
           ? await executeCoreVerificationProbes({
               loadedAdapter,
               runDirectory,
               roundDirectory,
-              targetManifest
+              targetManifest,
+              probeIds: missingCoreProbeIds
             })
           : [];
+      coreProbeResults = [
+        ...new Map(
+          [...coreProbeResults, ...resumedCoreProbeResults].map((probeExecution) => [
+            probeExecution.probe_id,
+            probeExecution
+          ] as const)
+        ).values()
+      ];
       await writeJson(artifacts.core_probe_results_path, coreProbeResults);
       await recordRoundPhase({
         round,
@@ -1698,28 +1796,66 @@ export const runClosedLoop = async (input: {
         }
       });
     }
-    let postVerificationExecutions =
-      (await loadJsonIfExists<AdapterCapabilityExecution[]>(
+    const persistedPostVerificationExecutions =
+      await loadJsonIfExists<AdapterCapabilityExecution[]>(
         artifacts.post_verification_executions_path
-      )) ?? [];
-    let adapterExecutions =
-      (await loadJsonIfExists<AdapterCapabilityExecution[]>(
+      );
+    let postVerificationExecutions =
+      persistedPostVerificationExecutions ??
+      orderedAdapterExecutions(
+        postVerificationCapabilities,
+        await restoreAdapterCapabilityExecutions({
+          loadedAdapter,
+          capabilities: postVerificationCapabilities,
+          roundDirectory
+        })
+      );
+    const restoredPostVerificationExecutions =
+      !persistedPostVerificationExecutions && postVerificationExecutions.length > 0;
+    const persistedAdapterExecutions =
+      await loadJsonIfExists<AdapterCapabilityExecution[]>(
         artifacts.adapter_executions_path
-      )) ?? [
-        ...preVerificationExecutions,
-        ...postVerificationExecutions
-      ];
+      );
+    let adapterExecutions =
+      persistedAdapterExecutions ??
+      orderedAdapterExecutions(
+        [...preVerificationCapabilities, ...postVerificationCapabilities],
+        [...preVerificationExecutions, ...postVerificationExecutions]
+      );
+    if (restoredPostVerificationExecutions) {
+      runtimeWarnings = unique([
+        ...runtimeWarnings,
+        `Reconstructed post_verification capability aggregate from adapter result files for round ${round}.`
+      ]);
+      await Promise.all([
+        writeJson(
+          artifacts.post_verification_executions_path,
+          postVerificationExecutions
+        ),
+        writeJson(artifacts.adapter_executions_path, adapterExecutions)
+      ]);
+    } else if (!persistedAdapterExecutions) {
+      await writeJson(artifacts.adapter_executions_path, adapterExecutions);
+    }
     if (!phaseCompletedAtOrBeyond(resumedRoundPhase, "post_verification")) {
       await recordRoundPhase({
         round,
         phase: "post_verification",
         status: "in_progress"
       });
-      postVerificationExecutions =
-        loadedAdapter && contractAgreementArtifact.status === "agreed"
+      const repairedPostVerificationCapabilities = new Set(
+        postVerificationExecutions.map((execution) => execution.capability)
+      );
+      const missingPostVerificationCapabilities = postVerificationCapabilities.filter(
+        (capability) => !repairedPostVerificationCapabilities.has(capability)
+      );
+      const resumedPostVerificationExecutions =
+        loadedAdapter &&
+        contractAgreementArtifact.status === "agreed" &&
+        missingPostVerificationCapabilities.length > 0
           ? await runAdapterCapabilities({
               loadedAdapter,
-              capabilities: postVerificationCapabilities,
+              capabilities: missingPostVerificationCapabilities,
               runId,
               round,
               runDirectory,
@@ -1753,10 +1889,14 @@ export const runClosedLoop = async (input: {
               }
             })
           : [];
-      adapterExecutions = [
-        ...preVerificationExecutions,
-        ...postVerificationExecutions
-      ];
+      postVerificationExecutions = orderedAdapterExecutions(
+        postVerificationCapabilities,
+        [...postVerificationExecutions, ...resumedPostVerificationExecutions]
+      );
+      adapterExecutions = orderedAdapterExecutions(
+        [...preVerificationCapabilities, ...postVerificationCapabilities],
+        [...preVerificationExecutions, ...postVerificationExecutions]
+      );
       await Promise.all([
         writeJson(
           artifacts.post_verification_executions_path,

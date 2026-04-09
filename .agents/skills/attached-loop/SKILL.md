@@ -1,3 +1,8 @@
+---
+name: attached-loop
+description: Keep stock Codex on the current thread as the attached harness controller without nested codex exec calls.
+---
+
 # attached-loop
 
 Use this skill when the operator wants stock Codex to behave like the active loop controller instead of launching detached child Codex sessions.
@@ -10,6 +15,7 @@ Keep the current Codex thread attached to the run while still honoring the harne
 
 - Do not spawn nested `codex exec` or `codex exec resume`.
 - Treat the current Codex thread as the controller and generator surface.
+- Treat this as the stock Codex current-thread mainline, not an App Server thread/turn implementation.
 - Keep shell usage phase-local and short-lived.
 - Update persisted protocol artifacts before and after each phase boundary.
 - Prefer repairing from `runtime/live-state.json`, `runtime/round-phase.json`, and committed `round_summary.json` files instead of guessing from chat history.

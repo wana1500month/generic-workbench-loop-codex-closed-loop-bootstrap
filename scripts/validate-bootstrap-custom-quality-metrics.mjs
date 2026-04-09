@@ -319,6 +319,54 @@ const main = async () => {
       "subjective-quality-review evidence path should exist on disk"
     );
 
+    const attachedGradeRoundOutputPath = join(
+      fixture.adapterDirectory,
+      "grade_round-attached-result.json"
+    );
+    const attachedGradeRoundExecution = await runCommand(
+      process.execPath,
+      [fixture.gradeRoundScriptPath],
+      {
+        cwd: fixture.workspaceRoot,
+        env: capabilityEnv(
+          fixture,
+          "grade_round",
+          gradeRoundInputPath,
+          attachedGradeRoundOutputPath,
+          {
+            HARNESS_CONTROLLER_MODE: "attached"
+          }
+        ),
+        shell: false
+      }
+    );
+    assert(
+      attachedGradeRoundExecution.code === 0,
+      `attached grade_round script failed:\n${attachedGradeRoundExecution.stdout}\n${attachedGradeRoundExecution.stderr}`
+    );
+    const attachedGradeRoundResult = await readJsonFile(attachedGradeRoundOutputPath);
+    assert(
+      attachedGradeRoundResult.threshold_verdict === "fail",
+      "attached grade_round should fail closed when the nested subjective judge is blocked"
+    );
+    assert(
+      Array.isArray(attachedGradeRoundResult.subjective_metric_results) &&
+        attachedGradeRoundResult.subjective_metric_results.some(
+          (metric) =>
+            metric.metric_id === "design-quality" &&
+            metric.status === "fail" &&
+            metric.score_out_of_ten === 0
+        ),
+      "attached grade_round should emit fail-closed subjective metric results"
+    );
+    const attachedSubjectiveReviewItem = (attachedGradeRoundResult.evidence_items ?? []).find(
+      (item) => item.path === "artifacts/subjective-quality-review.json"
+    );
+    assert(
+      attachedSubjectiveReviewItem,
+      "attached grade_round should still publish subjective-quality-review.json as evidence"
+    );
+
     const { buildQualityCritiqueArtifact } = await importDist("protocol-artifacts.js");
     const qualityCritique = buildQualityCritiqueArtifact({
       round: 1,
