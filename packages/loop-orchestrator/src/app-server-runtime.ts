@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { join } from "node:path";
 import readline from "node:readline";
 
+import { resolveCodexCliLaunch } from "./codex-cli.js";
 import { repoRoot, writeText } from "./file-system.js";
 import {
   buildTransportStateArtifact,
@@ -84,23 +85,11 @@ export interface AppServerTransportController {
 const unique = <T>(values: readonly T[]): T[] => [...new Set(values)];
 
 const appServerCommand = (): { command: string; args: string[] } => {
-  const command =
-    process.env.HARNESS_APP_SERVER_BIN ??
-    process.env.HARNESS_CODEX_BIN ??
-    "codex";
-  const parsedArgs = process.env.HARNESS_APP_SERVER_BIN_ARGS
-    ? JSON.parse(process.env.HARNESS_APP_SERVER_BIN_ARGS)
-    : process.env.HARNESS_CODEX_BIN_ARGS
-      ? JSON.parse(process.env.HARNESS_CODEX_BIN_ARGS)
-      : [];
-  const prefixArgs =
-    Array.isArray(parsedArgs) && parsedArgs.every((value) => typeof value === "string")
-      ? parsedArgs
-      : [];
-  return {
-    command,
-    args: [...prefixArgs, "app-server"]
-  };
+  return resolveCodexCliLaunch({
+    commandEnvKeys: ["HARNESS_APP_SERVER_BIN", "HARNESS_CODEX_BIN"],
+    argsEnvKeys: ["HARNESS_APP_SERVER_BIN_ARGS", "HARNESS_CODEX_BIN_ARGS"],
+    tailArgs: ["app-server"]
+  });
 };
 
 const transportPromptText = (input: {
@@ -803,6 +792,8 @@ class LiveAppServerTransport implements AppServerTransportController {
       | {
           id?: string;
           name?: string;
+          status?: unknown;
+          turns?: unknown;
           runtimeStatus?: unknown;
         }
       | undefined;
@@ -816,16 +807,18 @@ class LiveAppServerTransport implements AppServerTransportController {
     }
 
     const runtimeStatus = this.normalizeThreadRuntimeStatus(
-      thread?.runtimeStatus ?? result.status
+      thread?.status ?? thread?.runtimeStatus ?? result.status
     );
     if (runtimeStatus.type) {
       this.snapshotState.thread_runtime_status = runtimeStatus.type;
       this.snapshotState.thread_active_flags = runtimeStatus.activeFlags;
     }
 
-    const turns = Array.isArray(result.turns)
-      ? (result.turns as Array<{ id?: string; status?: string }>)
-      : [];
+    const turns = Array.isArray(thread?.turns)
+      ? (thread.turns as Array<{ id?: string; status?: string }>)
+      : Array.isArray((result as { turns?: unknown }).turns)
+        ? ((result as { turns: Array<{ id?: string; status?: string }> }).turns)
+        : [];
     const lastTurn = turns.at(-1);
     if (lastTurn?.id) {
       this.snapshotState.turn_id = lastTurn.id;

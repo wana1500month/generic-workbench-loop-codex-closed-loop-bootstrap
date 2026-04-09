@@ -1388,6 +1388,22 @@ export const runClosedLoop = async (input: {
     });
   };
   let appServerTransport: AppServerTransportController | undefined;
+  let heartbeat: ReturnType<typeof startRuntimeHeartbeat> | undefined;
+  let runtimeStopped = false;
+  const stopRuntime = async (): Promise<void> => {
+    if (runtimeStopped) {
+      return;
+    }
+    runtimeStopped = true;
+    await Promise.allSettled([
+      appServerTransport?.stop({
+        stopReason: currentCheckpointStopReason,
+        notes: heartbeatNotes
+      }) ?? Promise.resolve(),
+      heartbeat?.stop("stopped") ?? Promise.resolve()
+    ]);
+  };
+  try {
   await writeLiveTransportProtocol();
   if (transportMode === "app-server") {
     appServerTransport = await startAppServerTransport({
@@ -1428,7 +1444,7 @@ export const runClosedLoop = async (input: {
       })
     );
   }
-  const heartbeat = startRuntimeHeartbeat({
+  heartbeat = startRuntimeHeartbeat({
     runId,
     controllerMode,
     transportMode,
@@ -1506,7 +1522,7 @@ export const runClosedLoop = async (input: {
         notes: heartbeatNotes
       });
     }
-    await heartbeat.tick();
+    await heartbeat!.tick();
   };
   const writeCheckpoint = async (
     stopReason: LoopRunSummary["stop_reason"] | undefined
@@ -1613,7 +1629,7 @@ export const runClosedLoop = async (input: {
       }
     }
     currentCheckpointStopReason = summary.stop_reason;
-    await heartbeat.tick();
+    await heartbeat!.tick();
     return summary;
   };
 
@@ -1628,13 +1644,6 @@ export const runClosedLoop = async (input: {
     heartbeatNotes.splice(0, heartbeatNotes.length, ...unique([...heartbeatNotes, ...input.notes]));
     await writeLiveTransportProtocol();
     const summary = await writeCheckpoint(input.stopReason);
-    if (appServerTransport) {
-      await appServerTransport.stop({
-        stopReason: summary.stop_reason,
-        notes: heartbeatNotes
-      });
-    }
-    await heartbeat.stop("stopped");
     return {
       plan,
       summary,
@@ -1648,13 +1657,6 @@ export const runClosedLoop = async (input: {
     : undefined;
   if (input.repairOnly && !repairRoundLimit) {
     const repairedSummary = await writeCheckpoint(restoredRun?.summary.stop_reason);
-    if (appServerTransport) {
-      await appServerTransport.stop({
-        stopReason: repairedSummary.stop_reason,
-        notes: heartbeatNotes
-      });
-    }
-    await heartbeat.stop("stopped");
     return {
       plan,
       summary: repairedSummary,
@@ -2725,13 +2727,6 @@ export const runClosedLoop = async (input: {
       }
     });
     if (repairRoundLimit === round) {
-      if (appServerTransport) {
-        await appServerTransport.stop({
-          stopReason: roundCheckpointSummary.stop_reason,
-          notes: heartbeatNotes
-        });
-      }
-      await heartbeat.stop("stopped");
       return {
         plan,
         summary: roundCheckpointSummary,
@@ -2947,13 +2942,6 @@ export const runClosedLoop = async (input: {
       codex_handoff_path: codexHandoffPath
     }
   });
-  if (appServerTransport) {
-    await appServerTransport.stop({
-      stopReason: summary.stop_reason,
-      notes: heartbeatNotes
-    });
-  }
-  await heartbeat.stop("stopped");
 
   return {
     plan,
@@ -2961,4 +2949,7 @@ export const runClosedLoop = async (input: {
     runDirectory,
     plannedScenarioPath
   };
+  } finally {
+    await stopRuntime();
+  }
 };

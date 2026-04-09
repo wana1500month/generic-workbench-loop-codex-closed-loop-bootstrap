@@ -25,25 +25,6 @@ const assert = (condition, message) => {
 
 const strictMode = process.env.HARNESS_APP_SERVER_REAL_SMOKE_STRICT === "1";
 
-const codexCommand = process.env.HARNESS_APP_SERVER_BIN ?? process.env.HARNESS_CODEX_BIN ?? "codex";
-const codexPrefixArgs = (() => {
-  const raw = process.env.HARNESS_APP_SERVER_BIN_ARGS ?? process.env.HARNESS_CODEX_BIN_ARGS;
-  if (!raw) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.every((entry) => typeof entry === "string")) {
-      return parsed;
-    }
-  } catch {
-    // ignore malformed override
-  }
-
-  return [];
-})();
-
 const main = async () => {
   if (process.env.HARNESS_DISABLE_CODEX_AGENTS === "1") {
     if (strictMode) {
@@ -59,9 +40,16 @@ const main = async () => {
 
   await ensureBuild();
 
+  const { resolveCodexCliLaunch } = await importDist("codex-cli.js");
   const { repoRoot, checkCodexAuth } = await importDist("codex-runtime.js");
   const { startAppServerTransport } = await importDist("app-server-runtime.js");
   const { writeTransportProtocol } = await importDist("transport-protocol.js");
+  const codexLaunch = resolveCodexCliLaunch();
+  const appServerLaunch = resolveCodexCliLaunch({
+    commandEnvKeys: ["HARNESS_APP_SERVER_BIN", "HARNESS_CODEX_BIN"],
+    argsEnvKeys: ["HARNESS_APP_SERVER_BIN_ARGS", "HARNESS_CODEX_BIN_ARGS"],
+    tailArgs: ["app-server"]
+  });
 
   const authPreflight = await checkCodexAuth({
     strict: strictMode,
@@ -78,7 +66,7 @@ const main = async () => {
     return;
   }
 
-  const codexVersion = await runCommand(codexCommand, [...codexPrefixArgs, "--version"], {
+  const codexVersion = await runCommand(codexLaunch.command, [...codexLaunch.args, "--version"], {
     shell: false
   }).catch(() => ({ code: 1, stdout: "", stderr: "" }));
   if (codexVersion.code !== 0) {
@@ -92,14 +80,9 @@ const main = async () => {
     );
     return;
   }
-
-  const helpCheck = await runCommand(
-    codexCommand,
-    [...codexPrefixArgs, "app-server", "--help"],
-    {
-      shell: false
-    }
-  ).catch(() => ({ code: 1, stdout: "", stderr: "" }));
+  const helpCheck = await runCommand(appServerLaunch.command, [...appServerLaunch.args, "--help"], {
+    shell: false
+  }).catch(() => ({ code: 1, stdout: "", stderr: "" }));
   if (helpCheck.code !== 0) {
     if (strictMode) {
       throw new Error(
@@ -124,10 +107,14 @@ const main = async () => {
     const targetFilePath = join(targetRoot, "app-server-real-smoke.txt");
 
     await Promise.all([
+      mkdir(runDirectory, { recursive: true }),
       mkdir(runtimeDirectory, { recursive: true }),
-      mkdir(targetRoot, { recursive: true }),
-      writeFile(summaryPath, JSON.stringify({ run_id: "real-app-server-smoke" }, null, 2) + "\n")
+      mkdir(targetRoot, { recursive: true })
     ]);
+    await writeFile(
+      summaryPath,
+      JSON.stringify({ run_id: "real-app-server-smoke" }, null, 2) + "\n"
+    );
 
     const protocolPath = await writeTransportProtocol({
       runDirectory,
@@ -158,7 +145,7 @@ const main = async () => {
       initialNotes: ["Real app-server smoke validation."],
       threadName: "real-app-server-smoke · attached-loop",
       defaultTaskTimeoutMs: 180_000,
-      requestTimeoutMs: 30_000
+      requestTimeoutMs: 60_000
     });
 
     try {

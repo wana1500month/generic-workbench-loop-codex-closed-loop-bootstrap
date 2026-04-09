@@ -1,5 +1,5 @@
-import { readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { readdir, writeFile } from "node:fs/promises";
+import { join, relative } from "node:path";
 
 import {
   cleanupTempRoot,
@@ -37,14 +37,63 @@ const discoverNewRunDirectory = async (knownRunDirectories) => {
   return createdRunDirectory;
 };
 
+const configureSemanticBootstrapAdapter = async (fixture) => {
+  const adapterContract = await readJsonFile(fixture.paths.adapterPath);
+  const semanticExecutorPath = join(
+    process.cwd(),
+    ".tmp",
+    "semantic-validation",
+    "executor.cjs"
+  );
+  const semanticVerifierPath = join(
+    process.cwd(),
+    ".tmp",
+    "semantic-validation",
+    "verifier.cjs"
+  );
+
+  adapterContract.target_root = relative(fixture.workspaceRoot, fixture.targetRoot);
+  adapterContract.capabilities.prepare_target.command =
+    `node "${semanticExecutorPath}" patch-only-success`;
+  adapterContract.capabilities.run_target.command =
+    `node "${semanticExecutorPath}" patch-only-success`;
+  adapterContract.verification_provider.capabilities.capture_evidence.command =
+    `node "${semanticVerifierPath}" patch-only-success`;
+  adapterContract.verification_provider.capabilities.run_checks.command =
+    `node "${semanticVerifierPath}" patch-only-success`;
+  adapterContract.verification_provider.capabilities.grade_round.command =
+    `node "${semanticVerifierPath}" patch-only-success`;
+
+  await writeFile(
+    fixture.paths.adapterPath,
+    JSON.stringify(adapterContract, null, 2) + "\n",
+    "utf8"
+  );
+};
+
 const main = async () => {
   await ensureBuild();
   const tempRoot = await createTempRoot("validate-app-server-interrupted-generator");
 
   try {
-    const fixture = await createBootstrapFixture(tempRoot);
+    const fixture = await createBootstrapFixture(tempRoot, {
+      targetFamily: "api-service",
+      frameworkHint: "Node.js API",
+      runCommand: "npm run start",
+      readyUrl: "http://127.0.0.1:3000/health",
+      appUrl: undefined,
+      healthUrl: "http://127.0.0.1:3000/health",
+      apiBaseUrl: "http://127.0.0.1:3000/api"
+    });
+    await configureSemanticBootstrapAdapter(fixture);
     const fakeAppServerPath = join(process.cwd(), "scripts", "testing", "fake-app-server.mjs");
     const fakeAppServerStatePath = join(tempRoot, "fake-app-server-state.json");
+    const apiServiceProfilePath = join(
+      process.cwd(),
+      "evals",
+      "verification-profiles",
+      "api-service.profile.json"
+    );
     const runDirectoriesBeforeFirstAttempt = await listRunDirectories();
 
     const firstRun = await runLoop(
@@ -61,9 +110,9 @@ const main = async () => {
         "--rubric",
         fixture.paths.generatedRubricPath,
         "--evaluator-profile",
-        fixture.paths.generatedVerificationProfilePath,
+        apiServiceProfilePath,
         "--target-family",
-        "browser-app"
+        "api-service"
       ],
       {
         silent: true,
@@ -85,13 +134,20 @@ const main = async () => {
       join(runDirectory, "runtime", "transport-state.json")
     );
     assert(
-      interruptedTransportState.app_server?.thread_runtime_status === "active" ||
-        interruptedTransportState.status === "live",
-      "Expected interrupted generator transport state to persist an active App Server thread."
+      interruptedTransportState.status === "closed",
+      `Expected interrupted generator transport status 'closed', received '${interruptedTransportState.status ?? "missing"}'.`
     );
     assert(
-      interruptedTransportState.app_server?.turn_status === "inProgress",
-      `Expected interrupted generator turn_status 'inProgress', received '${interruptedTransportState.app_server?.turn_status ?? "missing"}'.`
+      interruptedTransportState.app_server?.thread_lifecycle === "closed",
+      `Expected interrupted generator thread_lifecycle 'closed', received '${interruptedTransportState.app_server?.thread_lifecycle ?? "missing"}'.`
+    );
+    assert(
+      interruptedTransportState.app_server?.turn_status === "interrupted",
+      `Expected interrupted generator turn_status 'interrupted', received '${interruptedTransportState.app_server?.turn_status ?? "missing"}'.`
+    );
+    assert(
+      interruptedTransportState.app_server?.last_request_method === "thread/unsubscribe",
+      `Expected interrupted generator cleanup to unsubscribe the App Server thread, received '${interruptedTransportState.app_server?.last_request_method ?? "missing"}'.`
     );
 
     const resumedRun = await runLoop(
@@ -110,9 +166,9 @@ const main = async () => {
         "--rubric",
         fixture.paths.generatedRubricPath,
         "--evaluator-profile",
-        fixture.paths.generatedVerificationProfilePath,
+        apiServiceProfilePath,
         "--target-family",
-        "browser-app"
+        "api-service"
       ],
       {
         silent: true,
@@ -159,7 +215,15 @@ const main = async () => {
 
     console.log("Validated App Server interrupted generator repair.");
   } finally {
-    await cleanupTempRoot(tempRoot);
+    await cleanupTempRoot(tempRoot).catch((error) => {
+      if (error?.code === "EBUSY" || error?.code === "EPERM") {
+        console.warn(
+          `[validate-app-server-interrupted-generator] cleanup skipped: ${error.code}`
+        );
+        return;
+      }
+      throw error;
+    });
   }
 };
 

@@ -40,7 +40,22 @@ export const createTempRoot = async (name) => {
 };
 
 export const cleanupTempRoot = async (path) => {
-  await rm(path, { recursive: true, force: true });
+  let lastError;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await rm(path, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (error?.code !== "EBUSY" && error?.code !== "EPERM") {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+  }
+  if (lastError) {
+    throw lastError;
+  }
 };
 
 export const createFakeCodexBin = async (tempRoot) => {
@@ -67,7 +82,7 @@ export const writeJsonFile = async (path, value) => {
 export const readJsonFile = async (path) =>
   JSON.parse(await readFile(path, "utf8"));
 
-export const createBootstrapFixture = async (tempRoot) => {
+export const createBootstrapFixture = async (tempRoot, answerOverrides = {}) => {
   const workspaceRoot = join(tempRoot, "workspace");
   const targetRoot = join(tempRoot, "target-app");
   await mkdir(workspaceRoot, { recursive: true });
@@ -98,8 +113,18 @@ export const createBootstrapFixture = async (tempRoot) => {
     appUrl: "http://127.0.0.1:3000/",
     constraints: [],
     qualityBar: ["basic flow works end to end"],
-    notes: "validator fixture"
+    notes: "validator fixture",
+    ...answerOverrides
   };
+  if ("appUrl" in answerOverrides && answerOverrides.appUrl === undefined) {
+    delete answers.appUrl;
+  }
+  if ("healthUrl" in answerOverrides && answerOverrides.healthUrl === undefined) {
+    delete answers.healthUrl;
+  }
+  if ("apiBaseUrl" in answerOverrides && answerOverrides.apiBaseUrl === undefined) {
+    delete answers.apiBaseUrl;
+  }
 
   await scaffoldBootstrapArtifacts(answers, paths);
 

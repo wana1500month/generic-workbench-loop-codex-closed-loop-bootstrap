@@ -253,16 +253,16 @@ for await (const line of rl) {
       thread: {
         id: currentThreadId,
         name: threadName,
-        runtimeStatus: runtimeStatusPayload()
-      },
-      turns: currentTurnId
-        ? [
-            {
-              id: currentTurnId,
-              status: turnStatus
-            }
-          ]
-        : []
+        status: runtimeStatusPayload(),
+        turns: currentTurnId
+          ? [
+              {
+                id: currentTurnId,
+                status: turnStatus
+              }
+            ]
+          : []
+      }
     });
     continue;
   }

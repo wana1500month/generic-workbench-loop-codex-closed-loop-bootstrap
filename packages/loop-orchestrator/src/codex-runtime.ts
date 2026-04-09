@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { resolveCodexCliLaunch } from "./codex-cli.js";
 import { isControllerMode } from "./controller-mode.js";
 import { writeJson, writeText } from "./file-system.js";
 import {
@@ -94,25 +95,6 @@ const readJsonIfExists = async <T>(path: string): Promise<T | undefined> => {
   } catch {
     return undefined;
   }
-};
-
-const getCodexCommand = (): string => process.env.HARNESS_CODEX_BIN ?? "codex";
-
-const getCodexCommandPrefixArgs = (): string[] => {
-  if (!process.env.HARNESS_CODEX_BIN_ARGS) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(process.env.HARNESS_CODEX_BIN_ARGS) as unknown;
-    if (Array.isArray(parsed) && parsed.every((entry) => typeof entry === "string")) {
-      return parsed;
-    }
-  } catch {
-    // ignore malformed testing override
-  }
-
-  return [];
 };
 
 const resolvedHarnessTransportMode = () => {
@@ -251,12 +233,11 @@ export const checkCodexAuth = async (options: {
   requireFileBacked: boolean;
   cwd?: string;
 }): Promise<CodexAuthPreflight> => {
-  const command = getCodexCommand();
-  const prefixArgs = getCodexCommandPrefixArgs();
+  const launch = resolveCodexCliLaunch();
   const authFilePath = join(resolveCodexHome(), "auth.json");
   const status = await spawnProcess(
-    command,
-    [...prefixArgs, "login", "status"],
+    launch.command,
+    [...launch.args, "login", "status"],
     options.cwd ?? process.cwd()
   );
 
@@ -355,6 +336,8 @@ export const runCodexCommand = async (
     await writeJson(schemaPath, input.outputSchema);
   }
 
+  const codexLaunch = resolveCodexCliLaunch();
+
   if (process.env.HARNESS_DISABLE_CODEX_AGENTS === "1") {
     const disabledResult: CodexCommandResult = {
       code: 0,
@@ -390,7 +373,7 @@ export const runCodexCommand = async (
         stderr_path: stderrPath,
         events_path: eventsPath,
         response_written: false,
-        codex_command: getCodexCommand(),
+        codex_command: codexLaunch.command,
         ...(schemaPath ? { schema_path: schemaPath } : {}),
         ...(input.profile ? { profile: input.profile } : {}),
         ...(input.configOverrides ? { config_overrides: input.configOverrides } : {}),
@@ -438,7 +421,7 @@ export const runCodexCommand = async (
         stderr_path: stderrPath,
         events_path: eventsPath,
         response_written: false,
-        codex_command: getCodexCommand(),
+        codex_command: codexLaunch.command,
         ...(schemaPath ? { schema_path: schemaPath } : {}),
         ...(input.profile ? { profile: input.profile } : {}),
         ...(input.configOverrides ? { config_overrides: input.configOverrides } : {}),
@@ -448,8 +431,7 @@ export const runCodexCommand = async (
     return blockedResult;
   }
 
-  const command = getCodexCommand();
-  const commandPrefixArgs = getCodexCommandPrefixArgs();
+  const command = codexLaunch.command;
   const baseArgs = input.profile ? ["--profile", input.profile] : [];
   const configArgs = Object.entries(input.configOverrides ?? {}).flatMap(([key, value]) => [
     "-c",
@@ -457,7 +439,7 @@ export const runCodexCommand = async (
   ]);
   const args = input.sessionId
     ? [
-        ...commandPrefixArgs,
+        ...codexLaunch.args,
         "exec",
         "resume",
         ...configArgs,
@@ -469,7 +451,7 @@ export const runCodexCommand = async (
         "-"
       ]
     : [
-        ...commandPrefixArgs,
+        ...codexLaunch.args,
         "exec",
         ...baseArgs,
         ...configArgs,

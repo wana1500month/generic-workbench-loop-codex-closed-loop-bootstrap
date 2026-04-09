@@ -4,6 +4,7 @@ import type {
   TransportMode,
   TransportStateArtifact
 } from "./types.js";
+import { resolveCodexCliLaunch } from "./codex-cli.js";
 
 export type AppServerTransportSnapshot = NonNullable<
   TransportStateArtifact["app_server"]
@@ -80,62 +81,68 @@ export const buildTransportStateArtifact = (input: {
   notes?: string[];
   lastError?: string;
   appServer?: AppServerTransportSnapshot;
-}): TransportStateArtifact => ({
-  run_id: input.runId,
-  controller_mode: input.controllerMode,
-  transport_mode: input.transportMode,
-  ...(input.executorMode ? { executor_mode: input.executorMode } : {}),
-  updated_at: new Date().toISOString(),
-  status: input.status ?? "configured",
-  ...(input.summaryPath ? { summary_path: input.summaryPath } : {}),
-  ...(input.protocolPath ? { protocol_path: input.protocolPath } : {}),
-  ui_binding_mode:
-    input.transportMode === "app-server"
-      ? "embedded-app-server"
-      : input.transportMode === "current-thread"
-        ? "stock-current-thread"
-        : "none",
-  ...(input.transportMode === "app-server" && input.appServer?.thread_name
-    ? {
-        ui_surface: {
-          thread_name: input.appServer.thread_name
-        }
-      }
-    : {}),
-  ...(input.notes?.length ? { notes: input.notes } : {}),
-  ...(input.lastError ? { last_error: input.lastError } : {}),
-  ...(input.transportMode === "app-server" || input.appServer
-    ? {
-        app_server:
-          input.appServer ?? {
-            implemented: false,
-            transport: "stdio",
-            initialized: false,
-            command: process.env.HARNESS_APP_SERVER_BIN ??
-              process.env.HARNESS_CODEX_BIN ??
-              "codex",
-            args: [],
-            thread_lifecycle: "not_started",
-            turn_status: "not_started",
-            required_methods: [
-              "thread/start",
-              "thread/read",
-              "thread/name/set",
-              "thread/resume",
-              "turn/start",
-              "turn/steer",
-              "turn/interrupt"
-            ],
-            expected_event_types: [
-              "thread/started",
-              "thread/status/changed",
-              "turn/started",
-              "item/started",
-              "item/completed",
-              "item/agentMessage/delta",
-              "turn/completed"
-            ]
+}): TransportStateArtifact => {
+  const defaultAppServerLaunch = resolveCodexCliLaunch({
+    commandEnvKeys: ["HARNESS_APP_SERVER_BIN", "HARNESS_CODEX_BIN"],
+    argsEnvKeys: ["HARNESS_APP_SERVER_BIN_ARGS", "HARNESS_CODEX_BIN_ARGS"],
+    tailArgs: ["app-server"]
+  });
+
+  return {
+    run_id: input.runId,
+    controller_mode: input.controllerMode,
+    transport_mode: input.transportMode,
+    ...(input.executorMode ? { executor_mode: input.executorMode } : {}),
+    updated_at: new Date().toISOString(),
+    status: input.status ?? "configured",
+    ...(input.summaryPath ? { summary_path: input.summaryPath } : {}),
+    ...(input.protocolPath ? { protocol_path: input.protocolPath } : {}),
+    ui_binding_mode:
+      input.transportMode === "app-server"
+        ? "embedded-app-server"
+        : input.transportMode === "current-thread"
+          ? "stock-current-thread"
+          : "none",
+    ...(input.transportMode === "app-server" && input.appServer?.thread_name
+      ? {
+          ui_surface: {
+            thread_name: input.appServer.thread_name
           }
-      }
-    : {})
-});
+        }
+      : {}),
+    ...(input.notes?.length ? { notes: input.notes } : {}),
+    ...(input.lastError ? { last_error: input.lastError } : {}),
+    ...(input.transportMode === "app-server" || input.appServer
+      ? {
+          app_server:
+            input.appServer ?? {
+              implemented: false,
+              transport: "stdio",
+              initialized: false,
+              command: defaultAppServerLaunch.command,
+              args: defaultAppServerLaunch.args,
+              thread_lifecycle: "not_started",
+              turn_status: "not_started",
+              required_methods: [
+                "thread/start",
+                "thread/read",
+                "thread/name/set",
+                "thread/resume",
+                "turn/start",
+                "turn/steer",
+                "turn/interrupt"
+              ],
+              expected_event_types: [
+                "thread/started",
+                "thread/status/changed",
+                "turn/started",
+                "item/started",
+                "item/completed",
+                "item/agentMessage/delta",
+                "turn/completed"
+              ]
+            }
+        }
+      : {})
+  };
+};

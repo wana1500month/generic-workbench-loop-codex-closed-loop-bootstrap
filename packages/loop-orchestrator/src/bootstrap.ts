@@ -1949,7 +1949,7 @@ const main = async () => {
     process.env.HARNESS_TRANSPORT === "app-server"
       ? process.env.HARNESS_TRANSPORT
       : controllerMode === "attached"
-        ? "current-thread"
+        ? "app-server"
         : "codex-exec";
   const attachedGeneratorTaskPath =
     typeof process.env.HARNESS_ATTACHED_GENERATOR_TASK_PATH === "string"

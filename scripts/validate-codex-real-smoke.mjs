@@ -25,24 +25,6 @@ const assert = (condition, message) => {
 
 const strictMode = process.env.HARNESS_CODEX_REAL_SMOKE_STRICT === "1";
 
-const codexCommand = process.env.HARNESS_CODEX_BIN ?? "codex";
-const codexPrefixArgs = (() => {
-  if (!process.env.HARNESS_CODEX_BIN_ARGS) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(process.env.HARNESS_CODEX_BIN_ARGS);
-    if (Array.isArray(parsed) && parsed.every((entry) => typeof entry === "string")) {
-      return parsed;
-    }
-  } catch {
-    // ignore malformed override
-  }
-
-  return [];
-})();
-
 const main = async () => {
   if (process.env.HARNESS_DISABLE_CODEX_AGENTS === "1") {
     if (strictMode) {
@@ -58,7 +40,9 @@ const main = async () => {
 
   await ensureBuild();
 
+  const { resolveCodexCliLaunch } = await importDist("codex-cli.js");
   const { repoRoot, checkCodexAuth, runCodexCommand } = await importDist("codex-runtime.js");
+  const codexLaunch = resolveCodexCliLaunch();
   const authPreflight = await checkCodexAuth({
     strict: strictMode,
     requireChatgpt: true,
@@ -74,7 +58,7 @@ const main = async () => {
     return;
   }
 
-  const codexVersion = await runCommand(codexCommand, [...codexPrefixArgs, "--version"], {
+  const codexVersion = await runCommand(codexLaunch.command, [...codexLaunch.args, "--version"], {
     shell: false
   }).catch(() => ({ code: 1, stdout: "", stderr: "" }));
   if (codexVersion.code !== 0) {
