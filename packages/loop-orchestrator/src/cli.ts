@@ -1,6 +1,11 @@
 import { relative } from "node:path";
 
 import { runInteractiveBootstrap } from "./bootstrap.js";
+import {
+  defaultControllerMode,
+  isControllerMode,
+  isControllerRoundPhase
+} from "./controller-mode.js";
 import { defaultExecutorMode, isExecutorMode } from "./executor-mode.js";
 import { repoRoot } from "./file-system.js";
 import { runClosedLoop } from "./loop.js";
@@ -17,6 +22,16 @@ const parseArgs = (
   resumeRunPath?: string;
   allowResumeMigration?: boolean;
   forceReopenTerminal?: boolean;
+  controllerMode?: "attached" | "detached";
+  repairOnly?: boolean;
+  resumePhase?: 
+    | "negotiation"
+    | "pre_verification"
+    | "core_probes"
+    | "post_verification"
+    | "evaluation"
+    | "round_commit"
+    | "run_finalize";
   executorMode?: "harness" | "subagents-experimental";
   mode: "loop" | "single";
   maxRounds?: number;
@@ -31,6 +46,17 @@ const parseArgs = (
   let resumeRunPath: string | undefined;
   let allowResumeMigration = false;
   let forceReopenTerminal = false;
+  let controllerMode: "attached" | "detached" | undefined;
+  let repairOnly = false;
+  let resumePhase:
+    | "negotiation"
+    | "pre_verification"
+    | "core_probes"
+    | "post_verification"
+    | "evaluation"
+    | "round_commit"
+    | "run_finalize"
+    | undefined;
   let executorMode: "harness" | "subagents-experimental" | undefined;
   let mode: "loop" | "single" = "loop";
   let maxRounds: number | undefined;
@@ -95,6 +121,33 @@ const parseArgs = (
       continue;
     }
 
+    if (value === "--controller-mode") {
+      const candidate = argv[index + 1];
+      if (isControllerMode(candidate)) {
+        controllerMode = candidate;
+      } else {
+        errors.push(`Invalid controller mode: ${candidate ?? ""}`);
+      }
+      index += 1;
+      continue;
+    }
+
+    if (value === "--repair") {
+      repairOnly = true;
+      continue;
+    }
+
+    if (value === "--resume-phase") {
+      const candidate = argv[index + 1];
+      if (isControllerRoundPhase(candidate)) {
+        resumePhase = candidate;
+      } else {
+        errors.push(`Invalid resume phase: ${candidate ?? ""}`);
+      }
+      index += 1;
+      continue;
+    }
+
     if (value === "--executor-mode") {
       const candidate = argv[index + 1];
       if (isExecutorMode(candidate)) {
@@ -145,6 +198,9 @@ const parseArgs = (
     resumeRunPath,
     allowResumeMigration,
     forceReopenTerminal,
+    controllerMode,
+    repairOnly,
+    resumePhase,
     executorMode,
     mode,
     maxRounds,
@@ -174,6 +230,9 @@ const main = async (): Promise<void> => {
     console.error(
       "       node ./packages/loop-orchestrator/dist/cli.js --resume-run <run-dir> --force-reopen-terminal"
     );
+    console.error(
+      "       node ./packages/loop-orchestrator/dist/cli.js --resume-run <run-dir> --repair --resume-phase evaluation --controller-mode detached"
+    );
     process.exitCode = 1;
     return;
   }
@@ -184,6 +243,12 @@ const main = async (): Promise<void> => {
   let targetFamily = args.targetFamily;
   let targetScore = args.targetScore;
   let maxRounds = args.maxRounds;
+  const controllerMode =
+    args.controllerMode ??
+    (isControllerMode(process.env.HARNESS_CONTROLLER_MODE)
+      ? process.env.HARNESS_CONTROLLER_MODE
+      : undefined) ??
+    defaultControllerMode;
   const executorMode =
     args.executorMode ??
     (isExecutorMode(process.env.HARNESS_EXECUTOR_MODE)
@@ -232,6 +297,9 @@ const main = async (): Promise<void> => {
           resumeRunPath: args.resumeRunPath,
           allowResumeMigration: args.allowResumeMigration,
           forceReopenTerminal: args.forceReopenTerminal,
+          controllerMode,
+          repairOnly: args.repairOnly,
+          resumePhase: args.resumePhase,
           executorMode,
           targetScore
         })
@@ -243,6 +311,9 @@ const main = async (): Promise<void> => {
           resumeRunPath: args.resumeRunPath,
           allowResumeMigration: args.allowResumeMigration,
           forceReopenTerminal: args.forceReopenTerminal,
+          controllerMode,
+          repairOnly: args.repairOnly,
+          resumePhase: args.resumePhase,
           executorMode,
           maxRounds,
           targetScore

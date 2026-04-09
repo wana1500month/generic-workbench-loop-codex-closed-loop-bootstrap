@@ -33,6 +33,8 @@ export type RunStopReason =
 export type RoundStopReason = RunStopReason | "continue";
 export type RuntimeEventCode =
   | "run.resumed_from_history"
+  | "resume.recovered_round_checkpoint"
+  | "resume.repaired_interrupted_round"
   | "resume.migration_override"
   | "resume.noop_terminal"
   | "resume.reopened_terminal"
@@ -42,6 +44,16 @@ export type ValidationLane =
   | "deterministic_semantic"
   | "environment_integration";
 export type ExecutorMode = "harness" | "subagents-experimental";
+export type ControllerMode = "attached" | "detached";
+export type ControllerRoundPhase =
+  | "negotiation"
+  | "pre_verification"
+  | "core_probes"
+  | "post_verification"
+  | "evaluation"
+  | "round_commit"
+  | "run_finalize";
+export type ControllerPhaseStatus = "in_progress" | "completed";
 export type ProbeFailureClassification = "environment_blocked" | "probe_error";
 export type FailureLineagePolicyAction = "patch_only" | "recontract" | "stop";
 export type FailureLineageTriggerCode =
@@ -734,6 +746,7 @@ export interface TrajectoryDecisionArtifact extends TrajectoryDirective {
 
 export interface RoundArtifacts {
   round_directory: string;
+  runtime_directory: string;
   contract_json_path: string;
   contract_md_path: string;
   contract_review_json_path: string;
@@ -753,6 +766,12 @@ export interface RoundArtifacts {
   round_result_json_path: string;
   eval_report_path: string;
   failure_lineage_path: string;
+  target_manifest_path: string;
+  core_probe_results_path: string;
+  pre_verification_executions_path: string;
+  post_verification_executions_path: string;
+  adapter_executions_path: string;
+  negotiation_state_path: string;
   planner_context_path: string;
   generator_brief_path: string;
   qa_review_path: string;
@@ -904,6 +923,7 @@ export interface RoundSummary {
   negotiation_mode: NegotiationMode;
   continuation_authority: ContinuationAuthority;
   decision_source: LifecycleDecisionSource;
+  controller_mode?: ControllerMode;
   recontract_reason?: RecontractReason;
   label: string;
   controller_reason: string;
@@ -968,6 +988,7 @@ export interface LoopRunSummary {
   round_count: number;
   scenario_id: string;
   rubric_id: string;
+  controller_mode?: ControllerMode;
   executor_mode?: ExecutorMode;
   target_family?: TargetFamily;
   validation_lane?: ValidationLane;
@@ -995,6 +1016,9 @@ export interface LoopRunSummary {
   adapter_attached?: boolean;
   codex_session_registry_path?: string;
   resume_identity_path?: string;
+  runtime_live_state_path?: string;
+  runtime_round_phase_path?: string;
+  controller_lease_path?: string;
   stop_reason?: RunStopReason;
   selection_basis?: "terminal_round";
   best_round?: number;
@@ -1022,6 +1046,61 @@ export interface RuntimeEvent {
   message: string;
   created_at: string;
   metadata?: Record<string, string | number | boolean | null>;
+}
+
+export interface RuntimeRoundPhaseArtifact {
+  run_id: string;
+  round: number;
+  controller_mode: ControllerMode;
+  executor_mode?: ExecutorMode;
+  phase: ControllerRoundPhase;
+  status: ControllerPhaseStatus;
+  updated_at: string;
+  heartbeat_at: string;
+  owner_pid?: number;
+  phase_started_at?: string;
+  phase_completed_at?: string;
+  session?: {
+    thread_id?: string;
+  };
+  artifacts?: Record<string, string>;
+  notes?: string[];
+}
+
+export interface ControllerLeaseArtifact {
+  run_id: string;
+  controller_mode: ControllerMode;
+  executor_mode?: ExecutorMode;
+  status: "running" | "stopped";
+  updated_at: string;
+  heartbeat_at: string;
+  owner_pid?: number;
+  round?: number;
+  phase?: ControllerRoundPhase;
+  phase_status?: ControllerPhaseStatus;
+  summary_path?: string;
+  live_state_path?: string;
+}
+
+export interface RuntimeLiveStateArtifact {
+  run_id: string;
+  controller_mode: ControllerMode;
+  executor_mode?: ExecutorMode;
+  updated_at: string;
+  heartbeat_at: string;
+  round_count: number;
+  active_round?: number;
+  active_phase?: ControllerRoundPhase;
+  active_phase_status?: ControllerPhaseStatus;
+  latest_round_summary_path?: string;
+  latest_eval_report_path?: string;
+  best_round?: number;
+  best_total_score?: number;
+  stop_reason?: RunStopReason;
+  summary_path?: string;
+  round_phase_path?: string;
+  controller_lease_path?: string;
+  notes?: string[];
 }
 
 export interface ResumeDecisionArtifact {

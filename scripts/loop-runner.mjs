@@ -109,6 +109,9 @@ let forceReopenTerminal = readNpmConfigValue(
   ["force_reopen_terminal", "forcereopenterminal"],
   { allowBooleanMarkers: true }
 ) === "true";
+let controllerMode = readNpmConfigValue(["controller_mode", "controllermode"]);
+let repairOnly = readNpmConfigValue(["repair"], { allowBooleanMarkers: true }) === "true";
+let resumePhase = readNpmConfigValue(["resume_phase", "resumephase"]);
 let maxRounds = parsePositiveNumber(
   readNpmConfigValue(["max_rounds", "maxrounds", "max_iterations", "maxiterations"])
 );
@@ -162,6 +165,23 @@ for (let index = 0; index < rawArgs.length; index += 1) {
 
   if (value === "--force-reopen-terminal") {
     forceReopenTerminal = true;
+    continue;
+  }
+
+  if (value === "--controller-mode") {
+    controllerMode = rawArgs[index + 1] ?? controllerMode;
+    index += 1;
+    continue;
+  }
+
+  if (value === "--repair") {
+    repairOnly = true;
+    continue;
+  }
+
+  if (value === "--resume-phase") {
+    resumePhase = rawArgs[index + 1] ?? resumePhase;
+    index += 1;
     continue;
   }
 
@@ -265,6 +285,9 @@ const normalizedCliArgs = [
   ...(resumeRunPath ? ["--resume-run", resumeRunPath] : []),
   ...(allowResumeMigration ? ["--allow-resume-migration"] : []),
   ...(forceReopenTerminal ? ["--force-reopen-terminal"] : []),
+  ...(controllerMode ? ["--controller-mode", controllerMode] : []),
+  ...(repairOnly ? ["--repair"] : []),
+  ...(resumePhase ? ["--resume-phase", resumePhase] : []),
   ...(maxRounds !== undefined ? ["--max-rounds", String(maxRounds)] : []),
   ...(targetScore !== undefined ? ["--target-score", String(targetScore)] : []),
   ...passthroughArgs,

@@ -46,6 +46,9 @@ Acceptance:
 - `patch-request.json` stays the first follow-up file.
 - `--resume-run <run-dir>` can reopen an existing run from persisted artifacts alone.
 - `loop:single` can seed a one-attempt run that later resumes in a fresh process.
+- Every run should persist `runtime/live-state.json`, `runtime/round-phase.json`, and `runtime/controller-lease.json`, and every committed round should checkpoint `summary.json` plus `current_best.json`.
+- Resume should merge committed `round_summary.json` files back into controller history so missing or stale run summaries can be rebuilt from disk.
+- `--repair` plus `--resume-phase <phase>` should repair interrupted rounds from persisted controller journals without forcing the controller to open extra rounds.
 - Resume identity mismatches fail closed by default when adapter contract, evaluator bundle, rubric fingerprint, target family, or validation lane changes.
 - Each run persists `resume-identity.json`, and resume checks should prefer that artifact over reconstructed summary state when it exists.
 - `--allow-resume-migration` writes a reviewable `resume-migration.json` plus summary fingerprints when a mismatch is intentionally accepted.
@@ -53,6 +56,7 @@ Acceptance:
 - Each evaluated attempt persists `failure-lineage.json`, and resumed runs restore that lineage instead of reconstructing controller state from patch requests alone.
 - Resumed invocations should persist machine-readable `runtime_events[]` and `resume-decision.json`, so noop, continue, and reopen policy can be audited without parsing warning prose.
 - Per-round summaries should also persist `decision_source`, so policy-snapshot decisions, hard rules, and default patch authority stay reviewable after resume.
+- The runtime should separate `controller_mode = detached|attached`, with detached reserved for crash-safe supervisor execution and attached reserved for current-thread Codex operation without nested `codex exec`.
 
 Validation:
 - Inspect the latest run under `evals/runs`

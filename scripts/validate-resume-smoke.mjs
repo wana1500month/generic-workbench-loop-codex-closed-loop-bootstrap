@@ -1,3 +1,6 @@
+import { cp, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
 import {
   assertDecisionSource,
   assertFailurePolicySnapshot,
@@ -19,6 +22,51 @@ import {
   runLoop
 } from "./validation-utils.mjs";
 
+const readJson = async (path) => JSON.parse(await readFile(path, "utf8"));
+const writeJson = async (path, value) =>
+  writeFile(path, JSON.stringify(value, null, 2));
+
+const assertRuntimeCheckpointSurface = async (
+  summary,
+  { expectedRoundCount, expectedControllerMode = "detached" }
+) => {
+  if (summary.controller_mode !== expectedControllerMode) {
+    throw new Error(
+      `Expected controller_mode '${expectedControllerMode}', received '${summary.controller_mode ?? "missing"}'.`
+    );
+  }
+  if (!summary.runtime_live_state_path || !summary.runtime_round_phase_path || !summary.controller_lease_path) {
+    throw new Error("Expected runtime checkpoint paths to be present in summary.json.");
+  }
+
+  const [liveState, roundPhase, controllerLease] = await Promise.all([
+    readJson(summary.runtime_live_state_path),
+    readJson(summary.runtime_round_phase_path),
+    readJson(summary.controller_lease_path)
+  ]);
+
+  if (liveState.round_count !== expectedRoundCount) {
+    throw new Error(
+      `Expected runtime live-state round_count '${expectedRoundCount}', received '${liveState.round_count}'.`
+    );
+  }
+  if (liveState.controller_mode !== expectedControllerMode) {
+    throw new Error(
+      `Expected live-state controller_mode '${expectedControllerMode}', received '${liveState.controller_mode ?? "missing"}'.`
+    );
+  }
+  if (roundPhase.controller_mode !== expectedControllerMode) {
+    throw new Error(
+      `Expected round-phase controller_mode '${expectedControllerMode}', received '${roundPhase.controller_mode ?? "missing"}'.`
+    );
+  }
+  if (controllerLease.controller_mode !== expectedControllerMode) {
+    throw new Error(
+      `Expected controller-lease controller_mode '${expectedControllerMode}', received '${controllerLease.controller_mode ?? "missing"}'.`
+    );
+  }
+};
+
 console.log("[validate-resume-smoke] seed single attempt");
 const seedResult = await runLoop([
   "--single",
@@ -37,6 +85,7 @@ assertTargetFamily(seededSummary, "api-service");
 assertValidationLane(seededSummary, "deterministic_semantic");
 assertStopReason(seededSummary, "max_rounds_reached");
 assertRoundCount(seededSummary, 1);
+await assertRuntimeCheckpointSurface(seededSummary, { expectedRoundCount: 1 });
 await assertControllerDecisionBundleSemantics(
   seededSummary.round_history?.[0],
   "api-service",
@@ -49,10 +98,15 @@ assertRoundStopReason(
   "seed remediation candidate round"
 );
 
-console.log("[validate-resume-smoke] resume persisted run");
+console.log("[validate-resume-smoke] remove summary and resume from committed round checkpoint");
+await rm(join(seededRunDirectory, "summary.json"));
 const resumedResult = await runLoop([
   "--resume-run",
   seededRunDirectory,
+  "--adapter",
+  "./.tmp/semantic-validation/patch-only-success/adapter.json",
+  "--target-family",
+  "api-service",
   "--max-rounds",
   "3"
 ]);
@@ -65,7 +119,9 @@ assertTargetFamily(resumedSummary, "api-service");
 assertValidationLane(resumedSummary, "deterministic_semantic");
 assertStopReason(resumedSummary, "target_reached");
 assertRoundCount(resumedSummary, 2);
+await assertRuntimeCheckpointSurface(resumedSummary, { expectedRoundCount: 2 });
 assertRuntimeEventCode(resumedSummary, "run.resumed_from_history");
+assertRuntimeEventCode(resumedSummary, "resume.recovered_round_checkpoint");
 assertRuntimeEventCode(resumedSummary, "resume.continued");
 assertRoundBundleSemantics(
   resumedSummary.round_history?.[0],
@@ -97,6 +153,111 @@ const resumedDecision = await readResumeDecisionArtifact(resumedSummary);
 if (resumedDecision.decision !== "continue") {
   throw new Error(
     `Expected resumed decision 'continue', received '${resumedDecision.decision}'.`
+  );
+}
+
+console.log("[validate-resume-smoke] synthesize interrupted round and repair from runtime journal");
+const repairSeedResult = await runLoop([
+  "--single",
+  "--adapter",
+  "./.tmp/semantic-validation/patch-only-success/adapter.json",
+  "--target-family",
+  "api-service"
+]);
+if (repairSeedResult.code !== 0) {
+  throw new Error("Repair seed single-attempt run failed.");
+}
+
+const repairRunDirectory = extractRunDirectory(repairSeedResult.stdout);
+const repairSummarySeed = await readSummary(repairRunDirectory);
+const roundOneDirectory = join(repairRunDirectory, "round-001");
+const roundTwoDirectory = join(repairRunDirectory, "round-002");
+const runtimeDirectory = join(repairRunDirectory, "runtime");
+await cp(roundOneDirectory, roundTwoDirectory, { recursive: true });
+await rm(join(roundTwoDirectory, "round_summary.json"));
+const [runtimeLiveState, runtimeRoundPhase] = await Promise.all([
+  readJson(join(runtimeDirectory, "live-state.json")),
+  readJson(join(runtimeDirectory, "round-phase.json"))
+]);
+const staleHeartbeat = "2026-04-09T00:00:00.000Z";
+await Promise.all([
+  writeJson(join(runtimeDirectory, "live-state.json"), {
+    ...runtimeLiveState,
+    round_count: 1,
+    active_round: 2,
+    active_phase: "evaluation",
+    active_phase_status: "completed",
+    latest_eval_report_path: join(roundTwoDirectory, "eval_report.json"),
+    latest_round_summary_path: join(roundOneDirectory, "round_summary.json"),
+    updated_at: staleHeartbeat,
+    heartbeat_at: staleHeartbeat,
+    notes: ["Synthetic interrupted round for resume repair validation."]
+  }),
+  writeJson(join(runtimeDirectory, "round-phase.json"), {
+    ...runtimeRoundPhase,
+    round: 2,
+    phase: "evaluation",
+    status: "completed",
+    updated_at: staleHeartbeat,
+    heartbeat_at: staleHeartbeat,
+    phase_started_at: staleHeartbeat,
+    phase_completed_at: staleHeartbeat,
+    artifacts: {
+      negotiation_state_path: join(roundTwoDirectory, "negotiation-state.json"),
+      eval_report_path: join(roundTwoDirectory, "eval_report.json"),
+      patch_request_path: join(roundTwoDirectory, "patch-request.json"),
+      round_result_path: join(roundTwoDirectory, "round-result.json")
+    }
+  }),
+  writeJson(join(runtimeDirectory, "controller-lease.json"), {
+    run_id: repairSummarySeed.run_id,
+    controller_mode: "detached",
+    executor_mode: repairSummarySeed.executor_mode,
+    status: "running",
+    updated_at: staleHeartbeat,
+    heartbeat_at: staleHeartbeat,
+    owner_pid: 99999,
+    round: 2,
+    phase: "evaluation",
+    phase_status: "completed",
+    summary_path: join(repairRunDirectory, "summary.json"),
+    live_state_path: join(runtimeDirectory, "live-state.json")
+  })
+]);
+
+const repairResult = await runLoop([
+  "--resume-run",
+  repairRunDirectory,
+  "--repair",
+  "--resume-phase",
+  "evaluation",
+  "--max-rounds",
+  "3"
+]);
+if (repairResult.code !== 0) {
+  throw new Error("Interrupted round repair run failed.");
+}
+
+const repairedSummary = await readSummary(repairRunDirectory);
+assertTargetFamily(repairedSummary, "api-service");
+assertValidationLane(repairedSummary, "deterministic_semantic");
+assertRoundCount(repairedSummary, 2);
+await assertRuntimeCheckpointSurface(repairedSummary, { expectedRoundCount: 2 });
+assertRuntimeEventCode(repairedSummary, "run.resumed_from_history");
+assertRuntimeEventCode(repairedSummary, "resume.repaired_interrupted_round");
+assertRuntimeWarningMissing(
+  repairedSummary,
+  "Resume returned without opening a new round."
+);
+assertRoundStopReason(
+  repairedSummary.round_history?.[1],
+  "continue",
+  "repaired interrupted round"
+);
+const repairedRoundSummary = await readJson(join(roundTwoDirectory, "round_summary.json"));
+if (repairedRoundSummary.round !== 2) {
+  throw new Error(
+    `Expected repaired round_summary.json to record round 2, received '${repairedRoundSummary.round ?? "missing"}'.`
   );
 }
 

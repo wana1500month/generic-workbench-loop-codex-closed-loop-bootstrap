@@ -16,6 +16,17 @@ const parseTargetScore = (value) => {
   return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : undefined;
 };
 
+const controllerModes = new Set(["attached", "detached"]);
+const controllerRoundPhases = new Set([
+  "negotiation",
+  "pre_verification",
+  "core_probes",
+  "post_verification",
+  "evaluation",
+  "round_commit",
+  "run_finalize"
+]);
+
 const parseArgs = (argv) => {
   let adapterPath;
   let rubricPath;
@@ -24,6 +35,9 @@ const parseArgs = (argv) => {
   let resumeRunPath;
   let allowResumeMigration = false;
   let forceReopenTerminal = false;
+  let controllerMode;
+  let repairOnly = false;
+  let resumePhase;
   let executorMode;
   let mode = "loop";
   let maxRounds;
@@ -73,6 +87,21 @@ const parseArgs = (argv) => {
           throw new Error(`Invalid executor mode: ${executorMode ?? ""}`);
         }
         break;
+      case "--controller-mode":
+        controllerMode = argv[++index];
+        if (!controllerModes.has(controllerMode)) {
+          throw new Error(`Invalid controller mode: ${controllerMode ?? ""}`);
+        }
+        break;
+      case "--repair":
+        repairOnly = true;
+        break;
+      case "--resume-phase":
+        resumePhase = argv[++index];
+        if (!controllerRoundPhases.has(resumePhase)) {
+          throw new Error(`Invalid resume phase: ${resumePhase ?? ""}`);
+        }
+        break;
       case "--allow-resume-migration":
         allowResumeMigration = true;
         break;
@@ -105,6 +134,9 @@ const parseArgs = (argv) => {
     resumeRunPath,
     allowResumeMigration,
     forceReopenTerminal,
+    controllerMode,
+    repairOnly,
+    resumePhase,
     executorMode,
     mode,
     maxRounds,
@@ -123,6 +155,9 @@ const result =
         resumeRunPath: args.resumeRunPath,
         allowResumeMigration: args.allowResumeMigration,
         forceReopenTerminal: args.forceReopenTerminal,
+        controllerMode: args.controllerMode,
+        repairOnly: args.repairOnly,
+        resumePhase: args.resumePhase,
         executorMode: args.executorMode,
         targetScore: args.targetScore
       })
@@ -134,6 +169,9 @@ const result =
         resumeRunPath: args.resumeRunPath,
         allowResumeMigration: args.allowResumeMigration,
         forceReopenTerminal: args.forceReopenTerminal,
+        controllerMode: args.controllerMode,
+        repairOnly: args.repairOnly,
+        resumePhase: args.resumePhase,
         executorMode: args.executorMode,
         maxRounds: args.maxRounds,
         targetScore: args.targetScore
@@ -143,6 +181,7 @@ const summary = result.summary;
 console.log(`Run created: ${relative(repoRoot, result.runDirectory)}`);
 console.log(`Idea: ${relative(repoRoot, summary.idea_path ?? "")}`);
 console.log(`Rubric: ${summary.rubric_id}`);
+console.log(`Controller mode: ${summary.controller_mode ?? "detached"}`);
 console.log(`Executor mode: ${summary.executor_mode ?? "harness"}`);
 if (summary.target_family) {
   console.log(`Target family: ${summary.target_family}`);

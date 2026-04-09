@@ -43,6 +43,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Default operation is a single agent and one worktree per lane or run. Reach for worktrees or subagents only when the request explicitly needs parallel exploration or comparator work.
 - `bootstrap generator`: now receives an inline remediation brief built from the current round contract, generator plan, latest patch request, latest quality critique, and latest eval threshold gaps so patch-only mutation is no longer prompt-stateless
 - `bootstrap grader`: now preserves `quality_contract`, `quality_axis_id`, and `subjective_metrics` through runtime loading, so intake-authored quality semantics reach grading, critique, and patch-request generation intact
+- `attached controller`: keeps the current Codex thread as the operator surface, skips nested planner/contract/eval Codex enhancements, and refuses bootstrap `apply_change` when that path would need to spawn a nested `codex exec`
 
 ## Round contract and dimension floors
 
@@ -60,17 +61,24 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Use `--evaluator-profile <path>` when a specific bundle file must be selected directly.
 - Use `--target-family <family>` when the harness should resolve a bundled evaluator pack for a known family such as `generic-core`, `api-service`, `crud-api`, `chat-agent`, `browser-app`, `browser-editor`, `fullstack-app`, or `dashboard`.
 - Use `--resume-run <evals/runs/run-###>` to reopen an existing run from file state alone.
+- Use `--controller-mode detached` for the default crash-safe supervisor path and `--controller-mode attached` only when the current Codex thread is expected to stay in control without nested `codex exec`.
+- Use `--repair` with `--resume-run` when the controller should repair persisted state and stop instead of opening additional rounds.
+- Use `--resume-phase <phase>` to force repair or resume from a known persisted controller phase such as `evaluation` or `round_commit`.
 - Use `--force-reopen-terminal` only when you intentionally want to reopen a run that already ended with `target_reached`, `contract_completed`, `environment_blocked`, or `adapter_contract_invalid`.
 - When no adapter, explicit bundle, or restored bundle is present, the runtime now defaults to the neutral `generic-core` family in the `deterministic_semantic` lane.
 - Resume identity now binds `adapter_contract_path`, `adapter_contract_sha256`, `target_family`, `validation_lane`, `evaluator_profile_path`, `evaluator_bundle_sha256`, and `rubric_sha256`.
 - Every run now persists that identity in `resume-identity.json`, and `summary.json.resume_identity_path` points to it directly.
 - Resumed invocations now also persist `resume-decision.json`, and `summary.json.resume_decision_path` points at the authoritative reopen or no-op decision for that invocation.
+- Every run now also persists `runtime/live-state.json`, `runtime/round-phase.json`, and `runtime/controller-lease.json`, and `summary.json` carries those paths so recovery can inspect controller state without trusting chat memory.
+- The controller now checkpoints `summary.json`, `current_best.json`, and `controller-summary.md` after each committed round instead of only at final closeout, so committed rounds survive parent-controller crashes.
+- Resume now merges `summary.json.round_history[]` with committed `round-###/round_summary.json` files and can rebuild missing run summaries or repair interrupted rounds directly from runtime journals.
 - `summary.json.runtime_events[]` now carries machine-readable event codes such as `resume.noop_terminal`, `resume.reopened_terminal`, `resume.continued`, `resume.migration_override`, and `validation.environment_lane_hint`, so validators no longer depend on warning-string matching.
+- `summary.json.runtime_events[]` now also carries `resume.recovered_round_checkpoint` and `resume.repaired_interrupted_round`, so repaired controller state is explicitly reviewable.
 - `summary.json.round_history[]` now also persists the resolved `target_family` and `validation_lane` for each attempt, so resume migrations and explicit-profile runs stay machine-auditable after the fact.
 - `summary.json.round_history[]` now also persists `round_stop_reason`, so per-round terminal outcomes no longer depend on parsing handoff prose.
 - `summary.json.round_history[]` now also persists `decision_source`, so reviewers can tell whether a round followed `policy_snapshot`, a hard rule, or default patch authority without reading handoff prose.
 - `summary.json.feature_list_path`, `summary.json.progress_path`, `summary.json.progress_log_path`, `summary.json.done_when_path`, and `summary.json.init_script_path` now point at the durable memory surfaces that travel with the run.
-- The root `loop:run` and `loop:single` shim now retries the build with pinned TypeScript `5.8.3` when host `npm run build --silent` exits abnormally, matching the bootstrap fallback already used by `init.sh`.
+- The root `build`, `loop:run`, and `loop:single` entrypoints now retry the TypeScript build with pinned `5.8.3` when the host compiler exits abnormally, matching the bootstrap fallback already used by `init.sh`.
 - Resume identity mismatches fail closed by default. Use `--allow-resume-migration` only when intentionally changing the adapter contract, bundle, rubric, or target family for an existing run, and expect the controller to write `resume-migration.json`.
 - Resuming a run that already ended with `target_reached`, `contract_completed`, `environment_blocked`, or `adapter_contract_invalid` now defaults to a no-op closure. `--allow-resume-migration` alone does not reopen a terminal run; use `--force-reopen-terminal` when you intentionally want to spend more budget, and pair it with `--allow-resume-migration` when the reopen also changes run identity.
 - `loop:single` now means a literal single executed attempt even when an adapter is attached. Use it to seed fresh-process resume smoke without spending the remediation budget up front.
@@ -179,6 +187,11 @@ evals/runs/<run-id>/
   resume-identity.json
   resume-decision.json
   resume-migration.json
+  runtime/
+    live-state.json
+    round-phase.json
+    controller-lease.json
+    codex-sessions.json
   round-001/
     round-contract.json
     round-contract.md
@@ -233,9 +246,10 @@ Initial build attempts and recontract attempts also write `contract-review.*` an
 11. Continue to the next remediation attempt until target, contract completion, plateau, or max rounds. Do not let plateau stop a blocking `revise` with explicit must-fix work.
 12. When `trajectory-decision.json` chooses `pivot` or `parallel_pivot`, reopen from the selected anchor instead of treating the next attempt as a linear patch of the current head.
 13. When the initial build attempt closes structurally but still misses target thresholds, keep revising through the remediation budget instead of forcing a fake terminal success.
-14. If a process stops early, reopen the same run with `--resume-run` and let the controller restore its state from `summary.json`, the latest patch request, the latest trajectory decision, the latest eval report, the latest `failure-lineage.json`, and the latest agreed contract frame.
-15. Reject resume attempts that change the run identity unless `--allow-resume-migration` is explicitly present, and persist that override as `resume-migration.json` for later review.
-16. Continue harness work by reading `codex-handoff.md`.
+14. If a process stops early, reopen the same run with `--resume-run` and let the controller restore its state from `summary.json`, `runtime/live-state.json`, `runtime/round-phase.json`, committed `round_summary.json` files, the latest patch request, the latest trajectory decision, the latest eval report, the latest `failure-lineage.json`, and the latest agreed contract frame.
+15. If the persisted state shows an interrupted round, use `--repair` to finish the interrupted round from the runtime journal without spending additional round budget on new work.
+16. Reject resume attempts that change the run identity unless `--allow-resume-migration` is explicitly present, and persist that override as `resume-migration.json` for later review.
+17. Continue harness work by reading `codex-handoff.md`.
 
 ## Validation commands
 
@@ -252,6 +266,8 @@ npm run loop:run -- --adapter ./adapter.example.json --max-rounds 3
 npm run loop:run -- --adapter ./.tmp/semantic-validation/patch-only-success/adapter.json --target-family api-service --max-rounds 3
 npm run loop:single -- --adapter ./.tmp/semantic-validation/patch-only-success/adapter.json --target-family api-service
 npm run loop:run -- --resume-run ./evals/runs/run-### --max-rounds 3
+npm run loop:run -- --resume-run ./evals/runs/run-### --repair --resume-phase evaluation
+npm run loop:run -- --controller-mode attached --max-rounds 1
 npm run loop:run -- --resume-run ./evals/runs/run-### --target-family crud-api --allow-resume-migration --max-rounds 3
 npm run validate:lifecycle-api
 npm run validate:family-crud

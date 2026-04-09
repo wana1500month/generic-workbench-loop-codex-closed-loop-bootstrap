@@ -1941,6 +1941,26 @@ const main = async () => {
     "generator-remediation-brief.json",
     JSON.stringify(remediationBrief, null, 2)
   );
+  if (process.env.HARNESS_CONTROLLER_MODE === "attached") {
+    const attachedNotePath = await writeArtifact(
+      "apply-change.attached-controller.txt",
+      [
+        "Attached controller mode forbids nested Codex execution from bootstrap apply_change.",
+        "Run generator work in the current Codex thread and keep adapter commands phase-local instead of invoking codex exec here."
+      ].join("\\n")
+    );
+    await finalize({
+      capability: "apply_change",
+      ok: false,
+      summary: "Attached controller mode refused nested Codex generator execution.",
+      findings: [
+        "HARNESS_CONTROLLER_MODE=attached requires generator work to stay in the current Codex thread instead of spawning codex exec from bootstrap apply_change."
+      ],
+      evidence_paths: [remediationBriefPath, attachedNotePath]
+    });
+    process.exitCode = 1;
+    return;
+  }
   const prompt = [
     "You are the generator for a closed-loop harness.",
     "Work only inside the target root.",

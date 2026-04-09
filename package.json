@@ -7,7 +7,7 @@
     "packages/loop-orchestrator"
   ],
   "scripts": {
-    "build": "tsc -b",
+    "build": "node ./scripts/build-workspace.mjs",
     "loop:intent": "node ./scripts/loop-intent.mjs",
     "loop:intake": "node ./scripts/loop-intake.mjs",
     "loop:run": "node ./scripts/loop-runner.mjs",

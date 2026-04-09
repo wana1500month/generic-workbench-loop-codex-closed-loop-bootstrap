@@ -1,5 +1,6 @@
 import { join } from "node:path";
 
+import type { ControllerMode, ControllerRoundPhase } from "./types.js";
 import type { SingleRoundResult } from "./types.js";
 import { runClosedLoop } from "./loop.js";
 
@@ -11,6 +12,9 @@ export const runSingleIteration = async (input: {
   resumeRunPath?: string;
   allowResumeMigration?: boolean;
   forceReopenTerminal?: boolean;
+  controllerMode?: ControllerMode;
+  repairOnly?: boolean;
+  resumePhase?: ControllerRoundPhase;
   executorMode?: "harness" | "subagents-experimental";
   targetScore?: number;
 }): Promise<SingleRoundResult> => {
@@ -22,6 +26,9 @@ export const runSingleIteration = async (input: {
     resumeRunPath: input.resumeRunPath,
     allowResumeMigration: input.allowResumeMigration,
     forceReopenTerminal: input.forceReopenTerminal,
+    controllerMode: input.controllerMode,
+    repairOnly: input.repairOnly,
+    resumePhase: input.resumePhase,
     executorMode: input.executorMode,
     maxRounds: 1,
     targetScore: input.targetScore,

@@ -1,3 +1,4 @@
+import { readdir } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 
 import {
@@ -9,9 +10,18 @@ import {
   buildFailureLineageArtifact,
   loadFailureLineageArtifact
 } from "./failure-lineage.js";
-import { loadJson } from "./file-system.js";
+import { loadJson, loadJsonIfExists } from "./file-system.js";
+import {
+  readControllerLeaseArtifact,
+  readRuntimeLiveStateArtifact,
+  readRuntimeRoundPhaseArtifact,
+  runtimeStatePathsForRun
+} from "./runtime-state.js";
 import type {
   ActiveContractFrame,
+  ContractAgreementArtifact,
+  ControllerLeaseArtifact,
+  ControllerRoundPhase,
   EvalReport,
   FailureLineage,
   LoadedAdapterContract,
@@ -22,9 +32,10 @@ import type {
   PatchRequestArtifact,
   ReleaseThresholdResults,
   RemediationHistory,
+  RuntimeLiveStateArtifact,
+  RuntimeRoundPhaseArtifact,
   RoundContractArtifact,
   RoundSummary,
-  ContractAgreementArtifact,
   TrajectoryDecisionArtifact
 } from "./types.js";
 
@@ -59,6 +70,17 @@ export interface RestoredRunState {
   plateauCount: number;
   repeatedUnresolvedCount: number;
   roundStart: number;
+  summaryWasRecovered: boolean;
+  repairNotes: string[];
+  runtimeLiveState?: RuntimeLiveStateArtifact;
+  runtimeRoundPhase?: RuntimeRoundPhaseArtifact;
+  controllerLease?: ControllerLeaseArtifact;
+  interruptedRound?: {
+    round: number;
+    roundDirectory: string;
+    resumeFromPhase: ControllerRoundPhase;
+    phaseStatus: RuntimeRoundPhaseArtifact["status"];
+  };
 }
 
 const isImproved = (nextScore: number, currentBest: number | undefined): boolean =>
@@ -165,6 +187,148 @@ const activeContractFrameForHistory = async (
 };
 
 const resolvedRunDirectory = (runPath: string): string => resolve(runPath);
+const controllerLeaseStaleMs = 30_000;
+
+const roundDirectoryPattern = /^round-(\d+)$/;
+
+const isLeaseStale = (
+  lease: ControllerLeaseArtifact | undefined,
+  now = Date.now()
+): boolean => {
+  if (!lease || lease.status !== "running") {
+    return false;
+  }
+
+  const heartbeatAt = Date.parse(lease.heartbeat_at);
+  if (Number.isNaN(heartbeatAt)) {
+    return true;
+  }
+
+  return now - heartbeatAt > controllerLeaseStaleMs;
+};
+
+const loadRoundSummariesFromDisk = async (
+  runDirectory: string
+): Promise<RoundSummary[]> => {
+  const entries = await readdir(runDirectory, { withFileTypes: true });
+  const summaries = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory() && roundDirectoryPattern.test(entry.name))
+      .map(async (entry) => {
+        const roundSummaryPath = join(runDirectory, entry.name, "round_summary.json");
+        return loadJsonIfExists<RoundSummary>(roundSummaryPath);
+      })
+  );
+
+  return summaries
+    .filter((summary): summary is RoundSummary => Boolean(summary))
+    .sort((left, right) => left.round - right.round);
+};
+
+const mergeRoundHistory = (
+  summaryHistory: readonly RoundSummary[],
+  diskHistory: readonly RoundSummary[]
+): RoundSummary[] =>
+  [...new Map(
+    [...summaryHistory, ...diskHistory]
+      .sort((left, right) => left.round - right.round)
+      .map((summary) => [summary.round, summary] as const)
+  ).values()];
+
+const bestRoundSummaryFromHistory = (
+  history: readonly RoundSummary[]
+): RoundSummary | undefined => {
+  let bestRoundSummary: RoundSummary | undefined;
+
+  for (const summary of history) {
+    if (!bestRoundSummary || isImproved(summary.total_score, bestRoundSummary.total_score)) {
+      bestRoundSummary = summary;
+    }
+  }
+
+  return bestRoundSummary;
+};
+
+const hydrateSummaryFromHistory = (input: {
+  runId: string;
+  scenario: LoopScenario;
+  rubric: LoopRubric;
+  summary?: LoopRunSummary;
+  history: RoundSummary[];
+}): LoopRunSummary => {
+  const latestRoundSummary = input.history[input.history.length - 1];
+  const bestRoundSummary = bestRoundSummaryFromHistory(input.history);
+  const stopReason =
+    latestRoundSummary?.round_stop_reason &&
+    latestRoundSummary.round_stop_reason !== "continue"
+      ? latestRoundSummary.round_stop_reason
+      : input.summary?.stop_reason;
+
+  return {
+    run_id: input.summary?.run_id ?? input.runId,
+    scenario_id: input.summary?.scenario_id ?? input.scenario.scenario_id,
+    rubric_id: input.summary?.rubric_id ?? input.rubric.rubric_id,
+    ...(input.summary ?? {}),
+    total_score: latestRoundSummary?.total_score ?? input.summary?.total_score ?? 0,
+    control_plane_score:
+      latestRoundSummary?.control_plane_score ?? input.summary?.control_plane_score ?? 0,
+    proof_score: latestRoundSummary?.proof_score ?? input.summary?.proof_score ?? 0,
+    release_score: latestRoundSummary?.release_score ?? input.summary?.release_score ?? 0,
+    round_count: input.history.length,
+    round_history: input.history,
+    ...(latestRoundSummary?.round !== undefined
+      ? { terminal_round: latestRoundSummary.round }
+      : {}),
+    ...(latestRoundSummary?.threshold_results
+      ? { threshold_results: latestRoundSummary.threshold_results }
+      : {}),
+    ...(latestRoundSummary?.dimension_scores
+      ? { dimension_scores: latestRoundSummary.dimension_scores }
+      : {}),
+    ...(bestRoundSummary
+      ? {
+          best_round: bestRoundSummary.round,
+          best_scoring_total_score: bestRoundSummary.total_score,
+          best_scoring_control_plane_score: bestRoundSummary.control_plane_score,
+          best_scoring_proof_score: bestRoundSummary.proof_score,
+          best_scoring_release_score: bestRoundSummary.release_score,
+          best_scoring_threshold_results: bestRoundSummary.threshold_results
+        }
+      : {}),
+    ...(stopReason ? { stop_reason: stopReason } : {})
+  };
+};
+
+const interruptedRoundStateFor = (input: {
+  runDirectory: string;
+  history: readonly RoundSummary[];
+  runtimeRoundPhase?: RuntimeRoundPhaseArtifact;
+}):
+  | {
+      round: number;
+      roundDirectory: string;
+      resumeFromPhase: ControllerRoundPhase;
+      phaseStatus: RuntimeRoundPhaseArtifact["status"];
+    }
+  | undefined => {
+  if (!input.runtimeRoundPhase) {
+    return undefined;
+  }
+
+  if (input.runtimeRoundPhase.round <= input.history.length) {
+    return undefined;
+  }
+
+  return {
+    round: input.runtimeRoundPhase.round,
+    roundDirectory: join(
+      input.runDirectory,
+      `round-${String(input.runtimeRoundPhase.round).padStart(3, "0")}`
+    ),
+    resumeFromPhase: input.runtimeRoundPhase.phase,
+    phaseStatus: input.runtimeRoundPhase.status
+  };
+};
 
 export const restoreRunState = async (
   runPath: string
@@ -176,15 +340,36 @@ export const restoreRunState = async (
   const planPath = join(runDirectory, "plan.json");
   const plannerBriefPath = join(runDirectory, "planner-brief.md");
   const rubricPath = join(runDirectory, "effective-rubric.json");
+  const runtimePaths = runtimeStatePathsForRun(runDirectory);
 
-  const [summary, scenario, plan, rubric] = await Promise.all([
-    loadJson<LoopRunSummary>(summaryPath),
+  const [
+    summary,
+    scenario,
+    plan,
+    rubric,
+    runtimeLiveState,
+    runtimeRoundPhase,
+    controllerLease,
+    diskHistory
+  ] = await Promise.all([
+    loadJsonIfExists<LoopRunSummary>(summaryPath),
     loadJson<LoopScenario>(plannedScenarioPath),
     loadJson<LoopPlan>(planPath),
-    loadJson<LoopRubric>(rubricPath)
+    loadJson<LoopRubric>(rubricPath),
+    readRuntimeLiveStateArtifact(runtimePaths.liveStatePath),
+    readRuntimeRoundPhaseArtifact(runtimePaths.roundPhasePath),
+    readControllerLeaseArtifact(runtimePaths.controllerLeasePath),
+    loadRoundSummariesFromDisk(runDirectory)
   ]);
 
-  const history = summary.round_history ?? [];
+  const history = mergeRoundHistory(summary?.round_history ?? [], diskHistory);
+  const hydratedSummary = hydrateSummaryFromHistory({
+    runId,
+    scenario,
+    rubric,
+    summary,
+    history
+  });
   const latestRoundSummary = history[history.length - 1];
   const previousRoundSummary =
     history.length > 1 ? history[history.length - 2] : undefined;
@@ -216,11 +401,17 @@ export const restoreRunState = async (
           loadedAdapter: undefined
         })
       : undefined;
+  const interruptedRound = interruptedRoundStateFor({
+    runDirectory,
+    history,
+    runtimeRoundPhase
+  });
+  const staleLeaseDetected = isLeaseStale(controllerLease);
 
   return {
     runDirectory,
     runId,
-    summary,
+    summary: hydratedSummary,
     scenario,
     plan,
     rubric,
@@ -237,23 +428,61 @@ export const restoreRunState = async (
     previousFailureLineage,
     latestRoundSummary,
     previousRoundSummary,
-    bestScore: summary.best_scoring_total_score ?? summary.total_score,
+    bestScore:
+      hydratedSummary.best_scoring_total_score ?? hydratedSummary.total_score,
     bestControlPlaneScore:
-      summary.best_scoring_control_plane_score ?? summary.control_plane_score,
-    bestProofScore: summary.best_scoring_proof_score ?? summary.proof_score,
-    bestReleaseScore: summary.best_scoring_release_score ?? summary.release_score,
+      hydratedSummary.best_scoring_control_plane_score ??
+      hydratedSummary.control_plane_score,
+    bestProofScore:
+      hydratedSummary.best_scoring_proof_score ?? hydratedSummary.proof_score,
+    bestReleaseScore:
+      hydratedSummary.best_scoring_release_score ?? hydratedSummary.release_score,
     bestThresholdResults:
-      summary.best_scoring_threshold_results ?? summary.threshold_results,
-    bestRound: summary.best_round ?? summary.terminal_round ?? Math.max(history.length, 1),
+      hydratedSummary.best_scoring_threshold_results ??
+      hydratedSummary.threshold_results,
+    bestRound:
+      hydratedSummary.best_round ??
+      hydratedSummary.terminal_round ??
+      Math.max(history.length, 1),
     bestEvalReportPath:
-      history.find((round) => round.round === (summary.best_round ?? summary.terminal_round))
+      history.find(
+        (round) =>
+          round.round === (hydratedSummary.best_round ?? hydratedSummary.terminal_round)
+      )
         ?.eval_report_path ?? latestRoundSummary?.eval_report_path ?? "",
     bestPatchRequestPath:
-      history.find((round) => round.round === (summary.best_round ?? summary.terminal_round))
+      history.find(
+        (round) =>
+          round.round === (hydratedSummary.best_round ?? hydratedSummary.terminal_round)
+      )
         ?.patch_request_path ?? latestRoundSummary?.patch_request_path ?? "",
     plateauCount: plateauCountFromHistory(history),
     repeatedUnresolvedCount: repeatedUnresolvedCountFromHistory(history),
-    roundStart: history.length + 1
+    roundStart: interruptedRound?.round ?? history.length + 1,
+    summaryWasRecovered:
+      !summary || diskHistory.length !== (summary?.round_history ?? []).length,
+    repairNotes: [
+      ...(!summary ? ["summary.json was missing; rebuilt summary state from run artifacts."] : []),
+      ...(diskHistory.length > (summary?.round_history ?? []).length
+        ? [
+            `Recovered ${diskHistory.length - (summary?.round_history ?? []).length} committed round checkpoint(s) from round directories.`
+          ]
+        : []),
+      ...(staleLeaseDetected
+        ? [
+            `Detected stale controller lease from ${controllerLease?.heartbeat_at ?? "unknown heartbeat"} while restoring run state.`
+          ]
+        : []),
+      ...(interruptedRound
+        ? [
+            `Interrupted round ${interruptedRound.round} will resume from phase '${interruptedRound.resumeFromPhase}'.`
+          ]
+        : [])
+    ],
+    runtimeLiveState,
+    runtimeRoundPhase,
+    controllerLease,
+    interruptedRound
   };
 };
 

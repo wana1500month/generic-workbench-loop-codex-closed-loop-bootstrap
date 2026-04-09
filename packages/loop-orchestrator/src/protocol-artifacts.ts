@@ -63,8 +63,10 @@ const carryForwardSafeTargetCheckIds = (checkIds: readonly string[]): string[] =
 
 export const artifactsForRound = (roundDirectory: string): RoundArtifacts => {
   const handoffDirectory = join(roundDirectory, "agent_handoff");
+  const runtimeDirectory = join(roundDirectory, "runtime");
   return {
     round_directory: roundDirectory,
+    runtime_directory: runtimeDirectory,
     contract_json_path: join(roundDirectory, "round-contract.json"),
     contract_md_path: join(roundDirectory, "round-contract.md"),
     contract_review_json_path: join(roundDirectory, "contract-review.json"),
@@ -84,6 +86,18 @@ export const artifactsForRound = (roundDirectory: string): RoundArtifacts => {
     round_result_json_path: join(roundDirectory, "round-result.json"),
     eval_report_path: join(roundDirectory, "eval_report.json"),
     failure_lineage_path: join(roundDirectory, "failure-lineage.json"),
+    target_manifest_path: join(roundDirectory, "target-manifest.json"),
+    core_probe_results_path: join(roundDirectory, "core-probe-results.json"),
+    pre_verification_executions_path: join(
+      runtimeDirectory,
+      "pre-verification-executions.json"
+    ),
+    post_verification_executions_path: join(
+      runtimeDirectory,
+      "post-verification-executions.json"
+    ),
+    adapter_executions_path: join(runtimeDirectory, "adapter-executions.json"),
+    negotiation_state_path: join(runtimeDirectory, "negotiation-state.json"),
     planner_context_path: join(handoffDirectory, "planner-context.md"),
     generator_brief_path: join(handoffDirectory, "generator-brief.md"),
     qa_review_path: join(handoffDirectory, "qa-review.md"),
@@ -968,20 +982,27 @@ export const writeRoundEvaluationPlaceholders = async (input: {
   roundDirectory: string;
 }): Promise<RoundArtifacts> => {
   const artifacts = artifactsForRound(input.roundDirectory);
+  const createdAt = new Date().toISOString();
 
   await Promise.all([
     writeJson(artifacts.evaluator_verdict_json_path, {
       status: "pending",
+      pending_phase: "evaluation",
+      created_at: createdAt,
       generated_by: "writeRoundEvaluationPlaceholders"
     }),
     writeText(artifacts.evaluator_verdict_md_path, "# Evaluator Verdict\n\nPending final evaluation.\n"),
     writeJson(artifacts.patch_request_json_path, {
       status: "pending",
+      pending_phase: "evaluation",
+      created_at: createdAt,
       generated_by: "writeRoundEvaluationPlaceholders"
     }),
     writeText(artifacts.patch_request_md_path, "# Patch Request\n\nPending final evaluation.\n"),
     writeJson(artifacts.quality_critique_json_path, {
       status: "pending",
+      pending_phase: "evaluation",
+      created_at: createdAt,
       generated_by: "writeRoundEvaluationPlaceholders"
     }),
     writeText(
@@ -990,6 +1011,8 @@ export const writeRoundEvaluationPlaceholders = async (input: {
     ),
     writeJson(artifacts.trajectory_decision_json_path, {
       status: "pending",
+      pending_phase: "evaluation",
+      created_at: createdAt,
       generated_by: "writeRoundEvaluationPlaceholders"
     }),
     writeText(
@@ -998,10 +1021,14 @@ export const writeRoundEvaluationPlaceholders = async (input: {
     ),
     writeJson(artifacts.round_result_json_path, {
       status: "pending",
+      pending_phase: "evaluation",
+      created_at: createdAt,
       generated_by: "writeRoundEvaluationPlaceholders"
     }),
     writeJson(artifacts.eval_report_path, {
       status: "pending",
+      pending_phase: "evaluation",
+      created_at: createdAt,
       generated_by: "writeRoundEvaluationPlaceholders"
     })
   ]);

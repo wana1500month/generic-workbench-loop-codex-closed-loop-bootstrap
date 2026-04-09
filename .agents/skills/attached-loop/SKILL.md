@@ -1,0 +1,25 @@
+# attached-loop
+
+Use this skill when the operator wants stock Codex to behave like the active loop controller instead of launching detached child Codex sessions.
+
+## Goal
+
+Keep the current Codex thread attached to the run while still honoring the harness protocol artifacts and controller state machine.
+
+## Rules
+
+- Do not spawn nested `codex exec` or `codex exec resume`.
+- Treat the current Codex thread as the controller and generator surface.
+- Keep shell usage phase-local and short-lived.
+- Update persisted protocol artifacts before and after each phase boundary.
+- Prefer repairing from `runtime/live-state.json`, `runtime/round-phase.json`, and committed `round_summary.json` files instead of guessing from chat history.
+- Be explicit when attached mode must refuse a path that would require detached child Codex execution.
+
+## Expected flow
+
+1. Restore run state from persisted artifacts if `--resume-run` is in play.
+2. Open or repair the current round by phase, not by a long opaque subprocess.
+3. Write negotiation artifacts before mutation.
+4. Run verification and evaluation through persisted snapshots.
+5. Checkpoint `summary.json` and `current_best.json` after each committed round.
+6. Stop honestly when the current thread cannot stay attached or when detached controller behavior is required.
