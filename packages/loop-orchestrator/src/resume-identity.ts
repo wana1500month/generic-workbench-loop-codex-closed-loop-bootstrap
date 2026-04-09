@@ -1,10 +1,15 @@
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { ExecutorMode, LoopRunSummary, ValidationLane } from "./types.js";
+import type {
+  ExecutorMode,
+  LoopRunSummary,
+  TransportMode,
+  ValidationLane
+} from "./types.js";
 import { loadJson, sha256ForPath } from "./file-system.js";
 
-export const resumeIdentityVersion = 3;
+export const resumeIdentityVersion = 4;
 
 export interface ResumeIdentityState {
   resume_identity_version: number;
@@ -16,6 +21,7 @@ export interface ResumeIdentityState {
   evaluator_bundle_sha256?: string;
   rubric_sha256?: string;
   executor_mode?: ExecutorMode;
+  transport_mode?: TransportMode;
   target_family?: LoopRunSummary["target_family"];
   validation_lane?: ValidationLane;
 }
@@ -53,6 +59,7 @@ export const buildResumeIdentityState = async (input: {
   evaluatorProfilePath?: string;
   rubricPath?: string;
   executorMode?: ExecutorMode;
+  transportMode?: TransportMode;
   targetFamily?: LoopRunSummary["target_family"];
   validationLane?: ValidationLane;
 }): Promise<ResumeIdentityState> => {
@@ -78,6 +85,7 @@ export const buildResumeIdentityState = async (input: {
     ...(evaluatorBundleSha ? { evaluator_bundle_sha256: evaluatorBundleSha } : {}),
     ...(rubricSha ? { rubric_sha256: rubricSha } : {}),
     ...(input.executorMode ? { executor_mode: input.executorMode } : {}),
+    ...(input.transportMode ? { transport_mode: input.transportMode } : {}),
     ...(input.targetFamily ? { target_family: input.targetFamily } : {}),
     ...(input.validationLane ? { validation_lane: input.validationLane } : {})
   };
@@ -94,6 +102,7 @@ export const resumeIdentityFingerprint = (identity: ResumeIdentityState): string
     evaluator_bundle_sha256: identity.evaluator_bundle_sha256 ?? null,
     rubric_sha256: identity.rubric_sha256 ?? null,
     executor_mode: identity.executor_mode ?? null,
+    transport_mode: identity.transport_mode ?? null,
     target_family: identity.target_family ?? null,
     validation_lane: identity.validation_lane ?? null
   });
@@ -122,6 +131,7 @@ export const summaryResumeIdentity = (
     : {}),
   ...(summary?.rubric_sha256 ? { rubric_sha256: summary.rubric_sha256 } : {}),
   ...(summary?.executor_mode ? { executor_mode: summary.executor_mode } : {}),
+  ...(summary?.transport_mode ? { transport_mode: summary.transport_mode } : {}),
   ...(summary?.target_family ? { target_family: summary.target_family } : {}),
   ...(summary?.validation_lane ? { validation_lane: summary.validation_lane } : {})
 });
@@ -196,6 +206,12 @@ export const compareResumeIdentity = (input: {
     "executor mode",
     input.current.executor_mode,
     input.previous.executor_mode,
+    { requirePreviousPresenceInLegacyMode: true }
+  );
+  compareField(
+    "transport mode",
+    input.current.transport_mode,
+    input.previous.transport_mode,
     { requirePreviousPresenceInLegacyMode: true }
   );
   compareField(

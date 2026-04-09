@@ -45,6 +45,7 @@ export type ValidationLane =
   | "environment_integration";
 export type ExecutorMode = "harness" | "subagents-experimental";
 export type ControllerMode = "attached" | "detached";
+export type TransportMode = "codex-exec" | "current-thread" | "app-server";
 export type ControllerRoundPhase =
   | "negotiation"
   | "pre_verification"
@@ -924,6 +925,7 @@ export interface RoundSummary {
   continuation_authority: ContinuationAuthority;
   decision_source: LifecycleDecisionSource;
   controller_mode?: ControllerMode;
+  transport_mode?: TransportMode;
   recontract_reason?: RecontractReason;
   label: string;
   controller_reason: string;
@@ -989,6 +991,7 @@ export interface LoopRunSummary {
   scenario_id: string;
   rubric_id: string;
   controller_mode?: ControllerMode;
+  transport_mode?: TransportMode;
   executor_mode?: ExecutorMode;
   target_family?: TargetFamily;
   validation_lane?: ValidationLane;
@@ -1019,6 +1022,7 @@ export interface LoopRunSummary {
   runtime_live_state_path?: string;
   runtime_round_phase_path?: string;
   controller_lease_path?: string;
+  transport_state_path?: string;
   stop_reason?: RunStopReason;
   selection_basis?: "terminal_round";
   best_round?: number;
@@ -1052,6 +1056,7 @@ export interface RuntimeRoundPhaseArtifact {
   run_id: string;
   round: number;
   controller_mode: ControllerMode;
+  transport_mode: TransportMode;
   executor_mode?: ExecutorMode;
   phase: ControllerRoundPhase;
   status: ControllerPhaseStatus;
@@ -1070,6 +1075,7 @@ export interface RuntimeRoundPhaseArtifact {
 export interface ControllerLeaseArtifact {
   run_id: string;
   controller_mode: ControllerMode;
+  transport_mode: TransportMode;
   executor_mode?: ExecutorMode;
   status: "running" | "stopped";
   updated_at: string;
@@ -1085,6 +1091,7 @@ export interface ControllerLeaseArtifact {
 export interface RuntimeLiveStateArtifact {
   run_id: string;
   controller_mode: ControllerMode;
+  transport_mode: TransportMode;
   executor_mode?: ExecutorMode;
   updated_at: string;
   heartbeat_at: string;
@@ -1101,6 +1108,24 @@ export interface RuntimeLiveStateArtifact {
   round_phase_path?: string;
   controller_lease_path?: string;
   notes?: string[];
+}
+
+export interface TransportStateArtifact {
+  run_id: string;
+  controller_mode: ControllerMode;
+  transport_mode: TransportMode;
+  executor_mode?: ExecutorMode;
+  updated_at: string;
+  status: "configured" | "scaffold_only";
+  summary_path?: string;
+  notes?: string[];
+  app_server?: {
+    implemented: false;
+    thread_status: "not_started";
+    turn_status: "not_started";
+    required_methods: string[];
+    expected_event_types: string[];
+  };
 }
 
 export interface ResumeDecisionArtifact {

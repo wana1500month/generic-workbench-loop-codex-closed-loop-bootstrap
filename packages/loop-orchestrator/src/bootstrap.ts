@@ -1941,20 +1941,32 @@ const main = async () => {
     "generator-remediation-brief.json",
     JSON.stringify(remediationBrief, null, 2)
   );
-  if (process.env.HARNESS_CONTROLLER_MODE === "attached") {
+  const controllerMode =
+    process.env.HARNESS_CONTROLLER_MODE === "attached" ? "attached" : "detached";
+  const transportMode =
+    process.env.HARNESS_TRANSPORT === "codex-exec" ||
+    process.env.HARNESS_TRANSPORT === "current-thread" ||
+    process.env.HARNESS_TRANSPORT === "app-server"
+      ? process.env.HARNESS_TRANSPORT
+      : controllerMode === "attached"
+        ? "current-thread"
+        : "codex-exec";
+  if (transportMode === "current-thread" || transportMode === "app-server") {
     const attachedNotePath = await writeArtifact(
       "apply-change.attached-controller.txt",
       [
-        "Attached controller mode forbids nested Codex execution from bootstrap apply_change.",
+        "Current-thread transports forbid nested Codex execution from bootstrap apply_change.",
         "Run generator work in the current Codex thread and keep adapter commands phase-local instead of invoking codex exec here."
       ].join("\\n")
     );
     await finalize({
       capability: "apply_change",
       ok: false,
-      summary: "Attached controller mode refused nested Codex generator execution.",
+      summary: "Transport '" + transportMode + "' refused nested Codex generator execution.",
       findings: [
-        "HARNESS_CONTROLLER_MODE=attached requires generator work to stay in the current Codex thread instead of spawning codex exec from bootstrap apply_change."
+        "HARNESS_TRANSPORT=" +
+          transportMode +
+          " requires generator work to stay on the active thread or App Server turn instead of spawning codex exec from bootstrap apply_change."
       ],
       evidence_paths: [remediationBriefPath, attachedNotePath]
     });

@@ -10,6 +10,10 @@ import { defaultExecutorMode, isExecutorMode } from "./executor-mode.js";
 import { repoRoot } from "./file-system.js";
 import { runClosedLoop } from "./loop.js";
 import { runSingleIteration } from "./run-single-iteration.js";
+import {
+  defaultTransportModeForControllerMode,
+  isTransportMode
+} from "./transport-mode.js";
 
 const parseArgs = (
   argv: readonly string[]
@@ -23,6 +27,7 @@ const parseArgs = (
   allowResumeMigration?: boolean;
   forceReopenTerminal?: boolean;
   controllerMode?: "attached" | "detached";
+  transportMode?: "codex-exec" | "current-thread" | "app-server";
   repairOnly?: boolean;
   resumePhase?: 
     | "negotiation"
@@ -47,6 +52,7 @@ const parseArgs = (
   let allowResumeMigration = false;
   let forceReopenTerminal = false;
   let controllerMode: "attached" | "detached" | undefined;
+  let transportMode: "codex-exec" | "current-thread" | "app-server" | undefined;
   let repairOnly = false;
   let resumePhase:
     | "negotiation"
@@ -132,6 +138,17 @@ const parseArgs = (
       continue;
     }
 
+    if (value === "--transport") {
+      const candidate = argv[index + 1];
+      if (isTransportMode(candidate)) {
+        transportMode = candidate;
+      } else {
+        errors.push(`Invalid transport mode: ${candidate ?? ""}`);
+      }
+      index += 1;
+      continue;
+    }
+
     if (value === "--repair") {
       repairOnly = true;
       continue;
@@ -199,6 +216,7 @@ const parseArgs = (
     allowResumeMigration,
     forceReopenTerminal,
     controllerMode,
+    transportMode,
     repairOnly,
     resumePhase,
     executorMode,
@@ -220,6 +238,9 @@ const main = async (): Promise<void> => {
     console.error("       npm run loop:run -- 3");
     console.error(
       "       npm run loop:run -- --adapter <path> --target-family <family> --rubric <path> --evaluator-profile <path> --executor-mode harness --max-rounds 2"
+    );
+    console.error(
+      "       node ./packages/loop-orchestrator/dist/cli.js --controller-mode attached --transport current-thread --single"
     );
     console.error(
       "       node ./packages/loop-orchestrator/dist/cli.js --resume-run <run-dir> --max-rounds 3"
@@ -249,6 +270,12 @@ const main = async (): Promise<void> => {
       ? process.env.HARNESS_CONTROLLER_MODE
       : undefined) ??
     defaultControllerMode;
+  const transportMode =
+    args.transportMode ??
+    (isTransportMode(process.env.HARNESS_TRANSPORT)
+      ? process.env.HARNESS_TRANSPORT
+      : undefined) ??
+    defaultTransportModeForControllerMode(controllerMode);
   const executorMode =
     args.executorMode ??
     (isExecutorMode(process.env.HARNESS_EXECUTOR_MODE)
@@ -298,6 +325,7 @@ const main = async (): Promise<void> => {
           allowResumeMigration: args.allowResumeMigration,
           forceReopenTerminal: args.forceReopenTerminal,
           controllerMode,
+          transportMode,
           repairOnly: args.repairOnly,
           resumePhase: args.resumePhase,
           executorMode,
@@ -312,6 +340,7 @@ const main = async (): Promise<void> => {
           allowResumeMigration: args.allowResumeMigration,
           forceReopenTerminal: args.forceReopenTerminal,
           controllerMode,
+          transportMode,
           repairOnly: args.repairOnly,
           resumePhase: args.resumePhase,
           executorMode,
@@ -340,6 +369,8 @@ const main = async (): Promise<void> => {
     console.log(`Init script: ${relative(repoRoot, summary.init_script_path)}`);
   }
   console.log(`Rubric: ${summary.rubric_id}`);
+  console.log(`Controller mode: ${summary.controller_mode ?? controllerMode}`);
+  console.log(`Transport: ${summary.transport_mode ?? transportMode}`);
   console.log(`Executor mode: ${summary.executor_mode ?? executorMode}`);
   if (summary.target_family) {
     console.log(`Target family: ${summary.target_family}`);

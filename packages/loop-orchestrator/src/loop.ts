@@ -50,6 +50,14 @@ import {
 } from "./controller-mode.js";
 import { defaultExecutorMode, isExecutorMode } from "./executor-mode.js";
 import {
+  buildTransportStateArtifact,
+  defaultTransportModeForControllerMode,
+  isCurrentThreadTransport,
+  isTransportMode,
+  transportRuntimeWarningsForMode,
+  validateTransportMode
+} from "./transport-mode.js";
+import {
   buildPatchCarryForwardContract,
   buildSyntheticPatchCarryForwardAgreement,
   buildSyntheticPatchCarryForwardReview
@@ -99,7 +107,8 @@ import {
 import {
   runtimeStatePathsForRun,
   startRuntimeHeartbeat,
-  writeRuntimeRoundPhaseArtifact
+  writeRuntimeRoundPhaseArtifact,
+  writeTransportStateArtifact
 } from "./runtime-state.js";
 import { buildTrajectoryDecisionArtifact } from "./trajectory-controller.js";
 import type {
@@ -128,6 +137,7 @@ import type {
   RoundContractArtifact,
   RoundResultArtifact,
   RoundSummary,
+  TransportMode,
   RuntimeEvent,
   RuntimeEventCode,
   TargetManifest,
@@ -465,6 +475,7 @@ const buildCheckpointSummary = (input: {
   scenarioId: string;
   rubricId: string;
   controllerMode: ControllerMode;
+  transportMode: TransportMode;
   executorMode: LoopRunSummary["executor_mode"];
   targetFamily?: LoopRunSummary["target_family"];
   validationLane?: LoopRunSummary["validation_lane"];
@@ -490,6 +501,7 @@ const buildCheckpointSummary = (input: {
   runtimeLiveStatePath: string;
   runtimeRoundPhasePath: string;
   controllerLeasePath: string;
+  transportStatePath: string;
   stopReason?: LoopRunSummary["stop_reason"];
   bestRound?: number;
   bestScore?: number;
@@ -528,6 +540,7 @@ const buildCheckpointSummary = (input: {
     scenario_id: input.scenarioId,
     rubric_id: input.rubricId,
     controller_mode: input.controllerMode,
+    transport_mode: input.transportMode,
     ...(input.executorMode ? { executor_mode: input.executorMode } : {}),
     ...(input.targetFamily ? { target_family: input.targetFamily } : {}),
     ...(input.validationLane ? { validation_lane: input.validationLane } : {}),
@@ -573,6 +586,7 @@ const buildCheckpointSummary = (input: {
     runtime_live_state_path: input.runtimeLiveStatePath,
     runtime_round_phase_path: input.runtimeRoundPhasePath,
     controller_lease_path: input.controllerLeasePath,
+    transport_state_path: input.transportStatePath,
     ...(input.stopReason ? { stop_reason: input.stopReason } : {}),
     ...(terminalRound !== undefined
       ? {
@@ -710,6 +724,7 @@ export const runClosedLoop = async (input: {
   targetScore?: number;
   includeRemediationBudget?: boolean;
   controllerMode?: ControllerMode;
+  transportMode?: TransportMode;
   repairOnly?: boolean;
   resumePhase?: ControllerRoundPhase;
   executorMode?: "harness" | "subagents-experimental";
@@ -735,6 +750,21 @@ export const runClosedLoop = async (input: {
       : undefined) ??
     restoredRun?.summary.controller_mode ??
     defaultControllerMode;
+  const transportMode =
+    input.transportMode ??
+    (isTransportMode(process.env.HARNESS_TRANSPORT)
+      ? process.env.HARNESS_TRANSPORT
+      : undefined) ??
+    restoredRun?.summary.transport_mode ??
+    defaultTransportModeForControllerMode(controllerMode);
+  const transportValidationError = validateTransportMode({
+    controllerMode,
+    transportMode
+  });
+  if (transportValidationError) {
+    throw new Error(transportValidationError);
+  }
+  const currentThreadTransport = isCurrentThreadTransport(transportMode);
   const executorMode =
     input.executorMode ??
     (isExecutorMode(process.env.HARNESS_EXECUTOR_MODE)
@@ -745,6 +775,7 @@ export const runClosedLoop = async (input: {
   await mkdir(runDirectory, { recursive: true });
   const runtimeStatePaths = runtimeStatePathsForRun(runDirectory);
   const runRuntimeDirectory = runtimeStatePaths.runtimeDirectory;
+  const summaryPath = join(runDirectory, "summary.json");
   const codexSessionRegistryPath = join(runRuntimeDirectory, "codex-sessions.json");
   await mkdir(runRuntimeDirectory, { recursive: true });
   await ensureJsonFile(codexSessionRegistryPath, {});
@@ -811,6 +842,7 @@ export const runClosedLoop = async (input: {
     evaluatorProfilePath: bundleSelection.evaluatorProfilePath,
     rubricPath: effectiveRubricPath,
     executorMode,
+    transportMode,
     targetFamily: resolvedTargetFamily,
     validationLane: resolvedValidationLane
   });
@@ -945,11 +977,10 @@ export const runClosedLoop = async (input: {
 
   let runtimeWarnings = unique([
     ...previousPersistentWarnings,
-    ...(controllerMode === "attached"
-      ? [
-          "Attached controller mode follows the stock Codex current-thread protocol. It skips nested codex exec calls and does not implement App Server thread/turn orchestration."
-        ]
-      : []),
+    ...transportRuntimeWarningsForMode({
+      controllerMode,
+      transportMode
+    }),
     ...(bundleSelection.runtimeWarnings ?? []),
     ...(loadedAdapter?.runtime_warnings ?? []),
     ...(executorMode === "subagents-experimental"
@@ -957,6 +988,20 @@ export const runClosedLoop = async (input: {
       : []),
     ...currentRuntimeEvents.map((event) => event.message)
   ]);
+  await writeTransportStateArtifact(
+    runtimeStatePaths.transportStatePath,
+    buildTransportStateArtifact({
+      runId,
+      controllerMode,
+      transportMode,
+      executorMode,
+      summaryPath,
+      notes: transportRuntimeWarningsForMode({
+        controllerMode,
+        transportMode
+      })
+    })
+  );
 
   if (
     restoredRun &&
@@ -998,6 +1043,7 @@ export const runClosedLoop = async (input: {
     const summary: LoopRunSummary = {
       ...restoredRun.summary,
       controller_mode: controllerMode,
+      transport_mode: transportMode,
       executor_mode: executorMode,
       ...(resolvedTargetFamily ? { target_family: resolvedTargetFamily } : {}),
       ...(resolvedValidationLane
@@ -1033,6 +1079,7 @@ export const runClosedLoop = async (input: {
       runtime_live_state_path: runtimeStatePaths.liveStatePath,
       runtime_round_phase_path: runtimeStatePaths.roundPhasePath,
       controller_lease_path: runtimeStatePaths.controllerLeasePath,
+      transport_state_path: runtimeStatePaths.transportStatePath,
       runtime_events: noopRuntimeEvents,
       ...(resumeDecisionPath ? { resume_decision_path: resumeDecisionPath } : {}),
       ...(runtimeWarnings.length > 0 ? { runtime_warnings: runtimeWarnings } : {}),
@@ -1088,14 +1135,14 @@ export const runClosedLoop = async (input: {
       idea
     });
     const plannerEnhancement =
-      controllerMode === "attached"
+      currentThreadTransport
         ? {
             value: {
               scenario: baseScenario,
               plan: basePlan
             },
             runtimeWarnings: [
-              "Attached controller mode skipped nested Codex planner enhancement during run initialization."
+              `Transport '${transportMode}' skipped nested Codex planner enhancement during run initialization.`
             ]
           }
         : await enhancePlanWithCodex({
@@ -1186,7 +1233,6 @@ export const runClosedLoop = async (input: {
               restoredRun.summary.stop_reason === "adapter_contract_invalid"
           }
         : undefined;
-  const summaryPath = join(runDirectory, "summary.json");
   let activeHeartbeatRound = restoredRun?.interruptedRound?.round;
   let activeHeartbeatPhase = input.resumePhase ?? restoredRun?.interruptedRound?.resumeFromPhase;
   let activeHeartbeatPhaseStatus = restoredRun?.interruptedRound?.phaseStatus;
@@ -1201,9 +1247,24 @@ export const runClosedLoop = async (input: {
       : undefined;
   let latestEvalReportPath = restoredRun?.latestRoundSummary?.eval_report_path;
   const heartbeatNotes = [...(restoredRun?.repairNotes ?? [])];
+  await writeTransportStateArtifact(
+    runtimeStatePaths.transportStatePath,
+    buildTransportStateArtifact({
+      runId,
+      controllerMode,
+      transportMode,
+      executorMode,
+      summaryPath,
+      notes: transportRuntimeWarningsForMode({
+        controllerMode,
+        transportMode
+      })
+    })
+  );
   const heartbeat = startRuntimeHeartbeat({
     runId,
     controllerMode,
+    transportMode,
     executorMode,
     paths: runtimeStatePaths,
     getSnapshot: () => ({
@@ -1250,6 +1311,7 @@ export const runClosedLoop = async (input: {
       run_id: runId,
       round: inputPhase.round,
       controller_mode: controllerMode,
+      transport_mode: transportMode,
       executor_mode: executorMode,
       phase: inputPhase.phase,
       status: inputPhase.status,
@@ -1275,6 +1337,7 @@ export const runClosedLoop = async (input: {
       scenarioId: scenario.scenario_id,
       rubricId: hydratedRubric.rubric_id,
       controllerMode,
+      transportMode,
       executorMode,
       targetFamily: resolvedTargetFamily,
       validationLane: resolvedValidationLane,
@@ -1301,6 +1364,7 @@ export const runClosedLoop = async (input: {
       runtimeLiveStatePath: runtimeStatePaths.liveStatePath,
       runtimeRoundPhasePath: runtimeStatePaths.roundPhasePath,
       controllerLeasePath: runtimeStatePaths.controllerLeasePath,
+      transportStatePath: runtimeStatePaths.transportStatePath,
       stopReason,
       bestRound,
       bestScore,
@@ -1503,11 +1567,11 @@ export const runClosedLoop = async (input: {
               loadedAdapter
             });
       const contractReviewEnhancement =
-        controllerMode === "attached"
+        currentThreadTransport
           ? {
               value: baseContractReviewArtifact,
               runtimeWarnings: [
-                `Attached controller mode skipped nested Codex contract review enhancement for round ${round}.`
+                `Transport '${transportMode}' skipped nested Codex contract review enhancement for round ${round}.`
               ]
             }
           : await enhanceContractReviewWithCodex({
@@ -1540,11 +1604,11 @@ export const runClosedLoop = async (input: {
         adapterAttached: Boolean(loadedAdapter)
       });
       const generatorPlanEnhancement =
-        controllerMode === "attached"
+        currentThreadTransport
           ? {
               value: baseGeneratorPlanArtifact,
               runtimeWarnings: [
-                `Attached controller mode skipped nested Codex generator-plan enhancement for round ${round}.`
+                `Transport '${transportMode}' skipped nested Codex generator-plan enhancement for round ${round}.`
               ]
             }
           : await enhanceGeneratorPlanWithCodex({
@@ -1705,6 +1769,7 @@ export const runClosedLoop = async (input: {
               previousTrajectoryDecisionPath,
               extraEnv: {
                 HARNESS_CONTROLLER_MODE: controllerMode,
+                HARNESS_TRANSPORT: transportMode,
                 HARNESS_EXECUTOR_MODE: executorMode
               }
             })
@@ -1879,6 +1944,7 @@ export const runClosedLoop = async (input: {
                 HARNESS_CORE_PROBE_RESULTS_PATH: artifacts.core_probe_results_path,
                 HARNESS_TARGET_MANIFEST_PATH: artifacts.target_manifest_path,
                 HARNESS_CONTROLLER_MODE: controllerMode,
+                HARNESS_TRANSPORT: transportMode,
                 HARNESS_EXECUTOR_MODE: executorMode,
                 ...(selectedVerificationProfile
                   ? {
@@ -1973,11 +2039,11 @@ export const runClosedLoop = async (input: {
         previousPatchRequestAddressed
       });
       const evalEnhancement =
-        controllerMode === "attached"
+        currentThreadTransport
           ? {
               value: baseEvalReport,
               runtimeWarnings: [
-                `Attached controller mode skipped nested Codex eval enhancement for round ${round}.`
+                `Transport '${transportMode}' skipped nested Codex eval enhancement for round ${round}.`
               ]
             }
           : await enhanceEvalReportWithCodex({
@@ -2166,6 +2232,7 @@ export const runClosedLoop = async (input: {
       continuation_authority: lifecycleDecision.continuation_authority,
       decision_source: lifecycleDecision.decision_source,
       controller_mode: controllerMode,
+      transport_mode: transportMode,
       ...(lifecycleDecision.recontract_reason
         ? { recontract_reason: lifecycleDecision.recontract_reason }
         : {}),
@@ -2409,6 +2476,7 @@ export const runClosedLoop = async (input: {
     scenarioId: scenario.scenario_id,
     rubricId: hydratedRubric.rubric_id,
     controllerMode,
+    transportMode,
     executorMode,
     targetFamily: resolvedTargetFamily,
     validationLane: resolvedValidationLane,
@@ -2435,6 +2503,7 @@ export const runClosedLoop = async (input: {
     runtimeLiveStatePath: runtimeStatePaths.liveStatePath,
     runtimeRoundPhasePath: runtimeStatePaths.roundPhasePath,
     controllerLeasePath: runtimeStatePaths.controllerLeasePath,
+    transportStatePath: runtimeStatePaths.transportStatePath,
     stopReason: finalStopReason ?? resolvedStopReason,
     bestRound,
     bestScore: bestScore ?? terminalTotalScore,

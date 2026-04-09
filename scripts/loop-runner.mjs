@@ -110,6 +110,7 @@ let forceReopenTerminal = readNpmConfigValue(
   { allowBooleanMarkers: true }
 ) === "true";
 let controllerMode = readNpmConfigValue(["controller_mode", "controllermode"]);
+let transportMode = readNpmConfigValue(["transport"]);
 let repairOnly = readNpmConfigValue(["repair"], { allowBooleanMarkers: true }) === "true";
 let resumePhase = readNpmConfigValue(["resume_phase", "resumephase"]);
 let maxRounds = parsePositiveNumber(
@@ -170,6 +171,12 @@ for (let index = 0; index < rawArgs.length; index += 1) {
 
   if (value === "--controller-mode") {
     controllerMode = rawArgs[index + 1] ?? controllerMode;
+    index += 1;
+    continue;
+  }
+
+  if (value === "--transport") {
+    transportMode = rawArgs[index + 1] ?? transportMode;
     index += 1;
     continue;
   }
@@ -286,6 +293,7 @@ const normalizedCliArgs = [
   ...(allowResumeMigration ? ["--allow-resume-migration"] : []),
   ...(forceReopenTerminal ? ["--force-reopen-terminal"] : []),
   ...(controllerMode ? ["--controller-mode", controllerMode] : []),
+  ...(transportMode ? ["--transport", transportMode] : []),
   ...(repairOnly ? ["--repair"] : []),
   ...(resumePhase ? ["--resume-phase", resumePhase] : []),
   ...(maxRounds !== undefined ? ["--max-rounds", String(maxRounds)] : []),

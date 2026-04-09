@@ -29,6 +29,8 @@ export type {
   RoundContractArtifact,
   RoundResultArtifact,
   SingleRoundResult,
+  TransportMode,
+  TransportStateArtifact,
   TrajectoryDecisionArtifact,
   TrajectoryDirective,
   VerificationCoreProbe,

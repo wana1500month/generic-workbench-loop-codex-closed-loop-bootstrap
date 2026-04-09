@@ -43,7 +43,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Default operation is a single agent and one worktree per lane or run. Reach for worktrees or subagents only when the request explicitly needs parallel exploration or comparator work.
 - `bootstrap generator`: now receives an inline remediation brief built from the current round contract, generator plan, latest patch request, latest quality critique, and latest eval threshold gaps so patch-only mutation is no longer prompt-stateless
 - `bootstrap grader`: now preserves `quality_contract`, `quality_axis_id`, and `subjective_metrics` through runtime loading, so intake-authored quality semantics reach grading, critique, and patch-request generation intact
-- `attached controller`: keeps the current Codex thread as the operator surface, skips nested planner/contract/eval Codex enhancements, and fail-closes any nested `runCodexCommand()` path, including bootstrap `apply_change` and subjective-quality review, when that path would need to spawn `codex exec`
+- `same-thread transport`: keeps the active operator surface on the same thread or turn, skips nested planner/contract/eval Codex enhancements, and fail-closes any nested `runCodexCommand()` path, including bootstrap `apply_change` and subjective-quality review, when that path would need to spawn `codex exec`
 
 ## Round contract and dimension floors
 
@@ -61,8 +61,13 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Use `--evaluator-profile <path>` when a specific bundle file must be selected directly.
 - Use `--target-family <family>` when the harness should resolve a bundled evaluator pack for a known family such as `generic-core`, `api-service`, `crud-api`, `chat-agent`, `browser-app`, `browser-editor`, `fullstack-app`, or `dashboard`.
 - Use `--resume-run <evals/runs/run-###>` to reopen an existing run from file state alone.
-- Use `--controller-mode detached` for the default crash-safe supervisor path and `--controller-mode attached` only when the current Codex thread is expected to stay in control without nested `codex exec`.
-- CLI `attached` mode is the stock Codex current-thread protocol. It is not an App Server thread/turn implementation and it does not keep a custom thread container alive outside the current Codex session.
+- Use `--controller-mode detached` for the default crash-safe supervisor path and `--controller-mode attached` only when the active operator surface is expected to stay in control without nested `codex exec`.
+- `controller_mode` and `transport_mode` are separate axes:
+  - `detached` currently requires `--transport codex-exec`
+  - `attached` currently allows `--transport current-thread` or `--transport app-server`
+- Use `--transport current-thread` for the stock Codex current-thread protocol.
+- Use `--transport app-server` only to persist the App Server thread/turn contract scaffold. The CLI records expected `thread/start`, `thread/resume`, `turn/start`, and `turn/steer` surfaces, but it does not create a live App Server thread container.
+- `current-thread` and `app-server` are same-thread transports. Both forbid nested `codex exec` calls from shared runtime paths.
 - Use `--repair` with `--resume-run` when the controller should repair persisted state and stop instead of opening additional rounds.
 - Use `--resume-phase <phase>` to force repair or resume from a known persisted controller phase such as `evaluation` or `round_commit`.
 - Use `--force-reopen-terminal` only when you intentionally want to reopen a run that already ended with `target_reached`, `contract_completed`, `environment_blocked`, or `adapter_contract_invalid`.
@@ -71,6 +76,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Every run now persists that identity in `resume-identity.json`, and `summary.json.resume_identity_path` points to it directly.
 - Resumed invocations now also persist `resume-decision.json`, and `summary.json.resume_decision_path` points at the authoritative reopen or no-op decision for that invocation.
 - Every run now also persists `runtime/live-state.json`, `runtime/round-phase.json`, and `runtime/controller-lease.json`, and `summary.json` carries those paths so recovery can inspect controller state without trusting chat memory.
+- Every run now also persists `runtime/transport-state.json`, and `summary.json.transport_state_path` points at the active transport contract and scaffold status.
 - The controller now checkpoints `summary.json`, `current_best.json`, and `controller-summary.md` after each committed round instead of only at final closeout, so committed rounds survive parent-controller crashes.
 - Resume now merges `summary.json.round_history[]` with committed `round-###/round_summary.json` files and can rebuild missing run summaries or repair interrupted rounds directly from runtime journals.
 - Interrupted-round repair now reconstructs missing pre/post capability aggregates from `round-###/adapter/*-result.json` plus core probe aggregates from `round-###/core-probes/*-result.json`, then reruns only the missing capability or probe slices when persisted aggregates are stale or absent.
@@ -193,6 +199,7 @@ evals/runs/<run-id>/
     live-state.json
     round-phase.json
     controller-lease.json
+    transport-state.json
     codex-sessions.json
   round-001/
     round-contract.json
@@ -274,7 +281,13 @@ npm run loop:run -- --adapter ./.tmp/semantic-validation/patch-only-success/adap
 npm run loop:single -- --adapter ./.tmp/semantic-validation/patch-only-success/adapter.json --target-family api-service
 npm run loop:run -- --resume-run ./evals/runs/run-### --max-rounds 3
 npm run loop:run -- --resume-run ./evals/runs/run-### --repair --resume-phase evaluation
-npm run loop:run -- --controller-mode attached --max-rounds 1
+npm run loop:run -- --controller-mode attached --transport current-thread --max-rounds 1
+```
+
+Persist the App Server transport scaffold without claiming a live thread container:
+
+```bash
+npm run loop:single -- --controller-mode attached --transport app-server
 npm run loop:run -- --resume-run ./evals/runs/run-### --target-family crud-api --allow-resume-migration --max-rounds 3
 npm run validate:lifecycle-api
 npm run validate:family-crud

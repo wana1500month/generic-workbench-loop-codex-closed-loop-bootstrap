@@ -56,6 +56,7 @@
     "validate:bootstrap-profile-aware-verifier": "node ./scripts/validate-bootstrap-profile-aware-verifier.mjs",
     "validate:intake-gate": "node ./scripts/validate-intake-gate.mjs",
     "validate:durable-memory": "node ./scripts/validate-durable-memory.mjs",
+    "validate:transport-mode": "node ./scripts/validate-transport-mode.mjs",
     "validate:codex-auth-preflight": "node ./scripts/validate-codex-auth-preflight.mjs",
     "validate:codex-profile-wiring": "node ./scripts/validate-codex-profile-wiring.mjs",
     "validate:codex-executor-mode": "node ./scripts/validate-codex-executor-mode.mjs",

@@ -8,6 +8,8 @@ import type {
   ControllerRoundPhase,
   ExecutorMode,
   RunStopReason,
+  TransportMode,
+  TransportStateArtifact,
   RuntimeLiveStateArtifact,
   RuntimeRoundPhaseArtifact
 } from "./types.js";
@@ -17,6 +19,7 @@ export interface RuntimeStatePaths {
   controllerLeasePath: string;
   liveStatePath: string;
   roundPhasePath: string;
+  transportStatePath: string;
 }
 
 export interface RuntimeHeartbeatSnapshot {
@@ -47,7 +50,8 @@ export const runtimeStatePathsForRun = (
     runtimeDirectory,
     controllerLeasePath: join(runtimeDirectory, "controller-lease.json"),
     liveStatePath: join(runtimeDirectory, "live-state.json"),
-    roundPhasePath: join(runtimeDirectory, "round-phase.json")
+    roundPhasePath: join(runtimeDirectory, "round-phase.json"),
+    transportStatePath: join(runtimeDirectory, "transport-state.json")
   };
 };
 
@@ -65,6 +69,11 @@ export const readControllerLeaseArtifact = async (
   path: string
 ): Promise<ControllerLeaseArtifact | undefined> =>
   loadJsonIfExists<ControllerLeaseArtifact>(path);
+
+export const readTransportStateArtifact = async (
+  path: string
+): Promise<TransportStateArtifact | undefined> =>
+  loadJsonIfExists<TransportStateArtifact>(path);
 
 export const writeRuntimeRoundPhaseArtifact = async (
   path: string,
@@ -87,9 +96,17 @@ export const writeControllerLeaseArtifact = async (
   await writeJson(path, artifact);
 };
 
+export const writeTransportStateArtifact = async (
+  path: string,
+  artifact: TransportStateArtifact
+): Promise<void> => {
+  await writeJson(path, artifact);
+};
+
 export const startRuntimeHeartbeat = (input: {
   runId: string;
   controllerMode: ControllerMode;
+  transportMode: TransportMode;
   executorMode?: ExecutorMode;
   paths: RuntimeStatePaths;
   getSnapshot: () => RuntimeHeartbeatSnapshot;
@@ -111,6 +128,7 @@ export const startRuntimeHeartbeat = (input: {
       const liveStateArtifact: RuntimeLiveStateArtifact = {
         run_id: input.runId,
         controller_mode: input.controllerMode,
+        transport_mode: input.transportMode,
         ...(input.executorMode ? { executor_mode: input.executorMode } : {}),
         updated_at: now,
         heartbeat_at: now,
@@ -137,6 +155,7 @@ export const startRuntimeHeartbeat = (input: {
       const leaseArtifact: ControllerLeaseArtifact = {
         run_id: input.runId,
         controller_mode: input.controllerMode,
+        transport_mode: input.transportMode,
         ...(input.executorMode ? { executor_mode: input.executorMode } : {}),
         status: currentStatus,
         updated_at: now,
@@ -160,6 +179,7 @@ export const startRuntimeHeartbeat = (input: {
             run_id: input.runId,
             round: snapshot.round,
             controller_mode: input.controllerMode,
+            transport_mode: input.transportMode,
             ...(input.executorMode ? { executor_mode: input.executorMode } : {}),
             phase: snapshot.phase,
             status: snapshot.phaseStatus,

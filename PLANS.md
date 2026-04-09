@@ -57,12 +57,13 @@ Acceptance:
 - Each evaluated attempt persists `failure-lineage.json`, and resumed runs restore that lineage instead of reconstructing controller state from patch requests alone.
 - Resumed invocations should persist machine-readable `runtime_events[]` and `resume-decision.json`, so noop, continue, and reopen policy can be audited without parsing warning prose.
 - Per-round summaries should also persist `decision_source`, so policy-snapshot decisions, hard rules, and default patch authority stay reviewable after resume.
-- The runtime should separate `controller_mode = detached|attached`, with detached reserved for crash-safe supervisor execution and attached reserved for the stock Codex current-thread protocol without nested `codex exec`.
-- Attached mode should fail closed at the shared Codex runtime boundary so no nested `runCodexCommand()` path can bypass policy, including subjective-quality review.
-- App Server thread/turn orchestration should remain a separate future surface rather than another meaning of CLI `attached`.
+- The runtime should separate `controller_mode = detached|attached` from `transport_mode = codex-exec|current-thread|app-server`, with detached currently reserved for crash-safe `codex-exec` execution and attached reserved for same-thread transports.
+- Same-thread transports should fail closed at the shared Codex runtime boundary so no nested `runCodexCommand()` path can bypass policy, including subjective-quality review.
+- `current-thread` should remain the stock Codex attached surface, while `app-server` should persist a distinct scaffold for future thread/start, thread/resume, turn/start, and turn/steer orchestration instead of becoming another meaning of CLI `attached`.
 
 Validation:
 - Inspect the latest run under `evals/runs`
+- `npm run validate:transport-mode`
 - `npm run validate:resume-smoke`
 
 ## M3. External adapter boundary

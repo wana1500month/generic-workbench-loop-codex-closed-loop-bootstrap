@@ -17,6 +17,7 @@ const parseTargetScore = (value) => {
 };
 
 const controllerModes = new Set(["attached", "detached"]);
+const transportModes = new Set(["codex-exec", "current-thread", "app-server"]);
 const controllerRoundPhases = new Set([
   "negotiation",
   "pre_verification",
@@ -36,6 +37,7 @@ const parseArgs = (argv) => {
   let allowResumeMigration = false;
   let forceReopenTerminal = false;
   let controllerMode;
+  let transportMode;
   let repairOnly = false;
   let resumePhase;
   let executorMode;
@@ -93,6 +95,12 @@ const parseArgs = (argv) => {
           throw new Error(`Invalid controller mode: ${controllerMode ?? ""}`);
         }
         break;
+      case "--transport":
+        transportMode = argv[++index];
+        if (!transportModes.has(transportMode)) {
+          throw new Error(`Invalid transport mode: ${transportMode ?? ""}`);
+        }
+        break;
       case "--repair":
         repairOnly = true;
         break;
@@ -135,6 +143,7 @@ const parseArgs = (argv) => {
     allowResumeMigration,
     forceReopenTerminal,
     controllerMode,
+    transportMode,
     repairOnly,
     resumePhase,
     executorMode,
@@ -156,6 +165,7 @@ const result =
         allowResumeMigration: args.allowResumeMigration,
         forceReopenTerminal: args.forceReopenTerminal,
         controllerMode: args.controllerMode,
+        transportMode: args.transportMode,
         repairOnly: args.repairOnly,
         resumePhase: args.resumePhase,
         executorMode: args.executorMode,
@@ -170,6 +180,7 @@ const result =
         allowResumeMigration: args.allowResumeMigration,
         forceReopenTerminal: args.forceReopenTerminal,
         controllerMode: args.controllerMode,
+        transportMode: args.transportMode,
         repairOnly: args.repairOnly,
         resumePhase: args.resumePhase,
         executorMode: args.executorMode,
@@ -182,6 +193,7 @@ console.log(`Run created: ${relative(repoRoot, result.runDirectory)}`);
 console.log(`Idea: ${relative(repoRoot, summary.idea_path ?? "")}`);
 console.log(`Rubric: ${summary.rubric_id}`);
 console.log(`Controller mode: ${summary.controller_mode ?? "detached"}`);
+console.log(`Transport: ${summary.transport_mode ?? "codex-exec"}`);
 console.log(`Executor mode: ${summary.executor_mode ?? "harness"}`);
 if (summary.target_family) {
   console.log(`Target family: ${summary.target_family}`);

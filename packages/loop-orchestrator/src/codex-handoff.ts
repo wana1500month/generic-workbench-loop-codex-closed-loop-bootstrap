@@ -33,10 +33,13 @@ Continue work on the harness itself. This repository does not ship a bundled ada
 - Run id: ${input.summary.run_id}
 - Scenario: ${input.scenario.title}
 - Executor mode: ${input.summary.executor_mode ?? "harness"}
+- Controller mode: ${input.summary.controller_mode ?? "detached"}
+- Transport: ${input.summary.transport_mode ?? "codex-exec"}
 - Target family: ${input.summary.target_family ?? "none"}
 - Validation lane: ${input.summary.validation_lane ?? "none"}
 - Evaluator bundle: ${rel(input.summary.evaluator_profile_path)}
 - Resume identity: ${rel(input.summary.resume_identity_path)}
+- Transport state: ${rel(input.summary.transport_state_path)}
 - Terminal attempt: ${input.summary.terminal_round ?? "unknown"}
 - Best-scoring attempt: ${input.summary.best_round ?? "unknown"}
 - Latest trajectory mode: ${latestRound?.trajectory.mode ?? "none"}

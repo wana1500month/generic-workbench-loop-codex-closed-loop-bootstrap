@@ -255,6 +255,9 @@ const hydrateSummaryFromHistory = (input: {
   rubric: LoopRubric;
   summary?: LoopRunSummary;
   history: RoundSummary[];
+  runtimeLiveState?: RuntimeLiveStateArtifact;
+  runtimeRoundPhase?: RuntimeRoundPhaseArtifact;
+  controllerLease?: ControllerLeaseArtifact;
 }): LoopRunSummary => {
   const latestRoundSummary = input.history[input.history.length - 1];
   const bestRoundSummary = bestRoundSummaryFromHistory(input.history);
@@ -269,6 +272,24 @@ const hydrateSummaryFromHistory = (input: {
     scenario_id: input.summary?.scenario_id ?? input.scenario.scenario_id,
     rubric_id: input.summary?.rubric_id ?? input.rubric.rubric_id,
     ...(input.summary ?? {}),
+    ...(input.summary?.controller_mode
+      ? {}
+      : input.runtimeLiveState?.controller_mode
+        ? { controller_mode: input.runtimeLiveState.controller_mode }
+        : input.runtimeRoundPhase?.controller_mode
+          ? { controller_mode: input.runtimeRoundPhase.controller_mode }
+          : input.controllerLease?.controller_mode
+            ? { controller_mode: input.controllerLease.controller_mode }
+            : {}),
+    ...(input.summary?.transport_mode
+      ? {}
+      : input.runtimeLiveState?.transport_mode
+        ? { transport_mode: input.runtimeLiveState.transport_mode }
+        : input.runtimeRoundPhase?.transport_mode
+          ? { transport_mode: input.runtimeRoundPhase.transport_mode }
+          : input.controllerLease?.transport_mode
+            ? { transport_mode: input.controllerLease.transport_mode }
+            : {}),
     total_score: latestRoundSummary?.total_score ?? input.summary?.total_score ?? 0,
     control_plane_score:
       latestRoundSummary?.control_plane_score ?? input.summary?.control_plane_score ?? 0,
@@ -368,8 +389,15 @@ export const restoreRunState = async (
     scenario,
     rubric,
     summary,
-    history
+    history,
+    runtimeLiveState,
+    runtimeRoundPhase,
+    controllerLease
   });
+  hydratedSummary.runtime_live_state_path ??= runtimePaths.liveStatePath;
+  hydratedSummary.runtime_round_phase_path ??= runtimePaths.roundPhasePath;
+  hydratedSummary.controller_lease_path ??= runtimePaths.controllerLeasePath;
+  hydratedSummary.transport_state_path ??= runtimePaths.transportStatePath;
   const latestRoundSummary = history[history.length - 1];
   const previousRoundSummary =
     history.length > 1 ? history[history.length - 2] : undefined;

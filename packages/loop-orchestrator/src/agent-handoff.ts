@@ -308,11 +308,14 @@ export const writeRunControllerSummary = async (input: {
 
 - Run id: ${input.summary.run_id}
 - Attempts written: ${input.summary.round_count}
+- Controller mode: ${input.summary.controller_mode ?? "detached"}
+- Transport: ${input.summary.transport_mode ?? "codex-exec"}
 - Executor mode: ${input.summary.executor_mode ?? "harness"}
 - Target family: ${input.summary.target_family ?? "none"}
 - Validation lane: ${input.summary.validation_lane ?? "none"}
 - Evaluator bundle: ${input.summary.evaluator_profile_path ?? "none"}
 - Resume identity: ${input.summary.resume_identity_path ?? "none"}
+- Transport state: ${input.summary.transport_state_path ?? "none"}
 - Stop reason: ${input.summary.stop_reason ?? "none"}
 - Terminal attempt: ${input.summary.terminal_round ?? "none"}
 - Best-scoring attempt: ${input.summary.best_round ?? "none"}

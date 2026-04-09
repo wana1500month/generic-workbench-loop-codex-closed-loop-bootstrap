@@ -3,7 +3,13 @@ import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { isControllerMode } from "./controller-mode.js";
 import { writeJson, writeText } from "./file-system.js";
+import {
+  defaultTransportModeForControllerMode,
+  isCurrentThreadTransport,
+  isTransportMode
+} from "./transport-mode.js";
 
 export type CodexSandboxMode = "read-only" | "workspace-write";
 export type CodexJsonSchema = Record<string, unknown>;
@@ -71,8 +77,8 @@ export type CodexAuthPreflight = {
 };
 
 const unique = <T>(values: readonly T[]): T[] => [...new Set(values)];
-const attachedControllerBlockedReason =
-  "Attached controller mode forbids nested Codex command execution. Use the current Codex thread as the operator surface instead of spawning codex exec.";
+const currentThreadTransportBlockedReason =
+  "Current-thread transports forbid nested Codex command execution. Use the active Codex thread or App Server turn as the operator surface instead of spawning codex exec.";
 
 const tomlLiteral = (value: string | number | boolean): string => {
   if (typeof value === "string") {
@@ -107,6 +113,20 @@ const getCodexCommandPrefixArgs = (): string[] => {
   }
 
   return [];
+};
+
+const resolvedHarnessTransportMode = () => {
+  if (isTransportMode(process.env.HARNESS_TRANSPORT)) {
+    return process.env.HARNESS_TRANSPORT;
+  }
+
+  if (isControllerMode(process.env.HARNESS_CONTROLLER_MODE)) {
+    return defaultTransportModeForControllerMode(
+      process.env.HARNESS_CONTROLLER_MODE
+    );
+  }
+
+  return undefined;
 };
 
 const spawnProcess = async (
@@ -380,13 +400,14 @@ export const runCodexCommand = async (
     return disabledResult;
   }
 
-  if (process.env.HARNESS_CONTROLLER_MODE === "attached") {
+  const harnessTransportMode = resolvedHarnessTransportMode();
+  if (harnessTransportMode && isCurrentThreadTransport(harnessTransportMode)) {
     const blockedResult: CodexCommandResult = {
       code: 0,
       stdout: "",
       stderr: "",
       eventsText: "",
-      error: attachedControllerBlockedReason,
+      error: currentThreadTransportBlockedReason,
       promptPath,
       responsePath,
       stdoutPath,
@@ -408,7 +429,8 @@ export const runCodexCommand = async (
         cwd: input.cwd,
         used_resume: blockedResult.usedResume,
         disabled: true,
-        attached_controller_blocked: true,
+        current_thread_transport_blocked: true,
+        transport_mode: harnessTransportMode,
         error: blockedResult.error,
         prompt_path: promptPath,
         response_path: responsePath,

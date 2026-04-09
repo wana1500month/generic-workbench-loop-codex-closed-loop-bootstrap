@@ -1,6 +1,10 @@
 import { join } from "node:path";
 
-import type { ControllerMode, ControllerRoundPhase } from "./types.js";
+import type {
+  ControllerMode,
+  ControllerRoundPhase,
+  TransportMode
+} from "./types.js";
 import type { SingleRoundResult } from "./types.js";
 import { runClosedLoop } from "./loop.js";
 
@@ -13,6 +17,7 @@ export const runSingleIteration = async (input: {
   allowResumeMigration?: boolean;
   forceReopenTerminal?: boolean;
   controllerMode?: ControllerMode;
+  transportMode?: TransportMode;
   repairOnly?: boolean;
   resumePhase?: ControllerRoundPhase;
   executorMode?: "harness" | "subagents-experimental";
@@ -27,6 +32,7 @@ export const runSingleIteration = async (input: {
     allowResumeMigration: input.allowResumeMigration,
     forceReopenTerminal: input.forceReopenTerminal,
     controllerMode: input.controllerMode,
+    transportMode: input.transportMode,
     repairOnly: input.repairOnly,
     resumePhase: input.resumePhase,
     executorMode: input.executorMode,
