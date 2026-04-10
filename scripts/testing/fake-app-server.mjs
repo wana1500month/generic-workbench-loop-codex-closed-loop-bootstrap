@@ -192,6 +192,68 @@ const maybeCompleteTaskTurn = async ({ text, turnId, itemId }) => {
   return true;
 };
 
+const completeStructuredTurn = async ({ turnId, itemId, responseText = "{}" }) => {
+  turnStatus = "completed";
+  await setThreadRuntimeStatus("idle");
+  await notify("item/agentMessage/delta", {
+    threadId: currentThreadId,
+    turnId,
+    itemId,
+    delta: responseText,
+    cursor: eventCursor
+  });
+  await notify("item/completed", {
+    threadId: currentThreadId,
+    turnId,
+    item: {
+      id: itemId,
+      type: "agentMessage",
+      text: responseText
+    },
+    cursor: eventCursor
+  });
+  await notify("turn/completed", {
+    threadId: currentThreadId,
+    turn: {
+      id: turnId,
+      status: turnStatus
+    },
+    cursor: eventCursor
+  });
+};
+
+const completeInlineReview = async ({ turnId, reviewText = "{}" }) => {
+  turnStatus = "completed";
+  await setThreadRuntimeStatus("idle");
+  await notify("item/started", {
+    threadId: currentThreadId,
+    turnId,
+    item: {
+      id: `review_started_${turnCounter}`,
+      type: "enteredReviewMode"
+    },
+    cursor: eventCursor
+  });
+  await notify("item/completed", {
+    threadId: currentThreadId,
+    turnId,
+    item: {
+      id: `review_completed_${turnCounter}`,
+      type: "exitedReviewMode",
+      review: reviewText
+    },
+    cursor: eventCursor
+  });
+  await notify("turn/completed", {
+    threadId: currentThreadId,
+    turn: {
+      id: turnId,
+      status: turnStatus
+    },
+    cursor: eventCursor
+  });
+};
+
 const rl = readline.createInterface({
   input: process.stdin,
   crlfDelay: Infinity
@@ -220,6 +282,19 @@ for await (const line of rl) {
   }
 
   if (method === "initialized") {
+    continue;
+  }
+
+  if (method === "configRequirements/read") {
+    await respond(id, {
+      requirements: {
+        approvals: {
+          policy: {
+            allowed: ["never", "onRequest", "unlessTrusted"]
+          }
+        }
+      }
+    });
     continue;
   }
 
@@ -337,13 +412,6 @@ for await (const line of rl) {
       },
       cursor: eventCursor
     });
-    await notify("item/agentMessage/delta", {
-      threadId: currentThreadId,
-      turnId: currentTurnId,
-      itemId,
-      delta: "transport attached",
-      cursor: eventCursor
-    });
     if (typeof text === "string" && text.trim().length > 0) {
       const completed = await maybeCompleteTaskTurn({
         text,
@@ -354,6 +422,21 @@ for await (const line of rl) {
         continue;
       }
     }
+    if (params.outputSchema) {
+      await completeStructuredTurn({
+        turnId: currentTurnId,
+        itemId,
+        responseText: "{}"
+      });
+      continue;
+    }
+    await notify("item/agentMessage/delta", {
+      threadId: currentThreadId,
+      turnId: currentTurnId,
+      itemId,
+      delta: "transport attached",
+      cursor: eventCursor
+    });
     continue;
   }
 
@@ -405,6 +488,37 @@ for await (const line of rl) {
       threadId: currentThreadId,
       status: runtimeStatusPayload(),
       cursor: eventCursor
+    });
+    continue;
+  }
+
+  if (method === "review/start") {
+    turnCounter += 1;
+    currentTurnId = `turn_fake_${turnCounter}`;
+    turnStatus = "inProgress";
+    await setThreadRuntimeStatus("active", ["turnInProgress"]);
+    await respond(id, {
+      turn: {
+        id: currentTurnId,
+        status: turnStatus
+      }
+    });
+    await notify("turn/started", {
+      threadId: currentThreadId,
+      turn: {
+        id: currentTurnId,
+        status: turnStatus
+      },
+      cursor: eventCursor
+    });
+    await notify("thread/status/changed", {
+      threadId: currentThreadId,
+      status: runtimeStatusPayload(),
+      cursor: eventCursor
+    });
+    await completeInlineReview({
+      turnId: currentTurnId,
+      reviewText: "{}"
     });
     continue;
   }

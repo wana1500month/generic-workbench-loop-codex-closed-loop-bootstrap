@@ -46,6 +46,8 @@ type PendingTurnCompletion = {
     turnId: string;
     status: "completed" | "interrupted" | "failed";
     eventCursor?: number;
+    responseText?: string;
+    reviewText?: string;
   }) => void;
   reject: (error: Error) => void;
   timeout: NodeJS.Timeout;
@@ -66,6 +68,14 @@ type PersistedTransportStatus =
   | "blocked"
   | "closed";
 
+type AppServerTurnResult = {
+  turnId: string;
+  status: "completed" | "interrupted" | "failed";
+  eventCursor?: number;
+  responseText?: string;
+  reviewText?: string;
+};
+
 export interface AppServerTransportController {
   syncPhase: (input: {
     round: number;
@@ -82,11 +92,20 @@ export interface AppServerTransportController {
     taskCwd?: string;
     writableRoots?: string[];
     networkAccess?: boolean;
-  }) => Promise<{
-    turnId: string;
-    status: "completed" | "interrupted" | "failed";
-    eventCursor?: number;
-  }>;
+    inputItems?: Array<Record<string, unknown>>;
+    outputSchema?: Record<string, unknown>;
+    approvalPolicy?: string;
+    sandboxMode?: "workspaceWrite" | "readOnly";
+    summary?: "none" | "auto" | "concise" | "detailed";
+    effort?: "low" | "medium" | "high";
+  }) => Promise<AppServerTurnResult>;
+  runReview: (input: {
+    round: number;
+    phase: ControllerRoundPhase;
+    reviewLabel: string;
+    instructions: string;
+    completionTimeoutMs?: number;
+  }) => Promise<AppServerTurnResult>;
   stop: (input?: { stopReason?: string; notes?: string[] }) => Promise<void>;
   snapshot: () => AppServerTransportSnapshot;
 }
@@ -138,8 +157,12 @@ class LiveAppServerTransport implements AppServerTransportController {
   private readonly pending = new Map<number, PendingRequest>();
   private readonly pendingTurnCompletions = new Map<string, PendingTurnCompletion>();
   private readonly pendingLineHandlers = new Set<Promise<void>>();
+  private lineQueue: Promise<void> = Promise.resolve();
+  private readonly turnResponseText = new Map<string, string>();
+  private readonly turnReviewText = new Map<string, string>();
   private pendingThreadClosure?: PendingThreadClosure;
   private readonly snapshotState: AppServerTransportSnapshot;
+  private allowedApprovalPolicies?: string[];
   private nextRequestId = 1;
   private persistQueue: Promise<void> = Promise.resolve();
   private terminalTransportStatus?: PersistedTransportStatus;
@@ -188,13 +211,15 @@ class LiveAppServerTransport implements AppServerTransportController {
       requests_path: this.requestsPath,
       events_path: this.eventsPath,
       required_methods: [
+        "configRequirements/read",
         "thread/start",
         "thread/read",
         "thread/name/set",
         "thread/resume",
         "turn/start",
         "turn/steer",
-        "turn/interrupt"
+        "turn/interrupt",
+        "review/start"
       ],
       expected_event_types: [
         "thread/started",
@@ -203,6 +228,7 @@ class LiveAppServerTransport implements AppServerTransportController {
         "item/started",
         "item/completed",
         "item/agentMessage/delta",
+        "turn/diff/updated",
         "turn/completed"
       ]
     };
@@ -215,7 +241,8 @@ class LiveAppServerTransport implements AppServerTransportController {
     this.snapshotState.server_pid = this.child.pid;
     this.rl = readline.createInterface({ input: this.child.stdout });
     this.rl.on("line", (line) => {
-      const pendingLine = this.handleLine(line)
+      const pendingLine = this.lineQueue
+        .then(() => this.handleLine(line))
         .catch((error) => {
           void appendFile(
             this.errorsPath,
@@ -228,6 +255,7 @@ class LiveAppServerTransport implements AppServerTransportController {
         .finally(() => {
           this.pendingLineHandlers.delete(pendingLine);
         });
+      this.lineQueue = pendingLine;
       this.pendingLineHandlers.add(pendingLine);
     });
     this.child.stderr.on("data", (chunk) => {
@@ -290,6 +318,7 @@ class LiveAppServerTransport implements AppServerTransportController {
     });
     this.send({ method: "initialized", params: {} });
     this.snapshotState.initialized = true;
+    await this.tryReadConfigRequirements();
 
     if (input.restoredThreadId) {
       const priorThreadState = await this.tryReadThread(input.restoredThreadId);
@@ -379,49 +408,66 @@ class LiveAppServerTransport implements AppServerTransportController {
     taskCwd?: string;
     writableRoots?: string[];
     networkAccess?: boolean;
-  }): Promise<{
-    turnId: string;
-    status: "completed" | "interrupted" | "failed";
-    eventCursor?: number;
-  }> {
+    inputItems?: Array<Record<string, unknown>>;
+    outputSchema?: Record<string, unknown>;
+    approvalPolicy?: string;
+    sandboxMode?: "workspaceWrite" | "readOnly";
+    summary?: "none" | "auto" | "concise" | "detailed";
+    effort?: "low" | "medium" | "high";
+  }): Promise<AppServerTurnResult> {
     if (!this.snapshotState.thread_id) {
       throw new Error("App Server transport has no active thread.");
     }
 
-    if (
-      this.snapshotState.turn_id &&
-      this.snapshotState.turn_status === "inProgress"
-    ) {
-      await this.request("turn/interrupt", {
-        threadId: this.snapshotState.thread_id,
-        turnId: this.snapshotState.turn_id
-      });
-      this.snapshotState.last_request_method = "turn/interrupt";
-      await this.persistState();
-    }
+    await this.interruptActiveTurn();
 
     const cwd = input.taskCwd ?? this.cwd;
     const writableRoots = unique(input.writableRoots?.length ? input.writableRoots : [cwd]);
-
-    const result = await this.request("turn/start", {
+    const sandboxMode = input.sandboxMode ?? "workspaceWrite";
+    const requestedApprovalPolicy =
+      input.approvalPolicy ??
+      (sandboxMode === "readOnly"
+        ? this.resolveApprovalPolicy(["never", "unlessTrusted", "onRequest"])
+        : this.resolveApprovalPolicy(
+            this.controllerMode === "attached"
+              ? ["unlessTrusted", "onRequest", "never"]
+              : ["never"]
+          ));
+    const turnStartParams: Record<string, unknown> = {
       threadId: this.snapshotState.thread_id,
-      input: [
-        {
-          type: "text",
-          text: input.prompt
-        }
-      ],
+      input:
+        input.inputItems?.length
+          ? input.inputItems
+          : [
+              {
+                type: "text",
+                text: input.prompt
+              }
+            ],
       cwd,
-      approvalPolicy: "never",
-      sandboxPolicy: {
-        type: "workspaceWrite",
-        writableRoots,
-        networkAccess: input.networkAccess ?? false
-      },
+      sandboxPolicy:
+        sandboxMode === "readOnly"
+          ? {
+              type: "readOnly",
+              access: { type: "fullAccess" }
+            }
+          : {
+              type: "workspaceWrite",
+              writableRoots,
+              networkAccess: input.networkAccess ?? false
+            },
       model: this.model,
-      effort: "medium",
-      summary: "concise"
-    });
+      effort: input.effort ?? "medium",
+      summary: input.summary ?? "concise"
+    };
+    if (requestedApprovalPolicy) {
+      turnStartParams.approvalPolicy = requestedApprovalPolicy;
+    }
+    if (input.outputSchema) {
+      turnStartParams.outputSchema = input.outputSchema;
+    }
+
+    const result = await this.request("turn/start", turnStartParams);
     const turn = result.turn as { id?: string; status?: string } | undefined;
     if (!turn?.id) {
       throw new Error(`App Server ${input.taskLabel} task did not return a turn id.`);
@@ -434,6 +480,48 @@ class LiveAppServerTransport implements AppServerTransportController {
         ? turn.status
         : "inProgress";
     this.snapshotState.last_request_method = "turn/start";
+    await this.persistState();
+
+    return this.waitForTurnCompletion(
+      turn.id,
+      input.completionTimeoutMs ?? this.defaultTaskTimeoutMs
+    );
+  }
+
+  public async runReview(input: {
+    round: number;
+    phase: ControllerRoundPhase;
+    reviewLabel: string;
+    instructions: string;
+    completionTimeoutMs?: number;
+  }): Promise<AppServerTurnResult> {
+    if (!this.snapshotState.thread_id) {
+      throw new Error("App Server transport has no active thread.");
+    }
+
+    await this.interruptActiveTurn();
+
+    const result = await this.request("review/start", {
+      threadId: this.snapshotState.thread_id,
+      delivery: "inline",
+      target: {
+        type: "custom",
+        title: input.reviewLabel,
+        instructions: input.instructions
+      }
+    });
+    const turn = result.turn as { id?: string; status?: string } | undefined;
+    if (!turn?.id) {
+      throw new Error(`App Server ${input.reviewLabel} review did not return a turn id.`);
+    }
+    this.snapshotState.turn_id = turn.id;
+    this.snapshotState.turn_status =
+      turn.status === "completed" ||
+      turn.status === "failed" ||
+      turn.status === "interrupted"
+        ? turn.status
+        : "inProgress";
+    this.snapshotState.last_request_method = "review/start";
     await this.persistState();
 
     return this.waitForTurnCompletion(
@@ -528,7 +616,12 @@ class LiveAppServerTransport implements AppServerTransportController {
       return;
     }
 
-    const result = await this.request("turn/start", {
+    const statusApprovalPolicy = this.resolveApprovalPolicy([
+      "never",
+      "unlessTrusted",
+      "onRequest"
+    ]);
+    const turnParams: Record<string, unknown> = {
       threadId: this.snapshotState.thread_id,
       input: [
         {
@@ -543,7 +636,6 @@ class LiveAppServerTransport implements AppServerTransportController {
         }
       ],
       cwd: this.cwd,
-      approvalPolicy: "never",
       sandboxPolicy: {
         type: "readOnly",
         access: { type: "fullAccess" }
@@ -551,7 +643,12 @@ class LiveAppServerTransport implements AppServerTransportController {
       model: this.model,
       effort: "medium",
       summary: "concise"
-    });
+    };
+    if (statusApprovalPolicy) {
+      turnParams.approvalPolicy = statusApprovalPolicy;
+    }
+
+    const result = await this.request("turn/start", turnParams);
     const turn = result.turn as { id?: string; status?: string } | undefined;
     if (!turn?.id) {
       throw new Error("App Server turn/start did not return a turn id.");
@@ -565,6 +662,55 @@ class LiveAppServerTransport implements AppServerTransportController {
         : "inProgress";
     this.snapshotState.last_request_method = "turn/start";
     await this.persistState();
+  }
+
+  private async interruptActiveTurn(): Promise<void> {
+    if (
+      this.snapshotState.turn_id &&
+      this.snapshotState.turn_status === "inProgress" &&
+      this.snapshotState.thread_id
+    ) {
+      await this.request("turn/interrupt", {
+        threadId: this.snapshotState.thread_id,
+        turnId: this.snapshotState.turn_id
+      });
+      this.snapshotState.last_request_method = "turn/interrupt";
+      await this.persistState();
+    }
+  }
+
+  private resolveApprovalPolicy(preferredPolicies: readonly string[]): string | undefined {
+    if (preferredPolicies.length === 0) {
+      return undefined;
+    }
+    if (!this.allowedApprovalPolicies?.length) {
+      return preferredPolicies[0];
+    }
+    return preferredPolicies.find((policy) => this.allowedApprovalPolicies?.includes(policy));
+  }
+
+  private async tryReadConfigRequirements(): Promise<void> {
+    try {
+      const result = await this.request("configRequirements/read", {});
+      const requirements = result.requirements as
+        | {
+            approvals?: {
+              policy?: {
+                allowed?: string[];
+              };
+            };
+          }
+        | undefined;
+      const allowed =
+        requirements?.approvals?.policy?.allowed?.filter(
+          (value): value is string => typeof value === "string" && value.trim().length > 0
+        ) ?? [];
+      if (allowed.length > 0) {
+        this.allowedApprovalPolicies = unique(allowed);
+      }
+    } catch {
+      this.allowedApprovalPolicies = undefined;
+    }
   }
 
   private send(message: JsonRpcRequest): void {
@@ -658,6 +804,43 @@ class LiveAppServerTransport implements AppServerTransportController {
         this.snapshotState.turn_id = turn.id;
         this.snapshotState.turn_status = "inProgress";
       }
+    } else if (parsed.method === "item/agentMessage/delta") {
+      const delta = typeof (params as { delta?: unknown }).delta === "string"
+        ? ((params as { delta?: string }).delta ?? "")
+        : "";
+      const turnId =
+        typeof (params as { turnId?: unknown }).turnId === "string"
+          ? ((params as { turnId?: string }).turnId ?? "")
+          : "";
+      if (turnId && delta) {
+        this.appendTurnResponseText(turnId, delta);
+      }
+    } else if (parsed.method === "item/completed") {
+      const item = params.item as
+        | {
+            type?: string;
+            id?: string;
+            text?: string;
+            review?: string;
+          }
+        | undefined;
+      const turnId =
+        typeof (params as { turnId?: unknown }).turnId === "string"
+          ? ((params as { turnId?: string }).turnId ?? "")
+          : "";
+      if (turnId && typeof item?.text === "string" && item.text.trim().length > 0) {
+        if (!this.turnResponseText.has(turnId)) {
+          this.appendTurnResponseText(turnId, item.text);
+        }
+      }
+      if (
+        turnId &&
+        item?.type === "exitedReviewMode" &&
+        typeof item.review === "string" &&
+        item.review.trim().length > 0
+      ) {
+        this.turnReviewText.set(turnId, item.review);
+      }
     } else if (parsed.method === "turn/completed") {
       const turn = params.turn as { id?: string; status?: string } | undefined;
       if (turn?.id) {
@@ -681,21 +864,21 @@ class LiveAppServerTransport implements AppServerTransportController {
   private waitForTurnCompletion(
     turnId: string,
     timeoutMs: number
-  ): Promise<{
-    turnId: string;
-    status: "completed" | "interrupted" | "failed";
-    eventCursor?: number;
-  }> {
+  ): Promise<AppServerTurnResult> {
     if (
       this.snapshotState.turn_id === turnId &&
       (this.snapshotState.turn_status === "completed" ||
         this.snapshotState.turn_status === "interrupted" ||
         this.snapshotState.turn_status === "failed")
     ) {
+      const responseText = this.turnResponseText.get(turnId);
+      const reviewText = this.turnReviewText.get(turnId);
       return Promise.resolve({
         turnId,
         status: this.snapshotState.turn_status,
-        eventCursor: this.snapshotState.event_cursor
+        eventCursor: this.snapshotState.event_cursor,
+        ...(responseText ? { responseText } : {}),
+        ...(reviewText ? { reviewText } : {})
       });
     }
 
@@ -723,11 +906,28 @@ class LiveAppServerTransport implements AppServerTransportController {
 
     clearTimeout(pending.timeout);
     this.pendingTurnCompletions.delete(turnId);
+    const responseText = this.turnResponseText.get(turnId);
+    const reviewText = this.turnReviewText.get(turnId);
     pending.resolve({
       turnId,
       status,
-      eventCursor: this.snapshotState.event_cursor
+      eventCursor: this.snapshotState.event_cursor,
+      ...(responseText ? { responseText } : {}),
+      ...(reviewText ? { reviewText } : {})
     });
+    this.turnResponseText.delete(turnId);
+    this.turnReviewText.delete(turnId);
+  }
+
+  private appendTurnResponseText(turnId: string, chunk: string): void {
+    if (chunk.trim().length === 0) {
+      return;
+    }
+    const existing = this.turnResponseText.get(turnId);
+    this.turnResponseText.set(
+      turnId,
+      existing ? `${existing}${chunk}` : chunk
+    );
   }
 
   private waitForThreadClosed(timeoutMs: number): Promise<void> {

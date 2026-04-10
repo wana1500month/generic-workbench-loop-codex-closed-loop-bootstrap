@@ -15,9 +15,13 @@ import {
 } from "./agent-handoff.js";
 import {
   enhanceContractReviewWithCodex,
+  enhanceContractReviewWithAppServer,
   enhanceEvalReportWithCodex,
+  enhanceEvalReportWithAppServer,
   enhanceGeneratorPlanWithCodex,
+  enhanceGeneratorPlanWithAppServer,
   enhancePlanWithCodex,
+  enhancePlanWithAppServer,
   experimentalExecutorRuntimeWarning
 } from "./codex-agents.js";
 import {
@@ -216,6 +220,13 @@ const isImproved = (nextScore: number, currentBest: number | undefined): boolean
   currentBest === undefined || nextScore > currentBest + 0.001;
 
 const unique = <T>(values: readonly T[]): T[] => [...new Set(values)];
+
+const normalizeRuntimeWarnings = (warnings: readonly string[]): string[] =>
+  unique(
+    warnings
+      .map((warning) => warning.trim())
+      .filter((warning) => warning.length > 0)
+  );
 
 const parsePositiveTimeoutMs = (value: string | undefined): number | undefined => {
   const parsed = Number(value);
@@ -841,6 +852,7 @@ export const runClosedLoop = async (input: {
     throw new Error(transportValidationError);
   }
   const currentThreadTransport = isCurrentThreadTransport(transportMode);
+  let appServerTransport: AppServerTransportController | undefined;
   const phaseTimeouts = {
     ...parsePhaseTimeoutOverrides(process.env.HARNESS_PHASE_TIMEOUT_MS),
     ...(input.phaseTimeouts ?? {})
@@ -1078,7 +1090,7 @@ export const runClosedLoop = async (input: {
       : [])
   ]);
 
-  let runtimeWarnings = unique([
+  let runtimeWarnings = normalizeRuntimeWarnings([
     ...previousPersistentWarnings,
     ...transportRuntimeWarningsForMode({
       controllerMode,
@@ -1257,49 +1269,92 @@ export const runClosedLoop = async (input: {
     restoredRun?.plannedScenarioPath ?? join(runDirectory, "planned-scenario.json");
   const planPath = restoredRun?.planPath ?? join(runDirectory, "plan.json");
   let plannerBriefPath = restoredRun?.plannerBriefPath;
+  const ensureEarlyAppServerTransport = async (): Promise<void> => {
+    if (transportMode !== "app-server" || appServerTransport) {
+      return;
+    }
+    appServerTransport = await startAppServerTransport({
+      runId,
+      controllerMode,
+      executorMode,
+      transportStatePath: runtimeStatePaths.transportStatePath,
+      summaryPath,
+      protocolPath: transportProtocolPath,
+      restoredThreadId: restoredRun?.transportState?.app_server?.thread_id,
+      initialRound: restoredRun?.interruptedRound?.round ?? restoredRun?.roundStart ?? 1,
+      initialPhase:
+        input.resumePhase ?? restoredRun?.interruptedRound?.resumeFromPhase ?? "negotiation",
+      initialStatus: restoredRun?.interruptedRound?.phaseStatus ?? "in_progress",
+      initialNotes: restoredRun?.repairNotes ?? [],
+      threadName: `${runId} · ${resolvedTargetFamily ?? "attached-loop"}`,
+      defaultTaskTimeoutMs: appServerTaskTimeoutMs,
+      requestTimeoutMs: appServerRequestTimeoutMs
+    });
+  };
   if (!restoredRun) {
-    const baseScenario = buildScenarioFromIdea(idea);
-    const basePlan = buildLoopPlan({
-      scenario: baseScenario,
-      rubric: hydratedRubric,
-      maxRounds: attemptBudget,
-      idea
-    });
-    const plannerEnhancement =
-      currentThreadTransport
-        ? {
-            value: {
+    try {
+      await ensureEarlyAppServerTransport();
+      const baseScenario = buildScenarioFromIdea(idea);
+      const basePlan = buildLoopPlan({
+        scenario: baseScenario,
+        rubric: hydratedRubric,
+        maxRounds: attemptBudget,
+        idea
+      });
+      const plannerEnhancement =
+        transportMode === "app-server" && appServerTransport
+          ? await enhancePlanWithAppServer({
+              transport: appServerTransport,
+              runDirectory,
+              idea,
+              rubric: hydratedRubric,
               scenario: baseScenario,
-              plan: basePlan
-            },
-            runtimeWarnings: [
-              `Transport '${transportMode}' skipped nested Codex planner enhancement during run initialization.`
-            ]
-          }
-        : await enhancePlanWithCodex({
-            runDirectory,
-            idea,
-            rubric: hydratedRubric,
-            scenario: baseScenario,
-            plan: basePlan,
-            executorMode
-          });
-    scenario = plannerEnhancement.value.scenario;
-    plan = plannerEnhancement.value.plan;
-    runtimeWarnings = unique([
-      ...runtimeWarnings,
-      ...plannerEnhancement.runtimeWarnings
-    ]);
-    await Promise.all([
-      writeJson(plannedScenarioPath, scenario),
-      writeJson(planPath, plan)
-    ]);
-    plannerBriefPath = await writeRunPlannerBrief({
-      runDirectory,
-      idea,
-      scenario,
-      plan
-    });
+              plan: basePlan,
+              executorMode
+            })
+          : currentThreadTransport
+            ? {
+                value: {
+                  scenario: baseScenario,
+                  plan: basePlan
+                },
+                runtimeWarnings: [
+                  `Transport '${transportMode}' skipped nested Codex planner enhancement during run initialization.`
+                ]
+              }
+            : await enhancePlanWithCodex({
+                runDirectory,
+                idea,
+                rubric: hydratedRubric,
+                scenario: baseScenario,
+                plan: basePlan,
+                executorMode
+              });
+      scenario = plannerEnhancement.value.scenario;
+      plan = plannerEnhancement.value.plan;
+      runtimeWarnings = unique([
+        ...runtimeWarnings,
+        ...plannerEnhancement.runtimeWarnings
+      ]);
+      await Promise.all([
+        writeJson(plannedScenarioPath, scenario),
+        writeJson(planPath, plan)
+      ]);
+      plannerBriefPath = await writeRunPlannerBrief({
+        runDirectory,
+        idea,
+        scenario,
+        plan
+      });
+    } catch (error) {
+      await appServerTransport?.stop({
+        notes: [
+          error instanceof Error ? error.message : String(error)
+        ]
+      });
+      appServerTransport = undefined;
+      throw error;
+    }
   }
   if (!scenario || !plan || !plannerBriefPath) {
     throw new Error("Run initialization did not produce a resumable scenario, plan, and planner brief.");
@@ -1491,7 +1546,6 @@ export const runClosedLoop = async (input: {
       ]
     });
   };
-  let appServerTransport: AppServerTransportController | undefined;
   let heartbeat: ReturnType<typeof startRuntimeHeartbeat> | undefined;
   let runtimeStopped = false;
   const stopRuntime = async (): Promise<void> => {
@@ -1509,7 +1563,7 @@ export const runClosedLoop = async (input: {
   };
   try {
   await writeLiveTransportProtocol();
-  if (transportMode === "app-server") {
+  if (transportMode === "app-server" && !appServerTransport) {
     appServerTransport = await startAppServerTransport({
       runId,
       controllerMode,
@@ -1526,10 +1580,6 @@ export const runClosedLoop = async (input: {
       defaultTaskTimeoutMs: appServerTaskTimeoutMs,
       requestTimeoutMs: appServerRequestTimeoutMs
     });
-    runtimeWarnings = unique([
-      ...runtimeWarnings,
-      "App Server transport keeps a live thread/turn container through codex app-server."
-    ]);
   } else {
     await writeTransportStateArtifact(
       runtimeStatePaths.transportStatePath,
@@ -1949,20 +1999,29 @@ export const runClosedLoop = async (input: {
               loadedAdapter
             });
       const contractReviewEnhancement =
-        currentThreadTransport
-          ? {
-              value: baseContractReviewArtifact,
-              runtimeWarnings: [
-                `Transport '${transportMode}' skipped nested Codex contract review enhancement for round ${round}.`
-              ]
-            }
-          : await enhanceContractReviewWithCodex({
-              roundDirectory,
+        transportMode === "app-server" && appServerTransport
+          ? await enhanceContractReviewWithAppServer({
+              transport: appServerTransport,
+              round,
               contractArtifact,
               contractReviewArtifact: baseContractReviewArtifact,
               loadedAdapter,
               executorMode
-            });
+            })
+          : currentThreadTransport
+            ? {
+                value: baseContractReviewArtifact,
+                runtimeWarnings: [
+                  `Transport '${transportMode}' skipped nested Codex contract review enhancement for round ${round}.`
+                ]
+              }
+            : await enhanceContractReviewWithCodex({
+                roundDirectory,
+                contractArtifact,
+                contractReviewArtifact: baseContractReviewArtifact,
+                loadedAdapter,
+                executorMode
+              });
       runtimeWarnings = unique([
         ...runtimeWarnings,
         ...contractReviewEnhancement.runtimeWarnings
@@ -1986,22 +2045,33 @@ export const runClosedLoop = async (input: {
         adapterAttached: Boolean(loadedAdapter)
       });
       const generatorPlanEnhancement =
-        currentThreadTransport
-          ? {
-              value: baseGeneratorPlanArtifact,
-              runtimeWarnings: [
-                `Transport '${transportMode}' skipped nested Codex generator-plan enhancement for round ${round}.`
-              ]
-            }
-          : await enhanceGeneratorPlanWithCodex({
-              roundDirectory,
+        transportMode === "app-server" && appServerTransport
+          ? await enhanceGeneratorPlanWithAppServer({
+              transport: appServerTransport,
+              round,
               idea,
               contractArtifact,
               contractAgreementArtifact,
               generatorPlanArtifact: baseGeneratorPlanArtifact,
               previousPatchRequest,
               executorMode
-            });
+            })
+          : currentThreadTransport
+            ? {
+                value: baseGeneratorPlanArtifact,
+                runtimeWarnings: [
+                  `Transport '${transportMode}' skipped nested Codex generator-plan enhancement for round ${round}.`
+                ]
+              }
+            : await enhanceGeneratorPlanWithCodex({
+                roundDirectory,
+                idea,
+                contractArtifact,
+                contractAgreementArtifact,
+                generatorPlanArtifact: baseGeneratorPlanArtifact,
+                previousPatchRequest,
+                executorMode
+              });
       runtimeWarnings = unique([
         ...runtimeWarnings,
         ...generatorPlanEnhancement.runtimeWarnings
@@ -2600,15 +2670,10 @@ export const runClosedLoop = async (input: {
         previousPatchRequestAddressed
       });
       const evalEnhancement =
-        currentThreadTransport
-          ? {
-              value: baseEvalReport,
-              runtimeWarnings: [
-                `Transport '${transportMode}' skipped nested Codex eval enhancement for round ${round}.`
-              ]
-            }
-          : await enhanceEvalReportWithCodex({
-              roundDirectory,
+        transportMode === "app-server" && appServerTransport
+          ? await enhanceEvalReportWithAppServer({
+              transport: appServerTransport,
+              round,
               idea,
               contractArtifact,
               generatorPlanArtifact,
@@ -2617,7 +2682,25 @@ export const runClosedLoop = async (input: {
               coreProbeResults,
               targetManifest,
               executorMode
-            });
+            })
+          : currentThreadTransport
+            ? {
+                value: baseEvalReport,
+                runtimeWarnings: [
+                  `Transport '${transportMode}' skipped nested Codex eval enhancement for round ${round}.`
+                ]
+              }
+            : await enhanceEvalReportWithCodex({
+                roundDirectory,
+                idea,
+                contractArtifact,
+                generatorPlanArtifact,
+                evalReport: baseEvalReport,
+                adapterExecutions,
+                coreProbeResults,
+                targetManifest,
+                executorMode
+              });
       runtimeWarnings = unique([
         ...runtimeWarnings,
         ...evalEnhancement.runtimeWarnings
@@ -3019,7 +3102,7 @@ export const runClosedLoop = async (input: {
         ]
       : [])
   ]);
-  runtimeWarnings = unique([
+  runtimeWarnings = normalizeRuntimeWarnings([
     ...runtimeWarnings,
     ...finalRuntimeEvents.map((event) => event.message)
   ]);

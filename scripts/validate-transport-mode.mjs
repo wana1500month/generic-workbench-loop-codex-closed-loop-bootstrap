@@ -1,3 +1,4 @@
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
@@ -111,7 +112,8 @@ const assertTransportSurface = async (
       "thread/resume",
       "turn/start",
       "turn/steer",
-      "turn/interrupt"
+      "turn/interrupt",
+      "review/start"
     ]) {
       assert(
         transportState.app_server?.required_methods?.includes(method),
@@ -142,6 +144,9 @@ const expectInvalidCombination = async (args, expectedMessage) => {
 };
 
 const runAttachedAppServerValidation = async (fakeAppServerPath, attempt) => {
+  const recordDirectory = join(process.cwd(), ".tmp", "validate-transport-mode");
+  const recordPath = join(recordDirectory, `fake-app-server-record-${attempt}.json`);
+  await mkdir(recordDirectory, { recursive: true });
   const appServerExecution = await runLoop(
     ["--single", "--controller-mode", "attached", "--transport", "app-server"],
     {
@@ -149,7 +154,8 @@ const runAttachedAppServerValidation = async (fakeAppServerPath, attempt) => {
       env: {
         ...process.env,
         HARNESS_APP_SERVER_BIN: process.execPath,
-        HARNESS_APP_SERVER_BIN_ARGS: JSON.stringify([fakeAppServerPath])
+        HARNESS_APP_SERVER_BIN_ARGS: JSON.stringify([fakeAppServerPath]),
+        FAKE_APP_SERVER_RECORD_PATH: recordPath
       }
     }
   );
@@ -163,9 +169,29 @@ const runAttachedAppServerValidation = async (fakeAppServerPath, attempt) => {
     expectedControllerMode: "attached",
     expectedTransportMode: "app-server",
     expectedTransportStatus: "completed",
-    expectedWarning: "App Server transport keeps a live thread/turn container through codex app-server.",
+    expectedWarning: "App Server transport keeps a live attached thread/turn container through codex app-server.",
     expectAppServerLive: true
   });
+  const fakeRecord = JSON.parse(await readFile(recordPath, "utf8"));
+  const incomingRequests = fakeRecord
+    .filter((entry) => entry.direction === "in")
+    .map((entry) => entry.message);
+  assert(
+    incomingRequests.some((message) => message.method === "review/start"),
+    "Expected attached app-server loop to issue at least one review/start request."
+  );
+  assert(
+    incomingRequests.some(
+      (message) =>
+        message.method === "turn/start" &&
+        Array.isArray(message.params?.input) &&
+        message.params.input.some(
+          (item) => item?.type === "skill" && item?.name === "round-enhancement"
+        )
+    ),
+    "Expected attached app-server loop to issue at least one round-enhancement skill turn."
+  );
+  await rm(recordPath, { force: true });
 };
 
 const main = async () => {

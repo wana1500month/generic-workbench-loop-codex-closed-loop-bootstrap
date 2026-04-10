@@ -124,13 +124,15 @@ export const buildTransportStateArtifact = (input: {
               thread_lifecycle: "not_started",
               turn_status: "not_started",
               required_methods: [
+                "configRequirements/read",
                 "thread/start",
                 "thread/read",
                 "thread/name/set",
                 "thread/resume",
                 "turn/start",
                 "turn/steer",
-                "turn/interrupt"
+                "turn/interrupt",
+                "review/start"
               ],
               expected_event_types: [
                 "thread/started",
@@ -139,6 +141,7 @@ export const buildTransportStateArtifact = (input: {
                 "item/started",
                 "item/completed",
                 "item/agentMessage/delta",
+                "turn/diff/updated",
                 "turn/completed"
               ]
             }

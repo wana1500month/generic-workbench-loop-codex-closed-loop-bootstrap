@@ -1,5 +1,6 @@
 import { join } from "node:path";
 
+import type { AppServerTransportController } from "./app-server-runtime.js";
 import type {
   CodexCommandResult,
   CodexJsonSchema
@@ -67,7 +68,7 @@ type CodexEvaluatorPatch = {
   next_actions?: string[];
 };
 
-type EnhancementResult<T> = {
+export type EnhancementResult<T> = {
   value: T;
   runtimeWarnings: string[];
 };
@@ -93,6 +94,21 @@ const stageDisableEnv: Record<CodexStageName, string> = {
   "generator-plan": "HARNESS_DISABLE_CODEX_GENERATOR_PLAN",
   evaluator: "HARNESS_DISABLE_CODEX_EVALUATOR"
 };
+
+const roundEnhancementSkillPath = join(
+  repoRoot,
+  ".agents",
+  "skills",
+  "round-enhancement",
+  "SKILL.md"
+);
+
+const roundEnhancementSkillItem = () =>
+  ({
+    type: "skill",
+    name: "round-enhancement",
+    path: roundEnhancementSkillPath
+  }) satisfies Record<string, unknown>;
 
 const verdictSeverity: Record<RoundVerdict, number> = {
   advance: 0,
@@ -250,6 +266,12 @@ const maybeDisabledStage = <T>(
         runtimeWarnings: [agentFailureWarning(stage, disabledStageWarning(stage))]
       }
     : undefined;
+
+const skillPrompt = (skillName: string, prompt: string): string =>
+  [`Use $${skillName}.`, "", prompt].join("\n");
+
+const appServerFailureWarning = (agentName: string, details: string): string =>
+  `App Server ${agentName} enhancement fallback: ${details}`;
 
 export const enhancePlanWithCodex = async (input: {
   runDirectory: string;
@@ -826,6 +848,593 @@ export const enhanceEvalReportWithCodex = async (input: {
         agentFailureWarning(
           "evaluator",
           "response was not valid JSON; using deterministic evaluator report."
+        )
+      ]
+    };
+  }
+
+  const mergedVerdict = strictestVerdict(input.evalReport.overall_verdict, parsed.overall_verdict);
+  const thresholdResults =
+    mergedVerdict === input.evalReport.overall_verdict
+      ? input.evalReport.threshold_results
+      : {
+          ...input.evalReport.threshold_results,
+          contract_completed: false,
+          target_reached_eligible: false
+        };
+
+  return {
+    value: {
+      ...input.evalReport,
+      overall_verdict: mergedVerdict,
+      strengths: unique([
+        ...input.evalReport.strengths,
+        ...stringList(parsed.strengths, 10)
+      ]).slice(0, 10),
+      blockers: unique([
+        ...input.evalReport.blockers,
+        ...stringList(parsed.blockers, 10)
+      ]).slice(0, 10),
+      next_actions: unique([
+        ...stringList(parsed.next_actions, 10),
+        ...input.evalReport.next_actions
+      ]).slice(0, 10),
+      threshold_results: thresholdResults
+    },
+    runtimeWarnings: preparedPrompt.warning ? [preparedPrompt.warning] : []
+  };
+};
+
+export const enhancePlanWithAppServer = async (input: {
+  transport: AppServerTransportController;
+  runDirectory: string;
+  idea: IdeaBrief;
+  rubric: LoopRubric;
+  scenario: LoopScenario;
+  plan: LoopPlan;
+  executorMode: ExecutorMode;
+}): Promise<EnhancementResult<{ scenario: LoopScenario; plan: LoopPlan }>> => {
+  const disabledStage = maybeDisabledStage("planner", {
+    scenario: input.scenario,
+    plan: input.plan
+  });
+  if (disabledStage) {
+    return disabledStage;
+  }
+
+  const basePrompt = [
+    "You are the planner for a generic Codex workbench with a closed-loop harness engine.",
+    "Do not modify files or run commands. Read the input and return JSON only.",
+    "Keep the response concise and specific.",
+    "",
+    "Return JSON with this shape:",
+    "{",
+    '  "scenario_title": "optional string",',
+    '  "scenario_description": "optional string",',
+    '  "user_goals": ["optional strings"],',
+    '  "acceptance_highlights": ["optional strings"],',
+    '  "planner_focus_areas": ["planner_clarity|contract_testability|artifact_handoff|patch_authority|qa_rigor|runtime_portability"],',
+    '  "north_star": "optional string",',
+    '  "attempt_strategy": "optional string",',
+    '  "planner_notes": ["optional strings"],',
+    '  "remediation_policy": ["optional strings"]',
+    "}",
+    "",
+    "# Idea brief",
+    JSON.stringify(input.idea, null, 2),
+    "",
+    "# Existing scenario",
+    JSON.stringify(input.scenario, null, 2),
+    "",
+    "# Existing plan",
+    JSON.stringify(input.plan, null, 2),
+    "",
+    "# Rubric",
+    JSON.stringify(input.rubric, null, 2)
+  ].join("\n");
+  const preparedPrompt = await buildExecutorModePrompt({
+    executorMode: input.executorMode,
+    role: "planner",
+    prompt: basePrompt
+  });
+
+  const execution = await input.transport.runTask({
+    round: 0,
+    phase: "negotiation",
+    taskLabel: "planner enhancement",
+    prompt: skillPrompt("round-enhancement", preparedPrompt.prompt),
+    taskCwd: repoRoot,
+    sandboxMode: "readOnly",
+    approvalPolicy: "never",
+    outputSchema: plannerSchema,
+    inputItems: [
+      {
+        type: "text",
+        text: skillPrompt("round-enhancement", preparedPrompt.prompt)
+      },
+      roundEnhancementSkillItem()
+    ]
+  });
+  if (execution.status !== "completed" || !execution.responseText) {
+    return {
+      value: { scenario: input.scenario, plan: input.plan },
+      runtimeWarnings: [
+        ...(preparedPrompt.warning ? [preparedPrompt.warning] : []),
+        appServerFailureWarning(
+          "planner",
+          execution.status === "completed"
+            ? "empty structured response; using deterministic planner output."
+            : `turn ended with status '${execution.status}'.`
+        )
+      ]
+    };
+  }
+
+  const parsed = parseJsonResponse<CodexPlannerPatch>(execution.responseText);
+  if (!parsed) {
+    return {
+      value: { scenario: input.scenario, plan: input.plan },
+      runtimeWarnings: [
+        ...(preparedPrompt.warning ? [preparedPrompt.warning] : []),
+        appServerFailureWarning(
+          "planner",
+          "response was not valid JSON; using deterministic planner output."
+        )
+      ]
+    };
+  }
+
+  const focusAreas = Array.isArray(parsed.planner_focus_areas)
+    ? unique(
+        parsed.planner_focus_areas.filter(
+          (focus): focus is HarnessFocusArea => validFocusAreas.has(focus)
+        )
+      )
+    : [];
+
+  return {
+    value: {
+      scenario: {
+        ...input.scenario,
+        ...(trimString(parsed.scenario_title) ? { title: trimString(parsed.scenario_title)! } : {}),
+        ...(trimString(parsed.scenario_description)
+          ? { description: trimString(parsed.scenario_description)! }
+          : {}),
+        ...(stringList(parsed.user_goals).length > 0
+          ? { user_goals: stringList(parsed.user_goals) }
+          : {}),
+        ...(stringList(parsed.acceptance_highlights).length > 0
+          ? { acceptance_highlights: stringList(parsed.acceptance_highlights) }
+          : {})
+      },
+      plan: {
+        ...input.plan,
+        ...(trimString(parsed.north_star) ? { north_star: trimString(parsed.north_star)! } : {}),
+        ...(trimString(parsed.attempt_strategy)
+          ? { attempt_strategy: trimString(parsed.attempt_strategy)! }
+          : {}),
+        ...(focusAreas.length > 0 ? { planner_focus_areas: focusAreas } : {}),
+        ...(stringList(parsed.planner_notes).length > 0
+          ? {
+              planner_notes: unique([
+                ...stringList(parsed.planner_notes),
+                ...input.plan.planner_notes
+              ]).slice(0, 12)
+            }
+          : {}),
+        ...(stringList(parsed.remediation_policy).length > 0
+          ? {
+              remediation_policy: unique([
+                ...stringList(parsed.remediation_policy),
+                ...input.plan.remediation_policy
+              ]).slice(0, 12)
+            }
+          : {})
+      }
+    },
+    runtimeWarnings: preparedPrompt.warning ? [preparedPrompt.warning] : []
+  };
+};
+
+export const enhanceContractReviewWithAppServer = async (input: {
+  transport: AppServerTransportController;
+  round: number;
+  contractArtifact: RoundContractArtifact;
+  contractReviewArtifact: ContractReviewArtifact;
+  loadedAdapter?: LoadedAdapterContract;
+  executorMode: ExecutorMode;
+}): Promise<EnhancementResult<ContractReviewArtifact>> => {
+  const disabledStage = maybeDisabledStage("contract-review", input.contractReviewArtifact);
+  if (disabledStage) {
+    return disabledStage;
+  }
+
+  const basePrompt = [
+    "You are the evaluator reviewing a round contract for a generic Codex workbench harness.",
+    "Return JSON only.",
+    "Be conservative. Reject unclear or untestable contracts.",
+    "",
+    "Return JSON with this shape:",
+    "{",
+    '  "decision": "accept|revise",',
+    '  "concerns": ["optional strings"],',
+    '  "required_changes": ["optional strings"],',
+    '  "approved_checks": ["optional check ids from the contract"],',
+    '  "adapter_ready": true,',
+    '  "static_blockers": ["optional strings"]',
+    "}",
+    "",
+    "# Contract artifact",
+    JSON.stringify(input.contractArtifact, null, 2),
+    "",
+    "# Current deterministic review",
+    JSON.stringify(input.contractReviewArtifact, null, 2),
+    "",
+    "# Adapter summary",
+    JSON.stringify(
+      input.loadedAdapter
+        ? {
+            adapter_id: input.loadedAdapter.contract.adapter_id,
+            verifier_id: input.loadedAdapter.contract.verification_provider?.provider_id,
+            target_root: input.loadedAdapter.contract.target_root,
+            target_family: input.loadedAdapter.verification_profile?.profile.target_family,
+            validation_lane: input.loadedAdapter.verification_profile?.profile.validation_lane
+          }
+        : { adapter_attached: false },
+      null,
+      2
+    )
+  ].join("\n");
+  const preparedPrompt = await buildExecutorModePrompt({
+    executorMode: input.executorMode,
+    role: "evaluator",
+    prompt: basePrompt
+  });
+
+  const execution = await input.transport.runReview({
+    round: input.round,
+    phase: "negotiation",
+    reviewLabel: `round-${String(input.round).padStart(3, "0")} contract review`,
+    instructions: preparedPrompt.prompt
+  });
+  if (execution.status !== "completed" || !execution.reviewText) {
+    return {
+      value: input.contractReviewArtifact,
+      runtimeWarnings: [
+        ...(preparedPrompt.warning ? [preparedPrompt.warning] : []),
+        appServerFailureWarning(
+          "contract-review",
+          execution.status === "completed"
+            ? "empty review output; using deterministic contract review."
+            : `review turn ended with status '${execution.status}'.`
+        )
+      ]
+    };
+  }
+
+  const parsed = parseJsonResponse<CodexContractReviewPatch>(execution.reviewText);
+  if (!parsed) {
+    return {
+      value: input.contractReviewArtifact,
+      runtimeWarnings: [
+        ...(preparedPrompt.warning ? [preparedPrompt.warning] : []),
+        appServerFailureWarning(
+          "contract-review",
+          "review output was not valid JSON; using deterministic contract review."
+        )
+      ]
+    };
+  }
+
+  const approvedChecks = stringList(parsed.approved_checks).filter((checkId) =>
+    input.contractArtifact.acceptance_checks.includes(checkId)
+  );
+  const concerns = unique([
+    ...input.contractReviewArtifact.concerns,
+    ...stringList(parsed.concerns)
+  ]).slice(0, 12);
+  const requiredChanges = unique([
+    ...input.contractReviewArtifact.required_changes,
+    ...stringList(parsed.required_changes)
+  ]).slice(0, 12);
+  const staticBlockers = unique([
+    ...input.contractReviewArtifact.static_blockers,
+    ...stringList(parsed.static_blockers)
+  ]).slice(0, 12);
+  const mergedDecision =
+    requiredChanges.length > 0 ||
+    staticBlockers.length > 0 ||
+    parsed.decision === "revise" ||
+    input.contractReviewArtifact.decision === "revise"
+      ? "revise"
+      : "accept";
+
+  return {
+    value: {
+      ...input.contractReviewArtifact,
+      decision: mergedDecision,
+      concerns,
+      required_changes: requiredChanges,
+      approved_checks:
+        approvedChecks.length > 0
+          ? approvedChecks
+          : input.contractReviewArtifact.approved_checks,
+      adapter_ready:
+        input.contractReviewArtifact.adapter_ready &&
+        (typeof parsed.adapter_ready === "boolean" ? parsed.adapter_ready : true),
+      static_blockers: staticBlockers
+    },
+    runtimeWarnings: preparedPrompt.warning ? [preparedPrompt.warning] : []
+  };
+};
+
+export const enhanceGeneratorPlanWithAppServer = async (input: {
+  transport: AppServerTransportController;
+  round: number;
+  idea: IdeaBrief;
+  contractArtifact: RoundContractArtifact;
+  contractAgreementArtifact: ContractAgreementArtifact;
+  generatorPlanArtifact: GeneratorPlanArtifact;
+  previousPatchRequest?: PatchRequestArtifact;
+  executorMode: ExecutorMode;
+}): Promise<EnhancementResult<GeneratorPlanArtifact>> => {
+  const disabledStage = maybeDisabledStage("generator-plan", input.generatorPlanArtifact);
+  if (disabledStage) {
+    return disabledStage;
+  }
+
+  const basePrompt = [
+    "You are the generator planner for a generic Codex workbench harness.",
+    "Do not edit files or run commands. Return JSON only.",
+    "Focus on the smallest coherent implementation plan for the current round.",
+    "",
+    "Return JSON with this shape:",
+    "{",
+    '  "implementation_intent": "optional string",',
+    '  "files_to_touch": ["optional strings"],',
+    '  "expected_proof": ["optional strings"],',
+    '  "risk_notes": ["optional strings"],',
+    '  "out_of_scope": ["optional strings"],',
+    '  "adapter_actions": ["optional strings"]',
+    "}",
+    "",
+    "# Idea brief",
+    JSON.stringify(input.idea, null, 2),
+    "",
+    "# Round contract",
+    JSON.stringify(input.contractArtifact, null, 2),
+    "",
+    "# Contract agreement",
+    JSON.stringify(input.contractAgreementArtifact, null, 2),
+    "",
+    "# Current generator plan",
+    JSON.stringify(input.generatorPlanArtifact, null, 2),
+    "",
+    "# Previous patch request",
+    JSON.stringify(input.previousPatchRequest ?? null, null, 2)
+  ].join("\n");
+  const preparedPrompt = await buildExecutorModePrompt({
+    executorMode: input.executorMode,
+    role: "generator",
+    prompt: basePrompt
+  });
+
+  const execution = await input.transport.runTask({
+    round: input.round,
+    phase: "negotiation",
+    taskLabel: "generator-plan enhancement",
+    prompt: skillPrompt("round-enhancement", preparedPrompt.prompt),
+    taskCwd: repoRoot,
+    sandboxMode: "readOnly",
+    approvalPolicy: "never",
+    outputSchema: generatorPlanSchema,
+    inputItems: [
+      {
+        type: "text",
+        text: skillPrompt("round-enhancement", preparedPrompt.prompt)
+      },
+      roundEnhancementSkillItem()
+    ]
+  });
+  if (execution.status !== "completed" || !execution.responseText) {
+    return {
+      value: input.generatorPlanArtifact,
+      runtimeWarnings: [
+        ...(preparedPrompt.warning ? [preparedPrompt.warning] : []),
+        appServerFailureWarning(
+          "generator-plan",
+          execution.status === "completed"
+            ? "empty structured response; using deterministic generator plan."
+            : `turn ended with status '${execution.status}'.`
+        )
+      ]
+    };
+  }
+
+  const parsed = parseJsonResponse<CodexGeneratorPlanPatch>(execution.responseText);
+  if (!parsed) {
+    return {
+      value: input.generatorPlanArtifact,
+      runtimeWarnings: [
+        ...(preparedPrompt.warning ? [preparedPrompt.warning] : []),
+        appServerFailureWarning(
+          "generator-plan",
+          "response was not valid JSON; using deterministic generator plan."
+        )
+      ]
+    };
+  }
+
+  return {
+    value: {
+      ...input.generatorPlanArtifact,
+      ...(trimString(parsed.implementation_intent)
+        ? { implementation_intent: trimString(parsed.implementation_intent)! }
+        : {}),
+      files_to_touch: unique([
+        ...input.generatorPlanArtifact.files_to_touch,
+        ...stringList(parsed.files_to_touch, 20)
+      ]).slice(0, 20),
+      expected_proof: unique([
+        ...input.generatorPlanArtifact.expected_proof,
+        ...stringList(parsed.expected_proof, 20)
+      ]).slice(0, 20),
+      risk_notes: unique([
+        ...stringList(parsed.risk_notes, 12),
+        ...input.generatorPlanArtifact.risk_notes
+      ]).slice(0, 12),
+      out_of_scope: unique([
+        ...input.generatorPlanArtifact.out_of_scope,
+        ...stringList(parsed.out_of_scope, 12)
+      ]).slice(0, 12),
+      adapter_actions: unique([
+        ...input.generatorPlanArtifact.adapter_actions,
+        ...stringList(parsed.adapter_actions, 12)
+      ]).slice(0, 12)
+    },
+    runtimeWarnings: preparedPrompt.warning ? [preparedPrompt.warning] : []
+  };
+};
+
+export const enhanceEvalReportWithAppServer = async (input: {
+  transport: AppServerTransportController;
+  round: number;
+  idea: IdeaBrief;
+  contractArtifact: RoundContractArtifact;
+  generatorPlanArtifact: GeneratorPlanArtifact;
+  evalReport: EvalReport;
+  adapterExecutions: AdapterCapabilityExecution[];
+  coreProbeResults: CoreVerificationProbeExecution[];
+  targetManifest?: TargetManifest;
+  executorMode: ExecutorMode;
+}): Promise<EnhancementResult<EvalReport>> => {
+  const disabledStage = maybeDisabledStage("evaluator", input.evalReport);
+  if (disabledStage) {
+    return disabledStage;
+  }
+
+  const basePrompt = [
+    "You are the evaluator for a generic Codex workbench harness.",
+    "Return JSON only.",
+    "Be conservative. If uncertain, prefer revise over advance and hold over revise when the evidence looks fundamentally blocked.",
+    "",
+    "Return JSON with this shape:",
+    "{",
+    '  "overall_verdict": "advance|revise|hold",',
+    '  "strengths": ["optional strings"],',
+    '  "blockers": ["optional strings"],',
+    '  "next_actions": ["optional strings"]',
+    "}",
+    "",
+    "# Idea brief",
+    JSON.stringify(
+      {
+        title: input.idea.title,
+        summary: input.idea.summary,
+        user_goals: input.idea.user_goals,
+        constraints: input.idea.constraints,
+        quality_bar: input.idea.quality_bar
+      },
+      null,
+      2
+    ),
+    "",
+    "# Round contract",
+    JSON.stringify(input.contractArtifact, null, 2),
+    "",
+    "# Generator plan",
+    JSON.stringify(input.generatorPlanArtifact, null, 2),
+    "",
+    "# Deterministic eval report",
+    JSON.stringify(
+      {
+        total_score: input.evalReport.total_score,
+        control_plane_score: input.evalReport.control_plane_score,
+        proof_score: input.evalReport.proof_score,
+        release_score: input.evalReport.release_score,
+        overall_verdict: input.evalReport.overall_verdict,
+        blockers: input.evalReport.blockers,
+        next_actions: input.evalReport.next_actions,
+        threshold_gap_details: input.evalReport.threshold_gap_details,
+        unresolved_check_ids: input.evalReport.unresolved_check_ids
+      },
+      null,
+      2
+    ),
+    "",
+    "# Adapter execution summary",
+    JSON.stringify(
+      input.adapterExecutions.map((execution) => ({
+        capability: execution.capability,
+        ok: execution.result.ok,
+        provider_role: execution.provider_role,
+        summary: execution.result.summary,
+        findings: execution.result.findings,
+        verified_evidence_paths: execution.verified_evidence_paths,
+        criteria_results: execution.verified_criteria_results.map((criterion) => ({
+          criterion_id: criterion.criterion_id,
+          status: criterion.status,
+          summary: criterion.summary
+        }))
+      })),
+      null,
+      2
+    ),
+    "",
+    "# Core probe summary",
+    JSON.stringify(
+      input.coreProbeResults.map((probe) => ({
+        probe_id: probe.probe_id,
+        ok: probe.ok,
+        role: probe.role,
+        mode: probe.mode,
+        summary: probe.summary,
+        observed_value: probe.observed_value,
+        evidence_paths: probe.evidence_paths
+      })),
+      null,
+      2
+    ),
+    "",
+    "# Target manifest",
+    JSON.stringify(input.targetManifest ?? null, null, 2)
+  ].join("\n");
+  const preparedPrompt = await buildExecutorModePrompt({
+    executorMode: input.executorMode,
+    role: "evaluator",
+    prompt: basePrompt
+  });
+
+  const execution = await input.transport.runReview({
+    round: input.round,
+    phase: "evaluation",
+    reviewLabel: `round-${String(input.round).padStart(3, "0")} eval review`,
+    instructions: preparedPrompt.prompt
+  });
+  if (execution.status !== "completed" || !execution.reviewText) {
+    return {
+      value: input.evalReport,
+      runtimeWarnings: [
+        ...(preparedPrompt.warning ? [preparedPrompt.warning] : []),
+        appServerFailureWarning(
+          "evaluator",
+          execution.status === "completed"
+            ? "empty review output; using deterministic evaluator report."
+            : `review turn ended with status '${execution.status}'.`
+        )
+      ]
+    };
+  }
+
+  const parsed = parseJsonResponse<CodexEvaluatorPatch>(execution.reviewText);
+  if (!parsed) {
+    return {
+      value: input.evalReport,
+      runtimeWarnings: [
+        ...(preparedPrompt.warning ? [preparedPrompt.warning] : []),
+        appServerFailureWarning(
+          "evaluator",
+          "review output was not valid JSON; using deterministic evaluator report."
         )
       ]
     };

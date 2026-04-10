@@ -45,4 +45,24 @@ const harnessHumanOutput = renderLoopIntentResponse(
 assert.match(harnessHumanOutput, /^Intent:\s+harness_design/m);
 assert.match(harnessHumanOutput, /Route:\s+proceed in the harness-design lane\./i);
 
+const koreanHarnessFixture = fixtures.find(
+  (fixture) => fixture.id === "korean-harness-design-actual-prompt"
+);
+assert(koreanHarnessFixture, "Missing korean-harness-design-actual-prompt fixture.");
+const koreanHarnessQuestions = renderLoopIntentResponse(
+  evaluateLoopIntent(koreanHarnessFixture.request)
+);
+assert.match(
+  koreanHarnessQuestions,
+  /^1\.\s+(현재 흐름에서 어떤 구체적 결함|어떤 결과가 나오면 이번 하네스 변경이 효과 있었다고 볼 수 있나)/m
+);
+
+const koreanResumeRoute = renderLoopIntentResponse(
+  evaluateLoopIntent(
+    "evals/runs/run-042를 이어서 진행해줘. 지금 run은 environment_blocked로 멈췄고 다음 단계는 reopen인지 hold인지 결정해야 한다."
+  )
+);
+assert.match(koreanResumeRoute, /^의도:\s+run_resume/m);
+assert.match(koreanResumeRoute, /경로:\s+기존 run을 이어서 진행\./);
+
 console.log(`validate:intent-gate passed (${fixtures.length} fixtures)`);

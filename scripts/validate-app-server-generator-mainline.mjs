@@ -24,6 +24,7 @@ const main = async () => {
   const fakeAppServerPath = join(process.cwd(), "scripts", "testing", "fake-app-server.mjs");
   const previousBin = process.env.HARNESS_APP_SERVER_BIN;
   const previousArgs = process.env.HARNESS_APP_SERVER_BIN_ARGS;
+  const previousRecordPath = process.env.FAKE_APP_SERVER_RECORD_PATH;
 
   process.env.HARNESS_APP_SERVER_BIN = process.execPath;
   process.env.HARNESS_APP_SERVER_BIN_ARGS = JSON.stringify([fakeAppServerPath]);
@@ -36,6 +37,8 @@ const main = async () => {
     const summaryPath = join(runDirectory, "summary.json");
     const responsePath = join(runtimeDirectory, "attached-generator-response.json");
     const targetFilePath = join(targetRoot, "attached-generator.txt");
+    const recordPath = join(runtimeDirectory, "fake-app-server-record.json");
+    process.env.FAKE_APP_SERVER_RECORD_PATH = recordPath;
 
     await Promise.all([
       mkdir(runtimeDirectory, { recursive: true }),
@@ -102,9 +105,10 @@ const main = async () => {
       });
     }
 
-    const [responseArtifact, targetFileContents] = await Promise.all([
+    const [responseArtifact, targetFileContents, fakeRecord] = await Promise.all([
       JSON.parse(await readFile(responsePath, "utf8")),
-      readFile(targetFilePath, "utf8")
+      readFile(targetFilePath, "utf8"),
+      JSON.parse(await readFile(recordPath, "utf8"))
     ]);
 
     assert(
@@ -114,6 +118,29 @@ const main = async () => {
     assert(
       targetFileContents.trim() === "attached generator validation",
       "Expected attached generator mainline to mutate the target file."
+    );
+    const incomingRequests = fakeRecord
+      .filter((entry) => entry.direction === "in")
+      .map((entry) => entry.message);
+    const generatorTurn = incomingRequests.find(
+      (message) =>
+        message.method === "turn/start" &&
+        message.params?.sandboxPolicy?.type === "workspaceWrite"
+    );
+    assert(generatorTurn, "Expected a workspaceWrite turn/start request for the attached generator task.");
+    assert(
+      generatorTurn.params?.approvalPolicy === "unlessTrusted",
+      `Expected attached generator task approvalPolicy 'unlessTrusted', received '${generatorTurn.params?.approvalPolicy ?? "missing"}'.`
+    );
+    const statusTurn = incomingRequests.find(
+      (message) =>
+        message.method === "turn/start" &&
+        message.params?.sandboxPolicy?.type === "readOnly"
+    );
+    assert(statusTurn, "Expected a readOnly status turn before the attached generator task.");
+    assert(
+      statusTurn.params?.approvalPolicy === "never",
+      `Expected status turn approvalPolicy 'never', received '${statusTurn.params?.approvalPolicy ?? "missing"}'.`
     );
 
     console.log("Validated App Server attached generator mainline.");
@@ -127,6 +154,11 @@ const main = async () => {
       delete process.env.HARNESS_APP_SERVER_BIN_ARGS;
     } else {
       process.env.HARNESS_APP_SERVER_BIN_ARGS = previousArgs;
+    }
+    if (previousRecordPath === undefined) {
+      delete process.env.FAKE_APP_SERVER_RECORD_PATH;
+    } else {
+      process.env.FAKE_APP_SERVER_RECORD_PATH = previousRecordPath;
     }
     await cleanupTempRoot(tempRoot);
   }

@@ -50,6 +50,7 @@ export interface LoopIntentResult {
   intent: LoopIntent;
   status: LoopIntentStatus;
   phase: LoopIntentPhase;
+  locale: "en" | "ko";
   confidence: number;
   route_target: LoopIntentRoute;
   questions: string[];
@@ -62,6 +63,15 @@ export interface LoopIntentResult {
   intake_phase?: IntakeGateResult["phase"];
   intake_missing_fields?: string[];
 }
+
+const hasKoreanText = (value: string): boolean =>
+  /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/u.test(value);
+
+const detectIntentLocale = (value: string): "en" | "ko" =>
+  hasKoreanText(value) ? "ko" : "en";
+
+const localizedQuestion = (input: { locale: "en" | "ko"; en: string; ko: string }): string =>
+  input.locale === "ko" ? input.ko : input.en;
 
 const harnessSurfaceSignals: IntentSignal[] = [
   { label: "harness", pattern: /\bharness\b/i },
@@ -342,6 +352,7 @@ const buildIntentRationale = (
 
 const buildHarnessFieldStates = (
   request: string,
+  locale: "en" | "ko",
   matchedHarnessSignals: readonly string[],
   matchedGapSignals: readonly string[],
   matchedSuccessSignals: readonly string[],
@@ -352,7 +363,11 @@ const buildHarnessFieldStates = (
     {
       id: "change_goal",
       satisfied: normalized.length >= 32 && (matchedChangeSignals.length > 0 || matchedHarnessSignals.length >= 2),
-      question: "What harness surface or operator path should change first?"
+      question: localizedQuestion({
+        locale,
+        en: "What harness surface or operator path should change first?",
+        ko: "어떤 하네스 표면이나 운영자 경로를 먼저 바꿔야 하나?"
+      })
     },
     {
       id: "current_gap",
@@ -361,18 +376,27 @@ const buildHarnessFieldStates = (
         (matchedHarnessSignals.length >= 4 &&
           matchedChangeSignals.length > 0 &&
           matchedSuccessSignals.length > 0),
-      question: "What concrete gap, failure mode, or operator pain exists in the current flow?"
+      question: localizedQuestion({
+        locale,
+        en: "What concrete gap, failure mode, or operator pain exists in the current flow?",
+        ko: "현재 흐름에서 어떤 구체적 결함, 실패 모드, 또는 운영자 불편이 있나?"
+      })
     },
     {
       id: "success_criteria",
       satisfied: matchedSuccessSignals.length > 0 || /\b1\.\s|\b2\.\s/.test(request),
-      question: "What outcome would tell us the harness change worked?"
+      question: localizedQuestion({
+        locale,
+        en: "What outcome would tell us the harness change worked?",
+        ko: "어떤 결과가 나오면 이번 하네스 변경이 효과 있었다고 볼 수 있나?"
+      })
     }
   ];
 };
 
 const buildResumeFieldStates = (
   request: string,
+  locale: "en" | "ko",
   matchedRunStateSignals: readonly string[],
   matchedRunActionSignals: readonly string[]
 ): IntentFieldState<ResumeIntentFieldId>[] => {
@@ -381,23 +405,36 @@ const buildResumeFieldStates = (
     {
       id: "run_reference",
       satisfied: runReference !== undefined,
-      question: "Which run should be resumed? Provide the run directory or run id."
+      question: localizedQuestion({
+        locale,
+        en: "Which run should be resumed? Provide the run directory or run id.",
+        ko: "어느 run을 이어야 하나? run id나 run 디렉터리를 적어줘."
+      })
     },
     {
       id: "current_state",
       satisfied: matchedRunStateSignals.length > 0,
-      question: "What is the current run state, stop reason, or latest patch status?"
+      question: localizedQuestion({
+        locale,
+        en: "What is the current run state, stop reason, or latest patch status?",
+        ko: "현재 run 상태, stop reason, 또는 최신 patch 상태가 어떤지 적어줘."
+      })
     },
     {
       id: "next_step",
       satisfied: matchedRunActionSignals.length > 0,
-      question: "What should happen next: reopen, continue, hold, or close out?"
+      question: localizedQuestion({
+        locale,
+        en: "What should happen next: reopen, continue, hold, or close out?",
+        ko: "다음에 무엇을 해야 하나? reopen, continue, hold, close out 중에서 정해줘."
+      })
     }
   ];
 };
 
 const buildEvaluatorFieldStates = (
   request: string,
+  locale: "en" | "ko",
   matchedEvaluatorSignals: readonly string[],
   matchedEvaluatorExampleSignals: readonly string[],
   matchedSuccessSignals: readonly string[]
@@ -409,27 +446,41 @@ const buildEvaluatorFieldStates = (
       /(?:browser-app|dashboard|api-service|chat-agent|fullstack-app|browser-editor|light lane|heavy lane)/i.test(
         request
       ),
-    question: "Which evaluator lane, family, or rubric surface needs calibration?"
+    question: localizedQuestion({
+      locale,
+      en: "Which evaluator lane, family, or rubric surface needs calibration?",
+      ko: "어느 evaluator lane, family, 또는 rubric 표면을 보정해야 하나?"
+    })
   },
   {
     id: "failure_examples",
     satisfied: matchedEvaluatorExampleSignals.length > 0,
-    question: "What examples show the evaluator getting it wrong today?"
+    question: localizedQuestion({
+      locale,
+      en: "What examples show the evaluator getting it wrong today?",
+      ko: "지금 evaluator가 틀리고 있다는 예시가 무엇인지 적어줘."
+    })
   },
   {
     id: "success_criteria",
     satisfied: matchedSuccessSignals.length > 0,
-    question: "What lift or calibration outcome should count as a successful evaluator change?"
+    question: localizedQuestion({
+      locale,
+      en: "What lift or calibration outcome should count as a successful evaluator change?",
+      ko: "어떤 lift나 calibration 결과가 나오면 evaluator 변경이 성공이라고 볼 수 있나?"
+    })
   }
 ];
 
 const buildProductResult = (
   intake: IntakeGateResult,
-  rationale: string[]
+  rationale: string[],
+  locale: "en" | "ko"
 ): LoopIntentResult => ({
   intent: "product_build",
   status: "route_to_product_intake",
   phase: intake.status === "ready_for_confirmation" ? "handoff" : "intent",
+  locale,
   confidence: intake.status === "ready_for_confirmation" ? 0.96 : 0.91,
   route_target: "product_intake",
   questions: intake.questions,
@@ -458,6 +509,20 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
   const matchedEvaluatorSignals = matchSignals(sanitizedRequest, evaluatorSurfaceSignals);
   const matchedEvaluatorChangeSignals = matchSignals(sanitizedRequest, evaluatorChangeSignals);
   const matchedEvaluatorExampleSignals = matchSignals(sanitizedRequest, evaluatorExampleSignals);
+  const hasLocalizedSignalHint = [
+    ...matchedHarnessSignals,
+    ...matchedHarnessChangeSignals,
+    ...matchedGapSignals,
+    ...matchedSuccessSignals,
+    ...matchedResumeSignals,
+    ...matchedRunStateSignals,
+    ...matchedRunActionSignals,
+    ...matchedEvaluatorSignals,
+    ...matchedEvaluatorChangeSignals,
+    ...matchedEvaluatorExampleSignals
+  ].some((signal) => signal.includes("(ko)") || /[^\x00-\x7F]/.test(signal));
+  const locale: "en" | "ko" =
+    detectIntentLocale(normalizedRequest) === "ko" || hasLocalizedSignalHint ? "ko" : "en";
 
   const hasProductContext = productContextPattern.test(sanitizedRequest);
   const hasReferenceNoise = sanitizedRequest !== normalizedRequest;
@@ -528,6 +593,7 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
   ) {
     const states = buildResumeFieldStates(
       normalizedRequest,
+      locale,
       matchedRunStateSignals,
       matchedRunActionSignals
     );
@@ -536,6 +602,7 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
       intent: "run_resume",
       status: missingFields.length > 0 ? "ask_resume_questions" : "ready_for_handoff",
       phase: missingFields.length > 0 ? "intent" : "handoff",
+      locale,
       confidence: calculateConfidence(resumeScore),
       route_target: "run_resume",
       questions: buildQuestions(states),
@@ -572,7 +639,8 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
           ...(hasReferenceNoise
             ? ["Reference URLs were ignored while scoring the lane."]
             : [])
-        ])
+        ]),
+        locale
       );
     }
   }
@@ -580,6 +648,7 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
   if (harnessScore >= evaluatorScore && harnessScore >= 4) {
     const states = buildHarnessFieldStates(
       sanitizedRequest,
+      locale,
       matchedHarnessSignals,
       matchedGapSignals,
       matchedSuccessSignals,
@@ -590,6 +659,7 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
       intent: "harness_design",
       status: missingFields.length > 0 ? "ask_harness_questions" : "ready_for_handoff",
       phase: missingFields.length > 0 ? "intent" : "handoff",
+      locale,
       confidence: calculateConfidence(harnessScore),
       route_target: "harness_design",
       questions: buildQuestions(states),
@@ -604,6 +674,7 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
   if (evaluatorScore >= 4) {
     const states = buildEvaluatorFieldStates(
       sanitizedRequest,
+      locale,
       matchedEvaluatorSignals,
       matchedEvaluatorExampleSignals,
       matchedSuccessSignals
@@ -613,6 +684,7 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
       intent: "evaluator_tuning",
       status: missingFields.length > 0 ? "ask_evaluator_questions" : "ready_for_handoff",
       phase: missingFields.length > 0 ? "intent" : "handoff",
+      locale,
       confidence: calculateConfidence(evaluatorScore),
       route_target: "evaluator_tuning",
       questions: buildQuestions(states),
@@ -630,7 +702,8 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
       buildIntentRationale("product-build", [], [
         `Detected a product-build request and delegated to loop:intake (${intake.status}).`,
         ...(hasReferenceNoise ? ["Reference URLs were ignored while scoring the lane."] : [])
-      ])
+      ]),
+      locale
     );
   }
 
@@ -638,11 +711,20 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
     intent: "unknown",
     status: "unclassified",
     phase: "none",
+    locale,
     confidence: 0.4,
     route_target: "clarify",
     questions: [
-      "Is this a product-build, harness-design, run-resume, or evaluator-tuning request?",
-      "What concrete output should the workbench produce next?"
+      localizedQuestion({
+        locale,
+        en: "Is this a product-build, harness-design, run-resume, or evaluator-tuning request?",
+        ko: "이 요청은 product-build, harness-design, run-resume, evaluator-tuning 중 어느 쪽인가?"
+      }),
+      localizedQuestion({
+        locale,
+        en: "What concrete output should the workbench produce next?",
+        ko: "워크벤치가 다음으로 내야 할 구체적 산출물이 무엇인지 적어줘."
+      })
     ],
     missing_fields: [],
     satisfied_fields: [],
@@ -654,21 +736,38 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
 
 const renderReadyRoute = (result: LoopIntentResult): string => {
   const routeLine =
-    result.route_target === "product_intake"
-      ? "Route: proceed through product intake."
-      : result.route_target === "harness_design"
-        ? "Route: proceed in the harness-design lane."
-        : result.route_target === "run_resume"
-          ? "Route: resume the existing run."
-          : result.route_target === "evaluator_tuning"
-            ? "Route: proceed in the evaluator-calibration lane."
-            : "Route: clarify the request.";
+    result.locale === "ko"
+      ? result.route_target === "product_intake"
+        ? "경로: product intake로 진행."
+        : result.route_target === "harness_design"
+          ? "경로: harness-design 레인으로 진행."
+          : result.route_target === "run_resume"
+            ? "경로: 기존 run을 이어서 진행."
+            : result.route_target === "evaluator_tuning"
+              ? "경로: evaluator calibration 레인으로 진행."
+              : "경로: 요청을 먼저 분류해야 함."
+      : result.route_target === "product_intake"
+        ? "Route: proceed through product intake."
+        : result.route_target === "harness_design"
+          ? "Route: proceed in the harness-design lane."
+          : result.route_target === "run_resume"
+            ? "Route: resume the existing run."
+            : result.route_target === "evaluator_tuning"
+              ? "Route: proceed in the evaluator-calibration lane."
+              : "Route: clarify the request.";
 
-  const lines = [`Intent: ${result.intent}`, routeLine];
+  const lines = [
+    result.locale === "ko" ? `의도: ${result.intent}` : `Intent: ${result.intent}`,
+    routeLine
+  ];
   if (result.extracted_run_reference) {
-    lines.push(`Run reference: ${result.extracted_run_reference}`);
+    lines.push(
+      result.locale === "ko"
+        ? `Run 참조: ${result.extracted_run_reference}`
+        : `Run reference: ${result.extracted_run_reference}`
+    );
   }
-  if (result.rationale.length > 0) {
+  if (result.locale === "en" && result.rationale.length > 0) {
     lines.push(result.rationale[0]!);
   }
   return lines.join("\n");
