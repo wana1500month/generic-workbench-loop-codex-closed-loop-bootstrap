@@ -1,4 +1,4 @@
-import { readdir, writeFile } from "node:fs/promises";
+import { readdir, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 
 import {
@@ -149,6 +149,10 @@ const main = async () => {
       interruptedTransportState.app_server?.last_request_method === "thread/unsubscribe",
       `Expected interrupted generator cleanup to unsubscribe the App Server thread, received '${interruptedTransportState.app_server?.last_request_method ?? "missing"}'.`
     );
+    await Promise.all([
+      rm(join(runDirectory, "planned-scenario.json"), { force: true }),
+      rm(join(runDirectory, "plan.json"), { force: true })
+    ]);
 
     const resumedRun = await runLoop(
       [
@@ -186,12 +190,14 @@ const main = async () => {
       );
     }
 
-    const [summary, attachedGeneratorResponse, resumedTransportState] = await Promise.all([
+    const [summary, attachedGeneratorResponse, resumedTransportState, resumedScenario, resumedPlan] = await Promise.all([
       readJsonFile(join(runDirectory, "summary.json")),
       readJsonFile(
         join(runDirectory, "round-001", "runtime", "attached-generator-response.json")
       ),
-      readJsonFile(join(runDirectory, "runtime", "transport-state.json"))
+      readJsonFile(join(runDirectory, "runtime", "transport-state.json")),
+      readJsonFile(join(runDirectory, "planned-scenario.json")),
+      readJsonFile(join(runDirectory, "plan.json"))
     ]);
 
     assert(
@@ -211,6 +217,20 @@ const main = async () => {
         warning.includes("App Server attached generator completed")
       ),
       "Expected resumed summary to record attached generator completion warning."
+    );
+    assert(
+      (summary.runtime_warnings ?? []).some((warning) =>
+        warning.includes("incomplete planning initialization")
+      ),
+      "Expected resumed summary to record partial-init rebuild warning."
+    );
+    assert(
+      typeof resumedScenario.scenario_id === "string" && resumedScenario.scenario_id.length > 0,
+      "Expected resumed App Server run to recreate planned-scenario.json."
+    );
+    assert(
+      typeof resumedPlan.attempt_strategy === "string" && resumedPlan.attempt_strategy.length > 0,
+      "Expected resumed App Server run to recreate plan.json."
     );
 
     console.log("Validated App Server interrupted generator repair.");

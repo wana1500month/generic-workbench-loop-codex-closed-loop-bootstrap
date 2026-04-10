@@ -11,6 +11,8 @@ import {
   loadFailureLineageArtifact
 } from "./failure-lineage.js";
 import { loadJson, loadJsonIfExists } from "./file-system.js";
+import { defaultIdeaPath, readIdeaBrief } from "./idea-intake.js";
+import { buildScenarioFromIdea } from "./planner.js";
 import {
   readControllerLeaseArtifact,
   readRuntimeLiveStateArtifact,
@@ -49,12 +51,14 @@ export interface RestoredRunState {
   runDirectory: string;
   runId: string;
   summary: LoopRunSummary;
-  scenario: LoopScenario;
-  plan: LoopPlan;
+  scenario?: LoopScenario;
+  plan?: LoopPlan;
   rubric: LoopRubric;
   plannedScenarioPath: string;
   planPath: string;
   plannerBriefPath: string;
+  initializationIncomplete: boolean;
+  initializationMissingArtifacts: string[];
   previousPatchRequest?: PatchRequestArtifact;
   previousPatchRequestPath?: string;
   previousTrajectoryDecision?: TrajectoryDecisionArtifact;
@@ -370,8 +374,8 @@ export const restoreRunState = async (
     diskHistory
   ] = await Promise.all([
     loadJsonIfExists<LoopRunSummary>(summaryPath),
-    loadJson<LoopScenario>(plannedScenarioPath),
-    loadJson<LoopPlan>(planPath),
+    loadJsonIfExists<LoopScenario>(plannedScenarioPath),
+    loadJsonIfExists<LoopPlan>(planPath),
     loadJson<LoopRubric>(rubricPath),
     readRuntimeLiveStateArtifact(runtimePaths.liveStatePath),
     readRuntimeRoundPhaseArtifact(runtimePaths.roundPhasePath),
@@ -381,9 +385,34 @@ export const restoreRunState = async (
   ]);
 
   const history = mergeRoundHistory(summary?.round_history ?? [], diskHistory);
+  const initializationMissingArtifacts = [
+    ...(scenario ? [] : [plannedScenarioPath]),
+    ...(plan ? [] : [planPath])
+  ];
+  const initializationIncomplete =
+    initializationMissingArtifacts.length > 0 && history.length === 0;
+  if (initializationMissingArtifacts.length > 0 && !initializationIncomplete) {
+    throw new Error(
+      `Missing run-scoped planning artifacts for resume: ${initializationMissingArtifacts
+        .map((path) => basename(path))
+        .join(", ")}.`
+    );
+  }
+  const hydratedScenario =
+    scenario ??
+    (initializationIncomplete
+      ? buildScenarioFromIdea(
+          await readIdeaBrief(summary?.idea_path ?? defaultIdeaPath)
+        )
+      : undefined);
+  if (!hydratedScenario) {
+    throw new Error(
+      `Could not resolve planning scenario state while restoring run '${runId}'.`
+    );
+  }
   const hydratedSummary = hydrateSummaryFromHistory({
     runId,
-    scenario,
+    scenario: hydratedScenario,
     rubric,
     summary,
     history,
@@ -450,6 +479,8 @@ export const restoreRunState = async (
     plannedScenarioPath,
     planPath,
     plannerBriefPath,
+    initializationIncomplete,
+    initializationMissingArtifacts,
     previousPatchRequest,
     previousPatchRequestPath,
     previousTrajectoryDecision,
@@ -513,6 +544,13 @@ export const restoreRunState = async (
       ...(interruptedRound
         ? [
             `Interrupted round ${interruptedRound.round} will resume from phase '${interruptedRound.resumeFromPhase}'.`
+          ]
+        : []),
+      ...(initializationIncomplete
+        ? [
+            `Resume detected incomplete planning initialization. Missing planner artifacts (${initializationMissingArtifacts
+              .map((path) => basename(path))
+              .join(", ")}); planner state will be rebuilt from IDEA and rubric before round execution continues.`
           ]
         : [])
     ],

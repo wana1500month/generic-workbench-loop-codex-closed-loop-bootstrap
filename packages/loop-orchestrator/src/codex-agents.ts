@@ -938,23 +938,39 @@ export const enhancePlanWithAppServer = async (input: {
     prompt: basePrompt
   });
 
-  const execution = await input.transport.runTask({
-    round: 0,
-    phase: "negotiation",
-    taskLabel: "planner enhancement",
-    prompt: skillPrompt("round-enhancement", preparedPrompt.prompt),
-    taskCwd: repoRoot,
-    sandboxMode: "readOnly",
-    approvalPolicy: "never",
-    outputSchema: plannerSchema,
-    inputItems: [
-      {
-        type: "text",
-        text: skillPrompt("round-enhancement", preparedPrompt.prompt)
-      },
-      roundEnhancementSkillItem()
-    ]
-  });
+  let execution;
+  try {
+    execution = await input.transport.runTask({
+      round: 0,
+      phase: "negotiation",
+      taskLabel: "planner enhancement",
+      prompt: skillPrompt("round-enhancement", preparedPrompt.prompt),
+      taskCwd: repoRoot,
+      sandboxMode: "readOnly",
+      approvalPolicy: "never",
+      outputSchema: plannerSchema,
+      inputItems: [
+        {
+          type: "text",
+          text: skillPrompt("round-enhancement", preparedPrompt.prompt)
+        },
+        roundEnhancementSkillItem()
+      ]
+    });
+  } catch (error) {
+    return {
+      value: { scenario: input.scenario, plan: input.plan },
+      runtimeWarnings: [
+        ...(preparedPrompt.warning ? [preparedPrompt.warning] : []),
+        appServerFailureWarning(
+          "planner",
+          error instanceof Error
+            ? `${error.message}; using deterministic planner output.`
+            : "App Server planner enhancement failed; using deterministic planner output."
+        )
+      ]
+    };
+  }
   if (execution.status !== "completed" || !execution.responseText) {
     return {
       value: { scenario: input.scenario, plan: input.plan },
@@ -1091,12 +1107,28 @@ export const enhanceContractReviewWithAppServer = async (input: {
     prompt: basePrompt
   });
 
-  const execution = await input.transport.runReview({
-    round: input.round,
-    phase: "negotiation",
-    reviewLabel: `round-${String(input.round).padStart(3, "0")} contract review`,
-    instructions: preparedPrompt.prompt
-  });
+  let execution;
+  try {
+    execution = await input.transport.runReview({
+      round: input.round,
+      phase: "negotiation",
+      reviewLabel: `round-${String(input.round).padStart(3, "0")} contract review`,
+      instructions: preparedPrompt.prompt
+    });
+  } catch (error) {
+    return {
+      value: input.contractReviewArtifact,
+      runtimeWarnings: [
+        ...(preparedPrompt.warning ? [preparedPrompt.warning] : []),
+        appServerFailureWarning(
+          "contract-review",
+          error instanceof Error
+            ? `${error.message}; using deterministic contract review.`
+            : "App Server contract-review failed; using deterministic contract review."
+        )
+      ]
+    };
+  }
   if (execution.status !== "completed" || !execution.reviewText) {
     return {
       value: input.contractReviewArtifact,
@@ -1219,23 +1251,39 @@ export const enhanceGeneratorPlanWithAppServer = async (input: {
     prompt: basePrompt
   });
 
-  const execution = await input.transport.runTask({
-    round: input.round,
-    phase: "negotiation",
-    taskLabel: "generator-plan enhancement",
-    prompt: skillPrompt("round-enhancement", preparedPrompt.prompt),
-    taskCwd: repoRoot,
-    sandboxMode: "readOnly",
-    approvalPolicy: "never",
-    outputSchema: generatorPlanSchema,
-    inputItems: [
-      {
-        type: "text",
-        text: skillPrompt("round-enhancement", preparedPrompt.prompt)
-      },
-      roundEnhancementSkillItem()
-    ]
-  });
+  let execution;
+  try {
+    execution = await input.transport.runTask({
+      round: input.round,
+      phase: "negotiation",
+      taskLabel: "generator-plan enhancement",
+      prompt: skillPrompt("round-enhancement", preparedPrompt.prompt),
+      taskCwd: repoRoot,
+      sandboxMode: "readOnly",
+      approvalPolicy: "never",
+      outputSchema: generatorPlanSchema,
+      inputItems: [
+        {
+          type: "text",
+          text: skillPrompt("round-enhancement", preparedPrompt.prompt)
+        },
+        roundEnhancementSkillItem()
+      ]
+    });
+  } catch (error) {
+    return {
+      value: input.generatorPlanArtifact,
+      runtimeWarnings: [
+        ...(preparedPrompt.warning ? [preparedPrompt.warning] : []),
+        appServerFailureWarning(
+          "generator-plan",
+          error instanceof Error
+            ? `${error.message}; using deterministic generator plan.`
+            : "App Server generator-plan enhancement failed; using deterministic generator plan."
+        )
+      ]
+    };
+  }
   if (execution.status !== "completed" || !execution.responseText) {
     return {
       value: input.generatorPlanArtifact,
@@ -1405,12 +1453,28 @@ export const enhanceEvalReportWithAppServer = async (input: {
     prompt: basePrompt
   });
 
-  const execution = await input.transport.runReview({
-    round: input.round,
-    phase: "evaluation",
-    reviewLabel: `round-${String(input.round).padStart(3, "0")} eval review`,
-    instructions: preparedPrompt.prompt
-  });
+  let execution;
+  try {
+    execution = await input.transport.runReview({
+      round: input.round,
+      phase: "evaluation",
+      reviewLabel: `round-${String(input.round).padStart(3, "0")} eval review`,
+      instructions: preparedPrompt.prompt
+    });
+  } catch (error) {
+    return {
+      value: input.evalReport,
+      runtimeWarnings: [
+        ...(preparedPrompt.warning ? [preparedPrompt.warning] : []),
+        appServerFailureWarning(
+          "evaluator",
+          error instanceof Error
+            ? `${error.message}; using deterministic evaluator report.`
+            : "App Server evaluator review failed; using deterministic evaluator report."
+        )
+      ]
+    };
+  }
   if (execution.status !== "completed" || !execution.reviewText) {
     return {
       value: input.evalReport,

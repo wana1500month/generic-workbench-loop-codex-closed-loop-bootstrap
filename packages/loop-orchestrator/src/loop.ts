@@ -276,6 +276,7 @@ class PhaseBudgetExceededError extends Error {
 const ephemeralRuntimeEventCodes = new Set<RuntimeEventCode>([
   "run.resumed_from_history",
   "resume.migration_override",
+  "resume.partial_init_rebuild",
   "resume.noop_terminal",
   "resume.reopened_terminal",
   "resume.continued",
@@ -824,7 +825,7 @@ export const runClosedLoop = async (input: {
     throw new Error("Repair mode requires --resume-run so the controller can restore persisted state.");
   }
   const attemptBudget =
-    input.maxRounds ?? restoredRun?.plan.max_rounds ?? 3;
+    input.maxRounds ?? restoredRun?.plan?.max_rounds ?? 3;
   const runId =
     restoredRun?.runId ??
     (await nextRunId(join(repoRoot, "evals", "runs")));
@@ -1087,6 +1088,21 @@ export const runClosedLoop = async (input: {
             }
           )
         ]
+      : []),
+    ...(restoredRun?.initializationIncomplete
+      ? [
+          buildRuntimeEvent(
+            "resume.partial_init_rebuild",
+            `Resume detected incomplete planning initialization for run '${runId}'. Missing planner artifacts will be rebuilt from IDEA and rubric before continuing.`,
+            {
+              resumed_run_id: runId,
+              missing_artifact_count:
+                restoredRun.initializationMissingArtifacts.length,
+              missing_artifacts:
+                restoredRun.initializationMissingArtifacts.join(", ")
+            }
+          )
+        ]
       : [])
   ]);
 
@@ -1122,6 +1138,9 @@ export const runClosedLoop = async (input: {
 
   if (
     restoredRun &&
+    !restoredRun.initializationIncomplete &&
+    restoredRun.plan &&
+    restoredRun.scenario &&
     !input.forceReopenTerminal &&
     resumeIdentityMismatches.length === 0 &&
     isResumeNoopTerminalStopReason(restoredStopReason)
@@ -1291,11 +1310,11 @@ export const runClosedLoop = async (input: {
       requestTimeoutMs: appServerRequestTimeoutMs
     });
   };
-  if (!restoredRun) {
+  if (!scenario || !plan) {
     try {
       await ensureEarlyAppServerTransport();
-      const baseScenario = buildScenarioFromIdea(idea);
-      const basePlan = buildLoopPlan({
+      const baseScenario = scenario ?? buildScenarioFromIdea(idea);
+      const basePlan = plan ?? buildLoopPlan({
         scenario: baseScenario,
         rubric: hydratedRubric,
         maxRounds: attemptBudget,

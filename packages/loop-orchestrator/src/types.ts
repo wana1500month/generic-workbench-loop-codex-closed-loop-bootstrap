@@ -37,6 +37,7 @@ export type RuntimeEventCode =
   | "run.resumed_from_history"
   | "resume.recovered_round_checkpoint"
   | "resume.repaired_interrupted_round"
+  | "resume.partial_init_rebuild"
   | "resume.migration_override"
   | "resume.noop_terminal"
   | "resume.reopened_terminal"
