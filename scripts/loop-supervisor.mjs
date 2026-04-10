@@ -2,10 +2,17 @@ import { spawn } from "node:child_process";
 import { openSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distCliPath = join(repoRoot, "packages", "loop-orchestrator", "dist", "cli.js");
+const runtimeHealthPath = join(
+  repoRoot,
+  "packages",
+  "loop-orchestrator",
+  "dist",
+  "runtime-health.js"
+);
 const npmExecutable = "npm";
 const runnerCliImport =
   "process.argv=[process.argv[0],'./packages/loop-orchestrator/dist/cli.js',...process.argv.slice(1)]; await import('./packages/loop-orchestrator/dist/cli.js')";
@@ -18,10 +25,9 @@ const parsePositiveNumber = (value, fallback) => {
 const pathForRunState = (runDirectory) =>
   join(runDirectory, "runtime", "supervisor-state.json");
 const runsDirectory = join(repoRoot, "evals", "runs");
-const pausedStopReasons = new Set([
-  "awaiting_current_thread_handoff",
-  "awaiting_manual_generator"
-]);
+const supervisorPollMs = 5_000;
+
+let runtimeHealthModule;
 
 const readJsonIfExists = async (path) => {
   try {
@@ -88,6 +94,9 @@ const runBuild = async () => {
     ["-p", "typescript@5.8.3", "tsc", "-b", "--force", "--pretty", "false"]
   );
 };
+
+const loadRuntimeHealthModule = async () =>
+  import(pathToFileURL(runtimeHealthPath).href);
 
 const findOptionValue = (args, option) => {
   const index = args.indexOf(option);
@@ -170,41 +179,42 @@ const parseSupervisorArgs = (argv) => {
   };
 };
 
-const spawnController = ({ controllerArgs, onRunDirectory, env }) =>
-  new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(
-      process.execPath,
-      ["--input-type=module", "--eval", runnerCliImport, "--", ...controllerArgs],
-      {
-        cwd: repoRoot,
-        env,
-        shell: false
-      }
-    );
+const spawnController = ({ controllerArgs, onRunDirectory, env }) => {
+  const child = spawn(
+    process.execPath,
+    ["--input-type=module", "--eval", runnerCliImport, "--", ...controllerArgs],
+    {
+      cwd: repoRoot,
+      env,
+      shell: false
+    }
+  );
 
-    let stdout = "";
-    let stderr = "";
-    let stdoutBuffer = "";
+  let stdout = "";
+  let stderr = "";
+  let stdoutBuffer = "";
 
-    child.stdout.on("data", (chunk) => {
-      const text = chunk.toString();
-      stdout += text;
-      process.stdout.write(text);
-      stdoutBuffer += text;
-      const lines = stdoutBuffer.split(/\r?\n/);
-      stdoutBuffer = lines.pop() ?? "";
-      for (const line of lines) {
-        const match = line.match(/^Run created:\s+(.+)$/);
-        if (match) {
-          onRunDirectory(resolve(repoRoot, match[1].trim()));
-        }
+  child.stdout.on("data", (chunk) => {
+    const text = chunk.toString();
+    stdout += text;
+    process.stdout.write(text);
+    stdoutBuffer += text;
+    const lines = stdoutBuffer.split(/\r?\n/);
+    stdoutBuffer = lines.pop() ?? "";
+    for (const line of lines) {
+      const match = line.match(/^Run created:\s+(.+)$/);
+      if (match) {
+        onRunDirectory(resolve(repoRoot, match[1].trim()));
       }
-    });
-    child.stderr.on("data", (chunk) => {
-      const text = chunk.toString();
-      stderr += text;
-      process.stderr.write(text);
-    });
+    }
+  });
+  child.stderr.on("data", (chunk) => {
+    const text = chunk.toString();
+    stderr += text;
+    process.stderr.write(text);
+  });
+
+  const completion = new Promise((resolvePromise, rejectPromise) => {
     child.on("error", rejectPromise);
     child.on("close", (code) => {
       resolvePromise({
@@ -215,6 +225,63 @@ const spawnController = ({ controllerArgs, onRunDirectory, env }) =>
       });
     });
   });
+
+  return { child, completion };
+};
+
+const readRuntimeHealth = async (runDirectory) => {
+  const runtimeDirectory = join(runDirectory, "runtime");
+  const [liveState, roundPhase, controllerLease, transportState] = await Promise.all([
+    readJsonIfExists(join(runtimeDirectory, "live-state.json")),
+    readJsonIfExists(join(runtimeDirectory, "round-phase.json")),
+    readJsonIfExists(join(runtimeDirectory, "controller-lease.json")),
+    readJsonIfExists(join(runtimeDirectory, "transport-state.json"))
+  ]);
+
+  const health = runtimeHealthModule.assessRuntimeHealth({
+    liveState,
+    roundPhase,
+    controllerLease,
+    transportState
+  });
+
+  return {
+    liveState,
+    roundPhase,
+    controllerLease,
+    transportState,
+    health
+  };
+};
+
+const waitForChildClose = (child) =>
+  new Promise((resolvePromise) => {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      resolvePromise();
+      return;
+    }
+    child.once("close", () => resolvePromise());
+  });
+
+const terminateController = async (child) => {
+  if (!child || child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+
+  child.kill();
+  const gracefulExit = await Promise.race([
+    waitForChildClose(child).then(() => true),
+    sleep(2_000).then(() => false)
+  ]);
+  if (gracefulExit || !child.pid || process.platform !== "win32") {
+    return;
+  }
+
+  await runCommand("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+    shell: false
+  }).catch(() => 1);
+  await waitForChildClose(child);
+};
 
 const runSupervisor = async (options) => {
   const controllerMode = findOptionValue(options.controllerArgs, "--controller-mode");
@@ -255,6 +322,13 @@ const runSupervisor = async (options) => {
       restart_count: restartCount,
       max_restarts: options.maxRestarts,
       last_exit_code: lastExitCode,
+      ...(input.executionState ? { execution_state: input.executionState } : {}),
+      ...(input.heartbeatAgeMs !== undefined
+        ? { heartbeat_age_ms: input.heartbeatAgeMs }
+        : {}),
+      ...(input.progressAgeMs !== undefined
+        ? { progress_age_ms: input.progressAgeMs }
+        : {}),
       ...(input.lastError ? { last_error: input.lastError } : {}),
       ...(options.logPath ? { log_path: options.logPath } : {}),
       ...(summary?.stop_reason ? { stop_reason: summary.stop_reason } : {}),
@@ -276,13 +350,64 @@ const runSupervisor = async (options) => {
       HARNESS_RUN_DISCOVERY_MARKER: discoveryMarkerPath,
       HARNESS_SUPERVISOR_SESSION_ID: supervisorSessionId
     };
-    const execution = await spawnController({
+    const controller = spawnController({
       controllerArgs: childArgs,
       env: childEnv,
       onRunDirectory: (nextRunDirectory) => {
         runDirectory = nextRunDirectory;
       }
     });
+    let restartReason;
+    let execution;
+
+    await writeState({
+      status: "launching",
+      launchedAt,
+      childPid: controller.child.pid
+    });
+
+    while (true) {
+      const outcome = await Promise.race([
+        controller.completion.then((result) => ({ kind: "completion", result })),
+        sleep(supervisorPollMs).then(() => ({ kind: "poll" }))
+      ]);
+
+      if (outcome.kind === "completion") {
+        execution = outcome.result;
+        break;
+      }
+
+      if (!runDirectory) {
+        continue;
+      }
+
+      const runtime = await readRuntimeHealth(runDirectory);
+      await writeState({
+        status: "watching",
+        launchedAt,
+        childPid: controller.child.pid,
+        executionState: runtime.health.execution_state,
+        heartbeatAgeMs: runtime.health.heartbeat_age_ms,
+        progressAgeMs: runtime.health.progress_age_ms
+      });
+
+      if (!runtime.health.should_restart) {
+        continue;
+      }
+
+      restartReason = `Supervisor detected ${runtime.health.execution_state}: ${runtime.health.summary}`;
+      await writeState({
+        status: "restarting",
+        launchedAt,
+        childPid: controller.child.pid,
+        executionState: runtime.health.execution_state,
+        heartbeatAgeMs: runtime.health.heartbeat_age_ms,
+        progressAgeMs: runtime.health.progress_age_ms,
+        lastError: restartReason
+      });
+      await terminateController(controller.child);
+    }
+
     lastExitCode = execution.code;
     if (!runDirectory) {
       const discoveryMarker = await readJsonIfExists(discoveryMarkerPath);
@@ -313,7 +438,9 @@ const runSupervisor = async (options) => {
 
     if (terminal) {
       await writeState({
-        status: pausedStopReasons.has(summary.stop_reason) ? "paused" : "completed",
+        status: runtimeHealthModule.pausedStopReasons.has(summary.stop_reason)
+          ? "paused"
+          : "completed",
         launchedAt,
         childPid: execution.pid
       });
@@ -328,7 +455,9 @@ const runSupervisor = async (options) => {
         lastError:
           !runDirectory
             ? "Controller exited before a run directory was recorded."
-            : `Restart budget exhausted after exit code ${execution.code}.`
+            : restartReason
+              ? `Restart budget exhausted after '${restartReason}'.`
+              : `Restart budget exhausted after exit code ${execution.code}.`
       });
       return execution.code === 0 ? 1 : execution.code;
     }
@@ -338,7 +467,8 @@ const runSupervisor = async (options) => {
       status: "restarting",
       launchedAt,
       childPid: execution.pid,
-      lastError: `Controller exited with code ${execution.code}; supervisor will resume the run.`
+      lastError: restartReason ??
+        `Controller exited with code ${execution.code}; supervisor will resume the run.`
     });
     await sleep(options.restartDelayMs);
   }
@@ -388,13 +518,15 @@ const main = async () => {
     process.exitCode = buildExitCode;
     return;
   }
+  runtimeHealthModule = await loadRuntimeHealthModule();
 
   if (options.noSupervisor) {
-    const execution = await spawnController({
+    const controller = spawnController({
       controllerArgs: options.controllerArgs,
       env: process.env,
       onRunDirectory: () => {}
     });
+    const execution = await controller.completion;
     process.exitCode = execution.code;
     return;
   }

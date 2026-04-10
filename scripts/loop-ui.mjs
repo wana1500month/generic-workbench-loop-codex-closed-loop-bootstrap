@@ -1,9 +1,18 @@
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const runsDirectory = join(repoRoot, "evals", "runs");
+const runtimeHealthPath = join(
+  repoRoot,
+  "packages",
+  "loop-orchestrator",
+  "dist",
+  "runtime-health.js"
+);
 
 const sleep = (ms) => new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
 
@@ -28,6 +37,32 @@ const readTailLines = async (path, count) => {
   }
 };
 
+const runBuild = async () =>
+  new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn("npm", ["run", "build", "--silent"], {
+      cwd: repoRoot,
+      env: process.env,
+      shell: process.platform === "win32"
+    });
+    child.on("error", rejectPromise);
+    child.on("close", (code) => resolvePromise(code ?? 1));
+  });
+
+let runtimeHealthModule;
+const ensureRuntimeHealthModule = async () => {
+  if (!existsSync(runtimeHealthPath)) {
+    const buildExitCode = await runBuild();
+    if (buildExitCode !== 0) {
+      throw new Error("Build the repository before using loop-ui.");
+    }
+  }
+
+  if (!runtimeHealthModule) {
+    runtimeHealthModule = await import(pathToFileURL(runtimeHealthPath).href);
+  }
+  return runtimeHealthModule;
+};
+
 const resolveRunDirectory = async (candidate) => {
   if (candidate) {
     return resolve(repoRoot, candidate);
@@ -45,16 +80,65 @@ const resolveRunDirectory = async (candidate) => {
   return join(runsDirectory, latest);
 };
 
+const formatAge = (ageMs) => {
+  if (ageMs === undefined) {
+    return "unknown";
+  }
+  if (ageMs < 1000) {
+    return `${ageMs}ms`;
+  }
+  if (ageMs < 10_000) {
+    return `${(ageMs / 1000).toFixed(1)}s`;
+  }
+  if (ageMs < 120_000) {
+    return `${Math.round(ageMs / 1000)}s`;
+  }
+  return `${(ageMs / 60_000).toFixed(1)}m`;
+};
+
+const bannerFor = (executionState) => {
+  if (executionState === "stalled") {
+    return "STALLED";
+  }
+  if (executionState === "paused") {
+    return "PAUSED";
+  }
+  if (executionState === "completed") {
+    return "COMPLETED";
+  }
+  if (executionState === "failed") {
+    return "FAILED";
+  }
+  return "RUNNING";
+};
+
 const render = async (runDirectory) => {
   const runtimeDirectory = join(runDirectory, "runtime");
-  const [transportState, liveState, roundPhase, recentEvents] = await Promise.all([
-    readJsonIfExists(join(runtimeDirectory, "transport-state.json")),
-    readJsonIfExists(join(runtimeDirectory, "live-state.json")),
-    readJsonIfExists(join(runtimeDirectory, "round-phase.json")),
-    readTailLines(join(runtimeDirectory, "app-server-events.jsonl"), 20)
-  ]);
+  const [
+    transportState,
+    liveState,
+    roundPhase,
+    controllerLease,
+    recentEvents,
+    runtimeHealth
+  ] =
+    await Promise.all([
+      readJsonIfExists(join(runtimeDirectory, "transport-state.json")),
+      readJsonIfExists(join(runtimeDirectory, "live-state.json")),
+      readJsonIfExists(join(runtimeDirectory, "round-phase.json")),
+      readJsonIfExists(join(runtimeDirectory, "controller-lease.json")),
+      readTailLines(join(runtimeDirectory, "app-server-events.jsonl"), 20),
+      ensureRuntimeHealthModule()
+    ]);
+  const health = runtimeHealth.assessRuntimeHealth({
+    liveState,
+    roundPhase,
+    controllerLease,
+    transportState
+  });
 
   process.stdout.write("\x1bc");
+  console.log(`Banner: ${bannerFor(health.execution_state)}`);
   console.log(`Run: ${transportState?.run_id ?? liveState?.run_id ?? "unknown"}`);
   console.log(
     `Transport: ${transportState?.transport_mode ?? "unknown"} (${transportState?.status ?? "unknown"})`
@@ -65,6 +149,11 @@ const render = async (runDirectory) => {
   console.log(
     `Round: ${roundPhase?.round ?? liveState?.active_round ?? "none"} / Phase: ${roundPhase?.phase ?? liveState?.active_phase ?? "none"} (${roundPhase?.status ?? liveState?.active_phase_status ?? "none"})`
   );
+  console.log(`Execution: ${health.execution_state}`);
+  console.log(`Heartbeat age: ${formatAge(health.heartbeat_age_ms)}`);
+  console.log(`Progress age: ${formatAge(health.progress_age_ms)}`);
+  console.log(`Transport event age: ${formatAge(health.transport_event_age_ms)}`);
+  console.log(`Health: ${health.summary}`);
   console.log("");
   console.log("Recent events:");
   if (recentEvents.length === 0) {
@@ -78,6 +167,7 @@ const render = async (runDirectory) => {
 
 const main = async () => {
   const runDirectory = await resolveRunDirectory(process.argv[2]);
+  await ensureRuntimeHealthModule();
   console.log(`Watching ${runDirectory}`);
   while (true) {
     await render(runDirectory);

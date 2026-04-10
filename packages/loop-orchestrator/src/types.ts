@@ -48,6 +48,12 @@ export type ValidationLane =
 export type ExecutorMode = "harness" | "subagents-experimental";
 export type ControllerMode = "attached" | "detached";
 export type TransportMode = "codex-exec" | "current-thread" | "app-server";
+export type ExecutionState =
+  | "running"
+  | "paused"
+  | "stalled"
+  | "failed"
+  | "completed";
 export type UiBindingMode =
   | "embedded-app-server"
   | "stock-current-thread"
@@ -60,7 +66,11 @@ export type ControllerRoundPhase =
   | "evaluation"
   | "round_commit"
   | "run_finalize";
-export type ControllerPhaseStatus = "in_progress" | "completed";
+export type ControllerPhaseStatus =
+  | "in_progress"
+  | "completed"
+  | "stalled"
+  | "awaiting_input";
 export type ProbeFailureClassification = "environment_blocked" | "probe_error";
 export type FailureLineagePolicyAction = "patch_only" | "recontract" | "stop";
 export type FailureLineageTriggerCode =
@@ -1105,6 +1115,10 @@ export interface RuntimeRoundPhaseArtifact {
   status: ControllerPhaseStatus;
   updated_at: string;
   heartbeat_at: string;
+  last_progress_at?: string;
+  last_progress_note?: string;
+  phase_timeout_ms?: number;
+  stall_threshold_ms?: number;
   owner_pid?: number;
   phase_started_at?: string;
   phase_completed_at?: string;
@@ -1120,9 +1134,10 @@ export interface ControllerLeaseArtifact {
   controller_mode: ControllerMode;
   transport_mode: TransportMode;
   executor_mode?: ExecutorMode;
-  status: "running" | "stopped";
+  status: "running" | "paused" | "stalled" | "stopped" | "failed";
   updated_at: string;
   heartbeat_at: string;
+  last_progress_at?: string;
   owner_pid?: number;
   round?: number;
   phase?: ControllerRoundPhase;
@@ -1138,6 +1153,11 @@ export interface RuntimeLiveStateArtifact {
   executor_mode?: ExecutorMode;
   updated_at: string;
   heartbeat_at: string;
+  execution_state: ExecutionState;
+  last_progress_at?: string;
+  last_progress_note?: string;
+  phase_timeout_ms?: number;
+  stall_threshold_ms?: number;
   round_count: number;
   active_round?: number;
   active_phase?: ControllerRoundPhase;
@@ -1233,6 +1253,9 @@ export interface SupervisorStateArtifact {
   child_pid?: number;
   restart_count: number;
   max_restarts: number;
+  execution_state?: ExecutionState;
+  heartbeat_age_ms?: number;
+  progress_age_ms?: number;
   last_exit_code?: number;
   last_error?: string;
   log_path?: string;

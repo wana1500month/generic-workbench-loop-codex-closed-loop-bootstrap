@@ -6,6 +6,7 @@ import type {
   ControllerMode,
   ControllerPhaseStatus,
   ControllerRoundPhase,
+  ExecutionState,
   ExecutorMode,
   RunStopReason,
   TransportMode,
@@ -27,6 +28,12 @@ export interface RuntimeHeartbeatSnapshot {
   round?: number;
   phase?: ControllerRoundPhase;
   phaseStatus?: ControllerPhaseStatus;
+  executionState: ExecutionState;
+  leaseStatus: ControllerLeaseArtifact["status"];
+  lastProgressAt?: string;
+  lastProgressNote?: string;
+  phaseTimeoutMs?: number;
+  stallThresholdMs?: number;
   phaseStartedAt?: string;
   latestRoundSummaryPath?: string;
   latestEvalReportPath?: string;
@@ -112,7 +119,7 @@ export const startRuntimeHeartbeat = (input: {
   getSnapshot: () => RuntimeHeartbeatSnapshot;
   intervalMs?: number;
 }): RuntimeHeartbeatController => {
-  let currentStatus: ControllerLeaseArtifact["status"] = "running";
+  let finalStatusOverride: ControllerLeaseArtifact["status"] | undefined;
   let writeInFlight = false;
   const intervalMs = input.intervalMs ?? 5000;
 
@@ -123,6 +130,7 @@ export const startRuntimeHeartbeat = (input: {
     writeInFlight = true;
     const now = new Date().toISOString();
     const snapshot = input.getSnapshot();
+    const leaseStatus = finalStatusOverride ?? snapshot.leaseStatus;
 
     try {
       const liveStateArtifact: RuntimeLiveStateArtifact = {
@@ -132,6 +140,19 @@ export const startRuntimeHeartbeat = (input: {
         ...(input.executorMode ? { executor_mode: input.executorMode } : {}),
         updated_at: now,
         heartbeat_at: now,
+        execution_state: snapshot.executionState,
+        ...(snapshot.lastProgressAt
+          ? { last_progress_at: snapshot.lastProgressAt }
+          : {}),
+        ...(snapshot.lastProgressNote
+          ? { last_progress_note: snapshot.lastProgressNote }
+          : {}),
+        ...(snapshot.phaseTimeoutMs !== undefined
+          ? { phase_timeout_ms: snapshot.phaseTimeoutMs }
+          : {}),
+        ...(snapshot.stallThresholdMs !== undefined
+          ? { stall_threshold_ms: snapshot.stallThresholdMs }
+          : {}),
         round_count: snapshot.roundCount,
         ...(snapshot.round !== undefined ? { active_round: snapshot.round } : {}),
         ...(snapshot.phase ? { active_phase: snapshot.phase } : {}),
@@ -157,9 +178,12 @@ export const startRuntimeHeartbeat = (input: {
         controller_mode: input.controllerMode,
         transport_mode: input.transportMode,
         ...(input.executorMode ? { executor_mode: input.executorMode } : {}),
-        status: currentStatus,
+        status: leaseStatus,
         updated_at: now,
         heartbeat_at: now,
+        ...(snapshot.lastProgressAt
+          ? { last_progress_at: snapshot.lastProgressAt }
+          : {}),
         owner_pid: process.pid,
         ...(snapshot.round !== undefined ? { round: snapshot.round } : {}),
         ...(snapshot.phase ? { phase: snapshot.phase } : {}),
@@ -185,6 +209,18 @@ export const startRuntimeHeartbeat = (input: {
             status: snapshot.phaseStatus,
             updated_at: now,
             heartbeat_at: now,
+            ...(snapshot.lastProgressAt
+              ? { last_progress_at: snapshot.lastProgressAt }
+              : {}),
+            ...(snapshot.lastProgressNote
+              ? { last_progress_note: snapshot.lastProgressNote }
+              : {}),
+            ...(snapshot.phaseTimeoutMs !== undefined
+              ? { phase_timeout_ms: snapshot.phaseTimeoutMs }
+              : {}),
+            ...(snapshot.stallThresholdMs !== undefined
+              ? { stall_threshold_ms: snapshot.stallThresholdMs }
+              : {}),
             owner_pid: process.pid,
             ...(snapshot.phaseStartedAt
               ? { phase_started_at: snapshot.phaseStartedAt }
@@ -207,8 +243,8 @@ export const startRuntimeHeartbeat = (input: {
 
   return {
     tick: writeSnapshot,
-    stop: async (status = "stopped") => {
-      currentStatus = status;
+    stop: async (status) => {
+      finalStatusOverride = status;
       clearInterval(interval);
       await writeSnapshot();
     }

@@ -122,6 +122,10 @@ import {
   writeRuntimeRoundPhaseArtifact,
   writeTransportStateArtifact
 } from "./runtime-state.js";
+import {
+  pausedStopReasons,
+  phaseBudgetToStallThresholdMs
+} from "./runtime-health.js";
 import { transportProtocolPathForRun, writeTransportProtocol } from "./transport-protocol.js";
 import { buildTrajectoryDecisionArtifact } from "./trajectory-controller.js";
 import type {
@@ -136,6 +140,7 @@ import type {
   ControllerPhaseStatus,
   ControllerRoundPhase,
   EvalReport,
+  ExecutionState,
   EvaluatorVerdictArtifact,
   FailureLineage,
   GeneratorPlanArtifact,
@@ -244,6 +249,18 @@ const parsePhaseTimeoutOverrides = (
       return acc;
     }, {});
 };
+
+class PhaseBudgetExceededError extends Error {
+  public readonly phase: ControllerRoundPhase;
+  public readonly timeoutMs: number;
+
+  public constructor(phase: ControllerRoundPhase, timeoutMs: number) {
+    super(`PHASE_TIMEOUT:${phase}:${timeoutMs}`);
+    this.name = "PhaseBudgetExceededError";
+    this.phase = phase;
+    this.timeoutMs = timeoutMs;
+  }
+}
 
 const ephemeralRuntimeEventCodes = new Set<RuntimeEventCode>([
   "run.resumed_from_history",
@@ -426,6 +443,9 @@ const runAdapterCapabilities = async (input: {
   previousPatchRequestPath?: string;
   previousTrajectoryDecisionPath?: string;
   extraEnv?: Record<string, string>;
+  onCapabilityComplete?: (
+    execution: AdapterCapabilityExecution
+  ) => Promise<void> | void;
 }): Promise<AdapterCapabilityExecution[]> => {
   if (!input.loadedAdapter) {
     return [];
@@ -433,37 +453,37 @@ const runAdapterCapabilities = async (input: {
 
   const executions: AdapterCapabilityExecution[] = [];
   for (const capability of input.capabilities) {
-    executions.push(
-      await executeAdapterCapability({
-        loadedAdapter: input.loadedAdapter,
+    const execution = await executeAdapterCapability({
+      loadedAdapter: input.loadedAdapter,
+      capability,
+      roundDirectory: input.roundDirectory,
+      extraEnv: input.extraEnv,
+      packet: {
+        adapter_id: input.loadedAdapter.contract.adapter_id,
         capability,
-        roundDirectory: input.roundDirectory,
-        extraEnv: input.extraEnv,
-        packet: {
-          adapter_id: input.loadedAdapter.contract.adapter_id,
-          capability,
-          run_id: input.runId,
-          round: input.round,
-          run_directory: input.runDirectory,
-          round_directory: input.roundDirectory,
-          runtime_directory: input.runtimeDirectory,
-          codex_session_registry_path: input.codexSessionRegistryPath,
-          target_root: join(
-            input.loadedAdapter.base_directory,
-            input.loadedAdapter.contract.target_root
-          ),
-          idea_path: input.ideaPath,
-          planned_scenario_path: input.plannedScenarioPath,
-          plan_path: input.planPath,
-          round_contract_path: input.roundContractPath,
-          contract_review_path: input.contractReviewPath,
-          contract_agreement_path: input.contractAgreementPath,
-          generator_plan_path: input.generatorPlanPath,
-          patch_request_path: input.previousPatchRequestPath,
-          trajectory_decision_path: input.previousTrajectoryDecisionPath
-        }
-      })
-    );
+        run_id: input.runId,
+        round: input.round,
+        run_directory: input.runDirectory,
+        round_directory: input.roundDirectory,
+        runtime_directory: input.runtimeDirectory,
+        codex_session_registry_path: input.codexSessionRegistryPath,
+        target_root: join(
+          input.loadedAdapter.base_directory,
+          input.loadedAdapter.contract.target_root
+        ),
+        idea_path: input.ideaPath,
+        planned_scenario_path: input.plannedScenarioPath,
+        plan_path: input.planPath,
+        round_contract_path: input.roundContractPath,
+        contract_review_path: input.contractReviewPath,
+        contract_agreement_path: input.contractAgreementPath,
+        generator_plan_path: input.generatorPlanPath,
+        patch_request_path: input.previousPatchRequestPath,
+        trajectory_decision_path: input.previousTrajectoryDecisionPath
+      }
+    });
+    executions.push(execution);
+    await input.onCapabilityComplete?.(execution);
   }
 
   return executions;
@@ -1344,11 +1364,52 @@ export const runClosedLoop = async (input: {
               restoredRun.summary.stop_reason === "adapter_contract_invalid"
           }
         : undefined;
+  let currentCheckpointStopReason = restoredRun?.summary.stop_reason;
   let activeHeartbeatRound = restoredRun?.interruptedRound?.round;
   let activeHeartbeatPhase = input.resumePhase ?? restoredRun?.interruptedRound?.resumeFromPhase;
   let activeHeartbeatPhaseStatus = restoredRun?.interruptedRound?.phaseStatus;
   let activeHeartbeatPhaseStartedAt = restoredRun?.runtimeRoundPhase?.phase_started_at;
-  let currentCheckpointStopReason = restoredRun?.summary.stop_reason;
+  let lastProgressAt =
+    restoredRun?.runtimeLiveState?.last_progress_at ??
+    restoredRun?.runtimeRoundPhase?.last_progress_at;
+  let lastProgressNote =
+    restoredRun?.runtimeLiveState?.last_progress_note ??
+    restoredRun?.runtimeRoundPhase?.last_progress_note;
+  let activePhaseTimeoutMs =
+    (activeHeartbeatPhase ? phaseTimeouts[activeHeartbeatPhase] : undefined) ??
+    restoredRun?.runtimeLiveState?.phase_timeout_ms ??
+    restoredRun?.runtimeRoundPhase?.phase_timeout_ms;
+  let activeStallThresholdMs =
+    restoredRun?.runtimeLiveState?.stall_threshold_ms ??
+    restoredRun?.runtimeRoundPhase?.stall_threshold_ms ??
+    phaseBudgetToStallThresholdMs(activePhaseTimeoutMs);
+  let activeExecutionState: ExecutionState =
+    restoredRun?.runtimeLiveState?.execution_state ??
+    (currentCheckpointStopReason
+      ? pausedStopReasons.has(currentCheckpointStopReason)
+        ? "paused"
+        : "completed"
+      : activeHeartbeatPhaseStatus === "awaiting_input"
+        ? "paused"
+        : activeHeartbeatPhaseStatus === "stalled"
+          ? "stalled"
+          : "running");
+  let activeLeaseStatus:
+    | "running"
+    | "paused"
+    | "stalled"
+    | "stopped"
+    | "failed" =
+    restoredRun?.controllerLease?.status ??
+    (activeExecutionState === "completed"
+      ? "stopped"
+      : activeExecutionState === "failed"
+        ? "failed"
+        : activeExecutionState === "paused"
+          ? "paused"
+          : activeExecutionState === "stalled"
+            ? "stalled"
+            : "running");
   let latestRoundSummaryPath =
     restoredRun?.latestRoundSummary && restoredRun.latestRoundSummary.round > 0
       ? join(
@@ -1360,6 +1421,49 @@ export const runClosedLoop = async (input: {
   const heartbeatNotes = [...(restoredRun?.repairNotes ?? [])];
   let transportProtocolCurrentPath =
     restoredRun?.summary.transport_protocol_path ?? transportProtocolPath;
+  const syncActivePhaseBudget = (): void => {
+    const configuredPhaseTimeout =
+      activeHeartbeatPhase ? phaseTimeouts[activeHeartbeatPhase] : undefined;
+    activePhaseTimeoutMs =
+      configuredPhaseTimeout ??
+      (activeHeartbeatPhase === restoredRun?.runtimeRoundPhase?.phase
+        ? restoredRun?.runtimeLiveState?.phase_timeout_ms ??
+          restoredRun?.runtimeRoundPhase?.phase_timeout_ms
+        : undefined);
+    activeStallThresholdMs = phaseBudgetToStallThresholdMs(activePhaseTimeoutMs);
+  };
+  const setExecutionState = (nextState: ExecutionState): void => {
+    activeExecutionState = nextState;
+    activeLeaseStatus =
+      nextState === "completed"
+        ? "stopped"
+        : nextState === "failed"
+          ? "failed"
+          : nextState === "paused"
+            ? "paused"
+            : nextState === "stalled"
+              ? "stalled"
+              : "running";
+  };
+  const assertPhaseBudget = (): void => {
+    if (
+      !activeHeartbeatPhase ||
+      activeHeartbeatPhaseStatus !== "in_progress" ||
+      activePhaseTimeoutMs === undefined ||
+      !activeHeartbeatPhaseStartedAt
+    ) {
+      return;
+    }
+
+    const phaseStartedAt = Date.parse(activeHeartbeatPhaseStartedAt);
+    if (Number.isNaN(phaseStartedAt)) {
+      return;
+    }
+
+    if (Date.now() - phaseStartedAt > activePhaseTimeoutMs) {
+      throw new PhaseBudgetExceededError(activeHeartbeatPhase, activePhaseTimeoutMs);
+    }
+  };
   const writeLiveTransportProtocol = async (): Promise<void> => {
     transportProtocolCurrentPath = await writeTransportProtocol({
       runDirectory,
@@ -1400,7 +1504,7 @@ export const runClosedLoop = async (input: {
         stopReason: currentCheckpointStopReason,
         notes: heartbeatNotes
       }) ?? Promise.resolve(),
-      heartbeat?.stop("stopped") ?? Promise.resolve()
+      heartbeat?.stop() ?? Promise.resolve()
     ]);
   };
   try {
@@ -1452,10 +1556,20 @@ export const runClosedLoop = async (input: {
     paths: runtimeStatePaths,
     getSnapshot: () => ({
       roundCount: history.length,
+      executionState: activeExecutionState,
+      leaseStatus: activeLeaseStatus,
       ...(activeHeartbeatRound !== undefined ? { round: activeHeartbeatRound } : {}),
       ...(activeHeartbeatPhase ? { phase: activeHeartbeatPhase } : {}),
       ...(activeHeartbeatPhaseStatus
         ? { phaseStatus: activeHeartbeatPhaseStatus }
+        : {}),
+      ...(lastProgressAt ? { lastProgressAt } : {}),
+      ...(lastProgressNote ? { lastProgressNote } : {}),
+      ...(activePhaseTimeoutMs !== undefined
+        ? { phaseTimeoutMs: activePhaseTimeoutMs }
+        : {}),
+      ...(activeStallThresholdMs !== undefined
+        ? { stallThresholdMs: activeStallThresholdMs }
         : {}),
       ...(activeHeartbeatPhaseStartedAt
         ? { phaseStartedAt: activeHeartbeatPhaseStartedAt }
@@ -1473,6 +1587,30 @@ export const runClosedLoop = async (input: {
       ...(heartbeatNotes.length > 0 ? { notes: heartbeatNotes } : {})
     })
   });
+  const markProgress = async (note: string): Promise<void> => {
+    assertPhaseBudget();
+    lastProgressAt = new Date().toISOString();
+    lastProgressNote = note;
+    if (
+      activeExecutionState !== "paused" &&
+      activeExecutionState !== "stalled" &&
+      activeExecutionState !== "failed" &&
+      activeExecutionState !== "completed"
+    ) {
+      setExecutionState("running");
+    }
+    await heartbeat!.tick();
+  };
+  const withPhaseBudget = async <T>(
+    phase: ControllerRoundPhase,
+    work: () => Promise<T>
+  ): Promise<T> => {
+    const result = await work();
+    if (activeHeartbeatPhase === phase) {
+      assertPhaseBudget();
+    }
+    return result;
+  };
   const recordRoundPhase = async (inputPhase: {
     round: number;
     phase: ControllerRoundPhase;
@@ -1484,8 +1622,14 @@ export const runClosedLoop = async (input: {
     activeHeartbeatRound = inputPhase.round;
     activeHeartbeatPhase = inputPhase.phase;
     activeHeartbeatPhaseStatus = inputPhase.status;
+    syncActivePhaseBudget();
     if (inputPhase.status === "in_progress") {
       activeHeartbeatPhaseStartedAt = now;
+      setExecutionState("running");
+    } else if (inputPhase.status === "awaiting_input") {
+      setExecutionState("paused");
+    } else if (inputPhase.status === "stalled") {
+      setExecutionState("stalled");
     }
     if (inputPhase.notes?.length) {
       heartbeatNotes.splice(0, heartbeatNotes.length, ...inputPhase.notes);
@@ -1500,6 +1644,14 @@ export const runClosedLoop = async (input: {
       status: inputPhase.status,
       updated_at: now,
       heartbeat_at: now,
+      ...(lastProgressAt ? { last_progress_at: lastProgressAt } : {}),
+      ...(lastProgressNote ? { last_progress_note: lastProgressNote } : {}),
+      ...(activePhaseTimeoutMs !== undefined
+        ? { phase_timeout_ms: activePhaseTimeoutMs }
+        : {}),
+      ...(activeStallThresholdMs !== undefined
+        ? { stall_threshold_ms: activeStallThresholdMs }
+        : {}),
       owner_pid: process.pid,
       ...(activeHeartbeatPhaseStartedAt
         ? { phase_started_at: activeHeartbeatPhaseStartedAt }
@@ -1723,10 +1875,10 @@ export const runClosedLoop = async (input: {
         : undefined;
     let persistContractReviewArtifact = false;
     let persistContractAgreementArtifact = false;
-    let contractArtifact: RoundContractArtifact;
-    let contractReviewArtifact: ContractReviewArtifact;
-    let contractAgreementArtifact: ContractAgreementArtifact;
-    let generatorPlanArtifact: GeneratorPlanArtifact;
+    let contractArtifact!: RoundContractArtifact;
+    let contractReviewArtifact!: ContractReviewArtifact;
+    let contractAgreementArtifact!: ContractAgreementArtifact;
+    let generatorPlanArtifact!: GeneratorPlanArtifact;
 
     if (phaseCompletedAtOrBeyond(resumedRoundPhase, "negotiation")) {
       const negotiationState = await loadJson<{
@@ -1746,6 +1898,7 @@ export const runClosedLoop = async (input: {
       persistContractAgreementArtifact =
         negotiationState.persistContractAgreementArtifact;
     } else {
+      await withPhaseBudget("negotiation", async () => {
       await recordRoundPhase({
         round,
         phase: "negotiation",
@@ -1891,6 +2044,7 @@ export const runClosedLoop = async (input: {
         writeRoundEvaluationPlaceholders({ roundDirectory }),
         writeRoundHandoffPlaceholders({ roundDirectory })
       ]);
+      await markProgress(`Negotiation artifacts saved for round ${round}.`);
       await recordRoundPhase({
         round,
         phase: "negotiation",
@@ -1900,6 +2054,7 @@ export const runClosedLoop = async (input: {
           contract_path: artifacts.contract_json_path,
           generator_plan_path: artifacts.generator_plan_json_path
         }
+      });
       });
     }
     if (
@@ -2008,6 +2163,9 @@ export const runClosedLoop = async (input: {
       await writeJson(artifacts.target_manifest_path, targetManifest ?? {});
     }
     if (!phaseCompletedAtOrBeyond(resumedRoundPhase, "pre_verification")) {
+      const preVerificationResult = await withPhaseBudget(
+        "pre_verification",
+        async (): Promise<ClosedLoopResult | undefined> => {
       await recordRoundPhase({
         round,
         phase: "pre_verification",
@@ -2031,9 +2189,9 @@ export const runClosedLoop = async (input: {
       );
       if (
         attachedGeneratorEligible &&
-        attachedGeneratorTargetRoot &&
-        missingPreVerificationCapabilities.includes("apply_change") &&
-        !attachedGeneratorResponse
+          attachedGeneratorTargetRoot &&
+          missingPreVerificationCapabilities.includes("apply_change") &&
+          !attachedGeneratorResponse
       ) {
         const attachedGeneratorPrompt = await readFile(
           artifacts.attached_generator_prompt_path,
@@ -2053,6 +2211,9 @@ export const runClosedLoop = async (input: {
           attachedGeneratorResponse = await readAttachedGeneratorResponse(
             artifacts.attached_generator_response_path
           );
+          await markProgress(
+            `App Server attached generator completed for round ${round}.`
+          );
           if (
             !attachedGeneratorResponse ||
             attachedGeneratorResponse.status === "blocked"
@@ -2066,6 +2227,22 @@ export const runClosedLoop = async (input: {
             `App Server attached generator completed for round ${round} and wrote ${artifacts.attached_generator_response_path}.`
           ]);
         } else if (transportMode === "current-thread") {
+          await recordRoundPhase({
+            round,
+            phase: "pre_verification",
+            status: "awaiting_input",
+            artifacts: {
+              attached_generator_task_path:
+                artifacts.attached_generator_task_path,
+              attached_generator_response_path:
+                artifacts.attached_generator_response_path
+            },
+            notes: [
+              `Current-thread attached generator is paused for round ${round}.`,
+              `Complete ${artifacts.attached_generator_prompt_path} on the current Codex thread.`,
+              `Write ${artifacts.attached_generator_response_path}, then resume the run.`
+            ]
+          });
           return finalizeRunAsManualHandoff({
             stopReason: "awaiting_current_thread_handoff",
             notes: [
@@ -2118,6 +2295,11 @@ export const runClosedLoop = async (input: {
                 HARNESS_CONTROLLER_MODE: controllerMode,
                 HARNESS_TRANSPORT: transportMode,
                 HARNESS_EXECUTOR_MODE: executorMode
+              },
+              onCapabilityComplete: async (execution) => {
+                await markProgress(
+                  `Adapter capability '${execution.capability}' finished for round ${round}.`
+                );
               }
             })
           : [];
@@ -2135,6 +2317,7 @@ export const runClosedLoop = async (input: {
         ),
         writeJson(artifacts.target_manifest_path, targetManifest ?? {})
       ]);
+      await markProgress(`Pre-verification artifacts saved for round ${round}.`);
       await recordRoundPhase({
         round,
         phase: "pre_verification",
@@ -2153,6 +2336,12 @@ export const runClosedLoop = async (input: {
             : {})
         }
       });
+          return undefined;
+        }
+      );
+      if (preVerificationResult) {
+        return preVerificationResult;
+      }
     }
     const persistedCoreProbeResults =
       await loadJsonIfExists<CoreVerificationProbeExecution[]>(
@@ -2174,6 +2363,7 @@ export const runClosedLoop = async (input: {
       await writeJson(artifacts.core_probe_results_path, coreProbeResults);
     }
     if (!phaseCompletedAtOrBeyond(resumedRoundPhase, "core_probes")) {
+      await withPhaseBudget("core_probes", async () => {
       await recordRoundPhase({
         round,
         phase: "core_probes",
@@ -2195,7 +2385,12 @@ export const runClosedLoop = async (input: {
               runDirectory,
               roundDirectory,
               targetManifest,
-              probeIds: missingCoreProbeIds
+              probeIds: missingCoreProbeIds,
+              onProbeComplete: async (probeExecution) => {
+                await markProgress(
+                  `Core probe '${probeExecution.probe_id}' finished for round ${round}.`
+                );
+              }
             })
           : [];
       coreProbeResults = [
@@ -2207,6 +2402,7 @@ export const runClosedLoop = async (input: {
         ).values()
       ];
       await writeJson(artifacts.core_probe_results_path, coreProbeResults);
+      await markProgress(`Core probe results saved for round ${round}.`);
       await recordRoundPhase({
         round,
         phase: "core_probes",
@@ -2214,6 +2410,7 @@ export const runClosedLoop = async (input: {
         artifacts: {
           core_probe_results_path: artifacts.core_probe_results_path
         }
+      });
       });
     }
     const persistedPostVerificationExecutions =
@@ -2258,6 +2455,7 @@ export const runClosedLoop = async (input: {
       await writeJson(artifacts.adapter_executions_path, adapterExecutions);
     }
     if (!phaseCompletedAtOrBeyond(resumedRoundPhase, "post_verification")) {
+      await withPhaseBudget("post_verification", async () => {
       await recordRoundPhase({
         round,
         phase: "post_verification",
@@ -2307,6 +2505,11 @@ export const runClosedLoop = async (input: {
                         selectedVerificationProfile.profile_path
                     }
                   : {})
+              },
+              onCapabilityComplete: async (execution) => {
+                await markProgress(
+                  `Adapter capability '${execution.capability}' finished for round ${round}.`
+                );
               }
             })
           : [];
@@ -2325,6 +2528,7 @@ export const runClosedLoop = async (input: {
         ),
         writeJson(artifacts.adapter_executions_path, adapterExecutions)
       ]);
+      await markProgress(`Post-verification artifacts saved for round ${round}.`);
       await recordRoundPhase({
         round,
         phase: "post_verification",
@@ -2335,14 +2539,15 @@ export const runClosedLoop = async (input: {
           adapter_executions_path: artifacts.adapter_executions_path
         }
       });
+      });
     }
-    let evalReport: EvalReport;
-    let previousPatchRequestResolved: boolean;
-    let evaluatorVerdictArtifact: EvaluatorVerdictArtifact;
-    let qualityCritiqueArtifact: QualityCritiqueArtifact;
-    let patchRequestArtifact: PatchRequestArtifact;
-    let trajectoryDecisionArtifact: TrajectoryDecisionArtifact;
-    let roundResultArtifact: RoundResultArtifact;
+    let evalReport!: EvalReport;
+    let previousPatchRequestResolved!: boolean;
+    let evaluatorVerdictArtifact!: EvaluatorVerdictArtifact;
+    let qualityCritiqueArtifact!: QualityCritiqueArtifact;
+    let patchRequestArtifact!: PatchRequestArtifact;
+    let trajectoryDecisionArtifact!: TrajectoryDecisionArtifact;
+    let roundResultArtifact!: RoundResultArtifact;
     let failureLineage: FailureLineage | undefined;
 
     if (phaseCompletedAtOrBeyond(resumedRoundPhase, "evaluation")) {
@@ -2372,6 +2577,7 @@ export const runClosedLoop = async (input: {
       previousPatchRequestResolved =
         roundResultArtifact.previous_patch_request_resolved;
     } else {
+      await withPhaseBudget("evaluation", async () => {
       await recordRoundPhase({
         round,
         phase: "evaluation",
@@ -2551,6 +2757,7 @@ export const runClosedLoop = async (input: {
         evalReport,
         failureLineage
       });
+      await markProgress(`Evaluation artifacts saved for round ${round}.`);
       await recordRoundPhase({
         round,
         phase: "evaluation",
@@ -2560,6 +2767,7 @@ export const runClosedLoop = async (input: {
           patch_request_path: artifacts.patch_request_json_path,
           round_result_path: artifacts.round_result_json_path
         }
+      });
       });
     }
     latestEvalReport = evalReport;
@@ -2677,6 +2885,10 @@ export const runClosedLoop = async (input: {
         ].slice(-6);
       }
     }
+    const stopReason = roundStopReason === "continue" ? undefined : roundStopReason;
+    const roundCheckpointSummary = await withPhaseBudget(
+      "round_commit",
+      async () => {
     await recordRoundPhase({
       round,
       phase: "round_commit",
@@ -2689,8 +2901,7 @@ export const runClosedLoop = async (input: {
     await writeRoundSummary(roundDirectory, roundSummary);
     latestRoundSummaryPath = join(roundDirectory, "round_summary.json");
     latestEvalReportPath = artifacts.eval_report_path;
-
-    const stopReason = roundStopReason === "continue" ? undefined : roundStopReason;
+    await markProgress(`Round summary saved for round ${round}.`);
     await writeRoundHandoff({
       roundDirectory,
       scenario,
@@ -2716,7 +2927,8 @@ export const runClosedLoop = async (input: {
     previousTrajectoryDecision = trajectoryDecisionArtifact;
     previousTrajectoryDecisionPath = artifacts.trajectory_decision_json_path;
     previousRoundSummary = roundSummary;
-    const roundCheckpointSummary = await writeCheckpoint(stopReason);
+    const checkpointSummary = await writeCheckpoint(stopReason);
+    await markProgress(`Run checkpoint saved after round ${round}.`);
     await recordRoundPhase({
       round,
       phase: "round_commit",
@@ -2726,6 +2938,9 @@ export const runClosedLoop = async (input: {
         summary_path: summaryPath
       }
     });
+        return checkpointSummary;
+      }
+    );
     if (repairRoundLimit === round) {
       return {
         plan,
@@ -2881,66 +3096,70 @@ export const runClosedLoop = async (input: {
     resumedFromRunId: input.resumeRunPath ? runId : undefined
   });
   currentCheckpointStopReason = summary.stop_reason;
-  await recordRoundPhase({
-    round: terminalRound ?? 0,
-    phase: "run_finalize",
-    status: "in_progress",
-    artifacts: {
-      summary_path: summaryPath
-    }
-  });
+  await withPhaseBudget("run_finalize", async () => {
+    await recordRoundPhase({
+      round: terminalRound ?? 0,
+      phase: "run_finalize",
+      status: "in_progress",
+      artifacts: {
+        summary_path: summaryPath
+      }
+    });
 
-  const codexHandoffPath = await writeRunCodexHandoff({
-    runDirectory,
-    summary,
-    plan,
-    scenario
-  });
-  summary.codex_handoff_path = codexHandoffPath;
+    const codexHandoffPath = await writeRunCodexHandoff({
+      runDirectory,
+      summary,
+      plan,
+      scenario
+    });
+    summary.codex_handoff_path = codexHandoffPath;
 
-  await Promise.all([
-    writeJson(currentResumeIdentityPath, currentResumeIdentity),
-    ...(resumeDecisionArtifact && resumeDecisionPath
-      ? [writeJson(resumeDecisionPath, resumeDecisionArtifact)]
-      : [])
-  ]);
-  await writeRunCheckpoint({
-    runDirectory,
-    summary,
-    currentBest: {
-      round: terminalRound,
-      totalScore: terminalRoundSummary?.total_score ?? bestScore ?? 0,
-      controlPlaneScore:
-        terminalRoundSummary?.control_plane_score ?? bestControlPlaneScore,
-      proofScore: terminalRoundSummary?.proof_score ?? bestProofScore,
-      releaseScore: terminalRoundSummary?.release_score ?? bestReleaseScore,
-      thresholdResults:
-        terminalRoundSummary?.threshold_results ?? bestThresholdResults,
-      dimensionScores:
-        terminalRoundSummary?.dimension_scores ?? bestDimensionScores,
-      patchRequestPath:
-        terminalRoundSummary?.patch_request_path ?? bestPatchRequestPath,
-      evalReportPath:
-        terminalRoundSummary?.eval_report_path ?? bestEvalReportPath,
-      bestScoringRound: bestRound,
-      bestScoringTotalScore: bestScore ?? 0,
-      bestScoringControlPlaneScore: bestControlPlaneScore,
-      bestScoringProofScore: bestProofScore,
-      bestScoringReleaseScore: bestReleaseScore,
-      bestScoringThresholdResults: bestThresholdResults,
-      bestScoringDimensionScores: bestDimensionScores,
-      bestScoringPatchRequestPath: bestPatchRequestPath,
-      bestScoringEvalReportPath: bestEvalReportPath
-    }
-  });
-  await recordRoundPhase({
-    round: terminalRound ?? 0,
-    phase: "run_finalize",
-    status: "completed",
-    artifacts: {
-      summary_path: summaryPath,
-      codex_handoff_path: codexHandoffPath
-    }
+    await Promise.all([
+      writeJson(currentResumeIdentityPath, currentResumeIdentity),
+      ...(resumeDecisionArtifact && resumeDecisionPath
+        ? [writeJson(resumeDecisionPath, resumeDecisionArtifact)]
+        : [])
+    ]);
+    await writeRunCheckpoint({
+      runDirectory,
+      summary,
+      currentBest: {
+        round: terminalRound,
+        totalScore: terminalRoundSummary?.total_score ?? bestScore ?? 0,
+        controlPlaneScore:
+          terminalRoundSummary?.control_plane_score ?? bestControlPlaneScore,
+        proofScore: terminalRoundSummary?.proof_score ?? bestProofScore,
+        releaseScore: terminalRoundSummary?.release_score ?? bestReleaseScore,
+        thresholdResults:
+          terminalRoundSummary?.threshold_results ?? bestThresholdResults,
+        dimensionScores:
+          terminalRoundSummary?.dimension_scores ?? bestDimensionScores,
+        patchRequestPath:
+          terminalRoundSummary?.patch_request_path ?? bestPatchRequestPath,
+        evalReportPath:
+          terminalRoundSummary?.eval_report_path ?? bestEvalReportPath,
+        bestScoringRound: bestRound,
+        bestScoringTotalScore: bestScore ?? 0,
+        bestScoringControlPlaneScore: bestControlPlaneScore,
+        bestScoringProofScore: bestProofScore,
+        bestScoringReleaseScore: bestReleaseScore,
+        bestScoringThresholdResults: bestThresholdResults,
+        bestScoringDimensionScores: bestDimensionScores,
+        bestScoringPatchRequestPath: bestPatchRequestPath,
+        bestScoringEvalReportPath: bestEvalReportPath
+      }
+    });
+    await markProgress(`Final run artifacts saved for ${runId}.`);
+    setExecutionState("completed");
+    await recordRoundPhase({
+      round: terminalRound ?? 0,
+      phase: "run_finalize",
+      status: "completed",
+      artifacts: {
+        summary_path: summaryPath,
+        codex_handoff_path: codexHandoffPath
+      }
+    });
   });
 
   return {
@@ -2949,6 +3168,65 @@ export const runClosedLoop = async (input: {
     runDirectory,
     plannedScenarioPath
   };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : String(error);
+    const note =
+      error instanceof PhaseBudgetExceededError
+        ? `Phase '${error.phase}' exhausted its ${error.timeoutMs}ms budget and was marked stalled.`
+        : `Controller failed while '${activeHeartbeatPhase ?? "initializing"}': ${message}`;
+    heartbeatNotes.splice(0, heartbeatNotes.length, ...unique([...heartbeatNotes, note]));
+
+    if (heartbeat && activeHeartbeatRound !== undefined && activeHeartbeatPhase) {
+      const stalledAt = new Date().toISOString();
+      activeHeartbeatPhaseStatus = "stalled";
+      setExecutionState(
+        error instanceof PhaseBudgetExceededError ? "stalled" : "failed"
+      );
+      await writeRuntimeRoundPhaseArtifact(runtimeStatePaths.roundPhasePath, {
+        run_id: runId,
+        round: activeHeartbeatRound,
+        controller_mode: controllerMode,
+        transport_mode: transportMode,
+        executor_mode: executorMode,
+        phase: activeHeartbeatPhase,
+        status: "stalled",
+        updated_at: stalledAt,
+        heartbeat_at: stalledAt,
+        ...(lastProgressAt ? { last_progress_at: lastProgressAt } : {}),
+        ...(lastProgressNote ? { last_progress_note: lastProgressNote } : {}),
+        ...(activePhaseTimeoutMs !== undefined
+          ? { phase_timeout_ms: activePhaseTimeoutMs }
+          : {}),
+        ...(activeStallThresholdMs !== undefined
+          ? { stall_threshold_ms: activeStallThresholdMs }
+          : {}),
+        owner_pid: process.pid,
+        ...(activeHeartbeatPhaseStartedAt
+          ? { phase_started_at: activeHeartbeatPhaseStartedAt }
+          : {}),
+        ...(appServerTransport?.snapshot().thread_id
+          ? { session: { thread_id: appServerTransport.snapshot().thread_id } }
+          : {}),
+        ...(heartbeatNotes.length > 0 ? { notes: heartbeatNotes } : {})
+      });
+      await writeLiveTransportProtocol();
+      if (appServerTransport) {
+        await appServerTransport.syncPhase({
+          round: activeHeartbeatRound,
+          phase: activeHeartbeatPhase,
+          status: "stalled",
+          notes: heartbeatNotes
+        });
+      }
+      await heartbeat.tick();
+    }
+
+    if (!(error instanceof PhaseBudgetExceededError)) {
+      setExecutionState("failed");
+      await heartbeat?.tick();
+    }
+    throw error;
   } finally {
     await stopRuntime();
   }

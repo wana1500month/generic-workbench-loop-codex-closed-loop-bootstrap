@@ -3,6 +3,14 @@ export { runSingleIteration } from "./run-single-iteration.js";
 export { executeAdapterCapability, loadAdapterContract } from "./adapter-runtime.js";
 export { executeCoreVerificationProbes } from "./core-verifier.js";
 export { evaluateLoopIntent, renderLoopIntentResponse } from "./intent-gate.js";
+export {
+  assessRuntimeHealth,
+  defaultHeartbeatStaleMs,
+  defaultStallThresholdMs,
+  defaultTransportEventStaleMs,
+  pausedStopReasons,
+  phaseBudgetToStallThresholdMs
+} from "./runtime-health.js";
 export type {
   AdapterCapabilityExecution,
   AdapterCapabilityName,

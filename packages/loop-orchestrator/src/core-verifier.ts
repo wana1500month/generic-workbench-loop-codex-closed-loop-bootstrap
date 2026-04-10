@@ -802,6 +802,7 @@ export const executeCoreVerificationProbes = async (input: {
   roundDirectory: string;
   targetManifest?: TargetManifest;
   probeIds?: string[];
+  onProbeComplete?: (execution: CoreVerificationProbeExecution) => Promise<void> | void;
 }): Promise<CoreVerificationProbeExecution[]> => {
   const profile = input.loadedAdapter?.verification_profile?.profile;
   if (!input.loadedAdapter || !profile?.core_probes || profile.core_probes.length === 0) {
@@ -893,7 +894,7 @@ export const executeCoreVerificationProbes = async (input: {
           : {})
       });
       const finishedAt = new Date();
-      executions.push({
+      const recordedExecution: CoreVerificationProbeExecution = {
         probe_id: probe.probe_id,
         label: probe.label,
         role,
@@ -918,7 +919,9 @@ export const executeCoreVerificationProbes = async (input: {
           resultPath,
           evidencePaths: [resultPath, ...execution.evidencePaths]
         })
-      });
+      };
+      executions.push(recordedExecution);
+      await input.onProbeComplete?.(recordedExecution);
     } catch (error: unknown) {
       const summary =
         error instanceof Error
@@ -964,7 +967,7 @@ export const executeCoreVerificationProbes = async (input: {
         failure_classification: classifyProbeFailureSummary(summary)
       });
       const finishedAt = new Date();
-      executions.push({
+      const recordedExecution: CoreVerificationProbeExecution = {
         probe_id: probe.probe_id,
         label: probe.label,
         role,
@@ -986,7 +989,9 @@ export const executeCoreVerificationProbes = async (input: {
           resultPath,
           evidencePaths: [resultPath]
         })
-      });
+      };
+      executions.push(recordedExecution);
+      await input.onProbeComplete?.(recordedExecution);
     }
   }
 

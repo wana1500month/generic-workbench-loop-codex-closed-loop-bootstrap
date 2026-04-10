@@ -18,6 +18,10 @@ import {
   readTransportStateArtifact,
   runtimeStatePathsForRun
 } from "./runtime-state.js";
+import {
+  assessRuntimeHealth,
+  defaultHeartbeatStaleMs
+} from "./runtime-health.js";
 import type {
   ActiveContractFrame,
   ContractAgreementArtifact,
@@ -190,25 +194,7 @@ const activeContractFrameForHistory = async (
 };
 
 const resolvedRunDirectory = (runPath: string): string => resolve(runPath);
-const controllerLeaseStaleMs = 30_000;
-
 const roundDirectoryPattern = /^round-(\d+)$/;
-
-const isLeaseStale = (
-  lease: ControllerLeaseArtifact | undefined,
-  now = Date.now()
-): boolean => {
-  if (!lease || lease.status !== "running") {
-    return false;
-  }
-
-  const heartbeatAt = Date.parse(lease.heartbeat_at);
-  if (Number.isNaN(heartbeatAt)) {
-    return true;
-  }
-
-  return now - heartbeatAt > controllerLeaseStaleMs;
-};
 
 const loadRoundSummariesFromDisk = async (
   runDirectory: string
@@ -446,7 +432,13 @@ export const restoreRunState = async (
     history,
     runtimeRoundPhase
   });
-  const staleLeaseDetected = isLeaseStale(controllerLease);
+  const runtimeHealth = assessRuntimeHealth({
+    liveState: runtimeLiveState,
+    roundPhase: runtimeRoundPhase,
+    controllerLease,
+    transportState
+  });
+  const staleLeaseDetected = runtimeHealth.heartbeat_stale;
 
   return {
     runDirectory,
@@ -510,7 +502,12 @@ export const restoreRunState = async (
         : []),
       ...(staleLeaseDetected
         ? [
-            `Detected stale controller lease from ${controllerLease?.heartbeat_at ?? "unknown heartbeat"} while restoring run state.`
+            `Detected stale controller heartbeat from ${runtimeHealth.heartbeat_at ?? controllerLease?.heartbeat_at ?? "unknown heartbeat"} while restoring run state (>${Math.round(defaultHeartbeatStaleMs / 1000)}s).`
+          ]
+        : []),
+      ...(runtimeHealth.execution_state === "stalled"
+        ? [
+            `Runtime health is stalled: ${runtimeHealth.summary}`
           ]
         : []),
       ...(interruptedRound

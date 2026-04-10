@@ -72,7 +72,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `current-thread` and `app-server` are same-thread transports. Both forbid nested `codex exec` calls from shared runtime paths.
 - Bootstrap-generated `apply_change` now accepts same-thread generator work through `runtime/attached-generator-prompt.md` and `runtime/attached-generator-response.json` instead of insisting on nested `codex exec`.
 - App Server attached generator turns now honor per-task `cwd`, writable roots, request timeout, and task completion timeout. Use `--app-server-task-timeout-ms`, `--app-server-request-timeout-ms`, and `--phase-timeout-ms phase=value,...` to tune long-running attached work without abusing `turn/steer` as a heartbeat.
-- Use `npm run loop:watch -- ...` when the controller should survive outer shell timeouts. The supervisor watches the child controller, restarts from `--resume-run` when needed, persists `runtime/supervisor-state.json` once the run exists, and discovers the owned run through a supervisor marker instead of guessing from the newest run directory.
+- Use `npm run loop:watch -- ...` when the controller should survive outer shell timeouts. The supervisor now polls runtime health while the child is still alive, marks stale-progress runs as `stalled`, restarts from `--resume-run` when needed, persists `runtime/supervisor-state.json` once the run exists, and discovers the owned run through a supervisor marker instead of guessing from the newest run directory.
 - Use `--repair` with `--resume-run` when the controller should repair persisted state and stop instead of opening additional rounds.
 - Use `--resume-phase <phase>` to force repair or resume from a known persisted controller phase such as `evaluation` or `round_commit`.
 - Use `--force-reopen-terminal` only when you intentionally want to reopen a run that already ended with `target_reached`, `contract_completed`, `environment_blocked`, or `adapter_contract_invalid`.
@@ -81,6 +81,8 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Every run now persists that identity in `resume-identity.json`, and `summary.json.resume_identity_path` points to it directly.
 - Resumed invocations now also persist `resume-decision.json`, and `summary.json.resume_decision_path` points at the authoritative reopen or no-op decision for that invocation.
 - Every run now also persists `runtime/live-state.json`, `runtime/round-phase.json`, and `runtime/controller-lease.json`, and `summary.json` carries those paths so recovery can inspect controller state without trusting chat memory.
+- `runtime/live-state.json` now separates `execution_state` from transport liveness and records `last_progress_at` / `last_progress_note`, so a fresh heartbeat is no longer treated as proof of real forward progress.
+- `runtime/round-phase.json` and `runtime/controller-lease.json` now also carry progress timestamps plus `stalled` / `awaiting_input` status, so pause and stall surfaces survive resume and supervision flows.
 - Every run now also persists `runtime/transport-state.json`, and `summary.json.transport_state_path` points at the active transport contract and live thread/turn state.
 - Same-thread runs now also persist `runtime/current-thread-protocol.md` or `runtime/app-server-protocol.md`, and `summary.json.transport_protocol_path` points at that operator surface.
 - Same-thread bootstrap generator rounds now also persist `runtime/attached-generator-task.json`, `runtime/attached-generator-prompt.md`, and `runtime/attached-generator-response.json`, so attached mutation can be resumed from files alone.
@@ -396,6 +398,8 @@ npm run validate:reference-adapter
 ```
 
 `loop:single` and `loop:run` write harness artifacts by default. When `--adapter <path>` is provided, they also execute the external capability boundary.
+
+`loop:ui` now renders derived runtime health instead of raw runtime files. Expect explicit `RUNNING`, `PAUSED`, `STALLED`, `COMPLETED`, or `FAILED` banners plus heartbeat and progress ages.
 
 Use `validate:lifecycle-api`, `validate:family-browser-semantic`, and `validate:family-fullstack-semantic` for deterministic controller coverage. Use `validate:family-browser`, `validate:family-fullstack`, `validate:family-editor`, and `validate:family-dashboard` for environment-integration smoke that may legitimately classify failures as `environment_blocked` instead of product defects.
 
