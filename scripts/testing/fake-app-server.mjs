@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import readline from "node:readline";
 
@@ -23,6 +23,12 @@ const loadPersistedState = async () => {
 
 const persistedState = await loadPersistedState();
 
+const writeAtomically = async (path, contents) => {
+  const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+  await writeFile(tempPath, contents, "utf8");
+  await rename(tempPath, path);
+};
+
 let currentThreadId = persistedState?.currentThreadId ?? defaultThreadId;
 let threadName = persistedState?.threadName ?? "fake attached loop";
 let threadLifecycle = persistedState?.threadLifecycle ?? "not_started";
@@ -44,7 +50,7 @@ const persistState = async () => {
     return;
   }
   await mkdir(dirname(statePath), { recursive: true });
-  await writeFile(
+  await writeAtomically(
     statePath,
     JSON.stringify(
       {
@@ -60,8 +66,7 @@ const persistState = async () => {
       },
       null,
       2
-    ) + "\n",
-    "utf8"
+    ) + "\n"
   );
 };
 
@@ -85,7 +90,7 @@ const appendRecord = async (entry) => {
     existing = [];
   }
   existing.push(entry);
-  await writeFile(recordPath, JSON.stringify(existing, null, 2) + "\n", "utf8");
+  await writeAtomically(recordPath, JSON.stringify(existing, null, 2) + "\n");
 };
 
 const send = async (message) => {
