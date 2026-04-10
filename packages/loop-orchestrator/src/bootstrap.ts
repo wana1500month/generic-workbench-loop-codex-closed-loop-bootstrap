@@ -422,6 +422,28 @@ const defaultApiBaseUrlForFamily = (
     ? "http://127.0.0.1:3000/api"
     : undefined;
 
+const defaultStrictPortBrowserRunCommand =
+  "npm run dev -- --host 127.0.0.1 --port 3000 --strictPort";
+
+export const defaultRunCommandForBootstrap = (
+  targetFamily: BootstrapTargetFamily,
+  projectMode: BootstrapAnswers["projectMode"]
+): string => {
+  if (
+    targetFamily === "browser-app" ||
+    targetFamily === "browser-editor" ||
+    targetFamily === "dashboard"
+  ) {
+    return defaultStrictPortBrowserRunCommand;
+  }
+
+  if (projectMode === "existing" && isApiOnlyFamily(targetFamily)) {
+    return "npm run start";
+  }
+
+  return "npm run dev";
+};
+
 const browserBackedFamily = (targetFamily: BootstrapTargetFamily): boolean =>
   !isApiOnlyFamily(targetFamily);
 
@@ -1527,7 +1549,7 @@ const moduleImportPath = (fromDirectory: string, toFile: string): string =>
     return normalized.startsWith(".") ? normalized : `./${normalized}`;
   })();
 
-const helperTemplate = (codexRuntimeImportPath: string): string => `import { createWriteStream } from "node:fs";
+const helperTemplate = (codexRuntimeImportPath: string): string => `import { openSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
@@ -1676,7 +1698,8 @@ export const spawnCommand = async (command, options = {}) =>
       cwd: options.cwd ?? targetRoot,
       env: { ...process.env, ...(options.env ?? {}) },
       shell: options.shell ?? true,
-      detached: options.detached ?? false
+      detached: options.detached ?? false,
+      windowsHide: options.windowsHide ?? true
     });
 
     let stdout = "";
@@ -1706,29 +1729,59 @@ export const spawnCommand = async (command, options = {}) =>
 
 export const startDetachedCommand = async (command, logPath, cwd = targetRoot) => {
   await ensureDirectory(dirname(logPath));
-  const logStream = createWriteStream(logPath, { flags: "a" });
+  const stdoutFd = openSync(logPath, "a");
+  const stderrFd = openSync(logPath, "a");
   const child = spawn(command, {
     cwd,
     env: process.env,
     shell: true,
     detached: true,
-    stdio: ["ignore", "pipe", "pipe"]
+    windowsHide: true,
+    stdio: ["ignore", stdoutFd, stderrFd]
   });
-  child.stdout?.pipe(logStream);
-  child.stderr?.pipe(logStream);
   child.unref();
   return { pid: child.pid ?? -1 };
 };
 
 export { readCodexSession, runCodexCommand, writeCodexSession };
 
-export const stopProcess = (pid) => {
+export const isProcessAlive = (pid) => {
+  if (typeof pid !== "number" || pid <= 0) {
+    return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const stopProcessTree = async (pid) => {
   if (typeof pid !== "number" || pid <= 0) {
     return;
   }
+
+  if (process.platform === "win32") {
+    await new Promise((resolvePromise) => {
+      const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+        shell: false,
+        windowsHide: true,
+        stdio: "ignore"
+      });
+      killer.on("close", () => resolvePromise(undefined));
+      killer.on("error", () => resolvePromise(undefined));
+    });
+    return;
+  }
+
   try {
-    process.kill(pid);
-  } catch {}
+    process.kill(-pid, "SIGTERM");
+  } catch {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {}
+  }
 };
 
 export const waitForUrl = async (url, timeoutMs = 60000) => {
@@ -2156,11 +2209,12 @@ const runTargetTemplate = (): string => `import { join } from "node:path";
 
 import {
   finalize,
+  isProcessAlive,
   readConfig,
   readJsonIfExists,
   runtimePaths,
   startDetachedCommand,
-  stopProcess,
+  stopProcessTree,
   waitForUrl,
   writeArtifact,
   writeRuntimeJson
@@ -2170,16 +2224,58 @@ const main = async () => {
   const config = await readConfig();
   const processStatePath = runtimePaths.runtimeDirectory + "/server-process.json";
   const previousState = await readJsonIfExists(processStatePath);
-  if (previousState?.pid) {
-    stopProcess(previousState.pid);
+  const logPath = join(runtimePaths.artifactsDirectory, "run-target.log");
+  const previousPid =
+    typeof previousState?.pid === "number" && previousState.pid > 0
+      ? previousState.pid
+      : null;
+  const trackedProcessAlive = previousPid !== null && isProcessAlive(previousPid);
+  const existingProbe = await waitForUrl(config.ready_url, 1500);
+  if (existingProbe.ok) {
+    await writeRuntimeJson("server-process.json", {
+      pid: trackedProcessAlive ? previousPid : null,
+      command: config.run_command,
+      reused: true,
+      adopted_existing_server: !trackedProcessAlive
+    });
+
+    const probePath = await writeArtifact(
+      "run-target-probe.log",
+      [
+        "ready_url=" + config.ready_url,
+        "status=" + existingProbe.status,
+        "ok=" + String(existingProbe.ok),
+        "reused=true",
+        "",
+        existingProbe.body
+      ].join("\\n")
+    );
+
+    await finalize({
+      capability: "run_target",
+      ok: true,
+      summary: "Reused existing target at " + config.ready_url + ".",
+      findings: [],
+      evidence_paths: [probePath],
+      target_manifest: {
+        ...(config.app_url ? { app_url: config.app_url } : {}),
+        ...(config.health_url ? { health_url: config.health_url } : {}),
+        ...(config.api_base_url ? { api_base_url: config.api_base_url } : {})
+      }
+    });
+    return;
   }
 
-  const logPath = join(runtimePaths.artifactsDirectory, "run-target.log");
+  if (previousPid) {
+    await stopProcessTree(previousPid);
+  }
+
   if (config.run_command) {
     const started = await startDetachedCommand(config.run_command, logPath, runtimePaths.targetRoot);
     await writeRuntimeJson("server-process.json", {
       pid: started.pid,
-      command: config.run_command
+      command: config.run_command,
+      reused: false
     });
   }
 
@@ -2202,7 +2298,10 @@ const main = async () => {
       ? "Target responded at " + config.ready_url + "."
       : "Target did not become ready at " + config.ready_url + ".",
     findings: probe.ok ? [] : ["Failed to reach " + config.ready_url + "."],
-    evidence_paths: ["artifacts/run-target.log", probePath],
+    evidence_paths: [
+      ...(config.run_command ? ["artifacts/run-target.log"] : []),
+      probePath
+    ],
     target_manifest: {
       ...(config.app_url ? { app_url: config.app_url } : {}),
       ...(config.health_url ? { health_url: config.health_url } : {}),
@@ -3267,10 +3366,7 @@ const collectAnswers = async (): Promise<BootstrapAnswers> => {
       const maxRounds = await askMaxRounds(rl, 3);
 
       const frameworkHint = defaultFrameworkHintForFamily(targetFamily);
-      const defaultRunCommand =
-        projectMode === "existing" && isApiOnlyFamily(targetFamily)
-          ? "npm run start"
-          : "npm run dev";
+      const defaultRunCommand = defaultRunCommandForBootstrap(targetFamily, projectMode);
       const runCommand =
         projectMode === "existing"
           ? await askRequired(

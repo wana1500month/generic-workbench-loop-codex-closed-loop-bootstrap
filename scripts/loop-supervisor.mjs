@@ -69,7 +69,8 @@ const runCommand = async (command, args, options = {}) =>
     const child = spawn(command, args, {
       cwd: options.cwd ?? repoRoot,
       env: process.env,
-      shell: options.shell ?? process.platform === "win32"
+      shell: options.shell ?? process.platform === "win32",
+      windowsHide: true
     });
     child.stdout.on("data", (chunk) => {
       process.stdout.write(chunk);
@@ -186,7 +187,8 @@ const spawnController = ({ controllerArgs, onRunDirectory, env }) => {
     {
       cwd: repoRoot,
       env,
-      shell: false
+      shell: false,
+      windowsHide: true
     }
   );
 
@@ -504,7 +506,8 @@ const main = async () => {
         cwd: repoRoot,
         env: process.env,
         detached: true,
-        stdio: ["ignore", logFd, logFd]
+        stdio: ["ignore", logFd, logFd],
+        windowsHide: true
       }
     );
     child.unref();
