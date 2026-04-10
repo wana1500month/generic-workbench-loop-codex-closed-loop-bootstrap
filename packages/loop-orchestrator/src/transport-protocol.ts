@@ -62,7 +62,7 @@ ${(input.notes ?? []).length > 0 ? input.notes!.map((note) => `- ${note}`).join(
     input.transportMode === "current-thread"
       ? `## Current-Thread Rules
 
-1. Stay on the current Codex thread. Do not call nested \`codex exec\` or \`codex exec resume\`.
+1. Stay on the current Codex thread. This is the stock foreground-thread operator surface. Do not call nested \`codex exec\` or \`codex exec resume\`.
 2. Work phase-by-phase. Update persisted protocol artifacts before and after each controller phase.
 3. Keep shell usage short-lived and local to the current phase.
 4. Treat \`round-contract.json\`, \`patch-request.json\`, and \`runtime/round-phase.json\` as authoritative over chat memory.
@@ -78,7 +78,7 @@ ${(input.notes ?? []).length > 0 ? input.notes!.map((note) => `- ${note}`).join(
 `
       : `## App Server Rules
 
-1. The live thread and turn belong to the App Server transport state, not to the stock Codex UI thread.
+1. Treat App Server as an embedded background-automation surface. The live thread and turn belong to the App Server transport state, not to the stock Codex UI thread.
 2. Resume the persisted \`thread_id\` when available, read thread state before opening a new turn, and keep \`thread/name/set\` aligned with the run label.
 3. Use \`turn/steer\` only for active phase updates on the current thread; use dedicated task turns for attached generator work.
 4. Keep \`transport-state.json\` aligned with thread lifecycle, runtime status, active flags, \`turn_id\`, and event cursor.

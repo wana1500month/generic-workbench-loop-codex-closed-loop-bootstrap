@@ -128,7 +128,8 @@ const transportPromptText = (input: {
   notes?: string[];
 }): string =>
   [
-    `Harness run ${input.runId} is attached through App Server transport.`,
+    `Harness run ${input.runId} is attached through the embedded App Server transport.`,
+    "This is a background automation surface, not the stock foreground Codex thread.",
     "The external loop controller remains authoritative for filesystem mutation and round state.",
     "Use this thread as the live operator container only. Do not spawn nested codex exec calls.",
     `Round ${input.round} is ${input.phase} (${input.status}).`,
@@ -142,6 +143,7 @@ class LiveAppServerTransport implements AppServerTransportController {
   private readonly transportStatePath: string;
   private readonly summaryPath: string;
   private readonly protocolPath: string;
+  private readonly dashboardPath: string;
   private readonly command: string;
   private readonly args: string[];
   private readonly cwd: string;
@@ -175,6 +177,7 @@ class LiveAppServerTransport implements AppServerTransportController {
     transportStatePath: string;
     summaryPath: string;
     protocolPath: string;
+    dashboardPath: string;
     restoredThreadId?: string;
     threadName: string;
     defaultTaskTimeoutMs: number;
@@ -187,6 +190,7 @@ class LiveAppServerTransport implements AppServerTransportController {
     this.transportStatePath = input.transportStatePath;
     this.summaryPath = input.summaryPath;
     this.protocolPath = input.protocolPath;
+    this.dashboardPath = input.dashboardPath;
     this.command = command;
     this.args = args;
     this.cwd = repoRoot;
@@ -236,6 +240,7 @@ class LiveAppServerTransport implements AppServerTransportController {
       cwd: this.cwd,
       env: process.env,
       shell: false,
+      windowsHide: true,
       stdio: ["pipe", "pipe", "pipe"]
     });
     this.snapshotState.server_pid = this.child.pid;
@@ -1135,7 +1140,7 @@ class LiveAppServerTransport implements AppServerTransportController {
   ): Promise<void> {
     const effectiveStatus = explicitStatus ?? this.terminalTransportStatus;
     const notes = unique([
-      "App Server transport keeps a live thread/turn container through codex app-server.",
+      "App Server transport is an embedded background-automation surface that keeps a live thread/turn container through codex app-server.",
       `Request log: ${this.requestsPath}`,
       `Event log: ${this.eventsPath}`,
       `Protocol surface: ${this.protocolPath}`
@@ -1150,6 +1155,7 @@ class LiveAppServerTransport implements AppServerTransportController {
           executorMode: this.executorMode,
           summaryPath: this.summaryPath,
           protocolPath: this.protocolPath,
+          dashboardPath: this.dashboardPath,
           status: this.deriveTransportStatus(effectiveStatus, Boolean(lastError)),
           notes,
           ...(lastError ? { lastError } : {}),
@@ -1168,6 +1174,7 @@ export const startAppServerTransport = async (input: {
   transportStatePath: string;
   summaryPath: string;
   protocolPath: string;
+  dashboardPath: string;
   restoredThreadId?: string;
   initialRound: number;
   initialPhase: ControllerRoundPhase;
@@ -1184,6 +1191,7 @@ export const startAppServerTransport = async (input: {
     transportStatePath: input.transportStatePath,
     summaryPath: input.summaryPath,
     protocolPath: input.protocolPath,
+    dashboardPath: input.dashboardPath,
     restoredThreadId: input.restoredThreadId,
     threadName: input.threadName,
     defaultTaskTimeoutMs: input.defaultTaskTimeoutMs,

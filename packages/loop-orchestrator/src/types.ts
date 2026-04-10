@@ -49,6 +49,11 @@ export type ValidationLane =
 export type ExecutorMode = "harness" | "subagents-experimental";
 export type ControllerMode = "attached" | "detached";
 export type TransportMode = "codex-exec" | "current-thread" | "app-server";
+export type OperatorPresentationMode =
+  | "foreground-thread"
+  | "background-automation"
+  | "headless";
+export type OperatorWorkspaceSurface = "local" | "worktree";
 export type ExecutionState =
   | "running"
   | "paused"
@@ -1077,6 +1082,7 @@ export interface LoopRunSummary {
   controller_lease_path?: string;
   transport_state_path?: string;
   transport_protocol_path?: string;
+  operator_surface_path?: string;
   stop_reason?: RunStopReason;
   selection_basis?: "terminal_round";
   best_round?: number;
@@ -1174,10 +1180,34 @@ export interface RuntimeLiveStateArtifact {
   notes?: string[];
 }
 
+export interface OperatorSurfaceArtifact {
+  run_id: string;
+  controller_mode: ControllerMode;
+  transport_mode: TransportMode;
+  presentation_mode: OperatorPresentationMode;
+  workspace_surface: OperatorWorkspaceSurface;
+  updated_at: string;
+  execution_state: ExecutionState | "configured";
+  round?: number;
+  phase?: ControllerRoundPhase;
+  phase_status?: ControllerPhaseStatus;
+  summary_path?: string;
+  transport_state_path?: string;
+  transport_protocol_path?: string;
+  next_action?: string;
+  active_prompt_path?: string;
+  active_response_path?: string;
+  dashboard_path?: string;
+  thread_id?: string;
+  thread_name?: string;
+  notes?: string[];
+}
+
 export interface TransportStateArtifact {
   run_id: string;
   controller_mode: ControllerMode;
   transport_mode: TransportMode;
+  presentation_mode?: OperatorPresentationMode;
   executor_mode?: ExecutorMode;
   updated_at: string;
   status:

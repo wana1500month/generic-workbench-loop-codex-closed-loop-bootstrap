@@ -122,7 +122,8 @@ const spawnProcess = async (
       child = spawn(command, args, {
         cwd,
         env: process.env,
-        shell: false
+        shell: false,
+        windowsHide: true
       });
     } catch (error: unknown) {
       resolvePromise({
@@ -476,7 +477,8 @@ export const runCodexCommand = async (
       child = spawn(command, args, {
         cwd: input.cwd,
         env: process.env,
-        shell: false
+        shell: false,
+        windowsHide: true
       });
     } catch (error: unknown) {
       resolvePromise({

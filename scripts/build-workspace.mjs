@@ -5,7 +5,8 @@ const runCommand = async (command, args, options = {}) =>
     const child = spawn(command, args, {
       cwd: process.cwd(),
       env: process.env,
-      shell: options.shell ?? false
+      shell: options.shell ?? false,
+      windowsHide: true
     });
 
     child.stdout.on("data", (chunk) => {

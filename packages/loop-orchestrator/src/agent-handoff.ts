@@ -341,9 +341,9 @@ ${bulletList(input.summary.runtime_warnings ?? [])}
 ## Operator Surface
 
 - ${input.summary.transport_mode === "current-thread"
-        ? "Stay on the current Codex thread and follow the persisted manual protocol."
+        ? "Stay on the current Codex foreground thread and follow the persisted operator surface plus manual protocol."
         : input.summary.transport_mode === "app-server"
-          ? "Resume the live App Server thread/turn from transport-state.json before steering further work."
+          ? "Treat App Server as the embedded background transport and resume its persisted thread/turn from transport-state.json before steering further work."
           : "Use detached codex-exec orchestration and rely on persisted runtime checkpoints for recovery."}
 
 ## Resume Migration

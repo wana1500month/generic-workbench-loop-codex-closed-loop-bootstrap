@@ -127,6 +127,10 @@ import {
   writeTransportStateArtifact
 } from "./runtime-state.js";
 import {
+  buildOperatorSurfaceArtifact,
+  writeOperatorSurfaceArtifacts
+} from "./operator-surface.js";
+import {
   pausedStopReasons,
   phaseBudgetToStallThresholdMs
 } from "./runtime-health.js";
@@ -584,6 +588,7 @@ const buildCheckpointSummary = (input: {
   controllerLeasePath: string;
   transportStatePath: string;
   transportProtocolPath?: string;
+  operatorSurfacePath?: string;
   stopReason?: LoopRunSummary["stop_reason"];
   bestRound?: number;
   bestScore?: number;
@@ -672,6 +677,9 @@ const buildCheckpointSummary = (input: {
     ...(input.transportProtocolPath
       ? { transport_protocol_path: input.transportProtocolPath }
       : {}),
+    ...(input.operatorSurfacePath
+      ? { operator_surface_path: input.operatorSurfacePath }
+      : {}),
     ...(input.stopReason ? { stop_reason: input.stopReason } : {}),
     ...(terminalRound !== undefined
       ? {
@@ -743,47 +751,57 @@ const writeRunCheckpoint = async (input: {
     bestScoringEvalReportPath?: string;
   };
 }): Promise<void> => {
+  const normalizedSummary: LoopRunSummary = input.summary.operator_surface_path
+    ? input.summary
+    : {
+        ...input.summary,
+        operator_surface_path: join(
+          input.runDirectory,
+          "runtime",
+          "operator-surface.json"
+        )
+      };
   const writes: Promise<unknown>[] = [
-    writeJson(join(input.runDirectory, "summary.json"), input.summary),
+    writeJson(join(input.runDirectory, "summary.json"), normalizedSummary),
     writeRunControllerSummary({
       runDirectory: input.runDirectory,
-      summary: input.summary
+      summary: normalizedSummary
     })
   ];
 
-  if (input.summary.terminal_round !== undefined) {
+  if (normalizedSummary.terminal_round !== undefined) {
     writes.push(
       writeJson(join(input.runDirectory, "current_best.json"), {
-        round: input.currentBest.round ?? input.summary.terminal_round,
+        round: input.currentBest.round ?? normalizedSummary.terminal_round,
         selection_basis: "terminal_round",
-        total_score: input.currentBest.totalScore ?? input.summary.total_score,
+        total_score: input.currentBest.totalScore ?? normalizedSummary.total_score,
         control_plane_score:
-          input.currentBest.controlPlaneScore ?? input.summary.control_plane_score,
-        proof_score: input.currentBest.proofScore ?? input.summary.proof_score,
-        release_score: input.currentBest.releaseScore ?? input.summary.release_score,
+          input.currentBest.controlPlaneScore ?? normalizedSummary.control_plane_score,
+        proof_score: input.currentBest.proofScore ?? normalizedSummary.proof_score,
+        release_score: input.currentBest.releaseScore ?? normalizedSummary.release_score,
         threshold_results:
-          input.currentBest.thresholdResults ?? input.summary.threshold_results,
+          input.currentBest.thresholdResults ?? normalizedSummary.threshold_results,
         dimension_scores:
-          input.currentBest.dimensionScores ?? input.summary.dimension_scores,
+          input.currentBest.dimensionScores ?? normalizedSummary.dimension_scores,
         patch_request_path: input.currentBest.patchRequestPath,
         eval_report_path: input.currentBest.evalReportPath,
         best_scoring_round:
-          input.currentBest.bestScoringRound ?? input.summary.best_round,
+          input.currentBest.bestScoringRound ?? normalizedSummary.best_round,
         best_scoring_total_score:
           input.currentBest.bestScoringTotalScore ??
-          input.summary.best_scoring_total_score,
+          normalizedSummary.best_scoring_total_score,
         best_scoring_control_plane_score:
           input.currentBest.bestScoringControlPlaneScore ??
-          input.summary.best_scoring_control_plane_score,
+          normalizedSummary.best_scoring_control_plane_score,
         best_scoring_proof_score:
           input.currentBest.bestScoringProofScore ??
-          input.summary.best_scoring_proof_score,
+          normalizedSummary.best_scoring_proof_score,
         best_scoring_release_score:
           input.currentBest.bestScoringReleaseScore ??
-          input.summary.best_scoring_release_score,
+          normalizedSummary.best_scoring_release_score,
         best_scoring_threshold_results:
           input.currentBest.bestScoringThresholdResults ??
-          input.summary.best_scoring_threshold_results,
+          normalizedSummary.best_scoring_threshold_results,
         best_scoring_dimension_scores:
           input.currentBest.bestScoringDimensionScores,
         best_scoring_patch_request_path:
@@ -1128,6 +1146,7 @@ export const runClosedLoop = async (input: {
       executorMode,
       summaryPath,
       protocolPath: transportProtocolPath,
+      dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
       status: "configured",
       notes: transportRuntimeWarningsForMode({
         controllerMode,
@@ -1135,6 +1154,24 @@ export const runClosedLoop = async (input: {
       })
     })
   );
+  await writeOperatorSurfaceArtifacts({
+    jsonPath: runtimeStatePaths.operatorSurfacePath,
+    markdownPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
+    artifact: buildOperatorSurfaceArtifact({
+      runId,
+      controllerMode,
+      transportMode,
+      executionState: "configured",
+      summaryPath,
+      transportStatePath: runtimeStatePaths.transportStatePath,
+      transportProtocolPath: transportProtocolPath,
+      dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
+      notes: transportRuntimeWarningsForMode({
+        controllerMode,
+        transportMode
+      })
+    })
+  });
 
   if (
     restoredRun &&
@@ -1299,6 +1336,7 @@ export const runClosedLoop = async (input: {
       transportStatePath: runtimeStatePaths.transportStatePath,
       summaryPath,
       protocolPath: transportProtocolPath,
+      dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
       restoredThreadId: restoredRun?.transportState?.app_server?.thread_id,
       initialRound: restoredRun?.interruptedRound?.round ?? restoredRun?.roundStart ?? 1,
       initialPhase:
@@ -1565,6 +1603,41 @@ export const runClosedLoop = async (input: {
       ]
     });
   };
+  const writeOperatorSurface = async (input?: {
+    round?: number;
+    phase?: ControllerRoundPhase;
+    phaseStatus?: ControllerPhaseStatus;
+    executionState?: ExecutionState | "configured";
+    nextAction?: string;
+    activePromptPath?: string;
+    activeResponsePath?: string;
+    notes?: string[];
+  }): Promise<void> => {
+    const snapshot = appServerTransport?.snapshot();
+    await writeOperatorSurfaceArtifacts({
+      jsonPath: runtimeStatePaths.operatorSurfacePath,
+      markdownPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
+      artifact: buildOperatorSurfaceArtifact({
+        runId,
+        controllerMode,
+        transportMode,
+        executionState: input?.executionState ?? activeExecutionState,
+        round: input?.round ?? activeHeartbeatRound,
+        phase: input?.phase ?? activeHeartbeatPhase,
+        phaseStatus: input?.phaseStatus ?? activeHeartbeatPhaseStatus,
+        summaryPath,
+        transportStatePath: runtimeStatePaths.transportStatePath,
+        transportProtocolPath: transportProtocolCurrentPath,
+        activePromptPath: input?.activePromptPath,
+        activeResponsePath: input?.activeResponsePath,
+        dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
+        threadId: snapshot?.thread_id,
+        threadName: snapshot?.thread_name,
+        nextAction: input?.nextAction,
+        notes: input?.notes ?? heartbeatNotes
+      })
+    });
+  };
   let heartbeat: ReturnType<typeof startRuntimeHeartbeat> | undefined;
   let runtimeStopped = false;
   const stopRuntime = async (): Promise<void> => {
@@ -1590,6 +1663,7 @@ export const runClosedLoop = async (input: {
       transportStatePath: runtimeStatePaths.transportStatePath,
       summaryPath,
       protocolPath: transportProtocolCurrentPath,
+      dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
       restoredThreadId: restoredRun?.transportState?.app_server?.thread_id,
       initialRound: activeHeartbeatRound ?? restoredRun?.roundStart ?? history.length + 1,
       initialPhase: activeHeartbeatPhase ?? "negotiation",
@@ -1609,6 +1683,7 @@ export const runClosedLoop = async (input: {
         executorMode,
         summaryPath,
         protocolPath: transportProtocolCurrentPath,
+        dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
         status: "configured",
         notes: transportRuntimeWarningsForMode({
           controllerMode,
@@ -1617,6 +1692,13 @@ export const runClosedLoop = async (input: {
       })
     );
   }
+  await writeOperatorSurface({
+    executionState: "configured",
+    notes: transportRuntimeWarningsForMode({
+      controllerMode,
+      transportMode
+    })
+  });
   heartbeat = startRuntimeHeartbeat({
     runId,
     controllerMode,
@@ -1735,6 +1817,23 @@ export const runClosedLoop = async (input: {
       ...(heartbeatNotes.length > 0 ? { notes: heartbeatNotes } : {})
     });
     await writeLiveTransportProtocol();
+    const artifactValues = inputPhase.artifacts
+      ? Object.values(inputPhase.artifacts).filter((value) => typeof value === "string")
+      : [];
+    const activePromptPath = artifactValues.find(
+      (value) => value.endsWith(".md") && /prompt/i.test(value)
+    );
+    const activeResponsePath = artifactValues.find(
+      (value) => value.endsWith(".json") && /response/i.test(value)
+    );
+    await writeOperatorSurface({
+      round: inputPhase.round,
+      phase: inputPhase.phase,
+      phaseStatus: inputPhase.status,
+      activePromptPath,
+      activeResponsePath,
+      notes: heartbeatNotes
+    });
     if (appServerTransport) {
       await appServerTransport.syncPhase({
         round: inputPhase.round,
@@ -1782,6 +1881,7 @@ export const runClosedLoop = async (input: {
       controllerLeasePath: runtimeStatePaths.controllerLeasePath,
       transportStatePath: runtimeStatePaths.transportStatePath,
       transportProtocolPath: transportProtocolCurrentPath,
+      operatorSurfacePath: runtimeStatePaths.operatorSurfacePath,
       stopReason,
       bestRound,
       bestScore,
@@ -1850,6 +1950,10 @@ export const runClosedLoop = async (input: {
       }
     }
     currentCheckpointStopReason = summary.stop_reason;
+    await writeOperatorSurface({
+      executionState: activeExecutionState,
+      notes: heartbeatNotes
+    });
     await heartbeat!.tick();
     return summary;
   };
@@ -1864,6 +1968,11 @@ export const runClosedLoop = async (input: {
     runtimeWarnings = unique([...runtimeWarnings, ...input.notes]);
     heartbeatNotes.splice(0, heartbeatNotes.length, ...unique([...heartbeatNotes, ...input.notes]));
     await writeLiveTransportProtocol();
+    await writeOperatorSurface({
+      executionState: "paused",
+      nextAction: input.notes[1] ?? input.notes[0],
+      notes: heartbeatNotes
+    });
     const summary = await writeCheckpoint(input.stopReason);
     return {
       plan,

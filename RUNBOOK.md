@@ -67,9 +67,10 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
   - `attached` currently allows `--transport current-thread` or `--transport app-server`
 - `npm run loop:run -- ...` now routes through the supervisor by default. Use `npm run loop:run:raw -- ...` only for direct controller debugging, and use `npm run loop:watch -- ...` to keep the supervisor detached from the launching shell.
 - Supervisor, runner, and bootstrap-generated runtime helper spawns now set `windowsHide: true`, so Windows detached runs stop opening a visible stack of extra `cmd.exe` shells while the harness is working.
-- Attached runs now default to `--transport app-server`. Use `--transport current-thread` only when you intentionally want the manual same-thread handoff protocol instead of live App Server automation.
-- Use `--transport current-thread` for the stock Codex current-thread protocol. Current-thread attached generator work is an honest manual pause surface that writes `attached-generator-prompt.md` / `attached-generator-response.json` and stops with `awaiting_current_thread_handoff`.
-- Use `--transport app-server` to open a live `codex app-server` stdio session. The runtime initializes the server, starts or resumes a thread, names it, reads runtime state through `thread/read`, opens a turn, and steers that turn at phase boundaries while persisting `thread_id`, `turn_id`, the event cursor, and thread runtime status.
+- Attached runs now default to `--transport current-thread`. That is the stock foreground-thread Codex surface. Use `--transport app-server` only when you intentionally want the embedded background App Server transport instead of the foreground current thread.
+- Use `--transport current-thread` for the stock Codex foreground-thread protocol. Current-thread attached generator work is an honest manual pause surface that writes `attached-generator-prompt.md` / `attached-generator-response.json` and stops with `awaiting_current_thread_handoff`.
+- Current-thread is now the honest foreground default, but full same-thread planner / contract-review / generator-plan / eval parity is still pending. Until that lands, the controller persists explicit runtime warnings instead of pretending those phases were live-enhanced on the current thread.
+- Use `--transport app-server` to open an embedded `codex app-server` stdio session. The runtime initializes the server, starts or resumes a thread, names it, reads runtime state through `thread/read`, opens a turn, and steers that turn at phase boundaries while persisting `thread_id`, `turn_id`, the event cursor, and thread runtime status.
 - `current-thread` and `app-server` are same-thread transports. Both forbid nested `codex exec` calls from shared runtime paths.
 - Bootstrap-generated `apply_change` now accepts same-thread generator work through `runtime/attached-generator-prompt.md` and `runtime/attached-generator-response.json` instead of insisting on nested `codex exec`.
 - App Server attached mutation turns now default to `approvalPolicy = "unlessTrusted"` while read-only status and planning turns stay at `approvalPolicy = "never"`. This keeps detached-style automation closed by default but re-enables native approval UX for attached build or repair work.
@@ -91,6 +92,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `runtime/live-state.json` now separates `execution_state` from transport liveness and records `last_progress_at` / `last_progress_note`, so a fresh heartbeat is no longer treated as proof of real forward progress.
 - `runtime/round-phase.json` and `runtime/controller-lease.json` now also carry progress timestamps plus `stalled` / `awaiting_input` status, so pause and stall surfaces survive resume and supervision flows.
 - Every run now also persists `runtime/transport-state.json`, and `summary.json.transport_state_path` points at the active transport contract and live thread/turn state.
+- Every run now also persists `runtime/operator-surface.json` plus `.md`, and `summary.json.operator_surface_path` points at the operator-facing projection that tells humans whether the active surface is foreground-thread, background-automation, or headless.
 - Same-thread runs now also persist `runtime/current-thread-protocol.md` or `runtime/app-server-protocol.md`, and `summary.json.transport_protocol_path` points at that operator surface.
 - Same-thread bootstrap generator rounds now also persist `runtime/attached-generator-task.json`, `runtime/attached-generator-prompt.md`, and `runtime/attached-generator-response.json`, so attached mutation can be resumed from files alone.
 - The controller now checkpoints `summary.json`, `current_best.json`, and `controller-summary.md` after each committed round instead of only at final closeout, so committed rounds survive parent-controller crashes.
@@ -217,6 +219,8 @@ evals/runs/<run-id>/
     round-phase.json
     controller-lease.json
     transport-state.json
+    operator-surface.json
+    operator-surface.md
     supervisor-state.json
     current-thread-protocol.md
     app-server-protocol.md
@@ -407,7 +411,7 @@ npm run validate:reference-adapter
 
 `loop:single` and `loop:run` write harness artifacts by default. When `--adapter <path>` is provided, they also execute the external capability boundary.
 
-`loop:ui` now renders derived runtime health instead of raw runtime files. Expect explicit `RUNNING`, `PAUSED`, `STALLED`, `COMPLETED`, or `FAILED` banners plus heartbeat and progress ages.
+`loop:ui` now prefers `runtime/operator-surface.json` and renders the operator-facing projection on top of derived runtime health. Expect explicit `RUNNING`, `PAUSED`, `STALLED`, `COMPLETED`, or `FAILED` banners plus presentation mode, next action, and heartbeat/progress ages.
 
 Use `validate:lifecycle-api`, `validate:family-browser-semantic`, and `validate:family-fullstack-semantic` for deterministic controller coverage. Use `validate:family-browser`, `validate:family-fullstack`, `validate:family-editor`, and `validate:family-dashboard` for environment-integration smoke that may legitimately classify failures as `environment_blocked` instead of product defects.
 

@@ -354,6 +354,9 @@ const main = async (): Promise<void> => {
       "       npm run loop:run -- --adapter <path> --target-family <family> --rubric <path> --evaluator-profile <path> --executor-mode harness --max-rounds 2"
     );
     console.error(
+      "       node ./packages/loop-orchestrator/dist/cli.js --controller-mode attached --single"
+    );
+    console.error(
       "       node ./packages/loop-orchestrator/dist/cli.js --controller-mode attached --transport app-server --app-server-task-timeout-ms 1800000 --single"
     );
     console.error(

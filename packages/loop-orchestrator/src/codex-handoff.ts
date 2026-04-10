@@ -99,9 +99,9 @@ ${bulletList([
 1. Keep the harness generic and file-driven.
 2. Treat the latest patch request as the highest-priority follow-up.
 3. ${input.summary.transport_mode === "current-thread"
-      ? "Stay on the current Codex thread and follow the persisted transport protocol instead of launching child Codex sessions."
+      ? "Stay on the current Codex foreground thread and follow the persisted operator surface plus transport protocol instead of launching child Codex sessions."
       : input.summary.transport_mode === "app-server"
-        ? "Resume the live App Server thread/turn from transport-state.json before steering more work."
+        ? "Treat App Server as the embedded background transport and resume its persisted thread/turn from transport-state.json before steering more work."
         : "If adapter proof is desired, configure the external adapter boundary rather than rebuilding a sample app inside this repo."}
 
 ## Runtime Warnings

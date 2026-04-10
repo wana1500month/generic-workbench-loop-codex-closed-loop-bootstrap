@@ -45,10 +45,15 @@ const assertTransportSurface = async (
     typeof summary.transport_protocol_path === "string",
     "Expected summary.transport_protocol_path to be present."
   );
+  assert(
+    typeof summary.operator_surface_path === "string",
+    "Expected summary.operator_surface_path to be present."
+  );
 
-  const [transportState, resumeIdentity] = await Promise.all([
+  const [transportState, resumeIdentity, operatorSurface] = await Promise.all([
     readJsonFile(summary.transport_state_path),
-    readJsonFile(summary.resume_identity_path)
+    readJsonFile(summary.resume_identity_path),
+    readJsonFile(summary.operator_surface_path)
   ]);
   assert(
     transportState.controller_mode === expectedControllerMode,
@@ -63,12 +68,36 @@ const assertTransportSurface = async (
     `Expected transport-state status '${expectedTransportStatus}', received '${transportState.status ?? "missing"}'.`
   );
   assert(
+    transportState.presentation_mode ===
+      (expectedTransportMode === "current-thread"
+        ? "foreground-thread"
+        : expectedTransportMode === "app-server"
+          ? "background-automation"
+          : "headless"),
+    `Unexpected presentation_mode '${transportState.presentation_mode ?? "missing"}' for '${expectedTransportMode}'.`
+  );
+  assert(
+    transportState.ui_surface?.dashboard_path === summary.operator_surface_path.replace(
+      "operator-surface.json",
+      "operator-surface.md"
+    ),
+    "Expected transport-state ui_surface.dashboard_path to point at operator-surface.md."
+  );
+  assert(
     resumeIdentity.transport_mode === expectedTransportMode,
     `Expected resume identity transport_mode '${expectedTransportMode}', received '${resumeIdentity.transport_mode ?? "missing"}'.`
   );
   assert(
     summary.round_history?.[0]?.transport_mode === expectedTransportMode,
     `Expected round_history[0].transport_mode '${expectedTransportMode}', received '${summary.round_history?.[0]?.transport_mode ?? "missing"}'.`
+  );
+  assert(
+    operatorSurface.transport_mode === expectedTransportMode,
+    `Expected operator surface transport_mode '${expectedTransportMode}', received '${operatorSurface.transport_mode ?? "missing"}'.`
+  );
+  assert(
+    operatorSurface.presentation_mode === transportState.presentation_mode,
+    "Expected operator surface and transport state to agree on presentation_mode."
   );
 
   if (expectAppServerLive) {
@@ -169,7 +198,8 @@ const runAttachedAppServerValidation = async (fakeAppServerPath, attempt) => {
     expectedControllerMode: "attached",
     expectedTransportMode: "app-server",
     expectedTransportStatus: "completed",
-    expectedWarning: "App Server transport keeps a live attached thread/turn container through codex app-server.",
+    expectedWarning:
+      "App Server transport is an embedded background-automation surface",
     expectAppServerLive: true
   });
   const fakeRecord = JSON.parse(await readFile(recordPath, "utf8"));
@@ -211,7 +241,26 @@ const main = async () => {
     expectedTransportMode: "current-thread",
     expectedTransportStatus: "configured",
     expectedWarning:
-      "Current-thread transport is a manual same-thread protocol",
+      "Current-thread transport is the stock Codex foreground-thread surface",
+    expectAppServerLive: false
+  });
+
+  const attachedDefaultExecution = await runLoop(
+    ["--single", "--controller-mode", "attached"],
+    { silent: true }
+  );
+  if (attachedDefaultExecution.code !== 0) {
+    throw new Error(
+      `Attached default transport validation run failed.\n${attachedDefaultExecution.stdout}\n${attachedDefaultExecution.stderr}`
+    );
+  }
+  const attachedDefaultRunDirectory = extractRunDirectory(attachedDefaultExecution.stdout);
+  await assertTransportSurface(attachedDefaultRunDirectory, {
+    expectedControllerMode: "attached",
+    expectedTransportMode: "current-thread",
+    expectedTransportStatus: "configured",
+    expectedWarning:
+      "Current-thread transport is the stock Codex foreground-thread surface",
     expectAppServerLive: false
   });
 

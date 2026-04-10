@@ -42,7 +42,8 @@ const runBuild = async () =>
     const child = spawn("npm", ["run", "build", "--silent"], {
       cwd: repoRoot,
       env: process.env,
-      shell: process.platform === "win32"
+      shell: process.platform === "win32",
+      windowsHide: true
     });
     child.on("error", rejectPromise);
     child.on("close", (code) => resolvePromise(code ?? 1));
@@ -115,6 +116,7 @@ const bannerFor = (executionState) => {
 const render = async (runDirectory) => {
   const runtimeDirectory = join(runDirectory, "runtime");
   const [
+    operatorSurface,
     transportState,
     liveState,
     roundPhase,
@@ -123,6 +125,7 @@ const render = async (runDirectory) => {
     runtimeHealth
   ] =
     await Promise.all([
+      readJsonIfExists(join(runtimeDirectory, "operator-surface.json")),
       readJsonIfExists(join(runtimeDirectory, "transport-state.json")),
       readJsonIfExists(join(runtimeDirectory, "live-state.json")),
       readJsonIfExists(join(runtimeDirectory, "round-phase.json")),
@@ -139,21 +142,39 @@ const render = async (runDirectory) => {
 
   process.stdout.write("\x1bc");
   console.log(`Banner: ${bannerFor(health.execution_state)}`);
-  console.log(`Run: ${transportState?.run_id ?? liveState?.run_id ?? "unknown"}`);
+  console.log(
+    `Run: ${operatorSurface?.run_id ?? transportState?.run_id ?? liveState?.run_id ?? "unknown"}`
+  );
+  console.log(
+    `Presentation: ${operatorSurface?.presentation_mode ?? transportState?.presentation_mode ?? "unknown"}`
+  );
   console.log(
     `Transport: ${transportState?.transport_mode ?? "unknown"} (${transportState?.status ?? "unknown"})`
   );
+  console.log(`Workspace: ${operatorSurface?.workspace_surface ?? "unknown"}`);
   console.log(
     `Thread: ${transportState?.app_server?.thread_id ?? "none"} / Turn: ${transportState?.app_server?.turn_id ?? "none"}`
   );
   console.log(
-    `Round: ${roundPhase?.round ?? liveState?.active_round ?? "none"} / Phase: ${roundPhase?.phase ?? liveState?.active_phase ?? "none"} (${roundPhase?.status ?? liveState?.active_phase_status ?? "none"})`
+    `Round: ${operatorSurface?.round ?? roundPhase?.round ?? liveState?.active_round ?? "none"} / Phase: ${operatorSurface?.phase ?? roundPhase?.phase ?? liveState?.active_phase ?? "none"} (${operatorSurface?.phase_status ?? roundPhase?.status ?? liveState?.active_phase_status ?? "none"})`
   );
-  console.log(`Execution: ${health.execution_state}`);
+  console.log(`Execution: ${operatorSurface?.execution_state ?? health.execution_state}`);
   console.log(`Heartbeat age: ${formatAge(health.heartbeat_age_ms)}`);
   console.log(`Progress age: ${formatAge(health.progress_age_ms)}`);
   console.log(`Transport event age: ${formatAge(health.transport_event_age_ms)}`);
   console.log(`Health: ${health.summary}`);
+  console.log(`Next action: ${operatorSurface?.next_action ?? "none"}`);
+  console.log(`Active prompt: ${operatorSurface?.active_prompt_path ?? "none"}`);
+  console.log(`Active response: ${operatorSurface?.active_response_path ?? "none"}`);
+  console.log("");
+  console.log("Operator notes:");
+  if (Array.isArray(operatorSurface?.notes) && operatorSurface.notes.length > 0) {
+    for (const note of operatorSurface.notes) {
+      console.log(`- ${note}`);
+    }
+  } else {
+    console.log("- none");
+  }
   console.log("");
   console.log("Recent events:");
   if (recentEvents.length === 0) {

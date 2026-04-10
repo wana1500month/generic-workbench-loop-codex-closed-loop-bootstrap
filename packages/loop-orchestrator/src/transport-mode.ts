@@ -5,6 +5,7 @@ import type {
   TransportStateArtifact
 } from "./types.js";
 import { resolveCodexCliLaunch } from "./codex-cli.js";
+import { operatorPresentationModeForTransport } from "./operator-surface.js";
 
 export type AppServerTransportSnapshot = NonNullable<
   TransportStateArtifact["app_server"]
@@ -19,7 +20,7 @@ export const transportModes = [
 export const defaultTransportModeForControllerMode = (
   controllerMode: ControllerMode
 ): TransportMode =>
-  controllerMode === "attached" ? "app-server" : "codex-exec";
+  controllerMode === "attached" ? "current-thread" : "codex-exec";
 
 export const isTransportMode = (
   value: string | undefined
@@ -53,13 +54,13 @@ export const transportRuntimeWarningsForMode = (input: {
 }): string[] => {
   if (input.transportMode === "current-thread") {
     return [
-      "Current-thread transport is a manual same-thread protocol for the stock Codex session and forbids nested codex exec calls."
+      "Current-thread transport is the stock Codex foreground-thread surface and forbids nested codex exec calls."
     ];
   }
 
   if (input.transportMode === "app-server") {
     return [
-      "App Server transport keeps a live attached thread/turn container through codex app-server."
+      "App Server transport is an embedded background-automation surface that keeps a live thread/turn container through codex app-server."
     ];
   }
 
@@ -77,6 +78,7 @@ export const buildTransportStateArtifact = (input: {
   executorMode?: ExecutorMode;
   summaryPath?: string;
   protocolPath?: string;
+  dashboardPath?: string;
   status?: TransportStateArtifact["status"];
   notes?: string[];
   lastError?: string;
@@ -92,6 +94,10 @@ export const buildTransportStateArtifact = (input: {
     run_id: input.runId,
     controller_mode: input.controllerMode,
     transport_mode: input.transportMode,
+    presentation_mode: operatorPresentationModeForTransport({
+      controllerMode: input.controllerMode,
+      transportMode: input.transportMode
+    }),
     ...(input.executorMode ? { executor_mode: input.executorMode } : {}),
     updated_at: new Date().toISOString(),
     status: input.status ?? "configured",
@@ -103,10 +109,13 @@ export const buildTransportStateArtifact = (input: {
         : input.transportMode === "current-thread"
           ? "stock-current-thread"
           : "none",
-    ...(input.transportMode === "app-server" && input.appServer?.thread_name
+    ...((input.dashboardPath || (input.transportMode === "app-server" && input.appServer?.thread_name))
       ? {
           ui_surface: {
-            thread_name: input.appServer.thread_name
+            ...(input.appServer?.thread_name
+              ? { thread_name: input.appServer.thread_name }
+              : {}),
+            ...(input.dashboardPath ? { dashboard_path: input.dashboardPath } : {})
           }
         }
       : {}),
