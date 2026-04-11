@@ -157,6 +157,8 @@ const phaseAliasMap = new Map<string, ControllerRoundPhase>([
 const usageLines = [
   "Usage:",
   "  npm run loop:single",
+  "  npm run loop:single:codex",
+  "  npm run loop:single:manual",
   "  npm run loop:run",
   "  npm run loop:bootstrap",
   `  node ./scripts/loop-runner.mjs --controller-mode attached --transport current-thread --single ${manualProtocolSeedFlag}`,
@@ -172,9 +174,10 @@ const usageLines = [
   `  ${["open", "negotiate", "pre-verify", "core-probes", "post-verify", "evaluate", "commit", "finalize"].join(", ")}`,
   "",
   "Notes:",
-  `  shell-launched attached/current-thread seeds require a bound Codex thread unless you intentionally pass ${manualProtocolSeedFlag}.`,
+  "  loop:single is an explicit detached/headless seed. Use loop:single:codex only from the Codex app, or loop:single:manual when you intentionally want a shell-owned manual-protocol seed.",
+  `  shell-launched attached/current-thread seeds require a bound Codex thread id unless you intentionally pass ${manualProtocolSeedFlag}.`,
   "  resume/phase preserve the existing run controller and transport unless you override them explicitly.",
-  `  app-visible current-thread runs must continue from the Codex thread unless you intentionally pass ${shellResumeDowngradeFlag}.`,
+  `  app-visible current-thread runs must continue from the same Codex thread unless you intentionally pass ${shellResumeDowngradeFlag}.`,
   "  phase re-enters from the named phase and runs until the next persisted handoff or terminal stop.",
   "  current-thread planning/negotiation/evaluation handoffs remain file-backed through operator-surface.json."
 ] as const;
@@ -186,11 +189,11 @@ const subcommandUsage = {
     ],
     resume: [
         `Usage: node ./scripts/loop-runner.mjs resume --run-dir <run-dir> [--force-reopen-terminal] [--repair] [--resume-phase <phase>] [${shellResumeDowngradeFlag}]`,
-        `Re-enters a persisted run using the stored controller/transport defaults unless overridden. App-visible current-thread runs require a Codex thread unless ${shellResumeDowngradeFlag} is supplied.`
+        `Re-enters a persisted run using the stored controller/transport defaults unless overridden. App-visible current-thread runs require the same bound Codex thread unless ${shellResumeDowngradeFlag} is supplied.`
     ],
     phase: [
         `Usage: node ./scripts/loop-runner.mjs phase <phase> --run-dir <run-dir> [--force-reopen-terminal] [--repair] [${shellResumeDowngradeFlag}]`,
-        `Friendly phase aliases such as 'open', 'negotiate', 'pre-verify', 'evaluate', and 'finalize' are accepted. App-visible current-thread runs require a Codex thread unless ${shellResumeDowngradeFlag} is supplied.`
+        `Friendly phase aliases such as 'open', 'negotiate', 'pre-verify', 'evaluate', and 'finalize' are accepted. App-visible current-thread runs require the same bound Codex thread unless ${shellResumeDowngradeFlag} is supplied.`
     ]
 } as const;
 
@@ -751,18 +754,24 @@ const requiresCodexThreadContinuation = (
   operatorSurface.handoff_state !== "automation" &&
   operatorSurface.handoff_state !== "headless";
 
-const currentInvocationOwnsCodexThread = (input: {
+const trimOptionalString = (value: string | undefined): string | undefined =>
+  typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+
+const resolveCurrentInvocationCodexThreadContext = (input: {
   controllerMode: ControllerMode;
   transportMode: TransportMode;
-}): boolean => {
-  const context = resolveOperatorSurfaceContext(input);
-  return (
+}) => resolveOperatorSurfaceContext(input);
+
+const currentInvocationOwnsCodexThread = (
+  context: ReturnType<typeof resolveCurrentInvocationCodexThreadContext>
+): boolean =>
+  (
     context.presentationMode === "foreground-thread" &&
     context.appVisibility === "visible-in-stock-app" &&
     context.surfaceOwner === "stock-codex-thread" &&
-    context.threadBindingState !== "unbound"
+    context.threadBindingState === "bound" &&
+    typeof context.threadId === "string"
   );
-};
 
 const validateResumeOwnership = async (input: {
   resumeRunPath: string;
@@ -785,23 +794,35 @@ const validateResumeOwnership = async (input: {
   if (!requiresCodexThreadContinuation(operatorSurface)) {
     return undefined;
   }
-  if (
-    currentInvocationOwnsCodexThread({
-      controllerMode: effectiveControllerMode,
-      transportMode: effectiveTransportMode
-    })
-  ) {
-    return undefined;
-  }
-  if (input.allowShellResumeDowngrade) {
-    return undefined;
-  }
+  const currentContext = resolveCurrentInvocationCodexThreadContext({
+    controllerMode: effectiveControllerMode,
+    transportMode: effectiveTransportMode
+  });
   const resumeSkill = operatorSurface?.resume_skill ?? "attached-loop";
-  return [
-    `Run '${restoredRun.runId}' is currently owned by a visible Codex thread.`,
-    `Resume it from the Codex app with $${resumeSkill} instead of reopening it from a shell.`,
-    `If you intentionally want to downgrade this run to manual-protocol, rerun with ${shellResumeDowngradeFlag}.`
-  ].join(" ");
+  const persistedThreadId = trimOptionalString(operatorSurface?.thread_id);
+  if (!currentInvocationOwnsCodexThread(currentContext)) {
+    if (input.allowShellResumeDowngrade) {
+      return undefined;
+    }
+    return [
+      `Run '${restoredRun.runId}' is currently owned by a visible Codex thread.`,
+      `Resume it from the Codex app with $${resumeSkill} instead of reopening it from a shell.`,
+      `If you intentionally want to downgrade this run to manual-protocol, rerun with ${shellResumeDowngradeFlag}.`
+    ].join(" ");
+  }
+  if (!persistedThreadId) {
+    return [
+      `Run '${restoredRun.runId}' requires same-thread Codex continuation, but its persisted operator surface has no thread_id.`,
+      `Reopen it from the original Codex thread with $${resumeSkill} so the run can stay bound.`
+    ].join(" ");
+  }
+  if (trimOptionalString(currentContext.threadId) !== persistedThreadId) {
+    return [
+      `Run '${restoredRun.runId}' is owned by Codex thread '${persistedThreadId}'.`,
+      `Resume it from that same Codex thread with $${resumeSkill} instead of continuing from '${currentContext.threadId ?? "unknown"}'.`
+    ].join(" ");
+  }
+  return undefined;
 };
 
 const validateSeedOwnership = (input: {
@@ -812,10 +833,12 @@ const validateSeedOwnership = (input: {
   if (
     input.controllerMode !== "attached" ||
     input.transportMode !== "current-thread" ||
-    currentInvocationOwnsCodexThread({
-      controllerMode: "attached",
-      transportMode: "current-thread"
-    })
+    currentInvocationOwnsCodexThread(
+      resolveCurrentInvocationCodexThreadContext({
+        controllerMode: "attached",
+        transportMode: "current-thread"
+      })
+    )
   ) {
     return undefined;
   }
@@ -823,7 +846,7 @@ const validateSeedOwnership = (input: {
     return undefined;
   }
   return [
-    "Shell-launched attached/current-thread seeds require a bound Codex thread.",
+    "Shell-launched attached/current-thread seeds require a bound Codex thread id.",
     "Start this run from the Codex app so $attached-loop owns the foreground thread,",
     `or rerun with ${manualProtocolSeedFlag} if you intentionally want a manual-protocol shell seed.`
   ].join(" ");

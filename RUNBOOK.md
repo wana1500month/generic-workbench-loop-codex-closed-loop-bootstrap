@@ -69,10 +69,10 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
   - `attached` currently allows `--transport current-thread` or `--transport app-server`
 - `npm run loop:run -- ...` now routes through the supervisor by default. Use `npm run loop:run:raw -- ...` only for direct controller debugging, and use `npm run loop:watch -- ...` to keep the supervisor detached from the launching shell.
 - Supervisor, runner, and bootstrap-generated runtime helper spawns now set `windowsHide: true`, so Windows detached runs stop opening a visible stack of extra `cmd.exe` shells while the harness is working.
-- Attached runs now default to `--transport current-thread`. That is the stock foreground-thread transport surface, but shell-launched current-thread runs still report `manual-protocol` until they bind to a real Codex thread.
+- Attached runs now default to `--transport current-thread`. That is the stock foreground-thread transport surface, but current-thread only claims foreground ownership when a real bound `CODEX_THREAD_ID` is present.
 - Use `--transport current-thread` for the stock Codex foreground-thread protocol. Current-thread attached generator work is an honest manual pause surface that writes `attached-generator-prompt.md` / `attached-generator-response.json` and stops with `awaiting_current_thread_handoff`.
 - Current-thread is now the honest foreground default across planner, contract-review, generator-plan, eval, and attached-generator stages. Each current-thread enhancement now persists explicit `*-task.json`, `*-prompt.md`, and `*-response.json` artifacts, stops with `awaiting_current_thread_handoff`, and resumes from those files instead of skipping nested enhancement paths.
-- Shell-launched `attached/current-thread` seeds now fail closed unless a real Codex thread binding is present. Use `--allow-manual-protocol-seed` only when you intentionally want to start a `manual-protocol` shell run instead of a Codex-owned foreground run.
+- Shell-launched `attached/current-thread` seeds now fail closed unless a real bound `CODEX_THREAD_ID` is present. Use `--allow-manual-protocol-seed` only when you intentionally want to start a `manual-protocol` shell run instead of a Codex-owned foreground run.
 - Use `--transport app-server` to open an embedded `codex app-server` stdio session. The runtime initializes the server, starts or resumes a thread, names it, reads runtime state through `thread/read`, opens a turn, and steers that turn at phase boundaries while persisting `thread_id`, `turn_id`, the event cursor, and thread runtime status.
 - `current-thread` and `app-server` are same-thread transports. Both forbid nested `codex exec` calls from shared runtime paths.
 - Bootstrap-generated `apply_change` now accepts same-thread generator work through `runtime/attached-generator-prompt.md` and `runtime/attached-generator-response.json` instead of insisting on nested `codex exec`.
@@ -91,7 +91,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Use `npm run loop:resume -- --run-dir <evals/runs/run-###>` as the explicit foreground re-entry surface instead of remembering the raw `--resume-run` form.
 - Use `npm run loop:phase -- <phase> --run-dir <evals/runs/run-###>` to re-enter from a named controller phase. Friendly aliases such as `open`, `negotiate`, `pre-verify`, `evaluate`, and `finalize` resolve to the canonical persisted phase names.
 - `loop:phase` is a phase-oriented front door, not a separate controller engine. It resumes from the named persisted phase and then runs until the next file-backed handoff or terminal stop.
-- App-visible `current-thread` runs now treat Codex-thread continuation as the canonical path. Shell `loop:resume` / `loop:phase` attempts fail closed unless you intentionally pass `--allow-shell-resume-downgrade`, which downgrades the run back to `manual-protocol`.
+- App-visible `current-thread` runs now treat same-thread Codex continuation as the canonical path. Shell `loop:resume` / `loop:phase` attempts fail closed unless you intentionally pass `--allow-shell-resume-downgrade`, which downgrades the run back to `manual-protocol`.
 - Use `--force-reopen-terminal` only when you intentionally want to reopen a run that already ended with `target_reached`, `contract_completed`, `environment_blocked`, or `adapter_contract_invalid`.
 - When no adapter, explicit bundle, or restored bundle is present, the runtime now defaults to the neutral `generic-core` family in the `deterministic_semantic` lane.
 - Resume identity now binds `adapter_contract_path`, `adapter_contract_sha256`, `target_family`, `validation_lane`, `evaluator_profile_path`, `evaluator_bundle_sha256`, and `rubric_sha256`.
@@ -102,11 +102,11 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `runtime/round-phase.json` and `runtime/controller-lease.json` now also carry progress timestamps plus `stalled` / `awaiting_input` status, so pause and stall surfaces survive resume and supervision flows.
 - Every run now also persists `runtime/transport-state.json`, and `summary.json.transport_state_path` points at the active transport contract and live thread/turn state.
 - Every run now also persists `runtime/operator-surface.json` plus `.md`, and `summary.json.operator_surface_path` points at the operator-facing projection that tells humans whether the active surface is foreground-thread, background-automation, or headless.
-- Current-thread operator surfaces now distinguish shell-launched `manual-protocol` runs from stock Codex `foreground-thread` runs by checking real thread binding such as `CODEX_THREAD_ID`.
+- Current-thread operator surfaces now distinguish shell-launched `manual-protocol` runs from stock Codex `foreground-thread` runs by requiring a real bound `CODEX_THREAD_ID`; launch-origin overrides alone no longer promote foreground ownership.
 - Operator-surface and transport-state now also persist `launch_origin`, `surface_owner`, `thread_binding_state`, `entrypoint`, and `app_visibility`, so stock Codex visibility is explicit instead of inferred from transport labels alone.
 - Operator-surface now also persists `handoff_state`, `resume_skill`, `resume_command`, `requires_codex_app`, `worktree_id`, and `worktree_path`, so `loop:status` and `loop:ui` can tell the operator whether the next continuation belongs in a local thread, worktree, automation surface, or manual shell resume.
 - App-visible `current-thread` runs now prefer `resume_skill = attached-loop` plus skill-first `next_action` guidance, while shell/manual runs continue to publish explicit CLI resume commands.
-- `loop:status` now prints shell fallback commands for app-visible `current-thread` runs only as explicit downgrade commands that include `--allow-shell-resume-downgrade`.
+- `loop:status` now prints shell fallback commands for app-visible `current-thread` runs only as explicit downgrade commands that include `--allow-shell-resume-downgrade`, and `resume` / `phase` require the same persisted Codex `thread_id` instead of accepting any foreground-looking shell context.
 - Completed operator surfaces now clear stale handoff notes and replace resume-style `next_action` text with closeout guidance, so terminal runs do not keep obsolete reattach instructions.
 - Use `HARNESS_WORKSPACE_SURFACE`, `HARNESS_WORKTREE_ID`, `HARNESS_WORKTREE_PATH`, `HARNESS_HANDOFF_STATE`, `HARNESS_RESUME_SKILL`, or `HARNESS_REQUIRES_CODEX_APP` only when an outer launcher already knows the Codex app resume surface and needs the persisted operator surface to reflect it explicitly.
 - Same-thread runs now also persist `runtime/current-thread-protocol.md` or `runtime/app-server-protocol.md`, and `summary.json.transport_protocol_path` points at that operator surface.
@@ -124,7 +124,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Browser-first bootstrap defaults now use `npm run dev -- --host 127.0.0.1 --port 3000 --strictPort`, so the generated harness fails closed on port collisions instead of silently drifting to a different Vite port than `ready_url` or `app_url`.
 - Resume identity mismatches fail closed by default. Use `--allow-resume-migration` only when intentionally changing the adapter contract, bundle, rubric, or target family for an existing run, and expect the controller to write `resume-migration.json`.
 - Resuming a run that already ended with `target_reached`, `contract_completed`, `environment_blocked`, or `adapter_contract_invalid` now defaults to a no-op closure. `--allow-resume-migration` alone does not reopen a terminal run; use `--force-reopen-terminal` when you intentionally want to spend more budget, and pair it with `--allow-resume-migration` when the reopen also changes run identity.
-- `loop:single` now means a literal single executed attempt even when an adapter is attached. Use it to seed fresh-process resume smoke without spending the remediation budget up front.
+- `loop:single` now means a literal single detached/headless attempt even when an adapter is attached. Use `loop:single:codex` for the Codex-owned current-thread front door and `loop:single:manual` for an explicit shell `manual-protocol` seed.
 
 ## Operating policy
 
@@ -318,6 +318,8 @@ npm run validate:bootstrap-deep-intake
 npm run validate:bootstrap-custom-quality-metrics
 npm run validate:bootstrap-profile-aware-verifier
 npm run loop:single
+npm run loop:single:codex
+npm run loop:single:manual
 npm run loop:run -- 3
 npm run loop:run:raw -- --max-rounds 1
 npm run loop:run -- --adapter ./adapter.example.json --max-rounds 3
@@ -334,7 +336,7 @@ npm run loop:ui -- ./evals/runs/run-###
 Run with a live App Server transport:
 
 ```bash
-npm run loop:single -- --controller-mode attached --transport app-server
+npm run loop:run:raw -- --single --controller-mode attached --transport app-server
 ```
 
 If the host does not expose a real `codex app-server`, point the runtime at a compatible override:
@@ -342,7 +344,7 @@ If the host does not expose a real `codex app-server`, point the runtime at a co
 ```powershell
 $env:HARNESS_APP_SERVER_BIN="node"
 $env:HARNESS_APP_SERVER_BIN_ARGS='["C:\\path\\to\\compatible-app-server.mjs"]'
-npm run loop:single -- --controller-mode attached --transport app-server
+npm run loop:run:raw -- --single --controller-mode attached --transport app-server
 ```
 
 Useful validation and companion commands:

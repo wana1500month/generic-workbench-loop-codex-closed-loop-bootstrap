@@ -389,6 +389,49 @@ const main = async () => {
     expectAppServerLive: false
   });
 
+  const assumedCurrentThreadExecution = await runLoop(
+    ["--single", "--controller-mode", "attached", "--transport", "current-thread"],
+    {
+      silent: true,
+      env: {
+        ...process.env,
+        CODEX_THREAD_ID: "",
+        HARNESS_LAUNCH_ORIGIN: "codex-app-thread",
+        HARNESS_THREAD_BINDING_STATE: "bound",
+        HARNESS_SURFACE_OWNER: "stock-codex-thread",
+        HARNESS_ENTRYPOINT: "skill",
+        HARNESS_APP_VISIBILITY: "visible-in-stock-app"
+      }
+    }
+  );
+  if (assumedCurrentThreadExecution.code !== 0) {
+    throw new Error(
+      `Assumed current-thread validation run failed.\n${assumedCurrentThreadExecution.stdout}\n${assumedCurrentThreadExecution.stderr}`
+    );
+  }
+  const assumedCurrentThreadRunDirectory = extractRunDirectory(assumedCurrentThreadExecution.stdout);
+  await assertTransportSurface(assumedCurrentThreadRunDirectory, {
+    expectedControllerMode: "attached",
+    expectedTransportMode: "current-thread",
+    expectedTransportStatus: "configured",
+    expectedRoundCount: 0,
+    expectedPresentationMode: "manual-protocol",
+    expectedLaunchOrigin: "codex-app-thread",
+    expectedThreadBindingState: "assumed",
+    expectedUiBindingMode: "none",
+    expectedAppVisibility: "not-visible-in-stock-app",
+    expectedWorkspaceSurface: "local",
+    expectedHandoffState: "manual",
+    expectedResumeSkill: "attached-loop",
+    expectedResumeCommandState: "present",
+    expectedBindingWarning:
+      "When no Codex thread binding is present, current-thread degrades to manual-protocol instead of claiming foreground-thread ownership.",
+    expectedRequiresCodexApp: false,
+    expectedWarning:
+      "Current-thread transport keeps the controller on the active operator surface",
+    expectAppServerLive: false
+  });
+
   const attachedDefaultExecution = await runLoop(
     ["--single", "--controller-mode", "attached"],
     {

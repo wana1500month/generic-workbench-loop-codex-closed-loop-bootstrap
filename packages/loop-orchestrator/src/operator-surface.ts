@@ -213,39 +213,36 @@ const resolveCurrentThreadContext = (input: {
   appVisibility?: OperatorAppVisibility;
 }): ResolvedOperatorSurfaceContext => {
   const effectiveThreadId = trimString(input.threadId) ?? envValue("CODEX_THREAD_ID");
+  const explicitThreadBindingState = input.threadBindingState ?? readThreadBindingStateOverride();
   const launchOrigin =
     input.launchOrigin ??
     readLaunchOriginOverride() ??
     (effectiveThreadId ? "codex-app-thread" : "shell");
   const threadBindingState =
-    input.threadBindingState ??
-    readThreadBindingStateOverride() ??
-    (effectiveThreadId
-      ? "bound"
-      : launchOrigin === "codex-app-thread"
+    effectiveThreadId
+      ? explicitThreadBindingState ?? "bound"
+      : explicitThreadBindingState === "bound"
         ? "assumed"
-        : "unbound");
+        : explicitThreadBindingState ?? (launchOrigin === "codex-app-thread" ? "assumed" : "unbound");
   const foregroundThread =
-    launchOrigin === "codex-app-thread" && threadBindingState !== "unbound";
+    launchOrigin === "codex-app-thread" &&
+    threadBindingState === "bound" &&
+    typeof effectiveThreadId === "string";
+  const surfaceOwner = foregroundThread ? "stock-codex-thread" : "external-controller";
+  const appVisibility = foregroundThread ? "visible-in-stock-app" : "not-visible-in-stock-app";
 
   return {
     threadId: effectiveThreadId,
     threadName: trimString(input.threadName),
     presentationMode: foregroundThread ? "foreground-thread" : "manual-protocol",
     launchOrigin,
-    surfaceOwner:
-      input.surfaceOwner ??
-      readSurfaceOwnerOverride() ??
-      (foregroundThread ? "stock-codex-thread" : "external-controller"),
+    surfaceOwner,
     threadBindingState,
     entrypoint:
       input.entrypoint ??
       readEntrypointOverride() ??
       (foregroundThread ? "skill" : "shell"),
-    appVisibility:
-      input.appVisibility ??
-      readAppVisibilityOverride() ??
-      (foregroundThread ? "visible-in-stock-app" : "not-visible-in-stock-app")
+    appVisibility
   };
 };
 

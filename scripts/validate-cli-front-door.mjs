@@ -43,6 +43,33 @@ const runNodeScript = async (scriptPath, args, options = {}) =>
 
 const runCli = async (args, options = {}) => runNodeScript(cliPath, args, options);
 
+const runPackageScript = async (scriptName, options = {}) =>
+  new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn("npm", ["run", scriptName, "--silent"], {
+      cwd: repoRoot,
+      env: options.env ?? process.env,
+      shell: process.platform === "win32",
+      windowsHide: true
+    });
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", rejectPromise);
+    child.on("close", (code) => {
+      resolvePromise({
+        code: code ?? 1,
+        stdout,
+        stderr
+      });
+    });
+  });
+
 const assertSucceeded = (execution, label) => {
   if (execution.code !== 0) {
     throw new Error(`${label} failed.\nSTDOUT:\n${execution.stdout}\nSTDERR:\n${execution.stderr}`);
@@ -67,12 +94,27 @@ const shellLikeEnv = {
   HARNESS_ENTRYPOINT: "shell",
   HARNESS_APP_VISIBILITY: "not-visible-in-stock-app"
 };
+const assumedForegroundEnv = {
+  ...process.env,
+  CODEX_THREAD_ID: "",
+  HARNESS_LAUNCH_ORIGIN: "codex-app-thread",
+  HARNESS_THREAD_BINDING_STATE: "bound",
+  HARNESS_SURFACE_OWNER: "stock-codex-thread",
+  HARNESS_ENTRYPOINT: "skill",
+  HARNESS_APP_VISIBILITY: "visible-in-stock-app"
+};
+const otherForegroundThreadEnv = {
+  ...foregroundThreadEnv,
+  CODEX_THREAD_ID: "thread_validate_other"
+};
 
 const help = await runCli(["--help"]);
 assertSucceeded(help, "cli help");
 assertTextContains(help.stdout, "status --run-dir <run-dir>", "cli help");
 assertTextContains(help.stdout, "loop:phase -- <phase> --run-dir <run-dir>", "cli help");
 assertTextContains(help.stdout, "loop:resume -- --run-dir <run-dir>", "cli help");
+assertTextContains(help.stdout, "loop:single:codex", "cli help");
+assertTextContains(help.stdout, "loop:single:manual", "cli help");
 assertTextContains(help.stdout, "--allow-shell-resume-downgrade", "cli help");
 const helpWithoutPath = await runCli(["--help"], {
   env: {
@@ -81,6 +123,49 @@ const helpWithoutPath = await runCli(["--help"], {
   }
 });
 assertSucceeded(helpWithoutPath, "cli help without npm on PATH");
+
+const explicitHeadlessSingle = await runPackageScript("loop:single");
+assertSucceeded(explicitHeadlessSingle, "loop:single detached front door");
+const explicitHeadlessRunDirectory = extractRunDirectory(explicitHeadlessSingle.stdout);
+const explicitHeadlessSummary = await readSummary(explicitHeadlessRunDirectory);
+if (explicitHeadlessSummary.controller_mode !== "detached") {
+  throw new Error(
+    `Expected loop:single controller_mode 'detached', received '${explicitHeadlessSummary.controller_mode ?? "missing"}'.`
+  );
+}
+if (explicitHeadlessSummary.transport_mode !== "codex-exec") {
+  throw new Error(
+    `Expected loop:single transport_mode 'codex-exec', received '${explicitHeadlessSummary.transport_mode ?? "missing"}'.`
+  );
+}
+
+const blockedCodexScriptSeed = await runPackageScript("loop:single:codex", {
+  env: shellLikeEnv
+});
+if (blockedCodexScriptSeed.code === 0) {
+  throw new Error("Expected loop:single:codex to fail from a shell-like environment.");
+}
+assertTextContains(
+  `${blockedCodexScriptSeed.stdout}\n${blockedCodexScriptSeed.stderr}`,
+  "--allow-manual-protocol-seed",
+  "blocked loop:single:codex"
+);
+const codexScriptSeed = await runPackageScript("loop:single:codex", {
+  env: foregroundThreadEnv
+});
+assertSucceeded(codexScriptSeed, "loop:single:codex foreground front door");
+const codexScriptRunDirectory = extractRunDirectory(codexScriptSeed.stdout);
+const codexScriptSummary = await readSummary(codexScriptRunDirectory);
+if (codexScriptSummary.controller_mode !== "attached") {
+  throw new Error(
+    `Expected loop:single:codex controller_mode 'attached', received '${codexScriptSummary.controller_mode ?? "missing"}'.`
+  );
+}
+if (codexScriptSummary.transport_mode !== "current-thread") {
+  throw new Error(
+    `Expected loop:single:codex transport_mode 'current-thread', received '${codexScriptSummary.transport_mode ?? "missing"}'.`
+  );
+}
 
 const blockedShellSeed = await runCli(
   ["--controller-mode", "attached", "--transport", "current-thread", "--single"],
@@ -100,6 +185,26 @@ assertTextContains(
   `${blockedShellSeed.stdout}\n${blockedShellSeed.stderr}`,
   "$attached-loop",
   "blocked shell seed"
+);
+assertTextContains(
+  `${blockedShellSeed.stdout}\n${blockedShellSeed.stderr}`,
+  "bound Codex thread id",
+  "blocked shell seed"
+);
+
+const blockedAssumedSeed = await runCli(
+  ["--controller-mode", "attached", "--transport", "current-thread", "--single"],
+  {
+    env: assumedForegroundEnv
+  }
+);
+if (blockedAssumedSeed.code === 0) {
+  throw new Error("Expected assumed foreground seed without CODEX_THREAD_ID to fail.");
+}
+assertTextContains(
+  `${blockedAssumedSeed.stdout}\n${blockedAssumedSeed.stderr}`,
+  "bound Codex thread id",
+  "blocked assumed seed"
 );
 
 const manualSeed = await runCli(
@@ -207,6 +312,22 @@ assertTextContains(
   `${blockedShellPlanningPhase.stdout}\n${blockedShellPlanningPhase.stderr}`,
   "--allow-shell-resume-downgrade",
   "blocked shell phase"
+);
+const blockedOtherThreadPlanningPhase = await runCli(["phase", "open", "--run-dir", runDirectory], {
+  env: otherForegroundThreadEnv
+});
+if (blockedOtherThreadPlanningPhase.code === 0) {
+  throw new Error("Expected different Codex thread continuation to fail for an app-visible run.");
+}
+assertTextContains(
+  `${blockedOtherThreadPlanningPhase.stdout}\n${blockedOtherThreadPlanningPhase.stderr}`,
+  "thread_validate_cli",
+  "blocked other-thread phase"
+);
+assertTextContains(
+  `${blockedOtherThreadPlanningPhase.stdout}\n${blockedOtherThreadPlanningPhase.stderr}`,
+  "thread_validate_other",
+  "blocked other-thread phase"
 );
 await writeFile(planningReport.active.active_response_path, "{}\n", "utf8");
 
