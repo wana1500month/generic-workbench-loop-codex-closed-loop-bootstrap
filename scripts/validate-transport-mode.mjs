@@ -37,6 +37,7 @@ const assertTransportSurface = async (
     expectedThreadId,
     expectedResumeCommandState,
     expectedNextActionIncludes,
+    expectedBindingWarning,
     expectedWarning,
     expectAppServerLive
   }
@@ -52,6 +53,9 @@ const assertTransportSurface = async (
   );
   assertRoundCount(summary, expectedRoundCount);
   assertRuntimeWarningContains(summary, expectedWarning);
+  if (expectedBindingWarning !== undefined) {
+    assertRuntimeWarningContains(summary, expectedBindingWarning);
+  }
   assert(
     typeof summary.transport_state_path === "string",
     "Expected summary.transport_state_path to be present."
@@ -377,6 +381,8 @@ const main = async () => {
     expectedHandoffState: "manual",
     expectedResumeSkill: "attached-loop",
     expectedResumeCommandState: "present",
+    expectedBindingWarning:
+      "When no Codex thread binding is present, current-thread degrades to manual-protocol instead of claiming foreground-thread ownership.",
     expectedRequiresCodexApp: false,
     expectedWarning:
       "Current-thread transport keeps the controller on the active operator surface",
@@ -414,6 +420,8 @@ const main = async () => {
     expectedResumeSkill: "attached-loop",
     expectedResumeCommandState: "absent",
     expectedNextActionIncludes: "$attached-loop",
+    expectedBindingWarning:
+      "Current-thread transport is bound to the active Codex thread and remains visible in the stock app.",
     expectedRequiresCodexApp: true,
     expectedThreadId: "thread_validate_current",
     expectedWarning:
@@ -455,6 +463,8 @@ const main = async () => {
     expectedHandoffState: "worktree",
     expectedResumeSkill: "attached-loop",
     expectedResumeCommandState: "absent",
+    expectedBindingWarning:
+      "Current-thread transport is bound to the active Codex thread and remains visible in the stock app.",
     expectedRequiresCodexApp: true,
     expectedWorktreeId: "wt-validate",
     expectedWorktreePath: worktreePath,

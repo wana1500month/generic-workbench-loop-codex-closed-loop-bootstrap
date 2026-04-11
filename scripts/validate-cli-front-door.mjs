@@ -56,12 +56,22 @@ const foregroundThreadEnv = {
   HARNESS_ENTRYPOINT: "skill",
   HARNESS_APP_VISIBILITY: "visible-in-stock-app"
 };
+const shellLikeEnv = {
+  ...process.env,
+  CODEX_THREAD_ID: "",
+  HARNESS_LAUNCH_ORIGIN: "shell",
+  HARNESS_THREAD_BINDING_STATE: "unbound",
+  HARNESS_SURFACE_OWNER: "external-controller",
+  HARNESS_ENTRYPOINT: "shell",
+  HARNESS_APP_VISIBILITY: "not-visible-in-stock-app"
+};
 
 const help = await runCli(["--help"]);
 assertSucceeded(help, "cli help");
 assertTextContains(help.stdout, "status --run-dir <run-dir>", "cli help");
 assertTextContains(help.stdout, "loop:phase -- <phase> --run-dir <run-dir>", "cli help");
 assertTextContains(help.stdout, "loop:resume -- --run-dir <run-dir>", "cli help");
+assertTextContains(help.stdout, "--allow-shell-resume-downgrade", "cli help");
 const helpWithoutPath = await runCli(["--help"], {
   env: {
     ...process.env,
@@ -126,9 +136,27 @@ const planningStatusWithoutPath = await runCli(["status", "--run-dir", runDirect
   }
 });
 assertSucceeded(planningStatusWithoutPath, "cli status without npm on PATH");
+const blockedShellPlanningPhase = await runCli(["phase", "open", "--run-dir", runDirectory], {
+  env: shellLikeEnv
+});
+if (blockedShellPlanningPhase.code === 0) {
+  throw new Error("Expected shell phase entry to fail for an app-visible current-thread run.");
+}
+assertTextContains(
+  `${blockedShellPlanningPhase.stdout}\n${blockedShellPlanningPhase.stderr}`,
+  "$attached-loop",
+  "blocked shell phase"
+);
+assertTextContains(
+  `${blockedShellPlanningPhase.stdout}\n${blockedShellPlanningPhase.stderr}`,
+  "--allow-shell-resume-downgrade",
+  "blocked shell phase"
+);
 await writeFile(planningReport.active.active_response_path, "{}\n", "utf8");
 
-const planningPhase = await runCli(["phase", "open", "--run-dir", runDirectory]);
+const planningPhase = await runCli(["phase", "open", "--run-dir", runDirectory], {
+  env: foregroundThreadEnv
+});
 assertSucceeded(planningPhase, "cli phase planning");
 summary = await readSummary(runDirectory);
 assertStopReason(summary, "awaiting_current_thread_handoff");
@@ -153,7 +181,9 @@ const secondNegotiationPhase = await runCli([
   "negotiate",
   "--run-dir",
   runDirectory
-]);
+], {
+  env: foregroundThreadEnv
+});
 assertSucceeded(secondNegotiationPhase, "cli phase negotiation");
 summary = await readSummary(runDirectory);
 assertStopReason(summary, "awaiting_current_thread_handoff");
@@ -173,7 +203,9 @@ if (generatorPlanReport.active.phase !== "negotiation") {
 }
 await writeFile(generatorPlanReport.active.active_response_path, "{}\n", "utf8");
 
-const attachedGeneratorResume = await runCli(["resume", "--run-dir", runDirectory]);
+const attachedGeneratorResume = await runCli(["resume", "--run-dir", runDirectory], {
+  env: foregroundThreadEnv
+});
 assertSucceeded(attachedGeneratorResume, "cli resume to attached generator");
 summary = await readSummary(runDirectory);
 assertStopReason(summary, "awaiting_current_thread_handoff");
@@ -191,7 +223,9 @@ let evaluationReport = postNegotiationReport;
 if (postNegotiationReport.active.phase === "pre_verification") {
   await writeFile(postNegotiationReport.active.active_response_path, "{}\n", "utf8");
 
-  const evaluationResume = await runCli(["resume", "--run-dir", runDirectory]);
+  const evaluationResume = await runCli(["resume", "--run-dir", runDirectory], {
+    env: foregroundThreadEnv
+  });
   assertSucceeded(evaluationResume, "cli resume to evaluation");
   summary = await readSummary(runDirectory);
   assertStopReason(summary, "awaiting_current_thread_handoff");

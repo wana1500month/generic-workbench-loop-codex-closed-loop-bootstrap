@@ -16,15 +16,18 @@ import {
   readOperatorSurfaceArtifact,
   runtimeStatePathsForRun
 } from "./runtime-state.js";
+import { resolveOperatorSurfaceContext } from "./operator-surface.js";
 import { runSingleIteration } from "./run-single-iteration.js";
 import {
   defaultTransportModeForControllerMode,
   isTransportMode
 } from "./transport-mode.js";
 import type {
+  ControllerMode,
   ControllerRoundPhase,
   LoopRunSummary,
-  OperatorSurfaceArtifact
+  OperatorSurfaceArtifact,
+  TransportMode
 } from "./types.js";
 
 type RunCommandArgs = {
@@ -35,6 +38,7 @@ type RunCommandArgs = {
   targetFamily?: string;
   resumeRunPath?: string;
   allowResumeMigration?: boolean;
+  allowShellResumeDowngrade?: boolean;
   forceReopenTerminal?: boolean;
   controllerMode?: "attached" | "detached";
   transportMode?: "codex-exec" | "current-thread" | "app-server";
@@ -119,6 +123,7 @@ interface StatusReport {
 }
 
 const helpTokens = new Set(["help", "--help", "-h"]);
+const shellResumeDowngradeFlag = "--allow-shell-resume-downgrade";
 const phaseAliasMap = new Map<string, ControllerRoundPhase>([
   ["planning", "planning"],
   ["open", "planning"],
@@ -153,8 +158,8 @@ const usageLines = [
   "  npm run loop:run",
   "  npm run loop:bootstrap",
   "  npm run loop:status -- --run-dir <run-dir> [--json]",
-  "  npm run loop:resume -- --run-dir <run-dir> [--force-reopen-terminal] [--repair] [--resume-phase <phase>]",
-  "  npm run loop:phase -- <phase> --run-dir <run-dir> [--force-reopen-terminal] [--repair]",
+  `  npm run loop:resume -- --run-dir <run-dir> [--force-reopen-terminal] [--repair] [--resume-phase <phase>] [${shellResumeDowngradeFlag}]`,
+  `  npm run loop:phase -- <phase> --run-dir <run-dir> [--force-reopen-terminal] [--repair] [${shellResumeDowngradeFlag}]`,
   "  node ./scripts/loop-runner.mjs --controller-mode attached --single",
   "  node ./scripts/loop-runner.mjs resume --run-dir <run-dir>",
   "  node ./scripts/loop-runner.mjs phase planning --run-dir <run-dir>",
@@ -165,6 +170,7 @@ const usageLines = [
   "",
   "Notes:",
   "  resume/phase preserve the existing run controller and transport unless you override them explicitly.",
+  `  app-visible current-thread runs must continue from the Codex thread unless you intentionally pass ${shellResumeDowngradeFlag}.`,
   "  phase re-enters from the named phase and runs until the next persisted handoff or terminal stop.",
   "  current-thread planning/negotiation/evaluation handoffs remain file-backed through operator-surface.json."
 ] as const;
@@ -175,12 +181,12 @@ const subcommandUsage = {
         "Reads persisted summary/runtime/operator-surface artifacts without starting a new controller."
     ],
     resume: [
-        "Usage: node ./scripts/loop-runner.mjs resume --run-dir <run-dir> [--force-reopen-terminal] [--repair] [--resume-phase <phase>]",
-        "Re-enters a persisted run using the stored controller/transport defaults unless overridden."
+        `Usage: node ./scripts/loop-runner.mjs resume --run-dir <run-dir> [--force-reopen-terminal] [--repair] [--resume-phase <phase>] [${shellResumeDowngradeFlag}]`,
+        `Re-enters a persisted run using the stored controller/transport defaults unless overridden. App-visible current-thread runs require a Codex thread unless ${shellResumeDowngradeFlag} is supplied.`
     ],
     phase: [
-        "Usage: node ./scripts/loop-runner.mjs phase <phase> --run-dir <run-dir> [--force-reopen-terminal] [--repair]",
-        "Friendly phase aliases such as 'open', 'negotiate', 'pre-verify', 'evaluate', and 'finalize' are accepted."
+        `Usage: node ./scripts/loop-runner.mjs phase <phase> --run-dir <run-dir> [--force-reopen-terminal] [--repair] [${shellResumeDowngradeFlag}]`,
+        `Friendly phase aliases such as 'open', 'negotiate', 'pre-verify', 'evaluate', and 'finalize' are accepted. App-visible current-thread runs require a Codex thread unless ${shellResumeDowngradeFlag} is supplied.`
     ]
 } as const;
 
@@ -219,6 +225,7 @@ const parseRunArgs = (argv: readonly string[]): RunCommandArgs => {
   let targetFamily: string | undefined;
   let resumeRunPath: string | undefined;
   let allowResumeMigration = false;
+  let allowShellResumeDowngrade = false;
   let forceReopenTerminal = false;
   let controllerMode: "attached" | "detached" | undefined;
   let transportMode: "codex-exec" | "current-thread" | "app-server" | undefined;
@@ -285,6 +292,11 @@ const parseRunArgs = (argv: readonly string[]): RunCommandArgs => {
 
     if (value === "--allow-resume-migration") {
       allowResumeMigration = true;
+      continue;
+    }
+
+    if (value === shellResumeDowngradeFlag) {
+      allowShellResumeDowngrade = true;
       continue;
     }
 
@@ -423,6 +435,7 @@ const parseRunArgs = (argv: readonly string[]): RunCommandArgs => {
     targetFamily,
     resumeRunPath,
     allowResumeMigration,
+    allowShellResumeDowngrade,
     forceReopenTerminal,
     controllerMode,
     transportMode,
@@ -644,15 +657,20 @@ const buildStatusReport = async (runDirectory: string): Promise<StatusReport> =>
     restoredRun.runtimeRoundPhase?.status ??
     restoredRun.interruptedRound?.phaseStatus;
   const resumeRunDir = resolve(restoredRun.runDirectory);
+  const shellDowngradeSuffix =
+    operatorSurface?.transport_mode === "current-thread" &&
+    operatorSurface?.app_visibility === "visible-in-stock-app"
+      ? ` ${shellResumeDowngradeFlag}`
+      : "";
   const phaseResumeCommand = activePhase
-    ? `npm run loop:phase -- ${activePhase} --run-dir "${resumeRunDir}"`
+    ? `npm run loop:phase -- ${activePhase} --run-dir "${resumeRunDir}"${shellDowngradeSuffix}`
     : undefined;
   const fallbackResumeCommand =
     operatorSurface?.resume_command ??
     (runtimeHealth.execution_state === "completed"
-      ? `npm run loop:resume -- --run-dir "${resumeRunDir}" --force-reopen-terminal`
+      ? `npm run loop:resume -- --run-dir "${resumeRunDir}" --force-reopen-terminal${shellDowngradeSuffix}`
       : phaseResumeCommand ??
-        `npm run loop:resume -- --run-dir "${resumeRunDir}"`);
+        `npm run loop:resume -- --run-dir "${resumeRunDir}"${shellDowngradeSuffix}`);
 
   return {
     run_id: restoredRun.runId,
@@ -712,6 +730,68 @@ const buildStatusReport = async (runDirectory: string): Promise<StatusReport> =>
 
 const joinRunPath = (runDirectory: string, fileName: string): string =>
   resolve(runDirectory, fileName);
+
+const requiresCodexThreadContinuation = (
+  operatorSurface: OperatorSurfaceArtifact | undefined
+): boolean =>
+  operatorSurface?.transport_mode === "current-thread" &&
+  operatorSurface.app_visibility === "visible-in-stock-app" &&
+  operatorSurface.requires_codex_app === true &&
+  operatorSurface.handoff_state !== "automation" &&
+  operatorSurface.handoff_state !== "headless";
+
+const currentInvocationOwnsCodexThread = (input: {
+  controllerMode: ControllerMode;
+  transportMode: TransportMode;
+}): boolean => {
+  const context = resolveOperatorSurfaceContext(input);
+  return (
+    context.presentationMode === "foreground-thread" &&
+    context.appVisibility === "visible-in-stock-app" &&
+    context.surfaceOwner === "stock-codex-thread" &&
+    context.threadBindingState !== "unbound"
+  );
+};
+
+const validateResumeOwnership = async (input: {
+  resumeRunPath: string;
+  controllerMode?: ControllerMode;
+  transportMode?: TransportMode;
+  allowShellResumeDowngrade: boolean;
+}): Promise<string | undefined> => {
+  const restoredRun = await restoreRunState(input.resumeRunPath);
+  const runtimePaths = runtimeStatePathsForRun(restoredRun.runDirectory);
+  const operatorSurface =
+    (await readOperatorSurfaceArtifact(runtimePaths.operatorSurfacePath)) ?? undefined;
+  const resumedControllerMode = isControllerMode(restoredRun.summary.controller_mode)
+    ? restoredRun.summary.controller_mode
+    : defaultControllerMode;
+  const effectiveControllerMode = input.controllerMode ?? resumedControllerMode;
+  const resumedTransportMode = isTransportMode(restoredRun.summary.transport_mode)
+    ? restoredRun.summary.transport_mode
+    : defaultTransportModeForControllerMode(effectiveControllerMode);
+  const effectiveTransportMode = input.transportMode ?? resumedTransportMode;
+  if (!requiresCodexThreadContinuation(operatorSurface)) {
+    return undefined;
+  }
+  if (
+    currentInvocationOwnsCodexThread({
+      controllerMode: effectiveControllerMode,
+      transportMode: effectiveTransportMode
+    })
+  ) {
+    return undefined;
+  }
+  if (input.allowShellResumeDowngrade) {
+    return undefined;
+  }
+  const resumeSkill = operatorSurface?.resume_skill ?? "attached-loop";
+  return [
+    `Run '${restoredRun.runId}' is currently owned by a visible Codex thread.`,
+    `Resume it from the Codex app with $${resumeSkill} instead of reopening it from a shell.`,
+    `If you intentionally want to downgrade this run to manual-protocol, rerun with ${shellResumeDowngradeFlag}.`
+  ].join(" ");
+};
 
 const printRunResult = (
   summary: LoopRunSummary,
@@ -944,6 +1024,19 @@ const main = async (): Promise<void> => {
     args.executorMode ??
     envExecutorMode ??
     (args.resumeRunPath ? undefined : defaultExecutorMode);
+  if (args.resumeRunPath) {
+    const resumeOwnershipError = await validateResumeOwnership({
+      resumeRunPath: args.resumeRunPath,
+      controllerMode,
+      transportMode,
+      allowShellResumeDowngrade: args.allowShellResumeDowngrade ?? false
+    });
+    if (resumeOwnershipError) {
+      console.error(resumeOwnershipError);
+      process.exitCode = 1;
+      return;
+    }
+  }
   if (args.bootstrap) {
     const bootstrap = await runInteractiveBootstrap();
     adapterPath = bootstrap.adapterPath;

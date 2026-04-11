@@ -58,9 +58,12 @@ export const transportRuntimeWarningsForMode = (input: {
   transportMode: TransportMode;
 }): string[] => {
   if (input.transportMode === "current-thread") {
+    const context = resolveOperatorSurfaceContext(input);
     return [
       "Current-thread transport keeps the controller on the active operator surface and forbids nested codex exec calls.",
-      "When no Codex thread binding is present, current-thread degrades to manual-protocol instead of claiming foreground-thread ownership."
+      context.presentationMode === "foreground-thread"
+        ? "Current-thread transport is bound to the active Codex thread and remains visible in the stock app."
+        : "When no Codex thread binding is present, current-thread degrades to manual-protocol instead of claiming foreground-thread ownership."
     ];
   }
 
