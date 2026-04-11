@@ -35,6 +35,8 @@ const assertTransportSurface = async (
     expectedWorktreeId,
     expectedWorktreePath,
     expectedThreadId,
+    expectedResumeCommandState,
+    expectedNextActionIncludes,
     expectedWarning,
     expectAppServerLive
   }
@@ -182,6 +184,25 @@ const assertTransportSurface = async (
     assert(
       operatorSurface.thread_id === expectedThreadId,
       `Expected operator surface thread_id '${expectedThreadId}', received '${operatorSurface.thread_id ?? "missing"}'.`
+    );
+  }
+  if (expectedResumeCommandState === "present") {
+    assert(
+      typeof operatorSurface.resume_command === "string",
+      "Expected operator surface to publish resume_command."
+    );
+  }
+  if (expectedResumeCommandState === "absent") {
+    assert(
+      operatorSurface.resume_command === undefined,
+      `Expected operator surface resume_command to be omitted, received '${operatorSurface.resume_command ?? "present"}'.`
+    );
+  }
+  if (expectedNextActionIncludes !== undefined) {
+    assert(
+      typeof operatorSurface.next_action === "string" &&
+        operatorSurface.next_action.includes(expectedNextActionIncludes),
+      `Expected operator surface next_action to contain '${expectedNextActionIncludes}', received '${operatorSurface.next_action ?? "missing"}'.`
     );
   }
 
@@ -355,6 +376,7 @@ const main = async () => {
     expectedWorkspaceSurface: "local",
     expectedHandoffState: "manual",
     expectedResumeSkill: "attached-loop",
+    expectedResumeCommandState: "present",
     expectedRequiresCodexApp: false,
     expectedWarning:
       "Current-thread transport keeps the controller on the active operator surface",
@@ -390,6 +412,8 @@ const main = async () => {
     expectedWorkspaceSurface: "local",
     expectedHandoffState: "local",
     expectedResumeSkill: "attached-loop",
+    expectedResumeCommandState: "absent",
+    expectedNextActionIncludes: "$attached-loop",
     expectedRequiresCodexApp: true,
     expectedThreadId: "thread_validate_current",
     expectedWarning:
@@ -430,6 +454,7 @@ const main = async () => {
     expectedWorkspaceSurface: "worktree",
     expectedHandoffState: "worktree",
     expectedResumeSkill: "attached-loop",
+    expectedResumeCommandState: "absent",
     expectedRequiresCodexApp: true,
     expectedWorktreeId: "wt-validate",
     expectedWorktreePath: worktreePath,

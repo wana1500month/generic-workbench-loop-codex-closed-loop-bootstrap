@@ -1,10 +1,16 @@
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npmExecutable = "npm";
+const cliDistPath = resolve(repoRoot, "packages", "loop-orchestrator", "dist", "cli.js");
+const readOnlyCliWatchPaths = [
+  resolve(repoRoot, "packages", "loop-orchestrator", "src"),
+  resolve(repoRoot, "packages", "loop-orchestrator", "tsconfig.json"),
+  resolve(repoRoot, "tsconfig.json")
+];
 const runnerCliImport =
   "process.argv=[process.argv[0],'./packages/loop-orchestrator/dist/cli.js',...process.argv.slice(1)]; await import('./packages/loop-orchestrator/dist/cli.js')";
 
@@ -95,15 +101,43 @@ const runBuild = async () => {
   );
 };
 
+const latestModifiedTimeMs = (targetPath) => {
+  if (!existsSync(targetPath)) {
+    return 0;
+  }
+
+  const stats = statSync(targetPath);
+  if (!stats.isDirectory()) {
+    return stats.mtimeMs;
+  }
+
+  return readdirSync(targetPath, { withFileTypes: true }).reduce((latest, entry) => {
+    const entryPath = resolve(targetPath, entry.name);
+    return Math.max(latest, latestModifiedTimeMs(entryPath));
+  }, stats.mtimeMs);
+};
+
+const readOnlyFrontDoorNeedsBuild = () => {
+  if (!existsSync(cliDistPath)) {
+    return true;
+  }
+
+  const distMtimeMs = statSync(cliDistPath).mtimeMs;
+  const latestWatchMtimeMs = readOnlyCliWatchPaths.reduce(
+    (latest, targetPath) => Math.max(latest, latestModifiedTimeMs(targetPath)),
+    0
+  );
+  return latestWatchMtimeMs > distMtimeMs;
+};
+
 const rawArgs = process.argv.slice(2);
-const directCliFrontDoorCommands = new Set([
+const readOnlyCliFrontDoorCommands = new Set([
   "help",
   "--help",
   "-h",
-  "status",
-  "resume",
-  "phase"
+  "status"
 ]);
+const mutatingCliFrontDoorCommands = new Set(["resume", "phase"]);
 if (rawArgs.includes("--supervised")) {
   const delegatedArgs = rawArgs.filter((value) => value !== "--supervised");
   const exitCode = await runCommand(
@@ -114,8 +148,15 @@ if (rawArgs.includes("--supervised")) {
   process.exitCode = exitCode;
   process.exit();
 }
-if (rawArgs.length > 0 && directCliFrontDoorCommands.has(rawArgs[0])) {
-  const buildExitCode = await runBuild();
+if (
+  rawArgs.length > 0 &&
+  (readOnlyCliFrontDoorCommands.has(rawArgs[0]) ||
+    mutatingCliFrontDoorCommands.has(rawArgs[0]))
+) {
+  const buildExitCode =
+    readOnlyCliFrontDoorCommands.has(rawArgs[0]) && !readOnlyFrontDoorNeedsBuild()
+      ? 0
+      : await runBuild();
   if (buildExitCode !== 0) {
     process.exitCode = buildExitCode;
   } else {

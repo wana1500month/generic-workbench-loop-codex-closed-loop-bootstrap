@@ -25,6 +25,8 @@ const rel = (path: string | undefined): string =>
 const trimString = (value: string | undefined): string | undefined =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 
+const unique = <T>(values: readonly T[]): T[] => [...new Set(values)];
+
 const operatorLaunchOrigins = [
   "codex-app-thread",
   "codex-automation",
@@ -345,13 +347,31 @@ export const operatorPresentationModeForTransport = (input: {
 };
 
 const defaultNextActionForTransport = (input: {
+  executionState: ExecutionState | "configured";
   transportMode: TransportMode;
   presentationMode: OperatorPresentationMode;
+  appVisibility: OperatorAppVisibility;
   handoffState: OperatorHandoffState;
+  resumeSkill: OperatorResumeSkill;
   worktreePath?: string;
   phase?: ControllerRoundPhase;
   phaseStatus?: ControllerPhaseStatus;
 }): string | undefined => {
+  if (input.executionState === "completed") {
+    if (
+      input.transportMode === "current-thread" &&
+      input.appVisibility === "visible-in-stock-app"
+    ) {
+      return "Run completed. Review the persisted summary on the current Codex thread and close out this run; no resume is required.";
+    }
+    return "Run completed. Review the persisted summary and close out this run; no resume is required.";
+  }
+  if (input.executionState === "failed") {
+    return "Inspect the persisted failure artifacts before attempting a repair or reopen.";
+  }
+  if (input.executionState === "stalled") {
+    return "Inspect the stalled phase artifacts before resuming or repairing this run.";
+  }
   if (input.handoffState === "worktree" && input.worktreePath) {
     return `Continue this run from the linked worktree at ${input.worktreePath}, then resume from the persisted phase surface.`;
   }
@@ -363,7 +383,7 @@ const defaultNextActionForTransport = (input: {
     input.phaseStatus === "awaiting_input" &&
     input.presentationMode === "foreground-thread"
   ) {
-    return "Stay on the current Codex thread, complete the active protocol artifact, then resume.";
+    return `Stay on the current Codex thread, complete the active protocol artifact, then continue with $${input.resumeSkill}.`;
   }
   if (
     input.transportMode === "current-thread" &&
@@ -377,6 +397,12 @@ const defaultNextActionForTransport = (input: {
     input.presentationMode === "manual-protocol"
   ) {
     return "This run is using current-thread as a manual protocol. Reattach through a Codex thread or resume from the same shell before continuing.";
+  }
+  if (
+    input.transportMode === "current-thread" &&
+    input.appVisibility === "visible-in-stock-app"
+  ) {
+    return `Continue this run on the current Codex thread with $${input.resumeSkill}.`;
   }
   if (input.transportMode === "app-server") {
     return "Resume or inspect the embedded App Server transport from persisted runtime state.";
@@ -433,8 +459,18 @@ const defaultResumeCommandFor = (input: {
   transportMode: TransportMode;
   phase?: ControllerRoundPhase;
   handoffState: OperatorHandoffState;
+  appVisibility: OperatorAppVisibility;
 }): string | undefined => {
   if (!input.runDirectory || input.executionState === "completed") {
+    return undefined;
+  }
+
+  if (
+    input.transportMode === "current-thread" &&
+    input.appVisibility === "visible-in-stock-app" &&
+    input.handoffState !== "automation" &&
+    input.handoffState !== "headless"
+  ) {
     return undefined;
   }
 
@@ -538,14 +574,26 @@ export const buildOperatorSurfaceArtifact = (input: {
       executionState: input.executionState,
       transportMode: input.transportMode,
       phase: input.phase,
-      handoffState
+      handoffState,
+      appVisibility: context.appVisibility
     });
+  const normalizedNotes =
+    input.executionState === "completed"
+      ? []
+      : unique(
+          (input.notes ?? [])
+            .map((note) => trimString(note))
+            .filter((note): note is string => typeof note === "string")
+        );
   const nextAction =
     input.nextAction ??
     defaultNextActionForTransport({
+      executionState: input.executionState,
       transportMode: input.transportMode,
       presentationMode: context.presentationMode,
+      appVisibility: context.appVisibility,
       handoffState,
+      resumeSkill,
       worktreePath,
       phase: input.phase,
       phaseStatus: input.phaseStatus
@@ -582,7 +630,7 @@ export const buildOperatorSurfaceArtifact = (input: {
     ...(worktreePath ? { worktree_path: worktreePath } : {}),
     ...(resumeCommand ? { resume_command: resumeCommand } : {}),
     ...(nextAction ? { next_action: nextAction } : {}),
-    ...(input.notes?.length ? { notes: input.notes } : {})
+    ...(normalizedNotes.length > 0 ? { notes: normalizedNotes } : {})
   };
 };
 

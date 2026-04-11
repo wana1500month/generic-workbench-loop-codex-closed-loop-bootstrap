@@ -15,11 +15,11 @@ import {
 
 const cliPath = resolve(repoRoot, "scripts", "loop-runner.mjs");
 
-const runCli = async (args) =>
+const runCli = async (args, options = {}) =>
   new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(process.execPath, [cliPath, ...args], {
       cwd: repoRoot,
-      env: process.env,
+      env: options.env ?? process.env,
       windowsHide: true
     });
 
@@ -47,15 +47,35 @@ const assertSucceeded = (execution, label) => {
   }
 };
 
+const foregroundThreadEnv = {
+  ...process.env,
+  CODEX_THREAD_ID: "thread_validate_cli",
+  HARNESS_LAUNCH_ORIGIN: "codex-app-thread",
+  HARNESS_THREAD_BINDING_STATE: "bound",
+  HARNESS_SURFACE_OWNER: "stock-codex-thread",
+  HARNESS_ENTRYPOINT: "skill",
+  HARNESS_APP_VISIBILITY: "visible-in-stock-app"
+};
+
 const help = await runCli(["--help"]);
 assertSucceeded(help, "cli help");
 assertTextContains(help.stdout, "status --run-dir <run-dir>", "cli help");
 assertTextContains(help.stdout, "loop:phase -- <phase> --run-dir <run-dir>", "cli help");
 assertTextContains(help.stdout, "loop:resume -- --run-dir <run-dir>", "cli help");
+const helpWithoutPath = await runCli(["--help"], {
+  env: {
+    ...process.env,
+    PATH: ""
+  }
+});
+assertSucceeded(helpWithoutPath, "cli help without npm on PATH");
 
 const seed = await runLoop(
   ["--controller-mode", "attached", "--transport", "current-thread", "--single"],
-  { silent: true }
+  {
+    env: foregroundThreadEnv,
+    silent: true
+  }
 );
 assertSucceeded(seed, "current-thread seed run");
 const runDirectory = extractRunDirectory(seed.stdout);
@@ -81,33 +101,31 @@ if (planningReport.operator_surface?.resume_skill !== "attached-loop") {
     `Expected planning status resume_skill 'attached-loop', received '${planningReport.operator_surface?.resume_skill ?? "missing"}'.`
   );
 }
-if (typeof planningReport.operator_surface?.resume_command !== "string") {
-  throw new Error("Expected planning status to publish resume_command.");
+if (planningReport.operator_surface?.resume_command !== undefined) {
+  throw new Error("Expected foreground-thread planning status to omit resume_command.");
 }
-if (
-  planningReport.operator_surface?.presentation_mode !== "manual-protocol" &&
-  planningReport.operator_surface?.presentation_mode !== "foreground-thread"
-) {
+if (planningReport.operator_surface?.presentation_mode !== "foreground-thread") {
   throw new Error(
-    `Expected current-thread foreground surface to resolve as manual-protocol or foreground-thread, received '${planningReport.operator_surface?.presentation_mode ?? "missing"}'.`
+    `Expected current-thread foreground surface to resolve as 'foreground-thread', received '${planningReport.operator_surface?.presentation_mode ?? "missing"}'.`
   );
 }
-if (
-  planningReport.operator_surface?.presentation_mode === "manual-protocol" &&
-  planningReport.operator_surface?.thread_binding_state !== "unbound"
-) {
+if (planningReport.operator_surface?.thread_binding_state === "unbound") {
   throw new Error(
-    `Expected manual-protocol surface to remain unbound, received '${planningReport.operator_surface?.thread_binding_state ?? "missing"}'.`
+    "Foreground-thread planning status should not report an unbound thread binding state."
   );
 }
-if (
-  planningReport.operator_surface?.presentation_mode === "foreground-thread" &&
-  planningReport.operator_surface?.thread_binding_state === "unbound"
-) {
+if (!planningReport.operator_surface?.next_action?.includes("$attached-loop")) {
   throw new Error(
-    "Foreground-thread surface should not report an unbound thread binding state."
+    `Expected foreground-thread planning next_action to reference $attached-loop, received '${planningReport.operator_surface?.next_action ?? "missing"}'.`
   );
 }
+const planningStatusWithoutPath = await runCli(["status", "--run-dir", runDirectory, "--json"], {
+  env: {
+    ...process.env,
+    PATH: ""
+  }
+});
+assertSucceeded(planningStatusWithoutPath, "cli status without npm on PATH");
 await writeFile(planningReport.active.active_response_path, "{}\n", "utf8");
 
 const planningPhase = await runCli(["phase", "open", "--run-dir", runDirectory]);

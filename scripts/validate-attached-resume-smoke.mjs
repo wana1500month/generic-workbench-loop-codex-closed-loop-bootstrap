@@ -68,6 +68,31 @@ const assertAttachedTransportSurface = async (
   }
 };
 
+const assertCompletedOperatorSurface = async (summary) => {
+  const operatorSurface = await readJsonFile(summary.operator_surface_path);
+  assert(
+    operatorSurface.execution_state === "completed",
+    `Expected completed operator surface execution_state, received '${operatorSurface.execution_state ?? "missing"}'.`
+  );
+  assert(
+    typeof operatorSurface.next_action === "string" &&
+      operatorSurface.next_action.includes("no resume is required"),
+    `Expected completed operator surface next_action to close out the run, received '${operatorSurface.next_action ?? "missing"}'.`
+  );
+  assert(
+    !operatorSurface.next_action.includes("Reattach through a Codex thread"),
+    "Completed operator surface should not keep stale manual reattach guidance."
+  );
+  assert(
+    !operatorSurface.next_action.includes("resume from the same shell"),
+    "Completed operator surface should not keep stale shell resume guidance."
+  );
+  assert(
+    !Array.isArray(operatorSurface.notes) || operatorSurface.notes.length === 0,
+    "Completed operator surface should clear stale handoff notes."
+  );
+};
+
 const fakeAppServerEnv = () => {
   const fakeAppServerPath = join(process.cwd(), "scripts", "testing", "fake-app-server.mjs");
   return {
@@ -145,6 +170,7 @@ await assertAttachedTransportSurface(currentThreadResumedSummary, {
   expectedTransportMode: "current-thread",
   expectedRoundCount: 2
 });
+await assertCompletedOperatorSurface(currentThreadResumedSummary);
 
 console.log("[validate-attached-resume-smoke] attached current-thread interrupted-round repair");
 const currentThreadRepairSeed = await runLoop([
@@ -373,6 +399,7 @@ await assertAttachedTransportSurface(appServerResumedSummary, {
   expectedTransportMode: "app-server",
   expectedRoundCount: 2
 });
+await assertCompletedOperatorSurface(appServerResumedSummary);
 
 console.log("[validate-attached-resume-smoke] attached app-server interrupted-round repair");
 const appServerRepairSeed = await runLoop(

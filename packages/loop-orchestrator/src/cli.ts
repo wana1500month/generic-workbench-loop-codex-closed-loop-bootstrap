@@ -858,9 +858,22 @@ const printStatusReport = (report: StatusReport): void => {
   console.log(
     `Operator surface: ${displayPath(report.paths.operator_surface_path) ?? report.paths.operator_surface_path}`
   );
-  console.log(`Resume: ${report.operator_surface?.resume_command ?? report.resume_commands.resume}`);
-  if (report.resume_commands.phase) {
-    console.log(`Phase re-entry: ${report.resume_commands.phase}`);
+  if (
+    report.operator_surface?.app_visibility === "visible-in-stock-app" &&
+    report.operator_surface.resume_skill
+  ) {
+    console.log(`Resume skill: $${report.operator_surface.resume_skill}`);
+    console.log(`CLI fallback: ${report.resume_commands.resume}`);
+    if (report.resume_commands.phase) {
+      console.log(`CLI phase fallback: ${report.resume_commands.phase}`);
+    }
+  } else {
+    console.log(
+      `Resume: ${report.operator_surface?.resume_command ?? report.resume_commands.resume}`
+    );
+    if (report.resume_commands.phase) {
+      console.log(`Phase re-entry: ${report.resume_commands.phase}`);
+    }
   }
   if (report.repair_notes.length > 0) {
     console.log("Repair notes:");

@@ -86,6 +86,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Use `--repair` with `--resume-run` when the controller should repair persisted state and stop instead of opening additional rounds.
 - Use `--resume-phase <phase>` to force repair or resume from a known persisted controller phase such as `evaluation` or `round_commit`.
 - Use `npm run loop:status -- --run-dir <evals/runs/run-###>` to inspect `summary.json`, runtime journals, and `operator-surface.json` without starting a new controller process. Add `--json` when another tool should consume the report.
+- `loop:status` and `--help` now reuse the current compiled CLI when `dist/` is already fresh, so read-only inspection does not force an unnecessary rebuild before printing status.
 - Use `npm run loop:resume -- --run-dir <evals/runs/run-###>` as the explicit foreground re-entry surface instead of remembering the raw `--resume-run` form.
 - Use `npm run loop:phase -- <phase> --run-dir <evals/runs/run-###>` to re-enter from a named controller phase. Friendly aliases such as `open`, `negotiate`, `pre-verify`, `evaluate`, and `finalize` resolve to the canonical persisted phase names.
 - `loop:phase` is a phase-oriented front door, not a separate controller engine. It resumes from the named persisted phase and then runs until the next file-backed handoff or terminal stop.
@@ -102,6 +103,8 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Current-thread operator surfaces now distinguish shell-launched `manual-protocol` runs from stock Codex `foreground-thread` runs by checking real thread binding such as `CODEX_THREAD_ID`.
 - Operator-surface and transport-state now also persist `launch_origin`, `surface_owner`, `thread_binding_state`, `entrypoint`, and `app_visibility`, so stock Codex visibility is explicit instead of inferred from transport labels alone.
 - Operator-surface now also persists `handoff_state`, `resume_skill`, `resume_command`, `requires_codex_app`, `worktree_id`, and `worktree_path`, so `loop:status` and `loop:ui` can tell the operator whether the next continuation belongs in a local thread, worktree, automation surface, or manual shell resume.
+- App-visible `current-thread` runs now prefer `resume_skill = attached-loop` plus skill-first `next_action` guidance, while shell/manual runs continue to publish explicit CLI resume commands.
+- Completed operator surfaces now clear stale handoff notes and replace resume-style `next_action` text with closeout guidance, so terminal runs do not keep obsolete reattach instructions.
 - Use `HARNESS_WORKSPACE_SURFACE`, `HARNESS_WORKTREE_ID`, `HARNESS_WORKTREE_PATH`, `HARNESS_HANDOFF_STATE`, `HARNESS_RESUME_SKILL`, or `HARNESS_REQUIRES_CODEX_APP` only when an outer launcher already knows the Codex app resume surface and needs the persisted operator surface to reflect it explicitly.
 - Same-thread runs now also persist `runtime/current-thread-protocol.md` or `runtime/app-server-protocol.md`, and `summary.json.transport_protocol_path` points at that operator surface.
 - Same-thread bootstrap generator rounds now also persist `runtime/attached-generator-task.json`, `runtime/attached-generator-prompt.md`, and `runtime/attached-generator-response.json`, so attached mutation can be resumed from files alone.

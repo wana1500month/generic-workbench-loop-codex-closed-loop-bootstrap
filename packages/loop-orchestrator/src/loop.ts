@@ -1578,6 +1578,13 @@ export const runClosedLoop = async (input: {
       : undefined;
   let latestEvalReportPath = restoredRun?.latestRoundSummary?.eval_report_path;
   const heartbeatNotes = [...(restoredRun?.repairNotes ?? [])];
+  const replaceHeartbeatNotes = (notes?: readonly string[]): void => {
+    heartbeatNotes.splice(
+      0,
+      heartbeatNotes.length,
+      ...(notes?.length ? unique(notes) : [])
+    );
+  };
   const activeArtifactPathsFor = (
     artifacts?: Record<string, string>
   ): {
@@ -1857,7 +1864,12 @@ export const runClosedLoop = async (input: {
       setExecutionState("stalled");
     }
     if (inputPhase.notes?.length) {
-      heartbeatNotes.splice(0, heartbeatNotes.length, ...inputPhase.notes);
+      replaceHeartbeatNotes(inputPhase.notes);
+    } else if (
+      inputPhase.status === "in_progress" ||
+      inputPhase.status === "completed"
+    ) {
+      replaceHeartbeatNotes();
     }
     await writeRuntimeRoundPhaseArtifact(runtimeStatePaths.roundPhasePath, {
       run_id: runId,
@@ -2041,11 +2053,10 @@ export const runClosedLoop = async (input: {
     activeResponsePath?: string;
   }): Promise<ClosedLoopResult> => {
     runtimeWarnings = unique([...runtimeWarnings, ...input.notes]);
-    heartbeatNotes.splice(0, heartbeatNotes.length, ...unique([...heartbeatNotes, ...input.notes]));
+    replaceHeartbeatNotes(unique([...heartbeatNotes, ...input.notes]));
     await writeLiveTransportProtocol();
     await writeOperatorSurface({
       executionState: "paused",
-      nextAction: input.notes[1] ?? input.notes[0],
       activePromptPath: input.activePromptPath,
       activeResponsePath: input.activeResponsePath,
       notes: heartbeatNotes
@@ -3554,6 +3565,7 @@ export const runClosedLoop = async (input: {
       }
     });
     await markProgress(`Final run artifacts saved for ${runId}.`);
+    replaceHeartbeatNotes();
     setExecutionState("completed");
     await recordRoundPhase({
       round: terminalRound ?? 0,
@@ -3579,7 +3591,7 @@ export const runClosedLoop = async (input: {
       error instanceof PhaseBudgetExceededError
         ? `Phase '${error.phase}' exhausted its ${error.timeoutMs}ms budget and was marked stalled.`
         : `Controller failed while '${activeHeartbeatPhase ?? "initializing"}': ${message}`;
-    heartbeatNotes.splice(0, heartbeatNotes.length, ...unique([...heartbeatNotes, note]));
+    replaceHeartbeatNotes(unique([...heartbeatNotes, note]));
 
     if (heartbeat && activeHeartbeatRound !== undefined && activeHeartbeatPhase) {
       const stalledAt = new Date().toISOString();
