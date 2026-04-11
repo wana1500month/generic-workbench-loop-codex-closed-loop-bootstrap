@@ -1,13 +1,16 @@
-import { access, readFile, stat } from "node:fs/promises";
+import { access, mkdir, readFile, rename, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { dirname, extname, isAbsolute, join, resolve } from "node:path";
 
+import { resolvedAdapterTargetRoot } from "./adapter-paths.js";
 import { loadJson, repoRoot, writeJson, writeText } from "./file-system.js";
+import { stopProcessTree } from "./process-runtime.js";
 import type {
   AdapterCapabilityExecution,
   AdapterCriterionResult,
   AdapterEvidenceItem,
+  AdapterCapabilityAttemptArtifact,
   AdapterExecutionAttestation,
   AdapterCapabilityName,
   AdapterCapabilityPacket,
@@ -183,12 +186,24 @@ const sha256ForBuffer = (value: Buffer | string): string =>
 const commandTokens = (command: string): string[] =>
   command.match(/"[^"]+"|'[^']+'|\S+/g)?.map((token) => token.replace(/^['"]|['"]$/g, "")) ?? [];
 
+const commandVectorFor = (input: {
+  command: string;
+  args?: readonly string[];
+}): string[] =>
+  input.args && input.args.length > 0 ? [input.command, ...input.args] : commandTokens(input.command);
+
+const commandDigestFor = (input: {
+  command: string;
+  args?: readonly string[];
+}): string => sha256ForBuffer(JSON.stringify(commandVectorFor(input)));
+
 const commandTargetFingerprint = (input: {
   command: string;
+  args?: readonly string[];
   baseDirectory: string;
   cwd?: string;
 }): string => {
-  const tokens = commandTokens(input.command);
+  const tokens = commandVectorFor(input);
   if (tokens.length === 0) {
     return "raw:";
   }
@@ -224,7 +239,7 @@ const commandTargetFingerprint = (input: {
     return `${commandName}:${scriptPath}`;
   }
 
-  return `raw:${input.command.trim().toLowerCase()}`;
+  return `raw:${commandVectorFor(input).join("\u0000").trim().toLowerCase()}`;
 };
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
@@ -290,6 +305,86 @@ const pathExists = async (path: string): Promise<boolean> => {
   } catch {
     return false;
   }
+};
+
+const attemptPathForCapability = (
+  roundDirectory: string,
+  capability: AdapterCapabilityName
+): string => join(roundDirectory, "adapter", `${capability}-attempt.json`);
+
+const lateResultPathForCapability = (input: {
+  roundDirectory: string;
+  capability: AdapterCapabilityName;
+  executionId: string;
+  suffix: string;
+}): string =>
+  join(
+    input.roundDirectory,
+    "adapter",
+    "late-results",
+    `${input.capability}-${input.executionId}-${input.suffix}`
+  );
+
+const resultExecutionIdFor = (input: {
+  packet?: AdapterCapabilityPacket;
+  rawResult: unknown;
+}): string | undefined => {
+  if (
+    isPlainObject(input.rawResult) &&
+    hasPrimitiveMetadata(input.rawResult.metadata) &&
+    typeof input.rawResult.metadata.execution_id === "string" &&
+    input.rawResult.metadata.execution_id.trim().length > 0
+  ) {
+    return input.rawResult.metadata.execution_id.trim();
+  }
+  if (
+    input.packet &&
+    typeof input.packet.execution_id === "string" &&
+    input.packet.execution_id.trim().length > 0
+  ) {
+    return input.packet.execution_id.trim();
+  }
+  return undefined;
+};
+
+const withExecutionMetadata = (
+  rawResult: unknown,
+  executionId: string
+): unknown => {
+  if (!isPlainObject(rawResult)) {
+    return rawResult;
+  }
+
+  const metadata = hasPrimitiveMetadata(rawResult.metadata) ? rawResult.metadata : {};
+  return {
+    ...rawResult,
+    metadata: {
+      ...metadata,
+      execution_id: executionId
+    }
+  };
+};
+
+const quarantineResultFile = async (input: {
+  sourcePath: string;
+  roundDirectory: string;
+  capability: AdapterCapabilityName;
+  executionId: string;
+  suffix: string;
+}): Promise<string | undefined> => {
+  if (!(await pathExists(input.sourcePath))) {
+    return undefined;
+  }
+
+  const destinationPath = lateResultPathForCapability({
+    roundDirectory: input.roundDirectory,
+    capability: input.capability,
+    executionId: input.executionId,
+    suffix: input.suffix
+  });
+  await mkdir(dirname(destinationPath), { recursive: true });
+  await rename(input.sourcePath, destinationPath);
+  return destinationPath;
 };
 
 const resolvedPath = (path: string): string =>
@@ -1742,6 +1837,7 @@ const shellExecutableFor = (
 
 const execCommand = async (input: {
   command: string;
+  args?: string[];
   cwd: string;
   timeoutMs: number;
   env: NodeJS.ProcessEnv;
@@ -1753,37 +1849,44 @@ const execCommand = async (input: {
   startedAt: string;
   finishedAt: string;
   durationMs: number;
+  timedOut: boolean;
 }> =>
   new Promise((resolvePromise, rejectPromise) => {
     const startedAtDate = new Date();
-    const child = spawn(input.command, {
-      cwd: input.cwd,
-      env: input.env,
-      shell: shellExecutableFor(input.shell),
-      windowsHide: true
-    });
+    const useDirectSpawn = Array.isArray(input.args);
+    const child = useDirectSpawn
+      ? spawn(input.command, input.args, {
+          cwd: input.cwd,
+          env: input.env,
+          shell: false,
+          detached: process.platform !== "win32",
+          windowsHide: true
+        })
+      : spawn(input.command, {
+          cwd: input.cwd,
+          env: input.env,
+          shell: shellExecutableFor(input.shell),
+          detached: process.platform !== "win32",
+          windowsHide: true
+        });
 
     let stdout = "";
     let stderr = "";
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill();
+      void stopProcessTree(child.pid ?? -1);
     }, input.timeoutMs);
 
-    child.stdout.on("data", (chunk: Buffer | string) => {
+    child.stdout?.on("data", (chunk: Buffer | string) => {
       stdout += chunk.toString();
     });
-    child.stderr.on("data", (chunk: Buffer | string) => {
+    child.stderr?.on("data", (chunk: Buffer | string) => {
       stderr += chunk.toString();
     });
     child.on("error", rejectPromise);
     child.on("close", (code) => {
       clearTimeout(timer);
-      if (timedOut) {
-        rejectPromise(new Error(`Adapter command timed out: ${input.command}`));
-        return;
-      }
       const finishedAtDate = new Date();
       resolvePromise({
         code,
@@ -1791,7 +1894,8 @@ const execCommand = async (input: {
         stderr,
         startedAt: startedAtDate.toISOString(),
         finishedAt: finishedAtDate.toISOString(),
-        durationMs: finishedAtDate.getTime() - startedAtDate.getTime()
+        durationMs: finishedAtDate.getTime() - startedAtDate.getTime(),
+        timedOut
       });
     });
   });
@@ -2982,17 +3086,23 @@ export const executeAdapterCapability = async (input: {
   extraEnv?: Record<string, string>;
 }): Promise<AdapterCapabilityExecution> => {
   const adapterDirectory = join(input.roundDirectory, "adapter");
+  const attemptPath = attemptPathForCapability(input.roundDirectory, input.capability);
   const packetPath = join(adapterDirectory, `${input.capability}-input.json`);
   const resultPath = join(adapterDirectory, `${input.capability}-result.json`);
   const stdoutPath = join(adapterDirectory, `${input.capability}-stdout.log`);
   const stderrPath = join(adapterDirectory, `${input.capability}-stderr.log`);
-  await writeJson(packetPath, input.packet);
 
   const provider = verificationProviderForCapability(
     input.loadedAdapter.contract,
     input.capability
   );
   const capabilitySpec = provider.capabilitySpec;
+  const executionId = randomUUID();
+  const packet: AdapterCapabilityPacket = {
+    ...input.packet,
+    execution_id: executionId
+  };
+  await writeJson(packetPath, packet);
   if (!capabilitySpec) {
     const result = defaultCapabilityResult(
       input.capability,
@@ -3015,49 +3125,101 @@ export const executeAdapterCapability = async (input: {
     };
   }
 
-  const targetRoot = resolve(
-    input.loadedAdapter.base_directory,
-    input.loadedAdapter.contract.target_root
-  );
+  const targetRoot = resolvedAdapterTargetRoot(input.loadedAdapter);
   const cwd = capabilitySpec.cwd
     ? resolve(input.loadedAdapter.base_directory, capabilitySpec.cwd)
     : targetRoot;
   const timeoutMs = capabilitySpec.timeout_ms ?? 120000;
+  const startedAt = new Date().toISOString();
+  const runningAttempt: AdapterCapabilityAttemptArtifact = {
+    capability: input.capability,
+    execution_id: executionId,
+    status: "running",
+    started_at: startedAt,
+    updated_at: startedAt,
+    timeout_ms: timeoutMs,
+    packet_path: packetPath,
+    result_path: resultPath,
+    stdout_path: stdoutPath,
+    stderr_path: stderrPath,
+    command: capabilitySpec.command,
+    ...(capabilitySpec.args?.length ? { args: capabilitySpec.args } : {}),
+    ...(capabilitySpec.shell ? { shell: capabilitySpec.shell } : {})
+  };
+  await writeJson(attemptPath, runningAttempt);
   const env = {
     ...process.env,
     HARNESS_INPUT_PATH: packetPath,
     HARNESS_OUTPUT_PATH: resultPath,
     HARNESS_TARGET_ROOT: targetRoot,
-    HARNESS_RUN_DIRECTORY: input.packet.run_directory,
-    HARNESS_ROUND_DIRECTORY: input.packet.round_directory,
+    HARNESS_RUN_DIRECTORY: packet.run_directory,
+    HARNESS_ROUND_DIRECTORY: packet.round_directory,
     HARNESS_RUNTIME_DIRECTORY:
-      input.packet.runtime_directory ?? join(input.packet.run_directory, "runtime"),
+      packet.runtime_directory ?? join(packet.run_directory, "runtime"),
     HARNESS_CODEX_SESSION_REGISTRY_PATH:
-      input.packet.codex_session_registry_path ??
-      join(input.packet.run_directory, "runtime", "codex-sessions.json"),
+      packet.codex_session_registry_path ??
+      join(packet.run_directory, "runtime", "codex-sessions.json"),
     HARNESS_CAPABILITY: input.capability,
     HARNESS_PROVIDER_ID: provider.providerId,
     HARNESS_PROVIDER_ROLE: provider.providerRole,
+    HARNESS_EXECUTION_ID: executionId,
     ...(input.extraEnv ?? {})
   };
 
-  const execution = await execCommand({
-    command: capabilitySpec.command,
-    cwd,
-    timeoutMs,
-    env,
-    shell: capabilitySpec.shell
-  });
+  let execution: Awaited<ReturnType<typeof execCommand>>;
+  try {
+    execution = await execCommand({
+      command: capabilitySpec.command,
+      ...(capabilitySpec.args ? { args: capabilitySpec.args } : {}),
+      cwd,
+      timeoutMs,
+      env,
+      shell: capabilitySpec.shell
+    });
+  } catch (error) {
+    const failedAt = new Date().toISOString();
+    await writeJson(attemptPath, {
+      ...runningAttempt,
+      status: "failed",
+      updated_at: failedAt,
+      finished_at: failedAt,
+      exit_code: null
+    } satisfies AdapterCapabilityAttemptArtifact);
+    throw error;
+  }
   await Promise.all([
     writeText(stdoutPath, execution.stdout),
     writeText(stderrPath, execution.stderr)
   ]);
 
+  if (execution.timedOut) {
+    await quarantineResultFile({
+      sourcePath: resultPath,
+      roundDirectory: input.roundDirectory,
+      capability: input.capability,
+      executionId,
+      suffix: "result.json"
+    });
+    const timedOutAt = execution.finishedAt;
+    await writeJson(attemptPath, {
+      ...runningAttempt,
+      status: "timed_out",
+      updated_at: timedOutAt,
+      timed_out_at: timedOutAt,
+      finished_at: timedOutAt,
+      exit_code: execution.code
+    } satisfies AdapterCapabilityAttemptArtifact);
+    throw new Error(
+      `Adapter command timed out after ${timeoutMs} ms: ${capabilitySpec.command}`
+    );
+  }
+
   let rawResult: unknown;
   if (await pathExists(resultPath)) {
-    rawResult = await loadJson<unknown>(resultPath);
+    rawResult = withExecutionMetadata(await loadJson<unknown>(resultPath), executionId);
   } else {
-    rawResult = {
+    rawResult = withExecutionMetadata(
+      {
       capability: input.capability,
       ok: execution.code === 0,
       summary:
@@ -3066,7 +3228,9 @@ export const executeAdapterCapability = async (input: {
           : `Capability '${input.capability}' failed with exit code ${execution.code ?? -1}.`,
       findings: execution.stderr.trim() ? [execution.stderr.trim()] : [],
       evidence_paths: []
-    };
+      },
+      executionId
+    );
   }
 
   const validated = await validateAdapterCapabilityResult({
@@ -3077,14 +3241,25 @@ export const executeAdapterCapability = async (input: {
     baseDirectory: input.loadedAdapter.base_directory,
     cwd,
     targetRoot,
-    runDirectory: input.packet.run_directory,
-    roundDirectory: input.packet.round_directory
+    runDirectory: packet.run_directory,
+    roundDirectory: packet.round_directory
   });
   await writeJson(resultPath, validated.result);
+  await writeJson(attemptPath, {
+    ...runningAttempt,
+    status: "completed",
+    updated_at: execution.finishedAt,
+    finished_at: execution.finishedAt,
+    exit_code: execution.code
+  } satisfies AdapterCapabilityAttemptArtifact);
   const resultRaw = await readFile(resultPath);
   const attestation: AdapterExecutionAttestation = {
     command: capabilitySpec.command,
-    command_sha256: sha256ForBuffer(capabilitySpec.command),
+    ...(capabilitySpec.args?.length ? { args: capabilitySpec.args } : {}),
+    command_sha256: commandDigestFor({
+      command: capabilitySpec.command,
+      args: capabilitySpec.args
+    }),
     cwd,
     shell: capabilitySpec.shell ?? "system",
     timeout_ms: timeoutMs,
@@ -3119,6 +3294,7 @@ export const restoreAdapterCapabilityExecution = async (input: {
   roundDirectory: string;
 }): Promise<AdapterCapabilityExecution | undefined> => {
   const adapterDirectory = join(input.roundDirectory, "adapter");
+  const attemptPath = attemptPathForCapability(input.roundDirectory, input.capability);
   const packetPath = join(adapterDirectory, `${input.capability}-input.json`);
   const resultPath = join(adapterDirectory, `${input.capability}-result.json`);
   if (!(await pathExists(packetPath)) || !(await pathExists(resultPath))) {
@@ -3126,22 +3302,54 @@ export const restoreAdapterCapabilityExecution = async (input: {
   }
 
   const packet = await loadJson<AdapterCapabilityPacket>(packetPath);
+  const attempt = await loadJson<AdapterCapabilityAttemptArtifact | undefined>(attemptPath).catch(
+    () => undefined
+  );
   const rawResult = await loadJson<unknown>(resultPath);
+  const resultExecutionId = resultExecutionIdFor({
+    packet,
+    rawResult
+  });
+  if (attempt) {
+    if (attempt.status === "timed_out") {
+      await quarantineResultFile({
+        sourcePath: resultPath,
+        roundDirectory: input.roundDirectory,
+        capability: input.capability,
+        executionId: attempt.execution_id,
+        suffix: "late-result.json"
+      });
+      return undefined;
+    }
+    if (attempt.status !== "completed") {
+      return undefined;
+    }
+    if (resultExecutionId && resultExecutionId !== attempt.execution_id) {
+      await quarantineResultFile({
+        sourcePath: resultPath,
+        roundDirectory: input.roundDirectory,
+        capability: input.capability,
+        executionId: resultExecutionId,
+        suffix: "mismatched-result.json"
+      });
+      return undefined;
+    }
+    if (!resultExecutionId && packet.execution_id && packet.execution_id !== attempt.execution_id) {
+      return undefined;
+    }
+  }
   const provider = verificationProviderForCapability(
     input.loadedAdapter.contract,
     input.capability
   );
   const capabilitySpec = provider.capabilitySpec;
-  const targetRoot = resolve(
-    input.loadedAdapter.base_directory,
-    input.loadedAdapter.contract.target_root
-  );
+  const targetRoot = resolvedAdapterTargetRoot(input.loadedAdapter);
   const cwd = capabilitySpec?.cwd
     ? resolve(input.loadedAdapter.base_directory, capabilitySpec.cwd)
     : targetRoot;
   const validated = await validateAdapterCapabilityResult({
     capability: input.capability,
-    rawResult,
+    rawResult: resultExecutionId ? withExecutionMetadata(rawResult, resultExecutionId) : rawResult,
     providerId: provider.providerId,
     providerRole: provider.providerRole,
     baseDirectory: input.loadedAdapter.base_directory,

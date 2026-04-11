@@ -113,8 +113,10 @@ assertSucceeded(help, "cli help");
 assertTextContains(help.stdout, "status --run-dir <run-dir>", "cli help");
 assertTextContains(help.stdout, "loop:phase -- <phase> --run-dir <run-dir>", "cli help");
 assertTextContains(help.stdout, "loop:resume -- --run-dir <run-dir>", "cli help");
-assertTextContains(help.stdout, "loop:single:codex", "cli help");
-assertTextContains(help.stdout, "loop:single:manual", "cli help");
+assertTextContains(help.stdout, "loop:start:codex", "cli help");
+assertTextContains(help.stdout, "loop:start:bg", "cli help");
+assertTextContains(help.stdout, "loop:start:manual", "cli help");
+assertTextContains(help.stdout, "loop:stop -- --run-dir <run-dir>", "cli help");
 assertTextContains(help.stdout, "--allow-shell-resume-downgrade", "cli help");
 const helpWithoutPath = await runCli(["--help"], {
   env: {
@@ -139,31 +141,31 @@ if (explicitHeadlessSummary.transport_mode !== "codex-exec") {
   );
 }
 
-const blockedCodexScriptSeed = await runPackageScript("loop:single:codex", {
+const blockedCodexScriptSeed = await runPackageScript("loop:start:codex", {
   env: shellLikeEnv
 });
 if (blockedCodexScriptSeed.code === 0) {
-  throw new Error("Expected loop:single:codex to fail from a shell-like environment.");
+  throw new Error("Expected loop:start:codex to fail from a shell-like environment.");
 }
 assertTextContains(
   `${blockedCodexScriptSeed.stdout}\n${blockedCodexScriptSeed.stderr}`,
   "--allow-manual-protocol-seed",
-  "blocked loop:single:codex"
+  "blocked loop:start:codex"
 );
-const codexScriptSeed = await runPackageScript("loop:single:codex", {
+const codexScriptSeed = await runPackageScript("loop:start:codex", {
   env: foregroundThreadEnv
 });
-assertSucceeded(codexScriptSeed, "loop:single:codex foreground front door");
+assertSucceeded(codexScriptSeed, "loop:start:codex foreground front door");
 const codexScriptRunDirectory = extractRunDirectory(codexScriptSeed.stdout);
 const codexScriptSummary = await readSummary(codexScriptRunDirectory);
 if (codexScriptSummary.controller_mode !== "attached") {
   throw new Error(
-    `Expected loop:single:codex controller_mode 'attached', received '${codexScriptSummary.controller_mode ?? "missing"}'.`
+    `Expected loop:start:codex controller_mode 'attached', received '${codexScriptSummary.controller_mode ?? "missing"}'.`
   );
 }
 if (codexScriptSummary.transport_mode !== "current-thread") {
   throw new Error(
-    `Expected loop:single:codex transport_mode 'current-thread', received '${codexScriptSummary.transport_mode ?? "missing"}'.`
+    `Expected loop:start:codex transport_mode 'current-thread', received '${codexScriptSummary.transport_mode ?? "missing"}'.`
   );
 }
 
@@ -183,7 +185,7 @@ assertTextContains(
 );
 assertTextContains(
   `${blockedShellSeed.stdout}\n${blockedShellSeed.stderr}`,
-  "$attached-loop",
+  "$loop-control",
   "blocked shell seed"
 );
 assertTextContains(
@@ -207,19 +209,9 @@ assertTextContains(
   "blocked assumed seed"
 );
 
-const manualSeed = await runCli(
-  [
-    "--controller-mode",
-    "attached",
-    "--transport",
-    "current-thread",
-    "--single",
-    "--allow-manual-protocol-seed"
-  ],
-  {
-    env: shellLikeEnv
-  }
-);
+const manualSeed = await runPackageScript("loop:start:manual", {
+  env: shellLikeEnv
+});
 assertSucceeded(manualSeed, "manual-protocol shell seed");
 const manualSeedRunDirectory = extractRunDirectory(manualSeed.stdout);
 const manualSeedSummary = await readSummary(manualSeedRunDirectory);

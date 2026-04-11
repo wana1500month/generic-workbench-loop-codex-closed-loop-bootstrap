@@ -1,6 +1,7 @@
 import { join } from "node:path";
 
 import type { AppServerTransportController } from "./app-server-runtime.js";
+import { resolvedAdapterTargetRoot } from "./adapter-paths.js";
 import type {
   CodexCommandResult,
   CodexJsonSchema
@@ -464,7 +465,7 @@ export const enhanceContractReviewWithCodex = async (input: {
         ? {
             adapter_id: input.loadedAdapter.contract.adapter_id,
             verifier_id: input.loadedAdapter.contract.verification_provider?.provider_id,
-            target_root: input.loadedAdapter.contract.target_root,
+            target_root: resolvedAdapterTargetRoot(input.loadedAdapter),
             target_family: input.loadedAdapter.verification_profile?.profile.target_family,
             validation_lane: input.loadedAdapter.verification_profile?.profile.validation_lane
           }
@@ -1092,7 +1093,7 @@ export const enhanceContractReviewWithAppServer = async (input: {
         ? {
             adapter_id: input.loadedAdapter.contract.adapter_id,
             verifier_id: input.loadedAdapter.contract.verification_provider?.provider_id,
-            target_root: input.loadedAdapter.contract.target_root,
+            target_root: resolvedAdapterTargetRoot(input.loadedAdapter),
             target_family: input.loadedAdapter.verification_profile?.profile.target_family,
             validation_lane: input.loadedAdapter.verification_profile?.profile.validation_lane
           }

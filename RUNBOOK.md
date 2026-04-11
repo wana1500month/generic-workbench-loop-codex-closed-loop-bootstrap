@@ -7,7 +7,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 ## Primary inputs
 
 - `IDEA.md`: the current harness goal or refactor request
-- `npm run loop:intent -- "<user request>"`: generic front door that separates product build, harness design, run resume, and evaluator tuning before work starts
+- `npm run loop:intent -- "<user request>"`: generic front door that separates product build, harness design, run control, run resume, and evaluator tuning before work starts
 - `npm run loop:intake -- "<user request>"`: staged intake gate that returns product questions, execution questions, or confirmation
 - `npm run loop:bootstrap`: writes `IDEA.md`, `intake.json`, `feature_list.generated.json`, `progress.md`, `progress.jsonl`, `done_when.md`, `init.sh`, `adapter.generated.json`, `rubric.generated.json`, and `verification-profile.generated.json`, then uses the generated rubric/bundle on the first run unless the CLI explicitly overrides them. Bootstrap now also captures deeper quality intent such as must-not-break flows, failure expectations, continuity boundaries, reference signals, non-goals, probe hints, and optional user-authored subjective metrics with minimum `x/10` thresholds.
 - `npm run reference-adapter:scaffold-quality-lane -- --profile <bundle.json> --out <strict-bundle.json>`: derives a stricter companion evaluator lane from an existing bundle without demanding release assertions that the source bundle does not actually configure
@@ -67,7 +67,8 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `controller_mode` and `transport_mode` are separate axes:
   - `detached` currently requires `--transport codex-exec`
   - `attached` currently allows `--transport current-thread` or `--transport app-server`
-- `npm run loop:run -- ...` now routes through the supervisor by default. Use `npm run loop:run:raw -- ...` only for direct controller debugging, and use `npm run loop:watch -- ...` to keep the supervisor detached from the launching shell.
+- `npm run loop:start:codex` is the Codex-owned current-thread start surface. Use `npm run loop:start:bg -- ...` or the deprecated `npm run loop:run -- ...` only when the operator explicitly wants detached background supervision.
+- `npm run loop:run:raw -- ...` remains the direct controller debugging surface, and `npm run loop:watch -- ...` keeps the supervisor detached from the launching shell.
 - Supervisor, runner, and bootstrap-generated runtime helper spawns now set `windowsHide: true`, so Windows detached runs stop opening a visible stack of extra `cmd.exe` shells while the harness is working.
 - Attached runs now default to `--transport current-thread`. That is the stock foreground-thread transport surface, but current-thread only claims foreground ownership when a real bound `CODEX_THREAD_ID` is present.
 - Use `--transport current-thread` for the stock Codex foreground-thread protocol. Current-thread attached generator work is an honest manual pause surface that writes `attached-generator-prompt.md` / `attached-generator-response.json` and stops with `awaiting_current_thread_handoff`.
@@ -83,6 +84,8 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `loop:intent` now mirrors the operator language for harness, resume, and evaluator questions. Korean harness-design or run-resume prompts should produce Korean follow-up questions instead of falling back to English-only front-door text.
 - App Server attached generator turns now honor per-task `cwd`, writable roots, request timeout, and task completion timeout. Use `--app-server-task-timeout-ms`, `--app-server-request-timeout-ms`, and `--phase-timeout-ms phase=value,...` to tune long-running attached work without abusing `turn/steer` as a heartbeat.
 - Use `npm run loop:watch -- ...` when the controller should survive outer shell timeouts. The supervisor now polls runtime health while the child is still alive, marks stale-progress runs as `stalled`, restarts from `--resume-run` when needed, persists `runtime/supervisor-state.json` once the run exists, and discovers the owned run through a supervisor marker instead of guessing from the newest run directory.
+- `loop:status` now reports terminal summary truth first and `runtime/supervisor-state.json` second, so stale runtime heartbeats cannot mask a failed supervisor.
+- Bootstrap-generated adapter commands now run as direct `node` invocations with explicit capability timeouts. Timed-out adapter executions kill the full process tree, write an attempt sentinel with `execution_id`, and quarantine late orphaned results under `adapter/late-results/`.
 - Bootstrap-generated `run_target` now probes `ready_url` first and reuses a live server instead of restarting it every round. When a tracked process must be replaced, Windows cleanup now uses `taskkill /T /F` so stale `node` or `vite` children do not survive after their parent shell exits.
 - Use `--repair` with `--resume-run` when the controller should repair persisted state and stop instead of opening additional rounds.
 - Use `--resume-phase <phase>` to force repair or resume from a known persisted controller phase such as `evaluation` or `round_commit`.
@@ -124,7 +127,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Browser-first bootstrap defaults now use `npm run dev -- --host 127.0.0.1 --port 3000 --strictPort`, so the generated harness fails closed on port collisions instead of silently drifting to a different Vite port than `ready_url` or `app_url`.
 - Resume identity mismatches fail closed by default. Use `--allow-resume-migration` only when intentionally changing the adapter contract, bundle, rubric, or target family for an existing run, and expect the controller to write `resume-migration.json`.
 - Resuming a run that already ended with `target_reached`, `contract_completed`, `environment_blocked`, or `adapter_contract_invalid` now defaults to a no-op closure. `--allow-resume-migration` alone does not reopen a terminal run; use `--force-reopen-terminal` when you intentionally want to spend more budget, and pair it with `--allow-resume-migration` when the reopen also changes run identity.
-- `loop:single` now means a literal single detached/headless attempt even when an adapter is attached. Use `loop:single:codex` for the Codex-owned current-thread front door and `loop:single:manual` for an explicit shell `manual-protocol` seed.
+- `loop:single` now means a literal single detached/headless attempt even when an adapter is attached. Use `loop:start:codex` for the Codex-owned current-thread front door and `loop:start:manual` for an explicit shell `manual-protocol` seed. `loop:single:codex` and `loop:single:manual` remain deprecated compatibility aliases.
 
 ## Operating policy
 
@@ -318,9 +321,10 @@ npm run validate:bootstrap-deep-intake
 npm run validate:bootstrap-custom-quality-metrics
 npm run validate:bootstrap-profile-aware-verifier
 npm run loop:single
-npm run loop:single:codex
-npm run loop:single:manual
-npm run loop:run -- 3
+npm run loop:start:codex
+npm run loop:start:manual
+npm run loop:start:bg -- --max-rounds 3
+npm run loop:stop -- --run-dir ./evals/runs/run-###
 npm run loop:run:raw -- --max-rounds 1
 npm run loop:run -- --adapter ./adapter.example.json --max-rounds 3
 npm run loop:run -- --adapter ./.tmp/semantic-validation/patch-only-success/adapter.json --target-family api-service --max-rounds 3
@@ -367,6 +371,7 @@ npm run validate:family-dashboard:positive
 npm run validate:family-fullstack-semantic
 npm run validate:family-fullstack:preflight
 npm run validate:attached-resume-smoke
+npm run validate:status-supervisor-precedence
 npm run validate:app-server-generator-mainline
 npm run validate:app-server-interrupted-generator
 npm run validate:supervisor-timeout-prevention

@@ -10,6 +10,7 @@ import type {
   ExecutorMode,
   OperatorSurfaceArtifact,
   RunStopReason,
+  SupervisorStateArtifact,
   TransportMode,
   TransportStateArtifact,
   RuntimeLiveStateArtifact,
@@ -22,6 +23,7 @@ export interface RuntimeStatePaths {
   liveStatePath: string;
   roundPhasePath: string;
   transportStatePath: string;
+  supervisorStatePath: string;
   operatorSurfacePath: string;
   operatorSurfaceMarkdownPath: string;
   plannerEnhancementTaskPath: string;
@@ -65,6 +67,7 @@ export const runtimeStatePathsForRun = (
     liveStatePath: join(runtimeDirectory, "live-state.json"),
     roundPhasePath: join(runtimeDirectory, "round-phase.json"),
     transportStatePath: join(runtimeDirectory, "transport-state.json"),
+    supervisorStatePath: join(runtimeDirectory, "supervisor-state.json"),
     operatorSurfacePath: join(runtimeDirectory, "operator-surface.json"),
     operatorSurfaceMarkdownPath: join(runtimeDirectory, "operator-surface.md"),
     plannerEnhancementTaskPath: join(runtimeDirectory, "planner-enhancement-task.json"),
@@ -92,6 +95,11 @@ export const readTransportStateArtifact = async (
   path: string
 ): Promise<TransportStateArtifact | undefined> =>
   loadJsonIfExists<TransportStateArtifact>(path);
+
+export const readSupervisorStateArtifact = async (
+  path: string
+): Promise<SupervisorStateArtifact | undefined> =>
+  loadJsonIfExists<SupervisorStateArtifact>(path);
 
 export const readOperatorSurfaceArtifact = async (
   path: string
@@ -122,6 +130,13 @@ export const writeControllerLeaseArtifact = async (
 export const writeTransportStateArtifact = async (
   path: string,
   artifact: TransportStateArtifact
+): Promise<void> => {
+  await writeJson(path, artifact);
+};
+
+export const writeSupervisorStateArtifact = async (
+  path: string,
+  artifact: SupervisorStateArtifact
 ): Promise<void> => {
   await writeJson(path, artifact);
 };

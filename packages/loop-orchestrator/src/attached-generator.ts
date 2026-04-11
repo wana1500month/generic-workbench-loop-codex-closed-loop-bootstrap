@@ -18,11 +18,15 @@ export const isBootstrapGeneratedAdapter = (
     return false;
   }
 
-  const applyChangeCommand =
-    loadedAdapter.contract.capabilities.apply_change?.command ?? "";
+  const applyChangeSpec = loadedAdapter.contract.capabilities.apply_change;
+  const applyChangeCommand = applyChangeSpec?.command ?? "";
+  const applyChangeArgs = applyChangeSpec?.args ?? [];
   return (
     loadedAdapter.contract.adapter_id.startsWith("generated-") &&
-    applyChangeCommand.includes(".generated/codex-adapter/scripts/apply-change")
+    (applyChangeCommand.includes(".generated/codex-adapter/scripts/apply-change") ||
+      applyChangeArgs.some((arg) =>
+        arg.includes(".generated/codex-adapter/scripts/apply-change")
+      ))
   );
 };
 

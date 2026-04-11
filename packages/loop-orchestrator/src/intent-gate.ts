@@ -5,10 +5,16 @@ import {
 } from "./intake-gate.js";
 
 type HarnessIntentFieldId = "change_goal" | "current_gap" | "success_criteria";
+type RunControlIntentFieldId =
+  | "action"
+  | "run_reference"
+  | "background_preference"
+  | "codex_ownership_preference";
 type ResumeIntentFieldId = "run_reference" | "current_state" | "next_step";
 type EvaluatorIntentFieldId = "calibration_focus" | "failure_examples" | "success_criteria";
 type IntentFieldId =
   | HarnessIntentFieldId
+  | RunControlIntentFieldId
   | ResumeIntentFieldId
   | EvaluatorIntentFieldId;
 
@@ -20,6 +26,7 @@ type IntentSignal = {
 export type LoopIntent =
   | "product_build"
   | "harness_design"
+  | "run_control"
   | "run_resume"
   | "evaluator_tuning"
   | "unknown";
@@ -27,8 +34,10 @@ export type LoopIntent =
 export type LoopIntentStatus =
   | "route_to_product_intake"
   | "ask_harness_questions"
+  | "ask_run_control_questions"
   | "ask_resume_questions"
   | "ask_evaluator_questions"
+  | "ready_for_run_control"
   | "ready_for_handoff"
   | "unclassified";
 
@@ -36,6 +45,7 @@ export type LoopIntentPhase = "none" | "intent" | "handoff";
 export type LoopIntentRoute =
   | "product_intake"
   | "harness_design"
+  | "run_control"
   | "run_resume"
   | "evaluator_tuning"
   | "clarify";
@@ -239,6 +249,39 @@ const runStateSignals: IntentSignal[] = [
   { label: "멈춤", pattern: /\uBA48/u }
 ];
 
+const runControlSignals: IntentSignal[] = [
+  { label: "loop start", pattern: /\bloop\s+start\b/i },
+  { label: "start loop", pattern: /\bstart\s+loop\b/i },
+  { label: "run loop", pattern: /\brun\s+loop\b/i },
+  { label: "start run", pattern: /\bstart\s+run\b/i },
+  { label: "show status", pattern: /\bshow\s+status\b/i },
+  { label: "loop status", pattern: /\bloop\s+status\b/i },
+  { label: "monitor", pattern: /\bmonitor(?:ing)?\b/i },
+  { label: "status", pattern: /\bstatus\b/i },
+  { label: "loop:status", pattern: /\bloop:status\b/i },
+  { label: "loop:stop", pattern: /\bloop:stop\b/i },
+  { label: "loop:start:bg", pattern: /\bloop:start:bg\b/i },
+  { label: "loop:start:codex", pattern: /\bloop:start:codex\b/i },
+  { label: "loop:start:manual", pattern: /\bloop:start:manual\b/i },
+  { label: "background", pattern: /\bbackground\b/i },
+  { label: "detached", pattern: /\bdetached\b/i },
+  { label: "supervisor", pattern: /\bsupervisor\b/i },
+  { label: "foreground", pattern: /\bforeground\b/i },
+  { label: "current-thread", pattern: /\bcurrent-thread\b/i },
+  { label: "attached", pattern: /\battached\b/i },
+  { label: "Codex-owned", pattern: /\bcodex-?owned\b/i },
+  { label: "Codex app", pattern: /\bcodex\s+app\b/i },
+  { label: "루프 시작", pattern: /\uB8E8\uD504\s*\uC2DC\uC791/u },
+  { label: "루프 상태", pattern: /\uB8E8\uD504\s*\uC0C1\uD0DC/u },
+  { label: "상태", pattern: /\uC0C1\uD0DC/u },
+  { label: "정지", pattern: /\uC815\uC9C0/u },
+  { label: "중지", pattern: /\uC911\uC9C0/u },
+  { label: "모니터링", pattern: /\uBAA8\uB2C8\uD130\uB9C1/u },
+  { label: "백그라운드", pattern: /\uBC31\uADF8\uB77C\uC6B4\uB4DC/u },
+  { label: "현재 스레드", pattern: /\uD604\uC7AC\s*\uC2A4\uB808\uB4DC/u },
+  { label: "코덱스 소유", pattern: /\uCF54\uB371\uC2A4\s*\uC18C\uC720/u }
+];
+
 const runActionSignals: IntentSignal[] = [
   { label: "resume", pattern: /\bresume\b/i },
   { label: "continue", pattern: /\bcontinue\b/i },
@@ -408,6 +451,79 @@ const buildHarnessFieldStates = (
   ];
 };
 
+const buildRunControlFieldStates = (
+  request: string,
+  locale: "en" | "ko",
+  matchedRunControlSignals: readonly string[]
+): IntentFieldState<RunControlIntentFieldId>[] => {
+  const normalized = normalizeText(request);
+  const runReference = extractRunReference(request);
+  const wantsStart =
+    /\b(loop\s+start|start\s+loop|run\s+loop|start\s+run)\b/i.test(request) ||
+    /\uB8E8\uD504\s*\uC2DC\uC791/u.test(request);
+  const wantsStatus =
+    /\b(status|show\s+status|loop\s+status|monitor(?:ing)?)\b/i.test(request) ||
+    /\uC0C1\uD0DC|\uBAA8\uB2C8\uD130\uB9C1/u.test(request);
+  const wantsStop =
+    /\b(stop|halt|terminate)\b/i.test(request) ||
+    /\uC815\uC9C0|\uC911\uC9C0/u.test(request);
+  const mentionsBackground =
+    /\b(background|detached|supervisor)\b/i.test(request) ||
+    /\uBC31\uADF8\uB77C\uC6B4\uB4DC/u.test(request);
+  const mentionsCodexOwnership =
+    /\b(codex\s+app|codex-?owned|current-thread|attached|foreground)\b/i.test(request) ||
+    /\uCF54\uB371\uC2A4\s*\uC18C\uC720|\uD604\uC7AC\s*\uC2A4\uB808\uB4DC/u.test(request);
+  const stopAll =
+    /\b(all\s+loops?|everything)\b/i.test(request) || /\uBAA8\uB4E0\s*\uB8E8\uD504/u.test(request);
+  const referencesCurrentRun =
+    /\b(current|active|latest)\b/i.test(normalized) ||
+    /\uD604\uC7AC|\uC9C0\uAE08|\uCD5C\uC2E0/u.test(request);
+
+  return [
+    {
+      id: "action",
+      satisfied: wantsStart || wantsStatus || wantsStop || matchedRunControlSignals.length > 0,
+      question: localizedQuestion({
+        locale,
+        en: "Which run-control action should happen next: start, status, stop, or resume?",
+        ko: "다음에 어떤 run-control 동작이 필요하나: start, status, stop, resume 중 무엇인가?"
+      })
+    },
+    {
+      id: "run_reference",
+      satisfied:
+        runReference !== undefined ||
+        wantsStart ||
+        stopAll ||
+        (wantsStatus && referencesCurrentRun) ||
+        (wantsStop && referencesCurrentRun),
+      question: localizedQuestion({
+        locale,
+        en: "Which run should this control action target? Provide a run id/run directory, or say this should target the next new run.",
+        ko: "이 control action이 겨냥할 run이 무엇인가? run id/run 디렉터리를 적거나 새 run 시작이라고 적어줘."
+      })
+    },
+    {
+      id: "background_preference",
+      satisfied: !wantsStart || mentionsBackground || mentionsCodexOwnership,
+      question: localizedQuestion({
+        locale,
+        en: "Should this start stay on the current Codex thread or launch as a background supervisor?",
+        ko: "이 시작은 현재 Codex thread에 붙어 있어야 하나, 아니면 background supervisor로 띄워야 하나?"
+      })
+    },
+    {
+      id: "codex_ownership_preference",
+      satisfied: !wantsStart || mentionsCodexOwnership || mentionsBackground,
+      question: localizedQuestion({
+        locale,
+        en: "Should Codex own the foreground current-thread surface for this run, or should the run stay shell/background-owned?",
+        ko: "이 run은 Codex가 foreground current-thread surface를 소유해야 하나, 아니면 shell/background 소유로 남아야 하나?"
+      })
+    }
+  ];
+};
+
 const buildResumeFieldStates = (
   request: string,
   locale: "en" | "ko",
@@ -517,6 +633,7 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
   const matchedHarnessChangeSignals = matchSignals(sanitizedRequest, harnessChangeSignals);
   const matchedGapSignals = matchSignals(sanitizedRequest, gapSignals);
   const matchedSuccessSignals = matchSignals(sanitizedRequest, successSignals);
+  const matchedRunControlSignals = matchSignals(sanitizedRequest, runControlSignals);
   const matchedResumeSignals = matchSignals(sanitizedRequest, resumeSignals);
   const matchedRunStateSignals = matchSignals(sanitizedRequest, runStateSignals);
   const matchedRunActionSignals = matchSignals(sanitizedRequest, runActionSignals);
@@ -528,6 +645,7 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
     ...matchedHarnessChangeSignals,
     ...matchedGapSignals,
     ...matchedSuccessSignals,
+    ...matchedRunControlSignals,
     ...matchedResumeSignals,
     ...matchedRunStateSignals,
     ...matchedRunActionSignals,
@@ -605,6 +723,32 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
     matchedRunStateSignals.length +
     matchedRunActionSignals.length +
     (runReference !== undefined ? 3 : 0);
+  const explicitRunControl =
+    matchedRunControlSignals.some((signal) =>
+      [
+        "loop start",
+        "start loop",
+        "run loop",
+        "start run",
+        "show status",
+        "loop status",
+        "monitor",
+        "status",
+        "loop:status",
+        "loop:stop",
+        "loop:start:bg",
+        "loop:start:codex",
+        "loop:start:manual",
+        "루프 시작",
+        "루프 상태",
+        "정지",
+        "중지",
+        "모니터링"
+      ].includes(signal)
+    );
+  const runControlScore = explicitRunControl
+    ? matchedRunControlSignals.length * 2 + (runReference !== undefined ? 1 : 0) + (hasRepoSurface ? 1 : 0)
+    : 0;
 
   const explicitHarnessChange =
     hasHarnessSurface &&
@@ -636,6 +780,7 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
   if (
     resumeScore >= 4 &&
     resumeScore >= productScore &&
+    resumeScore >= runControlScore &&
     resumeScore >= harnessScore &&
     resumeScore >= evaluatorScore
   ) {
@@ -658,6 +803,35 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
       satisfied_fields: buildSatisfiedFields(states),
       rationale: buildIntentRationale("run-resume", [
         ...matchedResumeSignals,
+        ...(runReference ? [runReference] : [])
+      ]),
+      extracted_run_reference: runReference
+    };
+  }
+
+  if (
+    runControlScore >= 4 &&
+    runControlScore >= productScore &&
+    runControlScore >= harnessScore &&
+    runControlScore >= evaluatorScore
+  ) {
+    const states = buildRunControlFieldStates(
+      normalizedRequest,
+      locale,
+      matchedRunControlSignals
+    );
+    const missingFields = buildMissingFields(states);
+    return {
+      intent: "run_control",
+      status: missingFields.length > 0 ? "ask_run_control_questions" : "ready_for_run_control",
+      phase: missingFields.length > 0 ? "intent" : "handoff",
+      locale,
+      confidence: calculateConfidence(runControlScore),
+      route_target: "run_control",
+      questions: buildQuestions(states),
+      missing_fields: missingFields,
+      satisfied_fields: buildSatisfiedFields(states),
+      rationale: buildIntentRationale("run-control", matchedRunControlSignals, [
         ...(runReference ? [runReference] : [])
       ]),
       extracted_run_reference: runReference
@@ -797,9 +971,11 @@ const renderReadyRoute = (result: LoopIntentResult): string => {
         ? "Route: proceed through product intake."
         : result.route_target === "harness_design"
           ? "Route: proceed in the harness-design lane."
+          : result.route_target === "run_control"
+            ? "Route: proceed in the run-control lane."
           : result.route_target === "run_resume"
             ? "Route: resume the existing run."
-            : result.route_target === "evaluator_tuning"
+          : result.route_target === "evaluator_tuning"
               ? "Route: proceed in the evaluator-calibration lane."
               : "Route: clarify the request.";
 
@@ -827,6 +1003,7 @@ export const renderLoopIntentResponse = (result: LoopIntentResult): string => {
 
   if (
     result.status === "ask_harness_questions" ||
+    result.status === "ask_run_control_questions" ||
     result.status === "ask_resume_questions" ||
     result.status === "ask_evaluator_questions" ||
     result.status === "unclassified"

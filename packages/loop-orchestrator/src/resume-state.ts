@@ -17,6 +17,7 @@ import {
   readControllerLeaseArtifact,
   readRuntimeLiveStateArtifact,
   readRuntimeRoundPhaseArtifact,
+  readSupervisorStateArtifact,
   readTransportStateArtifact,
   runtimeStatePathsForRun
 } from "./runtime-state.js";
@@ -43,6 +44,7 @@ import type {
   RuntimeRoundPhaseArtifact,
   RoundContractArtifact,
   RoundSummary,
+  SupervisorStateArtifact,
   TransportStateArtifact,
   TrajectoryDecisionArtifact
 } from "./types.js";
@@ -86,6 +88,7 @@ export interface RestoredRunState {
   runtimeRoundPhase?: RuntimeRoundPhaseArtifact;
   controllerLease?: ControllerLeaseArtifact;
   transportState?: TransportStateArtifact;
+  supervisorState?: SupervisorStateArtifact;
   interruptedRound?: {
     round: number;
     roundDirectory: string;
@@ -371,6 +374,7 @@ export const restoreRunState = async (
     runtimeRoundPhase,
     controllerLease,
     transportState,
+    supervisorState,
     diskHistory
   ] = await Promise.all([
     loadJsonIfExists<LoopRunSummary>(summaryPath),
@@ -381,6 +385,7 @@ export const restoreRunState = async (
     readRuntimeRoundPhaseArtifact(runtimePaths.roundPhasePath),
     readControllerLeaseArtifact(runtimePaths.controllerLeasePath),
     readTransportStateArtifact(runtimePaths.transportStatePath),
+    readSupervisorStateArtifact(runtimePaths.supervisorStatePath),
     loadRoundSummariesFromDisk(runDirectory)
   ]);
 
@@ -558,6 +563,7 @@ export const restoreRunState = async (
     runtimeRoundPhase,
     controllerLease,
     transportState,
+    supervisorState,
     interruptedRound
   };
 };

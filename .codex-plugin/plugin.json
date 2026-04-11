@@ -15,6 +15,7 @@
     ],
     "defaultPrompt": [
       "Route this request into the right harness lane and tell me the next file-backed step.",
+      "Use loop-control when the operator wants to start, inspect, resume, or stop a run from the Codex app.",
       "Run the attached loop from the current Codex thread without nested exec calls.",
       "Inspect a persisted run and decide whether to resume, hold, or close it."
     ],

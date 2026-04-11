@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { relative } from "node:path";
 
+import { resolvedAdapterTargetRoot } from "./adapter-paths.js";
 import { buildExecutorModePrompt } from "./codex-agent-manifest.js";
 import { repoRoot, writeJson, writeText } from "./file-system.js";
 import type { RuntimeStatePaths } from "./runtime-state.js";
@@ -413,7 +414,7 @@ const buildContractReviewEnhancementPrompt = async (input: {
         ? {
             adapter_id: input.loadedAdapter.contract.adapter_id,
             verifier_id: input.loadedAdapter.contract.verification_provider?.provider_id,
-            target_root: input.loadedAdapter.contract.target_root,
+            target_root: resolvedAdapterTargetRoot(input.loadedAdapter),
             target_family: input.loadedAdapter.verification_profile?.profile.target_family,
             validation_lane: input.loadedAdapter.verification_profile?.profile.validation_lane
           }

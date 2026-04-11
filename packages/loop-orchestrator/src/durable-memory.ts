@@ -216,7 +216,8 @@ export const buildInitScript = (): string =>
     "Ready commands:",
     "  npm run loop:intent -- --json \"<request>\"",
     "  npm run loop:intake -- --json \"<product request>\"",
-    "  npm run loop:run -- --resume-run evals/runs/run-###",
+    "  npm run loop:start:codex",
+    "  npm run loop:resume -- --run-dir evals/runs/run-###",
     "EOF",
     ""
   ].join("\n");

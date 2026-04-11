@@ -1,0 +1,4 @@
+interface:
+  display_name: "Loop Control"
+  short_description: "Start, inspect, resume, or stop harness runs from the right surface"
+  default_prompt: "Use $loop-control for loop start, status, stop, or resume. In the Codex app, default to a Codex-owned current-thread start and only use detached supervisor mode when the operator explicitly asks for background execution."

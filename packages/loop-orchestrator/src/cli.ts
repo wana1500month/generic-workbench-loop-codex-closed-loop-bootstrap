@@ -11,9 +11,10 @@ import { defaultExecutorMode, isExecutorMode } from "./executor-mode.js";
 import { repoRoot } from "./file-system.js";
 import { runClosedLoop } from "./loop.js";
 import { restoreRunState } from "./resume-state.js";
-import { assessRuntimeHealth } from "./runtime-health.js";
+import { assessRuntimeHealth, pausedStopReasons } from "./runtime-health.js";
 import {
   readOperatorSurfaceArtifact,
+  readSupervisorStateArtifact,
   runtimeStatePathsForRun
 } from "./runtime-state.js";
 import { resolveOperatorSurfaceContext } from "./operator-surface.js";
@@ -27,6 +28,7 @@ import type {
   ControllerRoundPhase,
   LoopRunSummary,
   OperatorSurfaceArtifact,
+  SupervisorStateArtifact,
   TransportMode
 } from "./types.js";
 
@@ -100,7 +102,11 @@ interface StatusReport {
     active_response_path?: string;
   };
   runtime_health: ReturnType<typeof assessRuntimeHealth>;
+  effective_execution_state: ReturnType<typeof assessRuntimeHealth>["execution_state"];
+  status_summary: string;
+  status_source: "summary_stop_reason" | "supervisor_state" | "runtime_health";
   operator_surface?: OperatorSurfaceArtifact;
+  supervisor_state?: SupervisorStateArtifact;
   repair_notes: string[];
   interrupted_round?: {
     round: number;
@@ -116,6 +122,7 @@ interface StatusReport {
     round_phase_path: string;
     controller_lease_path: string;
     transport_state_path: string;
+    supervisor_state_path: string;
   };
   resume_commands: {
     resume: string;
@@ -156,10 +163,10 @@ const phaseAliasMap = new Map<string, ControllerRoundPhase>([
 
 const usageLines = [
   "Usage:",
-  "  npm run loop:single",
-  "  npm run loop:single:codex",
-  "  npm run loop:single:manual",
-  "  npm run loop:run",
+  "  npm run loop:start:codex",
+  "  npm run loop:start:bg",
+  "  npm run loop:start:manual",
+  "  npm run loop:stop -- --run-dir <run-dir>",
   "  npm run loop:bootstrap",
   `  node ./scripts/loop-runner.mjs --controller-mode attached --transport current-thread --single ${manualProtocolSeedFlag}`,
   "  npm run loop:status -- --run-dir <run-dir> [--json]",
@@ -174,7 +181,8 @@ const usageLines = [
   `  ${["open", "negotiate", "pre-verify", "core-probes", "post-verify", "evaluate", "commit", "finalize"].join(", ")}`,
   "",
   "Notes:",
-  "  loop:single is an explicit detached/headless seed. Use loop:single:codex only from the Codex app, or loop:single:manual when you intentionally want a shell-owned manual-protocol seed.",
+  "  loop:start:codex is the Codex-owned current-thread start. loop:start:bg is the detached supervisor surface. loop:start:manual is the intentional shell-owned manual-protocol start.",
+  "  Deprecated aliases remain available: loop:run -> loop:start:bg, loop:single:codex -> loop:start:codex, loop:single:manual -> loop:start:manual, loop:single -> detached single-attempt seed.",
   `  shell-launched attached/current-thread seeds require a bound Codex thread id unless you intentionally pass ${manualProtocolSeedFlag}.`,
   "  resume/phase preserve the existing run controller and transport unless you override them explicitly.",
   `  app-visible current-thread runs must continue from the same Codex thread unless you intentionally pass ${shellResumeDowngradeFlag}.`,
@@ -646,16 +654,78 @@ const printUsage = (topic?: "status" | "resume" | "phase"): void => {
 const displayPath = (path: string | undefined): string | undefined =>
   path ? relative(repoRoot, resolve(path)) : undefined;
 
+const effectiveStatusFor = (input: {
+  summary: LoopRunSummary;
+  runtimeHealth: ReturnType<typeof assessRuntimeHealth>;
+  supervisorState?: SupervisorStateArtifact;
+}): {
+  executionState: ReturnType<typeof assessRuntimeHealth>["execution_state"];
+  summary: string;
+  source: "summary_stop_reason" | "supervisor_state" | "runtime_health";
+} => {
+  if (input.summary.stop_reason) {
+    return {
+      executionState: pausedStopReasons.has(input.summary.stop_reason) ? "paused" : "completed",
+      summary: `Run stop reason: ${input.summary.stop_reason}.`,
+      source: "summary_stop_reason"
+    };
+  }
+
+  if (input.supervisorState) {
+    if (input.supervisorState.status === "failed") {
+      return {
+        executionState: "failed",
+        summary:
+          input.supervisorState.last_error ??
+          "Supervisor reported a failed runtime state.",
+        source: "supervisor_state"
+      };
+    }
+    if (input.supervisorState.status === "paused") {
+      return {
+        executionState: "paused",
+        summary:
+          input.supervisorState.last_error ??
+          "Supervisor paused the run and expects operator input.",
+        source: "supervisor_state"
+      };
+    }
+    if (input.supervisorState.status === "completed") {
+      return {
+        executionState: "completed",
+        summary:
+          input.supervisorState.stop_reason
+            ? `Supervisor completed the run with stop reason '${input.supervisorState.stop_reason}'.`
+            : "Supervisor completed the run.",
+        source: "supervisor_state"
+      };
+    }
+  }
+
+  return {
+    executionState: input.runtimeHealth.execution_state,
+    summary: input.runtimeHealth.summary,
+    source: "runtime_health"
+  };
+};
+
 const buildStatusReport = async (runDirectory: string): Promise<StatusReport> => {
   const restoredRun = await restoreRunState(runDirectory);
   const runtimePaths = runtimeStatePathsForRun(restoredRun.runDirectory);
-  const operatorSurface =
-    (await readOperatorSurfaceArtifact(runtimePaths.operatorSurfacePath)) ?? undefined;
+  const [operatorSurface, supervisorState] = await Promise.all([
+    readOperatorSurfaceArtifact(runtimePaths.operatorSurfacePath),
+    readSupervisorStateArtifact(runtimePaths.supervisorStatePath)
+  ]);
   const runtimeHealth = assessRuntimeHealth({
     liveState: restoredRun.runtimeLiveState,
     roundPhase: restoredRun.runtimeRoundPhase,
     controllerLease: restoredRun.controllerLease,
     transportState: restoredRun.transportState
+  });
+  const effectiveStatus = effectiveStatusFor({
+    summary: restoredRun.summary,
+    runtimeHealth,
+    supervisorState: supervisorState ?? undefined
   });
   const summary = restoredRun.summary;
   const activeRound =
@@ -681,7 +751,7 @@ const buildStatusReport = async (runDirectory: string): Promise<StatusReport> =>
     : undefined;
   const fallbackResumeCommand =
     operatorSurface?.resume_command ??
-    (runtimeHealth.execution_state === "completed"
+    (effectiveStatus.executionState === "completed"
       ? `npm run loop:resume -- --run-dir "${resumeRunDir}" --force-reopen-terminal${shellDowngradeSuffix}`
       : phaseResumeCommand ??
         `npm run loop:resume -- --run-dir "${resumeRunDir}"${shellDowngradeSuffix}`);
@@ -721,7 +791,11 @@ const buildStatusReport = async (runDirectory: string): Promise<StatusReport> =>
         : {})
     },
     runtime_health: runtimeHealth,
+    effective_execution_state: effectiveStatus.executionState,
+    status_summary: effectiveStatus.summary,
+    status_source: effectiveStatus.source,
     ...(operatorSurface ? { operator_surface: operatorSurface } : {}),
+    ...(supervisorState ? { supervisor_state: supervisorState } : {}),
     repair_notes: restoredRun.repairNotes,
     ...(restoredRun.interruptedRound
       ? { interrupted_round: restoredRun.interruptedRound }
@@ -733,7 +807,8 @@ const buildStatusReport = async (runDirectory: string): Promise<StatusReport> =>
       live_state_path: runtimePaths.liveStatePath,
       round_phase_path: runtimePaths.roundPhasePath,
       controller_lease_path: runtimePaths.controllerLeasePath,
-      transport_state_path: runtimePaths.transportStatePath
+      transport_state_path: runtimePaths.transportStatePath,
+      supervisor_state_path: runtimePaths.supervisorStatePath
     },
     resume_commands: {
       resume: fallbackResumeCommand,
@@ -847,7 +922,7 @@ const validateSeedOwnership = (input: {
   }
   return [
     "Shell-launched attached/current-thread seeds require a bound Codex thread id.",
-    "Start this run from the Codex app so $attached-loop owns the foreground thread,",
+    "Start this run from the Codex app so $loop-control can launch the Codex-owned foreground thread,",
     `or rerun with ${manualProtocolSeedFlag} if you intentionally want a manual-protocol shell seed.`
   ].join(" ");
 };
@@ -963,8 +1038,16 @@ const printStatusReport = (report: StatusReport): void => {
       );
     }
   }
+  if (report.supervisor_state) {
+    console.log(
+      `Supervisor: ${report.supervisor_state.status} / restarts ${report.supervisor_state.restart_count}/${report.supervisor_state.max_restarts}`
+    );
+    if (report.supervisor_state.last_error) {
+      console.log(`Supervisor note: ${report.supervisor_state.last_error}`);
+    }
+  }
   console.log(
-    `Execution: ${report.runtime_health.execution_state} - ${report.runtime_health.summary}`
+    `Execution: ${report.effective_execution_state} - ${report.status_summary} (${report.status_source})`
   );
   if (report.active.round !== undefined || report.active.phase) {
     console.log(
@@ -996,6 +1079,9 @@ const printStatusReport = (report: StatusReport): void => {
   );
   console.log(
     `Operator surface: ${displayPath(report.paths.operator_surface_path) ?? report.paths.operator_surface_path}`
+  );
+  console.log(
+    `Supervisor state: ${displayPath(report.paths.supervisor_state_path) ?? report.paths.supervisor_state_path}`
   );
   if (
     report.operator_surface?.app_visibility === "visible-in-stock-app" &&

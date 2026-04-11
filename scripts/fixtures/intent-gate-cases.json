@@ -36,6 +36,13 @@
     "expect_route": "harness_design"
   },
   {
+    "id": "run-control-start-codex",
+    "request": "Start loop with loop:start:codex on the current-thread foreground surface instead of loop:start:bg detached background supervisor mode.",
+    "expect_intent": "run_control",
+    "expect_status": "ready_for_run_control",
+    "expect_route": "run_control"
+  },
+  {
     "id": "product-build-with-evaluator-context",
     "request": "Build a dashboard app for evaluator calibration. The first version should help operators review false positives and compare heavy-lane thresholds.",
     "expect_intent": "product_build",

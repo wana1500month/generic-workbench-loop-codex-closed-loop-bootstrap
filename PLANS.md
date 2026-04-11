@@ -69,6 +69,7 @@ Acceptance:
 - App-visible `current-thread` continuation should fail closed outside the same bound Codex `thread_id` by default, with any shell fallback requiring an explicit downgrade flag so the ownership change is intentional and reviewable.
 - Shell-launched `attached/current-thread` seeds should also fail closed by default unless a real bound `CODEX_THREAD_ID` is present, with explicit `manual-protocol` seeding requiring an intentional flag rather than silently opening a shell-owned attached run.
 - The npm single-run front door should stay split explicitly between detached/headless (`loop:single`) and Codex-owned current-thread (`loop:single:codex`) or intentional shell manual-protocol (`loop:single:manual`) seeds, so repo scripts do not blur app ownership semantics.
+- The Codex app front door should treat start/status/stop/resume as a dedicated `run_control` lane with `loop:start:codex`, `loop:start:bg`, `loop:start:manual`, and `loop:stop`, so loop ownership is explicit before execution starts.
 - The repo should expose key lane-centric skills through `agents/openai.yaml` and a repo-root local plugin manifest, so Codex app discovery starts from app-facing metadata rather than raw npm script knowledge.
 - Same-thread bootstrap generator work should flow through persisted `attached-generator-task.json`, `attached-generator-prompt.md`, and `attached-generator-response.json` artifacts so current-thread and App Server surfaces can mutate without nested child Codex processes. App Server generator turns should honor task-local cwd, writable roots, and timeout budgets.
 - The repo should expose phase-oriented foreground entrypoints such as `loop:status`, `loop:resume`, and `loop:phase`, so Codex app operators can inspect or re-enter a persisted run without memorizing raw `--resume-run` and `--resume-phase` flag combinations.
@@ -82,6 +83,7 @@ Validation:
 - `npm run validate:transport-mode`
 - `npm run validate:attached-resume-smoke`
 - `npm run validate:cli-front-door`
+- `npm run validate:status-supervisor-precedence`
 - `npm run validate:app-server-generator-mainline`
 - `npm run validate:app-server-interrupted-generator`
 - `npm run validate:supervisor-timeout-prevention`

@@ -158,12 +158,19 @@ const buildProofEvidenceOriginIndex = (
 const commandTokens = (command: string): string[] =>
   command.match(/"[^"]+"|'[^']+'|\S+/g)?.map((token) => token.replace(/^['"]|['"]$/g, "")) ?? [];
 
+const commandVectorFor = (input: {
+  command: string;
+  args?: readonly string[];
+}): string[] =>
+  input.args && input.args.length > 0 ? [input.command, ...input.args] : commandTokens(input.command);
+
 const commandTargetFingerprint = (input: {
   command: string;
+  args?: readonly string[];
   baseDirectory: string;
   cwd?: string;
 }): string => {
-  const tokens = commandTokens(input.command);
+  const tokens = commandVectorFor(input);
   if (tokens.length === 0) {
     return "raw:";
   }
@@ -199,7 +206,7 @@ const commandTargetFingerprint = (input: {
     return `${commandName}:${scriptPath}`;
   }
 
-  return `raw:${input.command.trim().toLowerCase()}`;
+  return `raw:${commandVectorFor(input).join("\u0000").trim().toLowerCase()}`;
 };
 
 const observedValueMatches = (
@@ -548,6 +555,7 @@ const verificationBoundaryIssues = (
         .map((spec) =>
           commandTargetFingerprint({
             command: spec.command,
+            args: spec.args,
             baseDirectory: loadedAdapter.base_directory,
             cwd: spec.cwd ? resolve(loadedAdapter.base_directory, spec.cwd) : undefined
           })
@@ -560,6 +568,7 @@ const verificationBoundaryIssues = (
       }
       const verifierFingerprint = commandTargetFingerprint({
         command: spec.command,
+        args: spec.args,
         baseDirectory: loadedAdapter.base_directory,
         cwd: spec.cwd ? resolve(loadedAdapter.base_directory, spec.cwd) : undefined
       });

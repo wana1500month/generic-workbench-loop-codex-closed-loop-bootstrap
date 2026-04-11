@@ -30,6 +30,7 @@ import {
   restoreAdapterCapabilityExecutions,
   loadVerificationProfile
 } from "./adapter-runtime.js";
+import { resolvedAdapterTargetRoot } from "./adapter-paths.js";
 import {
   isAttachedGeneratorTransport,
   isBootstrapGeneratedAdapter,
@@ -489,10 +490,7 @@ const runAdapterCapabilities = async (input: {
         round_directory: input.roundDirectory,
         runtime_directory: input.runtimeDirectory,
         codex_session_registry_path: input.codexSessionRegistryPath,
-        target_root: join(
-          input.loadedAdapter.base_directory,
-          input.loadedAdapter.contract.target_root
-        ),
+        target_root: resolvedAdapterTargetRoot(input.loadedAdapter),
         idea_path: input.ideaPath,
         planned_scenario_path: input.plannedScenarioPath,
         plan_path: input.planPath,
@@ -2455,10 +2453,7 @@ export const runClosedLoop = async (input: {
     const attachedGeneratorTargetRoot =
       loadedAdapter &&
       attachedGeneratorEligible
-        ? resolve(
-            loadedAdapter.base_directory,
-            loadedAdapter.contract.target_root
-          )
+        ? resolvedAdapterTargetRoot(loadedAdapter)
         : undefined;
     const attachedGeneratorWritableRoots = attachedGeneratorTargetRoot
       ? unique([attachedGeneratorTargetRoot, runDirectory])

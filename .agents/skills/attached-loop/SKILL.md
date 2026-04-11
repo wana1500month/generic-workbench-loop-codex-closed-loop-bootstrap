@@ -23,6 +23,7 @@ Keep the current Codex thread attached to the run while still honoring the harne
 - Update persisted protocol artifacts before and after each phase boundary.
 - Prefer repairing from `runtime/live-state.json`, `runtime/round-phase.json`, and committed `round_summary.json` files instead of guessing from chat history.
 - Be explicit when attached mode must refuse a path that would require detached child Codex execution.
+- Do not claim continuous monitoring unless a real background automation owns the task.
 - Read `runtime/current-thread-protocol.md` when it exists and treat it as the operator checklist for the active run.
 - When `runtime/attached-generator-prompt.md` exists, complete that generator task on the current thread and write `runtime/attached-generator-response.json` before resuming `pre_verification`.
 

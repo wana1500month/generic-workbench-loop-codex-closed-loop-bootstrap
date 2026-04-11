@@ -20,10 +20,12 @@ The closed-loop harness is the core runtime engine, and `product_build` is only 
 ## Intake-first UX
 
 - Use `npm run loop:intent -- "<user request>"` as the generic front door. `product_build` is only one routed lane, not the repository identity.
-- `loop:intent` may route requests into `product_build`, `harness_design`, `run_resume`, or `evaluator_tuning`.
+- `loop:intent` may route requests into `product_build`, `harness_design`, `run_control`, `run_resume`, or `evaluator_tuning`.
 - If `loop:intent` routes to `product_build`, continue to use `npm run loop:intake -- "<user request>"` as the authoritative staged intake gate.
-- Prefer lane-centric skills such as `intent-router`, `product-intake`, `harness-design`, `run-resume`, `evaluator-tuning`, `run-attempt`, and `closeout`.
+- Prefer lane-centric skills such as `intent-router`, `product-intake`, `harness-design`, `loop-control`, `run-resume`, `evaluator-tuning`, `run-attempt`, and `closeout`.
 - Compatibility aliases may remain for older automation, but the operator-facing surface should stay centered on that lane-centric set.
+- Treat runtime-control requests such as "start the loop", "show loop status", "resume the active loop", and "stop the loop" as `run_control`, not as product intake or generic harness design.
+- In the Codex app, default new loop starts to `npm run loop:start:codex` or `$loop-control`. Use `npm run loop:start:bg` only when the operator explicitly asks for detached background supervision.
 - If a user asks this repo to build or design an app, service, editor, dashboard, API, agent, or product feature, the first response must follow the intake protocol in `INTAKE_PROTOCOL.md`.
 - Do not jump straight to adapter analysis, family classification, MVP breakdown, UX proposals, wireframes, architecture advice, or stack recommendations before the intake is complete.
 - Treat missing intake fields as a hard block. This should fail closed: ask questions instead of guessing.

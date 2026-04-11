@@ -4,6 +4,7 @@ import { mkdir, readFile, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 
+import { resolvedAdapterTargetRoot } from "./adapter-paths.js";
 import { loadJsonIfExists, writeJson, writeText } from "./file-system.js";
 import type {
   CoreProbeAttestation,
@@ -149,11 +150,7 @@ const resolvedProbeTarget = (input: {
       `Core verification probe '${input.probe.probe_id}' is missing a target-root path target.`
     );
   }
-  return resolve(
-    input.loadedAdapter.base_directory,
-    input.loadedAdapter.contract.target_root,
-    input.probe.target
-  );
+  return resolve(resolvedAdapterTargetRoot(input.loadedAdapter), input.probe.target);
 };
 
 const buildAttestation = async (input: {
@@ -700,11 +697,7 @@ const executeShellCommandProbe = async (input: {
       `Core verification probe '${input.probe.probe_id}' is missing a shell command target.`
     );
   }
-  const cwd = resolve(
-    input.loadedAdapter.base_directory,
-    input.loadedAdapter.contract.target_root,
-    input.probe.cwd ?? "."
-  );
+  const cwd = resolve(resolvedAdapterTargetRoot(input.loadedAdapter), input.probe.cwd ?? ".");
   const stdoutPath = join(input.probeDirectory, `${input.probe.probe_id}-stdout.log`);
   const stderrPath = join(input.probeDirectory, `${input.probe.probe_id}-stderr.log`);
   const result = await execCommand({
@@ -713,10 +706,7 @@ const executeShellCommandProbe = async (input: {
     timeoutMs,
     env: {
       ...process.env,
-      HARNESS_TARGET_ROOT: resolve(
-        input.loadedAdapter.base_directory,
-        input.loadedAdapter.contract.target_root
-      ),
+      HARNESS_TARGET_ROOT: resolvedAdapterTargetRoot(input.loadedAdapter),
       HARNESS_RUN_DIRECTORY: input.runDirectory,
       HARNESS_ROUND_DIRECTORY: input.roundDirectory
     },

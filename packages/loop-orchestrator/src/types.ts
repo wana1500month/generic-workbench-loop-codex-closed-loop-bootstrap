@@ -390,6 +390,7 @@ export interface RemediationHistory {
 
 export interface AdapterCommandSpec {
   command: string;
+  args?: string[];
   cwd?: string;
   timeout_ms?: number;
   shell?: "powershell" | "sh" | "bash" | "cmd";
@@ -538,6 +539,7 @@ export interface LoadedAdapterContract {
 export interface AdapterCapabilityPacket {
   adapter_id: string;
   capability: AdapterCapabilityName;
+  execution_id?: string;
   run_id: string;
   round: number;
   run_directory: string;
@@ -603,6 +605,7 @@ export interface VerificationWitness {
 
 export interface AdapterExecutionAttestation {
   command: string;
+  args?: string[];
   command_sha256: string;
   cwd: string;
   shell: "powershell" | "sh" | "bash" | "cmd" | "system";
@@ -615,6 +618,25 @@ export interface AdapterExecutionAttestation {
   stderr_path: string;
   stderr_sha256: string;
   result_sha256: string;
+}
+
+export interface AdapterCapabilityAttemptArtifact {
+  capability: AdapterCapabilityName;
+  execution_id: string;
+  status: "running" | "completed" | "timed_out" | "failed";
+  started_at: string;
+  updated_at: string;
+  timeout_ms: number;
+  packet_path: string;
+  result_path: string;
+  stdout_path: string;
+  stderr_path: string;
+  command: string;
+  args?: string[];
+  shell?: AdapterCommandSpec["shell"];
+  timed_out_at?: string;
+  finished_at?: string;
+  exit_code?: number | null;
 }
 
 export interface CoreProbeAttestation {

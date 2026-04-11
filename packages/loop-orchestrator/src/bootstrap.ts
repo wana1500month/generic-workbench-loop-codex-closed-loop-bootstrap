@@ -2104,10 +2104,6 @@ const main = async () => {
     JSON.stringify(remediationBrief, null, 2)
   ].join("\\n");
 
-  const previousSession = await readCodexSession(
-    runtimePaths.codexSessionRegistryPath,
-    "generator"
-  );
   const execution = await runCodexCommand({
     name: "generator",
     prompt,
@@ -2122,8 +2118,7 @@ const main = async () => {
       dirname(config.idea_path),
       ...(previousRoundDirectory ? [previousRoundDirectory] : [])
     ],
-    sessionId:
-      typeof previousSession?.thread_id === "string" ? previousSession.thread_id : undefined,
+    sessionId: undefined,
     artifactDirectory: runtimePaths.artifactsDirectory,
     metadata: {
       role: "generator",
@@ -3165,32 +3160,44 @@ const scaffoldAdapterArtifacts = async (
     target_root: answers.targetRoot,
     capabilities: {
       prepare_target: {
-        command: `node ${paths.generatedAdapterRelativePath}/scripts/prepare-target.mjs`,
-        cwd: "."
+        command: "node",
+        args: [`${paths.generatedAdapterRelativePath}/scripts/prepare-target.mjs`],
+        cwd: ".",
+        timeout_ms: 180000
       },
       apply_change: {
-        command: `node ${paths.generatedAdapterRelativePath}/scripts/apply-change.mjs`,
-        cwd: "."
+        command: "node",
+        args: [`${paths.generatedAdapterRelativePath}/scripts/apply-change.mjs`],
+        cwd: ".",
+        timeout_ms: 900000
       },
       run_target: {
-        command: `node ${paths.generatedAdapterRelativePath}/scripts/run-target.mjs`,
-        cwd: "."
+        command: "node",
+        args: [`${paths.generatedAdapterRelativePath}/scripts/run-target.mjs`],
+        cwd: ".",
+        timeout_ms: 300000
       }
     },
     verification_provider: {
       provider_id: `${adapterId}-verifier`,
       capabilities: {
         capture_evidence: {
-          command: `node ${paths.generatedAdapterRelativePath}/scripts/capture-evidence.mjs`,
-          cwd: "."
+          command: "node",
+          args: [`${paths.generatedAdapterRelativePath}/scripts/capture-evidence.mjs`],
+          cwd: ".",
+          timeout_ms: 180000
         },
         run_checks: {
-          command: `node ${paths.generatedAdapterRelativePath}/scripts/run-checks.mjs`,
-          cwd: "."
+          command: "node",
+          args: [`${paths.generatedAdapterRelativePath}/scripts/run-checks.mjs`],
+          cwd: ".",
+          timeout_ms: 300000
         },
         grade_round: {
-          command: `node ${paths.generatedAdapterRelativePath}/scripts/grade-round.mjs`,
-          cwd: "."
+          command: "node",
+          args: [`${paths.generatedAdapterRelativePath}/scripts/grade-round.mjs`],
+          cwd: ".",
+          timeout_ms: 180000
         }
       }
     },

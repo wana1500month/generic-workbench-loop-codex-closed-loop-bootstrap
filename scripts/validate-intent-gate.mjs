@@ -45,6 +45,14 @@ const harnessHumanOutput = renderLoopIntentResponse(
 assert.match(harnessHumanOutput, /^Intent:\s+harness_design/m);
 assert.match(harnessHumanOutput, /Route:\s+proceed in the harness-design lane\./i);
 
+const runControlHumanOutput = renderLoopIntentResponse(
+  evaluateLoopIntent(
+    "Start loop with loop:start:codex on the current-thread foreground surface instead of loop:start:bg detached background supervisor mode."
+  )
+);
+assert.match(runControlHumanOutput, /^Intent:\s+run_control/m);
+assert.match(runControlHumanOutput, /Route:\s+proceed in the run-control lane\./i);
+
 const koreanHarnessFixture = fixtures.find(
   (fixture) => fixture.id === "korean-harness-design-actual-prompt"
 );
