@@ -96,6 +96,14 @@ const runBuild = async () => {
 };
 
 const rawArgs = process.argv.slice(2);
+const directCliFrontDoorCommands = new Set([
+  "help",
+  "--help",
+  "-h",
+  "status",
+  "resume",
+  "phase"
+]);
 if (rawArgs.includes("--supervised")) {
   const delegatedArgs = rawArgs.filter((value) => value !== "--supervised");
   const exitCode = await runCommand(
@@ -104,6 +112,22 @@ if (rawArgs.includes("--supervised")) {
     { shell: false }
   );
   process.exitCode = exitCode;
+  process.exit();
+}
+if (rawArgs.length > 0 && directCliFrontDoorCommands.has(rawArgs[0])) {
+  const buildExitCode = await runBuild();
+  if (buildExitCode !== 0) {
+    process.exitCode = buildExitCode;
+  } else {
+    const cliExitCode = await runCommand(process.execPath, [
+      "--input-type=module",
+      "--eval",
+      runnerCliImport,
+      "--",
+      ...rawArgs
+    ]);
+    process.exitCode = cliExitCode;
+  }
   process.exit();
 }
 let modeSingle = false;

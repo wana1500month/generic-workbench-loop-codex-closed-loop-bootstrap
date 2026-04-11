@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run Resume"
+  short_description: "Inspect persisted run state and choose the next controller action"
+  default_prompt: "Use $run-resume to inspect persisted run artifacts and decide whether the run should reopen, continue, hold, or close out."

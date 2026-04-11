@@ -131,6 +131,12 @@ import {
   writeOperatorSurfaceArtifacts
 } from "./operator-surface.js";
 import {
+  enhancePlanWithCurrentThread,
+  enhanceContractReviewWithCurrentThread,
+  enhanceEvalReportWithCurrentThread,
+  enhanceGeneratorPlanWithCurrentThread
+} from "./current-thread-enhancement.js";
+import {
   pausedStopReasons,
   phaseBudgetToStallThresholdMs
 } from "./runtime-health.js";
@@ -521,6 +527,7 @@ const orderedAdapterExecutions = (
 };
 
 const controllerPhaseOrder: readonly ControllerRoundPhase[] = [
+  "planning",
   "negotiation",
   "pre_verification",
   "core_probes",
@@ -984,6 +991,7 @@ export const runClosedLoop = async (input: {
     (restoredRun ? await loadResumeIdentityArtifact(runDirectory) : undefined) ??
     summaryResumeIdentity(restoredRun?.summary);
   const currentResumeIdentityPath = resumeIdentityArtifactPath(runDirectory);
+  await writeJson(currentResumeIdentityPath, currentResumeIdentity);
   const resumeDecisionPath = input.resumeRunPath
     ? join(runDirectory, "resume-decision.json")
     : undefined;
@@ -1325,6 +1333,16 @@ export const runClosedLoop = async (input: {
     restoredRun?.plannedScenarioPath ?? join(runDirectory, "planned-scenario.json");
   const planPath = restoredRun?.planPath ?? join(runDirectory, "plan.json");
   let plannerBriefPath = restoredRun?.plannerBriefPath;
+  let pendingPlannerEnhancementPause:
+    | {
+        artifacts: Record<string, string>;
+        notes: string[];
+      }
+    | undefined;
+  const resumePlanningEnhancement =
+    currentThreadTransport &&
+    restoredRun?.runtimeRoundPhase?.phase === "planning" &&
+    restoredRun.runtimeRoundPhase.status === "awaiting_input";
   const ensureEarlyAppServerTransport = async (): Promise<void> => {
     if (transportMode !== "app-server" || appServerTransport) {
       return;
@@ -1348,7 +1366,7 @@ export const runClosedLoop = async (input: {
       requestTimeoutMs: appServerRequestTimeoutMs
     });
   };
-  if (!scenario || !plan) {
+  if (!scenario || !plan || resumePlanningEnhancement) {
     try {
       await ensureEarlyAppServerTransport();
       const baseScenario = scenario ?? buildScenarioFromIdea(idea);
@@ -1358,45 +1376,74 @@ export const runClosedLoop = async (input: {
         maxRounds: attemptBudget,
         idea
       });
-      const plannerEnhancement =
-        transportMode === "app-server" && appServerTransport
-          ? await enhancePlanWithAppServer({
-              transport: appServerTransport,
-              runDirectory,
-              idea,
-              rubric: hydratedRubric,
-              scenario: baseScenario,
-              plan: basePlan,
-              executorMode
-            })
-          : currentThreadTransport
-            ? {
-                value: {
-                  scenario: baseScenario,
-                  plan: basePlan
-                },
-                runtimeWarnings: [
-                  `Transport '${transportMode}' skipped nested Codex planner enhancement during run initialization.`
-                ]
-              }
-            : await enhancePlanWithCodex({
-                runDirectory,
-                idea,
-                rubric: hydratedRubric,
-                scenario: baseScenario,
-                plan: basePlan,
-                executorMode
-              });
-      scenario = plannerEnhancement.value.scenario;
-      plan = plannerEnhancement.value.plan;
-      runtimeWarnings = unique([
-        ...runtimeWarnings,
-        ...plannerEnhancement.runtimeWarnings
-      ]);
-      await Promise.all([
-        writeJson(plannedScenarioPath, scenario),
-        writeJson(planPath, plan)
-      ]);
+      if (transportMode === "app-server" && appServerTransport) {
+        const plannerEnhancement = await enhancePlanWithAppServer({
+          transport: appServerTransport,
+          runDirectory,
+          idea,
+          rubric: hydratedRubric,
+          scenario: baseScenario,
+          plan: basePlan,
+          executorMode
+        });
+        scenario = plannerEnhancement.value.scenario;
+        plan = plannerEnhancement.value.plan;
+        runtimeWarnings = unique([
+          ...runtimeWarnings,
+          ...plannerEnhancement.runtimeWarnings
+        ]);
+        await Promise.all([
+          writeJson(plannedScenarioPath, scenario),
+          writeJson(planPath, plan)
+        ]);
+      } else if (currentThreadTransport) {
+        const plannerEnhancement = await enhancePlanWithCurrentThread({
+          runId,
+          transportProtocolPath,
+          runtimePaths: runtimeStatePaths,
+          plannedScenarioPath,
+          planPath,
+          idea,
+          rubric: hydratedRubric,
+          scenario: baseScenario,
+          plan: basePlan,
+          executorMode
+        });
+        if (plannerEnhancement.kind === "handoff") {
+          scenario = baseScenario;
+          plan = basePlan;
+          pendingPlannerEnhancementPause = {
+            artifacts: plannerEnhancement.artifacts,
+            notes: plannerEnhancement.notes
+          };
+        } else {
+          scenario = plannerEnhancement.value.scenario;
+          plan = plannerEnhancement.value.plan;
+          runtimeWarnings = unique([
+            ...runtimeWarnings,
+            ...plannerEnhancement.runtimeWarnings
+          ]);
+        }
+      } else {
+        const plannerEnhancement = await enhancePlanWithCodex({
+          runDirectory,
+          idea,
+          rubric: hydratedRubric,
+          scenario: baseScenario,
+          plan: basePlan,
+          executorMode
+        });
+        scenario = plannerEnhancement.value.scenario;
+        plan = plannerEnhancement.value.plan;
+        runtimeWarnings = unique([
+          ...runtimeWarnings,
+          ...plannerEnhancement.runtimeWarnings
+        ]);
+        await Promise.all([
+          writeJson(plannedScenarioPath, scenario),
+          writeJson(planPath, plan)
+        ]);
+      }
       plannerBriefPath = await writeRunPlannerBrief({
         runDirectory,
         idea,
@@ -1427,7 +1474,7 @@ export const runClosedLoop = async (input: {
   let bestThresholdResults: ReleaseThresholdResults | undefined =
     restoredRun?.bestThresholdResults;
   let bestDimensionScores = restoredRun?.summary.dimension_scores ?? [];
-  let bestRound = restoredRun?.bestRound ?? 1;
+  let bestRound = restoredRun?.bestRound;
   let bestEvalReportPath = restoredRun?.bestEvalReportPath ?? "";
   let bestPatchRequestPath = restoredRun?.bestPatchRequestPath ?? "";
   let plateauCount = restoredRun?.plateauCount ?? 0;
@@ -1531,6 +1578,26 @@ export const runClosedLoop = async (input: {
       : undefined;
   let latestEvalReportPath = restoredRun?.latestRoundSummary?.eval_report_path;
   const heartbeatNotes = [...(restoredRun?.repairNotes ?? [])];
+  const activeArtifactPathsFor = (
+    artifacts?: Record<string, string>
+  ): {
+    activePromptPath?: string;
+    activeResponsePath?: string;
+  } => {
+    const artifactValues = artifacts
+      ? Object.values(artifacts).filter((value) => typeof value === "string")
+      : [];
+    return {
+      activePromptPath: artifactValues.find(
+        (value) => value.endsWith(".md") && /prompt/i.test(value)
+      ),
+      activeResponsePath: artifactValues.find(
+        (value) => value.endsWith(".json") && /response/i.test(value)
+      )
+    };
+  };
+  let { activePromptPath: activePromptArtifactPath, activeResponsePath: activeResponseArtifactPath } =
+    activeArtifactPathsFor(restoredRun?.runtimeRoundPhase?.artifacts);
   let transportProtocolCurrentPath =
     restoredRun?.summary.transport_protocol_path ?? transportProtocolPath;
   const syncActivePhaseBudget = (): void => {
@@ -1614,6 +1681,12 @@ export const runClosedLoop = async (input: {
     notes?: string[];
   }): Promise<void> => {
     const snapshot = appServerTransport?.snapshot();
+    if (input?.activePromptPath !== undefined) {
+      activePromptArtifactPath = input.activePromptPath;
+    }
+    if (input?.activeResponsePath !== undefined) {
+      activeResponseArtifactPath = input.activeResponsePath;
+    }
     await writeOperatorSurfaceArtifacts({
       jsonPath: runtimeStatePaths.operatorSurfacePath,
       markdownPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
@@ -1628,8 +1701,9 @@ export const runClosedLoop = async (input: {
         summaryPath,
         transportStatePath: runtimeStatePaths.transportStatePath,
         transportProtocolPath: transportProtocolCurrentPath,
-        activePromptPath: input?.activePromptPath,
-        activeResponsePath: input?.activeResponsePath,
+        activePromptPath: input?.activePromptPath ?? activePromptArtifactPath,
+        activeResponsePath:
+          input?.activeResponsePath ?? activeResponseArtifactPath,
         dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
         threadId: snapshot?.thread_id,
         threadName: snapshot?.thread_name,
@@ -1817,15 +1891,11 @@ export const runClosedLoop = async (input: {
       ...(heartbeatNotes.length > 0 ? { notes: heartbeatNotes } : {})
     });
     await writeLiveTransportProtocol();
-    const artifactValues = inputPhase.artifacts
-      ? Object.values(inputPhase.artifacts).filter((value) => typeof value === "string")
-      : [];
-    const activePromptPath = artifactValues.find(
-      (value) => value.endsWith(".md") && /prompt/i.test(value)
+    const { activePromptPath, activeResponsePath } = activeArtifactPathsFor(
+      inputPhase.artifacts
     );
-    const activeResponsePath = artifactValues.find(
-      (value) => value.endsWith(".json") && /response/i.test(value)
-    );
+    activePromptArtifactPath = activePromptPath;
+    activeResponseArtifactPath = activeResponsePath;
     await writeOperatorSurface({
       round: inputPhase.round,
       phase: inputPhase.phase,
@@ -1904,36 +1974,39 @@ export const runClosedLoop = async (input: {
       resumedFromRunId: input.resumeRunPath ? runId : undefined
     });
 
-    await writeRunCheckpoint({
-      runDirectory,
-      summary,
-      currentBest: {
-        round: history[history.length - 1]?.round,
-        totalScore: history[history.length - 1]?.total_score ?? bestScore,
-        controlPlaneScore:
-          history[history.length - 1]?.control_plane_score ?? bestControlPlaneScore,
-        proofScore: history[history.length - 1]?.proof_score ?? bestProofScore,
-        releaseScore:
-          history[history.length - 1]?.release_score ?? bestReleaseScore,
-        thresholdResults:
-          history[history.length - 1]?.threshold_results ?? bestThresholdResults,
-        dimensionScores:
-          history[history.length - 1]?.dimension_scores ?? bestDimensionScores,
-        patchRequestPath:
-          history[history.length - 1]?.patch_request_path ?? bestPatchRequestPath,
-        evalReportPath:
-          history[history.length - 1]?.eval_report_path ?? bestEvalReportPath,
-        bestScoringRound: bestRound,
-        bestScoringTotalScore: bestScore,
-        bestScoringControlPlaneScore: bestControlPlaneScore,
-        bestScoringProofScore: bestProofScore,
-        bestScoringReleaseScore: bestReleaseScore,
-        bestScoringThresholdResults: bestThresholdResults,
-        bestScoringDimensionScores: bestDimensionScores,
-        bestScoringPatchRequestPath: bestPatchRequestPath,
-        bestScoringEvalReportPath: bestEvalReportPath
-      }
-    });
+    await Promise.all([
+      writeJson(currentResumeIdentityPath, currentResumeIdentity),
+      writeRunCheckpoint({
+        runDirectory,
+        summary,
+        currentBest: {
+          round: history[history.length - 1]?.round,
+          totalScore: history[history.length - 1]?.total_score ?? bestScore,
+          controlPlaneScore:
+            history[history.length - 1]?.control_plane_score ?? bestControlPlaneScore,
+          proofScore: history[history.length - 1]?.proof_score ?? bestProofScore,
+          releaseScore:
+            history[history.length - 1]?.release_score ?? bestReleaseScore,
+          thresholdResults:
+            history[history.length - 1]?.threshold_results ?? bestThresholdResults,
+          dimensionScores:
+            history[history.length - 1]?.dimension_scores ?? bestDimensionScores,
+          patchRequestPath:
+            history[history.length - 1]?.patch_request_path ?? bestPatchRequestPath,
+          evalReportPath:
+            history[history.length - 1]?.eval_report_path ?? bestEvalReportPath,
+          bestScoringRound: bestRound,
+          bestScoringTotalScore: bestScore,
+          bestScoringControlPlaneScore: bestControlPlaneScore,
+          bestScoringProofScore: bestProofScore,
+          bestScoringReleaseScore: bestReleaseScore,
+          bestScoringThresholdResults: bestThresholdResults,
+          bestScoringDimensionScores: bestDimensionScores,
+          bestScoringPatchRequestPath: bestPatchRequestPath,
+          bestScoringEvalReportPath: bestEvalReportPath
+        }
+      })
+    ]);
     if (crashAfterCheckpointEnabled() && history.length > 0) {
       const crashMarkerPath = join(
         runtimeStatePaths.runtimeDirectory,
@@ -1964,6 +2037,8 @@ export const runClosedLoop = async (input: {
       "awaiting_current_thread_handoff" | "awaiting_manual_generator"
     >;
     notes: string[];
+    activePromptPath?: string;
+    activeResponsePath?: string;
   }): Promise<ClosedLoopResult> => {
     runtimeWarnings = unique([...runtimeWarnings, ...input.notes]);
     heartbeatNotes.splice(0, heartbeatNotes.length, ...unique([...heartbeatNotes, ...input.notes]));
@@ -1971,6 +2046,8 @@ export const runClosedLoop = async (input: {
     await writeOperatorSurface({
       executionState: "paused",
       nextAction: input.notes[1] ?? input.notes[0],
+      activePromptPath: input.activePromptPath,
+      activeResponsePath: input.activeResponsePath,
       notes: heartbeatNotes
     });
     const summary = await writeCheckpoint(input.stopReason);
@@ -1981,6 +2058,47 @@ export const runClosedLoop = async (input: {
       plannedScenarioPath
     };
   };
+  const pauseForCurrentThreadEnhancement = async (input: {
+    round: number;
+    phase: ControllerRoundPhase;
+    artifacts: Record<string, string>;
+    notes: string[];
+  }): Promise<ClosedLoopResult> => {
+    const { activePromptPath, activeResponsePath } = activeArtifactPathsFor(
+      input.artifacts
+    );
+    await recordRoundPhase({
+      round: input.round,
+      phase: input.phase,
+      status: "awaiting_input",
+      artifacts: input.artifacts,
+      notes: input.notes
+    });
+    return finalizeRunAsManualHandoff({
+      stopReason: "awaiting_current_thread_handoff",
+      notes: input.notes,
+      activePromptPath,
+      activeResponsePath
+    });
+  };
+  if (pendingPlannerEnhancementPause) {
+    const { activePromptPath, activeResponsePath } = activeArtifactPathsFor(
+      pendingPlannerEnhancementPause.artifacts
+    );
+    await recordRoundPhase({
+      round: 0,
+      phase: "planning",
+      status: "awaiting_input",
+      artifacts: pendingPlannerEnhancementPause.artifacts,
+      notes: pendingPlannerEnhancementPause.notes
+    });
+    return finalizeRunAsManualHandoff({
+      stopReason: "awaiting_current_thread_handoff",
+      notes: pendingPlannerEnhancementPause.notes,
+      activePromptPath,
+      activeResponsePath
+    });
+  }
   await writeCheckpoint(restoredRun?.summary.stop_reason);
   const repairRoundLimit = input.repairOnly
     ? restoredRun?.interruptedRound?.round
@@ -2076,7 +2194,9 @@ export const runClosedLoop = async (input: {
       persistContractAgreementArtifact =
         negotiationState.persistContractAgreementArtifact;
     } else {
-      await withPhaseBudget("negotiation", async () => {
+      const negotiationResult = await withPhaseBudget(
+        "negotiation",
+        async (): Promise<ClosedLoopResult | undefined> => {
       await recordRoundPhase({
         round,
         phase: "negotiation",
@@ -2126,6 +2246,27 @@ export const runClosedLoop = async (input: {
               contractArtifact,
               loadedAdapter
             });
+      const currentThreadContractReviewEnhancement =
+        transportMode === "current-thread"
+          ? await enhanceContractReviewWithCurrentThread({
+              runId,
+              round,
+              transportProtocolPath: transportProtocolCurrentPath,
+              artifacts,
+              contractArtifact,
+              contractReviewArtifact: baseContractReviewArtifact,
+              loadedAdapter,
+              executorMode
+            })
+          : undefined;
+      if (currentThreadContractReviewEnhancement?.kind === "handoff") {
+        return pauseForCurrentThreadEnhancement({
+          round,
+          phase: "negotiation",
+          artifacts: currentThreadContractReviewEnhancement.artifacts,
+          notes: currentThreadContractReviewEnhancement.notes
+        });
+      }
       const contractReviewEnhancement =
         transportMode === "app-server" && appServerTransport
           ? await enhanceContractReviewWithAppServer({
@@ -2136,12 +2277,10 @@ export const runClosedLoop = async (input: {
               loadedAdapter,
               executorMode
             })
-          : currentThreadTransport
+          : currentThreadContractReviewEnhancement
             ? {
-                value: baseContractReviewArtifact,
-                runtimeWarnings: [
-                  `Transport '${transportMode}' skipped nested Codex contract review enhancement for round ${round}.`
-                ]
+                value: currentThreadContractReviewEnhancement.value,
+                runtimeWarnings: currentThreadContractReviewEnhancement.runtimeWarnings
               }
             : await enhanceContractReviewWithCodex({
                 roundDirectory,
@@ -2172,6 +2311,29 @@ export const runClosedLoop = async (input: {
         trajectory: lifecycleDecision.trajectory,
         adapterAttached: Boolean(loadedAdapter)
       });
+      const currentThreadGeneratorPlanEnhancement =
+        transportMode === "current-thread"
+          ? await enhanceGeneratorPlanWithCurrentThread({
+              runId,
+              round,
+              transportProtocolPath: transportProtocolCurrentPath,
+              artifacts,
+              idea,
+              contractArtifact,
+              contractAgreementArtifact,
+              generatorPlanArtifact: baseGeneratorPlanArtifact,
+              previousPatchRequest,
+              executorMode
+            })
+          : undefined;
+      if (currentThreadGeneratorPlanEnhancement?.kind === "handoff") {
+        return pauseForCurrentThreadEnhancement({
+          round,
+          phase: "negotiation",
+          artifacts: currentThreadGeneratorPlanEnhancement.artifacts,
+          notes: currentThreadGeneratorPlanEnhancement.notes
+        });
+      }
       const generatorPlanEnhancement =
         transportMode === "app-server" && appServerTransport
           ? await enhanceGeneratorPlanWithAppServer({
@@ -2184,12 +2346,10 @@ export const runClosedLoop = async (input: {
               previousPatchRequest,
               executorMode
             })
-          : currentThreadTransport
+          : currentThreadGeneratorPlanEnhancement
             ? {
-                value: baseGeneratorPlanArtifact,
-                runtimeWarnings: [
-                  `Transport '${transportMode}' skipped nested Codex generator-plan enhancement for round ${round}.`
-                ]
+                value: currentThreadGeneratorPlanEnhancement.value,
+                runtimeWarnings: currentThreadGeneratorPlanEnhancement.runtimeWarnings
               }
             : await enhanceGeneratorPlanWithCodex({
                 roundDirectory,
@@ -2253,7 +2413,11 @@ export const runClosedLoop = async (input: {
           generator_plan_path: artifacts.generator_plan_json_path
         }
       });
-      });
+        }
+      );
+      if (negotiationResult) {
+        return negotiationResult;
+      }
     }
     if (
       lifecycleDecision.negotiation_mode !== "patch_only" &&
@@ -2775,7 +2939,9 @@ export const runClosedLoop = async (input: {
       previousPatchRequestResolved =
         roundResultArtifact.previous_patch_request_resolved;
     } else {
-      await withPhaseBudget("evaluation", async () => {
+      const evaluationResult = await withPhaseBudget(
+        "evaluation",
+        async (): Promise<ClosedLoopResult | undefined> => {
       await recordRoundPhase({
         round,
         phase: "evaluation",
@@ -2798,6 +2964,31 @@ export const runClosedLoop = async (input: {
         previousPatchRequestAddressed
       });
       const evalEnhancement =
+        transportMode === "current-thread"
+          ? await enhanceEvalReportWithCurrentThread({
+              runId,
+              round,
+              transportProtocolPath: transportProtocolCurrentPath,
+              artifacts,
+              idea,
+              contractArtifact,
+              generatorPlanArtifact,
+              evalReport: baseEvalReport,
+              adapterExecutions,
+              coreProbeResults,
+              targetManifest,
+              executorMode
+            })
+          : undefined;
+      if (evalEnhancement?.kind === "handoff") {
+        return pauseForCurrentThreadEnhancement({
+          round,
+          phase: "evaluation",
+          artifacts: evalEnhancement.artifacts,
+          notes: evalEnhancement.notes
+        });
+      }
+      const resolvedEvalEnhancement =
         transportMode === "app-server" && appServerTransport
           ? await enhanceEvalReportWithAppServer({
               transport: appServerTransport,
@@ -2811,12 +3002,10 @@ export const runClosedLoop = async (input: {
               targetManifest,
               executorMode
             })
-          : currentThreadTransport
+          : evalEnhancement
             ? {
-                value: baseEvalReport,
-                runtimeWarnings: [
-                  `Transport '${transportMode}' skipped nested Codex eval enhancement for round ${round}.`
-                ]
+                value: evalEnhancement.value,
+                runtimeWarnings: evalEnhancement.runtimeWarnings
               }
             : await enhanceEvalReportWithCodex({
                 roundDirectory,
@@ -2831,9 +3020,9 @@ export const runClosedLoop = async (input: {
               });
       runtimeWarnings = unique([
         ...runtimeWarnings,
-        ...evalEnhancement.runtimeWarnings
+        ...resolvedEvalEnhancement.runtimeWarnings
       ]);
-      evalReport = evalEnhancement.value;
+      evalReport = resolvedEvalEnhancement.value;
       previousPatchRequestResolved =
         previousPatchTargetCheckIds.length === 0 ||
         evalReport.check_results.some(
@@ -2979,7 +3168,11 @@ export const runClosedLoop = async (input: {
           round_result_path: artifacts.round_result_json_path
         }
       });
-      });
+        }
+      );
+      if (evaluationResult) {
+        return evaluationResult;
+      }
     }
     latestEvalReport = evalReport;
     const improved = isImproved(evalReport.total_score, bestScore);

@@ -1,7 +1,9 @@
 import { join, relative } from "node:path";
 
 import { repoRoot, writeText } from "./file-system.js";
+import { resolveOperatorSurfaceContext } from "./operator-surface.js";
 import type {
+  ControllerMode,
   ControllerPhaseStatus,
   ControllerRoundPhase,
   LoopRunSummary,
@@ -28,6 +30,7 @@ export const writeTransportProtocol = async (input: {
     | "resume_identity_path"
     | "runtime_round_phase_path"
   >;
+  controllerMode?: ControllerMode;
   activeRound?: number;
   activePhase?: ControllerRoundPhase;
   activeStatus?: ControllerPhaseStatus;
@@ -36,6 +39,10 @@ export const writeTransportProtocol = async (input: {
   notes?: string[];
 }): Promise<string> => {
   const path = transportProtocolPathForRun(input.runDirectory, input.transportMode);
+  const context = resolveOperatorSurfaceContext({
+    controllerMode: input.controllerMode ?? input.summary.controller_mode ?? "detached",
+    transportMode: input.transportMode
+  });
 
   const common = `# Transport Protocol
 
@@ -60,14 +67,33 @@ ${(input.notes ?? []).length > 0 ? input.notes!.map((note) => `- ${note}`).join(
 
   const modeSpecific =
     input.transportMode === "current-thread"
-      ? `## Current-Thread Rules
+      ? context.presentationMode === "foreground-thread"
+        ? `## Current-Thread Rules
 
-1. Stay on the current Codex thread. This is the stock foreground-thread operator surface. Do not call nested \`codex exec\` or \`codex exec resume\`.
+1. Stay on the current Codex thread. This run is bound to the stock foreground-thread operator surface. Do not call nested \`codex exec\` or \`codex exec resume\`.
 2. Work phase-by-phase. Update persisted protocol artifacts before and after each controller phase.
 3. Keep shell usage short-lived and local to the current phase.
 4. Treat \`round-contract.json\`, \`patch-request.json\`, and \`runtime/round-phase.json\` as authoritative over chat memory.
-5. When the bootstrap generator surface is active, the controller pauses honestly with \`stop_reason = "awaiting_current_thread_handoff"\`. Complete \`runtime/attached-generator-prompt.md\` and write \`runtime/attached-generator-response.json\` before resuming pre_verification.
-6. If the route would require child Codex execution, fail closed and leave a persisted note instead of faking attached behavior.
+5. When a current-thread enhancement artifact is active, the controller pauses honestly with \`stop_reason = "awaiting_current_thread_handoff"\`. Complete the active \`*-prompt.md\` file and write the matching \`*-response.json\` before resuming.
+6. When the bootstrap generator surface is active, complete \`runtime/attached-generator-prompt.md\` and write \`runtime/attached-generator-response.json\` before resuming pre_verification.
+7. If the route would require child Codex execution, fail closed and leave a persisted note instead of faking attached behavior.
+
+## Manual Phase Loop
+
+1. Restore the latest run state from persisted artifacts.
+2. Read the active round contract and latest patch request.
+3. Complete only the active phase, then checkpoint.
+4. Re-open the next phase from files, not from chat assumptions.
+`
+        : `## Current-Thread Rules
+
+1. This run is using current-thread as a manual protocol rather than a bound stock Codex thread. Do not call nested \`codex exec\` or \`codex exec resume\`.
+2. Treat the persisted runtime artifacts as the source of truth and keep work phase-local.
+3. Use the same shell or explicitly reattach from a Codex thread before continuing the active phase.
+4. Treat \`round-contract.json\`, \`patch-request.json\`, and \`runtime/round-phase.json\` as authoritative over chat memory.
+5. When a current-thread enhancement artifact is active, the controller pauses honestly with \`stop_reason = "awaiting_current_thread_handoff"\`. Complete the active \`*-prompt.md\` file and write the matching \`*-response.json\` before resuming.
+6. When the bootstrap generator surface is active, complete \`runtime/attached-generator-prompt.md\` and write \`runtime/attached-generator-response.json\` before resuming pre_verification.
+7. If the route would require child Codex execution, fail closed and leave a persisted note instead of faking attached behavior.
 
 ## Manual Phase Loop
 

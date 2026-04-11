@@ -8,6 +8,7 @@ import {
   assertStopReason,
   assertTargetFamily,
   assertValidationLane,
+  driveCurrentThreadHandoffs,
   extractRunDirectory,
   readJsonFile,
   readSummary,
@@ -95,10 +96,10 @@ const currentThreadRunDirectory = extractRunDirectory(currentThreadSeed.stdout);
 const currentThreadSeedSummary = await readSummary(currentThreadRunDirectory);
 assertTargetFamily(currentThreadSeedSummary, "api-service");
 assertValidationLane(currentThreadSeedSummary, "deterministic_semantic");
-assertStopReason(currentThreadSeedSummary, "max_rounds_reached");
+assertStopReason(currentThreadSeedSummary, "awaiting_current_thread_handoff");
 await assertAttachedTransportSurface(currentThreadSeedSummary, {
   expectedTransportMode: "current-thread",
-  expectedRoundCount: 1
+  expectedRoundCount: 0
 });
 
 console.log("[validate-attached-resume-smoke] attached current-thread resume from missing summary");
@@ -120,7 +121,24 @@ const currentThreadResume = await runLoop([
 if (currentThreadResume.code !== 0) {
   throw new Error("Attached current-thread resume failed.");
 }
-const currentThreadResumedSummary = await readSummary(currentThreadRunDirectory);
+const currentThreadResumedSummary = await driveCurrentThreadHandoffs({
+  runDirectory: currentThreadRunDirectory,
+  resumeArgs: [
+    "--resume-run",
+    currentThreadRunDirectory,
+    "--controller-mode",
+    "attached",
+    "--transport",
+    "current-thread",
+    "--adapter",
+    "./.tmp/semantic-validation/patch-only-success/adapter.json",
+    "--target-family",
+    "api-service",
+    "--max-rounds",
+    "3"
+  ],
+  label: "Attached current-thread resume"
+});
 assertStopReason(currentThreadResumedSummary, "target_reached");
 assertRuntimeEventCode(currentThreadResumedSummary, "resume.recovered_round_checkpoint");
 await assertAttachedTransportSurface(currentThreadResumedSummary, {
@@ -144,27 +162,45 @@ if (currentThreadRepairSeed.code !== 0) {
   throw new Error("Attached current-thread repair seed failed.");
 }
 const currentThreadRepairRunDirectory = extractRunDirectory(currentThreadRepairSeed.stdout);
-const currentThreadRoundOneDirectory = join(currentThreadRepairRunDirectory, "round-001");
+await driveCurrentThreadHandoffs({
+  runDirectory: currentThreadRepairRunDirectory,
+  resumeArgs: [
+    "--resume-run",
+    currentThreadRepairRunDirectory,
+    "--controller-mode",
+    "attached",
+    "--transport",
+    "current-thread",
+    "--adapter",
+    "./.tmp/semantic-validation/patch-only-success/adapter.json",
+    "--target-family",
+    "api-service",
+    "--max-rounds",
+    "3"
+  ],
+  label: "Attached current-thread repair seed"
+});
 const currentThreadRoundTwoDirectory = join(currentThreadRepairRunDirectory, "round-002");
+const currentThreadRoundThreeDirectory = join(currentThreadRepairRunDirectory, "round-003");
 const currentThreadRuntimeDirectory = join(currentThreadRepairRunDirectory, "runtime");
-const currentThreadRoundTwoRuntimeDirectory = join(
-  currentThreadRoundTwoDirectory,
+const currentThreadRoundThreeRuntimeDirectory = join(
+  currentThreadRoundThreeDirectory,
   "runtime"
 );
-await cp(currentThreadRoundOneDirectory, currentThreadRoundTwoDirectory, {
+await cp(currentThreadRoundTwoDirectory, currentThreadRoundThreeDirectory, {
   recursive: true
 });
 await Promise.all([
-  rm(join(currentThreadRoundTwoDirectory, "round_summary.json")),
-  rm(join(currentThreadRoundTwoDirectory, "target-manifest.json"), { force: true }),
-  rm(join(currentThreadRoundTwoDirectory, "core-probe-results.json"), { force: true }),
-  rm(join(currentThreadRoundTwoRuntimeDirectory, "pre-verification-executions.json"), {
+  rm(join(currentThreadRoundThreeDirectory, "round_summary.json")),
+  rm(join(currentThreadRoundThreeDirectory, "target-manifest.json"), { force: true }),
+  rm(join(currentThreadRoundThreeDirectory, "core-probe-results.json"), { force: true }),
+  rm(join(currentThreadRoundThreeRuntimeDirectory, "pre-verification-executions.json"), {
     force: true
   }),
-  rm(join(currentThreadRoundTwoRuntimeDirectory, "post-verification-executions.json"), {
+  rm(join(currentThreadRoundThreeRuntimeDirectory, "post-verification-executions.json"), {
     force: true
   }),
-  rm(join(currentThreadRoundTwoRuntimeDirectory, "adapter-executions.json"), {
+  rm(join(currentThreadRoundThreeRuntimeDirectory, "adapter-executions.json"), {
     force: true
   })
 ]);
@@ -176,8 +212,8 @@ const [currentThreadLiveState, currentThreadRoundPhase] = await Promise.all([
 await Promise.all([
   writeJson(join(currentThreadRuntimeDirectory, "live-state.json"), {
     ...currentThreadLiveState,
-    round_count: 1,
-    active_round: 2,
+    round_count: 2,
+    active_round: 3,
     active_phase: "post_verification",
     active_phase_status: "in_progress",
     updated_at: staleHeartbeat,
@@ -185,21 +221,21 @@ await Promise.all([
   }),
   writeJson(join(currentThreadRuntimeDirectory, "round-phase.json"), {
     ...currentThreadRoundPhase,
-    round: 2,
+    round: 3,
     phase: "post_verification",
     status: "in_progress",
     updated_at: staleHeartbeat,
     heartbeat_at: staleHeartbeat,
     phase_started_at: staleHeartbeat,
     artifacts: {
-      target_manifest_path: join(currentThreadRoundTwoDirectory, "target-manifest.json"),
-      core_probe_results_path: join(currentThreadRoundTwoDirectory, "core-probe-results.json"),
+      target_manifest_path: join(currentThreadRoundThreeDirectory, "target-manifest.json"),
+      core_probe_results_path: join(currentThreadRoundThreeDirectory, "core-probe-results.json"),
       post_verification_executions_path: join(
-        currentThreadRoundTwoRuntimeDirectory,
+        currentThreadRoundThreeRuntimeDirectory,
         "post-verification-executions.json"
       ),
       adapter_executions_path: join(
-        currentThreadRoundTwoRuntimeDirectory,
+        currentThreadRoundThreeRuntimeDirectory,
         "adapter-executions.json"
       )
     }
@@ -212,7 +248,7 @@ await Promise.all([
     updated_at: staleHeartbeat,
     heartbeat_at: staleHeartbeat,
     owner_pid: 99999,
-    round: 2,
+    round: 3,
     phase: "post_verification",
     phase_status: "in_progress",
     summary_path: join(currentThreadRepairRunDirectory, "summary.json"),
@@ -223,6 +259,7 @@ const currentThreadRepair = await runLoop([
   "--resume-run",
   currentThreadRepairRunDirectory,
   "--repair",
+  "--force-reopen-terminal",
   "--resume-phase",
   "post_verification",
   "--controller-mode",
@@ -239,15 +276,32 @@ const currentThreadRepair = await runLoop([
 if (currentThreadRepair.code !== 0) {
   throw new Error("Attached current-thread repair failed.");
 }
-const currentThreadRepairedSummary = await readSummary(currentThreadRepairRunDirectory);
+const currentThreadRepairedSummary = await driveCurrentThreadHandoffs({
+  runDirectory: currentThreadRepairRunDirectory,
+  resumeArgs: [
+    "--resume-run",
+    currentThreadRepairRunDirectory,
+    "--controller-mode",
+    "attached",
+    "--transport",
+    "current-thread",
+    "--adapter",
+    "./.tmp/semantic-validation/patch-only-success/adapter.json",
+    "--target-family",
+    "api-service",
+    "--max-rounds",
+    "3"
+  ],
+  label: "Attached current-thread repair resume"
+});
 assertRuntimeEventCode(currentThreadRepairedSummary, "resume.repaired_interrupted_round");
 assertRuntimeWarningContains(
   currentThreadRepairedSummary,
-  "Reconstructed pre_verification capability aggregate from adapter result files for round 2."
+  "Reconstructed pre_verification capability aggregate from adapter result files for round 3."
 );
 await assertAttachedTransportSurface(currentThreadRepairedSummary, {
   expectedTransportMode: "current-thread",
-  expectedRoundCount: 2
+  expectedRoundCount: 3
 });
 
 console.log("[validate-attached-resume-smoke] attached app-server seed and resume");

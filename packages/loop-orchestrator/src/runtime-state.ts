@@ -24,6 +24,9 @@ export interface RuntimeStatePaths {
   transportStatePath: string;
   operatorSurfacePath: string;
   operatorSurfaceMarkdownPath: string;
+  plannerEnhancementTaskPath: string;
+  plannerEnhancementPromptPath: string;
+  plannerEnhancementResponsePath: string;
 }
 
 export interface RuntimeHeartbeatSnapshot {
@@ -63,7 +66,10 @@ export const runtimeStatePathsForRun = (
     roundPhasePath: join(runtimeDirectory, "round-phase.json"),
     transportStatePath: join(runtimeDirectory, "transport-state.json"),
     operatorSurfacePath: join(runtimeDirectory, "operator-surface.json"),
-    operatorSurfaceMarkdownPath: join(runtimeDirectory, "operator-surface.md")
+    operatorSurfaceMarkdownPath: join(runtimeDirectory, "operator-surface.md"),
+    plannerEnhancementTaskPath: join(runtimeDirectory, "planner-enhancement-task.json"),
+    plannerEnhancementPromptPath: join(runtimeDirectory, "planner-enhancement-prompt.md"),
+    plannerEnhancementResponsePath: join(runtimeDirectory, "planner-enhancement-response.json")
   };
 };
 

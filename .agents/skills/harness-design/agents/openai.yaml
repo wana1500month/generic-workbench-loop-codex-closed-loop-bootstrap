@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness Design"
+  short_description: "Work on routing, operator surfaces, skills, and harness control policy"
+  default_prompt: "Use $harness-design to rework harness-only surfaces such as routing, operator UX, skill metadata, resume policy, or planner and evaluator wiring."

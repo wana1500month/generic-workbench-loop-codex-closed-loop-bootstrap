@@ -14,6 +14,7 @@ export const isControllerMode = (
   (controllerModes as readonly string[]).includes(value);
 
 export const controllerRoundPhases = [
+  "planning",
   "negotiation",
   "pre_verification",
   "core_probes",

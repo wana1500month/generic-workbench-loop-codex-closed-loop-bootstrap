@@ -1,0 +1,4 @@
+interface:
+  display_name: "Product Intake"
+  short_description: "Ask only the staged product questions for product-build work"
+  default_prompt: "Use $product-intake to run the staged intake gate and ask only the missing product or execution questions."

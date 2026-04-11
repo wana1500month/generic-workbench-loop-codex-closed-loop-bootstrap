@@ -1,0 +1,4 @@
+interface:
+  display_name: "Attached Loop"
+  short_description: "Keep the active Codex thread as the harness controller"
+  default_prompt: "Use $attached-loop to keep this run on the current Codex thread and continue phase-by-phase without nested codex exec calls."

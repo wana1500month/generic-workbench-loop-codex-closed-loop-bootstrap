@@ -49,8 +49,39 @@ export type ValidationLane =
 export type ExecutorMode = "harness" | "subagents-experimental";
 export type ControllerMode = "attached" | "detached";
 export type TransportMode = "codex-exec" | "current-thread" | "app-server";
+export type OperatorLaunchOrigin =
+  | "codex-app-thread"
+  | "codex-automation"
+  | "shell"
+  | "supervisor"
+  | "embedded-client";
+export type OperatorSurfaceOwner =
+  | "stock-codex-thread"
+  | "embedded-app-server"
+  | "external-controller";
+export type ThreadBindingState = "bound" | "assumed" | "unbound";
+export type OperatorEntrypoint =
+  | "skill"
+  | "plugin"
+  | "shell"
+  | "supervisor"
+  | "automation"
+  | "cli";
+export type OperatorAppVisibility =
+  | "visible-in-stock-app"
+  | "not-visible-in-stock-app"
+  | "embedded-only";
+export type OperatorHandoffState =
+  | "none"
+  | "local"
+  | "worktree"
+  | "automation"
+  | "manual"
+  | "headless";
+export type OperatorResumeSkill = "attached-loop" | "run-resume";
 export type OperatorPresentationMode =
   | "foreground-thread"
+  | "manual-protocol"
   | "background-automation"
   | "headless";
 export type OperatorWorkspaceSurface = "local" | "worktree";
@@ -65,6 +96,7 @@ export type UiBindingMode =
   | "stock-current-thread"
   | "none";
 export type ControllerRoundPhase =
+  | "planning"
   | "negotiation"
   | "pre_verification"
   | "core_probes"
@@ -795,6 +827,15 @@ export interface RoundArtifacts {
   post_verification_executions_path: string;
   adapter_executions_path: string;
   negotiation_state_path: string;
+  contract_review_enhancement_task_path: string;
+  contract_review_enhancement_prompt_path: string;
+  contract_review_enhancement_response_path: string;
+  generator_plan_enhancement_task_path: string;
+  generator_plan_enhancement_prompt_path: string;
+  generator_plan_enhancement_response_path: string;
+  eval_enhancement_task_path: string;
+  eval_enhancement_prompt_path: string;
+  eval_enhancement_response_path: string;
   attached_generator_task_path: string;
   attached_generator_prompt_path: string;
   attached_generator_response_path: string;
@@ -825,6 +866,28 @@ export interface AttachedGeneratorTaskArtifact {
   must_deliver: string[];
   must_fix: string[];
   must_preserve: string[];
+  notes?: string[];
+  created_at: string;
+}
+
+export type CurrentThreadEnhancementStage =
+  | "planner"
+  | "contract-review"
+  | "generator-plan"
+  | "evaluator";
+
+export interface CurrentThreadEnhancementTaskArtifact {
+  run_id: string;
+  round?: number;
+  phase: ControllerRoundPhase;
+  stage: CurrentThreadEnhancementStage;
+  controller_mode: "attached";
+  transport_mode: "current-thread";
+  prompt_path: string;
+  response_path: string;
+  transport_protocol_path?: string;
+  summary: string;
+  context_paths: Record<string, string>;
   notes?: string[];
   created_at: string;
 }
@@ -1185,7 +1248,15 @@ export interface OperatorSurfaceArtifact {
   controller_mode: ControllerMode;
   transport_mode: TransportMode;
   presentation_mode: OperatorPresentationMode;
+  launch_origin: OperatorLaunchOrigin;
+  surface_owner: OperatorSurfaceOwner;
+  thread_binding_state: ThreadBindingState;
+  entrypoint: OperatorEntrypoint;
+  app_visibility: OperatorAppVisibility;
   workspace_surface: OperatorWorkspaceSurface;
+  handoff_state: OperatorHandoffState;
+  resume_skill: OperatorResumeSkill;
+  requires_codex_app: boolean;
   updated_at: string;
   execution_state: ExecutionState | "configured";
   round?: number;
@@ -1200,6 +1271,9 @@ export interface OperatorSurfaceArtifact {
   dashboard_path?: string;
   thread_id?: string;
   thread_name?: string;
+  worktree_id?: string;
+  worktree_path?: string;
+  resume_command?: string;
   notes?: string[];
 }
 
@@ -1208,6 +1282,11 @@ export interface TransportStateArtifact {
   controller_mode: ControllerMode;
   transport_mode: TransportMode;
   presentation_mode?: OperatorPresentationMode;
+  launch_origin?: OperatorLaunchOrigin;
+  surface_owner?: OperatorSurfaceOwner;
+  thread_binding_state?: ThreadBindingState;
+  entrypoint?: OperatorEntrypoint;
+  app_visibility?: OperatorAppVisibility;
   executor_mode?: ExecutorMode;
   updated_at: string;
   status:

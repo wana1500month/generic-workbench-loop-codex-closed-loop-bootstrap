@@ -1,0 +1,23 @@
+{
+  "name": "generic-codex-workbench",
+  "version": "0.1.0",
+  "description": "Closed-loop harness workbench for Codex with lane-centric skills, attached current-thread control, and resumable file-backed runtime state.",
+  "skills": "./.agents/skills/",
+  "interface": {
+    "displayName": "Harness Workbench",
+    "shortDescription": "Lane-centric closed-loop harness for Codex app workflows",
+    "longDescription": "Use the generic Codex workbench to route harness work, run attached current-thread loops, inspect resumable runs, and keep operator-facing state honest across current-thread, app-server, and headless transports.",
+    "developerName": "Local Workspace",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Route this request into the right harness lane and tell me the next file-backed step.",
+      "Run the attached loop from the current Codex thread without nested exec calls.",
+      "Inspect a persisted run and decide whether to resume, hold, or close it."
+    ],
+    "brandColor": "#0F766E"
+  }
+}

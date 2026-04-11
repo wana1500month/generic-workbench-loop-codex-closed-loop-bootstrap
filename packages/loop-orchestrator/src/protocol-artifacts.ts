@@ -98,6 +98,36 @@ export const artifactsForRound = (roundDirectory: string): RoundArtifacts => {
     ),
     adapter_executions_path: join(runtimeDirectory, "adapter-executions.json"),
     negotiation_state_path: join(runtimeDirectory, "negotiation-state.json"),
+    contract_review_enhancement_task_path: join(
+      runtimeDirectory,
+      "contract-review-enhancement-task.json"
+    ),
+    contract_review_enhancement_prompt_path: join(
+      runtimeDirectory,
+      "contract-review-enhancement-prompt.md"
+    ),
+    contract_review_enhancement_response_path: join(
+      runtimeDirectory,
+      "contract-review-enhancement-response.json"
+    ),
+    generator_plan_enhancement_task_path: join(
+      runtimeDirectory,
+      "generator-plan-enhancement-task.json"
+    ),
+    generator_plan_enhancement_prompt_path: join(
+      runtimeDirectory,
+      "generator-plan-enhancement-prompt.md"
+    ),
+    generator_plan_enhancement_response_path: join(
+      runtimeDirectory,
+      "generator-plan-enhancement-response.json"
+    ),
+    eval_enhancement_task_path: join(runtimeDirectory, "eval-enhancement-task.json"),
+    eval_enhancement_prompt_path: join(runtimeDirectory, "eval-enhancement-prompt.md"),
+    eval_enhancement_response_path: join(
+      runtimeDirectory,
+      "eval-enhancement-response.json"
+    ),
     attached_generator_task_path: join(runtimeDirectory, "attached-generator-task.json"),
     attached_generator_prompt_path: join(runtimeDirectory, "attached-generator-prompt.md"),
     attached_generator_response_path: join(

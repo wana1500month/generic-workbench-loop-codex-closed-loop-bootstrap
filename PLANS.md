@@ -60,9 +60,13 @@ Acceptance:
 - The runtime should separate `controller_mode = detached|attached` from `transport_mode = codex-exec|current-thread|app-server`, with detached currently reserved for crash-safe `codex-exec` execution and attached reserved for same-thread transports.
 - Attached should default to `current-thread`, while `app-server` remains an explicit embedded background transport surface.
 - Same-thread transports should fail closed at the shared Codex runtime boundary so no nested `runCodexCommand()` path can bypass policy, including subjective-quality review.
-- `current-thread` should remain the stock Codex attached surface with an explicit manual protocol file and manual-pause stop reasons, while `app-server` should persist live `thread/start`, `thread/read`, `thread/resume`, `thread/name/set`, `turn/start`, `turn/steer`, and `turn/interrupt` state instead of becoming another meaning of CLI `attached`.
+- `current-thread` should remain the stock Codex attached surface with explicit manual protocol files and manual-pause stop reasons across planner, contract-review, generator-plan, eval, and attached-generator handoffs, while `app-server` should persist live `thread/start`, `thread/read`, `thread/resume`, `thread/name/set`, `turn/start`, `turn/steer`, and `turn/interrupt` state instead of becoming another meaning of CLI `attached`.
 - Every run should also project a single operator-facing surface artifact such as `runtime/operator-surface.json` / `.md`, so foreground current-thread, embedded app-server, and headless detached modes expose one honest status surface to humans and tooling.
+- Operator-surface and transport-state should compute foreground ownership from actual thread binding, not from transport labels alone, so shell-launched current-thread runs report `manual-protocol` instead of pretending to be a stock Codex foreground thread.
+- Operator-surface should also persist explicit worktree and continuation guidance such as `handoff_state`, `resume_skill`, `resume_command`, `requires_codex_app`, `worktree_id`, and `worktree_path`, so Codex app local/worktree/background surfaces can be resumed without guesswork.
+- The repo should expose key lane-centric skills through `agents/openai.yaml` and a repo-root local plugin manifest, so Codex app discovery starts from app-facing metadata rather than raw npm script knowledge.
 - Same-thread bootstrap generator work should flow through persisted `attached-generator-task.json`, `attached-generator-prompt.md`, and `attached-generator-response.json` artifacts so current-thread and App Server surfaces can mutate without nested child Codex processes. App Server generator turns should honor task-local cwd, writable roots, and timeout budgets.
+- The repo should expose phase-oriented foreground entrypoints such as `loop:status`, `loop:resume`, and `loop:phase`, so Codex app operators can inspect or re-enter a persisted run without memorizing raw `--resume-run` and `--resume-phase` flag combinations.
 - Outer-timeout prevention should live in a separate supervisor surface that can restart the controller from `--resume-run` state, survive launcher-shell death when detached, and discover the owned run through an explicit supervisor marker instead of newest-run guessing.
 - The repo should expose a lightweight runtime dashboard for attached monitoring through `loop:ui`.
 - Trusted environments should have a real `app-server` smoke validator in addition to the existing `codex exec` smoke, while developer hosts without a usable `codex` binary should remain `environment_blocked`.
@@ -71,6 +75,7 @@ Validation:
 - Inspect the latest run under `evals/runs`
 - `npm run validate:transport-mode`
 - `npm run validate:attached-resume-smoke`
+- `npm run validate:cli-front-door`
 - `npm run validate:app-server-generator-mainline`
 - `npm run validate:app-server-interrupted-generator`
 - `npm run validate:supervisor-timeout-prevention`

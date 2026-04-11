@@ -52,6 +52,49 @@ export const extractRunDirectory = (stdout) => {
 export const readSummary = async (runDirectory) =>
   JSON.parse(await readFile(resolve(runDirectory, "summary.json"), "utf8"));
 
+export const driveCurrentThreadHandoffs = async ({
+  runDirectory,
+  resumeArgs,
+  env,
+  silent = true,
+  label = "current-thread run",
+  responseText = "{}\n",
+  maxHandoffs = 12
+}) => {
+  let summary = await readSummary(runDirectory);
+  for (let handoff = 0; summary.stop_reason === "awaiting_current_thread_handoff"; handoff += 1) {
+    if (handoff >= maxHandoffs) {
+      throw new Error(`${label} exceeded ${maxHandoffs} current-thread handoffs.`);
+    }
+    if (!summary.operator_surface_path) {
+      throw new Error(`${label} is awaiting current-thread input but has no operator_surface_path.`);
+    }
+    const operatorSurface = await readJsonFile(summary.operator_surface_path);
+    if (operatorSurface.transport_mode !== "current-thread") {
+      throw new Error(
+        `${label} expected current-thread operator surface, received '${operatorSurface.transport_mode ?? "missing"}'.`
+      );
+    }
+    if (typeof operatorSurface.active_response_path !== "string") {
+      throw new Error(
+        `${label} is awaiting current-thread input but has no active_response_path.`
+      );
+    }
+    await writeFile(resolve(operatorSurface.active_response_path), responseText, "utf8");
+    const execution = await runLoop(resumeArgs, {
+      env,
+      silent
+    });
+    if (execution.code !== 0) {
+      throw new Error(
+        `${label} resume step ${handoff + 1} failed.\n${execution.stdout}\n${execution.stderr}`
+      );
+    }
+    summary = await readSummary(runDirectory);
+  }
+  return summary;
+};
+
 export const readTextFile = async (path) =>
   readFile(resolve(path), "utf8");
 

@@ -149,11 +149,23 @@ const render = async (runDirectory) => {
     `Presentation: ${operatorSurface?.presentation_mode ?? transportState?.presentation_mode ?? "unknown"}`
   );
   console.log(
+    `Origin: ${operatorSurface?.launch_origin ?? transportState?.launch_origin ?? "unknown"} / Owner: ${operatorSurface?.surface_owner ?? transportState?.surface_owner ?? "unknown"}`
+  );
+  console.log(
+    `Binding: ${operatorSurface?.thread_binding_state ?? transportState?.thread_binding_state ?? "unknown"} / Visibility: ${operatorSurface?.app_visibility ?? transportState?.app_visibility ?? "unknown"}`
+  );
+  console.log(
     `Transport: ${transportState?.transport_mode ?? "unknown"} (${transportState?.status ?? "unknown"})`
   );
   console.log(`Workspace: ${operatorSurface?.workspace_surface ?? "unknown"}`);
   console.log(
-    `Thread: ${transportState?.app_server?.thread_id ?? "none"} / Turn: ${transportState?.app_server?.turn_id ?? "none"}`
+    `Handoff: ${operatorSurface?.handoff_state ?? "unknown"} / Resume skill: ${operatorSurface?.resume_skill ?? "unknown"} / Requires Codex app: ${operatorSurface?.requires_codex_app === undefined ? "unknown" : operatorSurface.requires_codex_app ? "yes" : "no"}`
+  );
+  console.log(
+    `Worktree: ${operatorSurface?.worktree_id ?? "none"} / ${operatorSurface?.worktree_path ?? "none"}`
+  );
+  console.log(
+    `Thread: ${operatorSurface?.thread_id ?? transportState?.app_server?.thread_id ?? "none"} / Turn: ${transportState?.app_server?.turn_id ?? "none"}`
   );
   console.log(
     `Round: ${operatorSurface?.round ?? roundPhase?.round ?? liveState?.active_round ?? "none"} / Phase: ${operatorSurface?.phase ?? roundPhase?.phase ?? liveState?.active_phase ?? "none"} (${operatorSurface?.phase_status ?? roundPhase?.status ?? liveState?.active_phase_status ?? "none"})`
@@ -164,6 +176,7 @@ const render = async (runDirectory) => {
   console.log(`Transport event age: ${formatAge(health.transport_event_age_ms)}`);
   console.log(`Health: ${health.summary}`);
   console.log(`Next action: ${operatorSurface?.next_action ?? "none"}`);
+  console.log(`Resume command: ${operatorSurface?.resume_command ?? "none"}`);
   console.log(`Active prompt: ${operatorSurface?.active_prompt_path ?? "none"}`);
   console.log(`Active response: ${operatorSurface?.active_response_path ?? "none"}`);
   console.log("");

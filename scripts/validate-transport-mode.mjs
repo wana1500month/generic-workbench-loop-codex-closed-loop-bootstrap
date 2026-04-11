@@ -22,6 +22,19 @@ const assertTransportSurface = async (
     expectedControllerMode,
     expectedTransportMode,
     expectedTransportStatus,
+    expectedRoundCount,
+    expectedPresentationMode,
+    expectedLaunchOrigin,
+    expectedThreadBindingState,
+    expectedUiBindingMode,
+    expectedAppVisibility,
+    expectedWorkspaceSurface,
+    expectedHandoffState,
+    expectedResumeSkill,
+    expectedRequiresCodexApp,
+    expectedWorktreeId,
+    expectedWorktreePath,
+    expectedThreadId,
     expectedWarning,
     expectAppServerLive
   }
@@ -35,7 +48,7 @@ const assertTransportSurface = async (
     summary.transport_mode === expectedTransportMode,
     `Expected transport_mode '${expectedTransportMode}', received '${summary.transport_mode ?? "missing"}'.`
   );
-  assertRoundCount(summary, 1);
+  assertRoundCount(summary, expectedRoundCount);
   assertRuntimeWarningContains(summary, expectedWarning);
   assert(
     typeof summary.transport_state_path === "string",
@@ -68,13 +81,24 @@ const assertTransportSurface = async (
     `Expected transport-state status '${expectedTransportStatus}', received '${transportState.status ?? "missing"}'.`
   );
   assert(
-    transportState.presentation_mode ===
-      (expectedTransportMode === "current-thread"
-        ? "foreground-thread"
-        : expectedTransportMode === "app-server"
-          ? "background-automation"
-          : "headless"),
-    `Unexpected presentation_mode '${transportState.presentation_mode ?? "missing"}' for '${expectedTransportMode}'.`
+    transportState.presentation_mode === expectedPresentationMode,
+    `Expected presentation_mode '${expectedPresentationMode}', received '${transportState.presentation_mode ?? "missing"}'.`
+  );
+  assert(
+    transportState.launch_origin === expectedLaunchOrigin,
+    `Expected launch_origin '${expectedLaunchOrigin}', received '${transportState.launch_origin ?? "missing"}'.`
+  );
+  assert(
+    transportState.thread_binding_state === expectedThreadBindingState,
+    `Expected thread_binding_state '${expectedThreadBindingState}', received '${transportState.thread_binding_state ?? "missing"}'.`
+  );
+  assert(
+    transportState.ui_binding_mode === expectedUiBindingMode,
+    `Expected ui_binding_mode '${expectedUiBindingMode}', received '${transportState.ui_binding_mode ?? "missing"}'.`
+  );
+  assert(
+    transportState.app_visibility === expectedAppVisibility,
+    `Expected app_visibility '${expectedAppVisibility}', received '${transportState.app_visibility ?? "missing"}'.`
   );
   assert(
     transportState.ui_surface?.dashboard_path === summary.operator_surface_path.replace(
@@ -87,10 +111,17 @@ const assertTransportSurface = async (
     resumeIdentity.transport_mode === expectedTransportMode,
     `Expected resume identity transport_mode '${expectedTransportMode}', received '${resumeIdentity.transport_mode ?? "missing"}'.`
   );
-  assert(
-    summary.round_history?.[0]?.transport_mode === expectedTransportMode,
-    `Expected round_history[0].transport_mode '${expectedTransportMode}', received '${summary.round_history?.[0]?.transport_mode ?? "missing"}'.`
-  );
+  if (expectedRoundCount > 0) {
+    assert(
+      summary.round_history?.[0]?.transport_mode === expectedTransportMode,
+      `Expected round_history[0].transport_mode '${expectedTransportMode}', received '${summary.round_history?.[0]?.transport_mode ?? "missing"}'.`
+    );
+  } else {
+    assert(
+      (summary.round_history ?? []).length === 0,
+      `Expected no round_history entries before current-thread planning handoff, received ${(summary.round_history ?? []).length}.`
+    );
+  }
   assert(
     operatorSurface.transport_mode === expectedTransportMode,
     `Expected operator surface transport_mode '${expectedTransportMode}', received '${operatorSurface.transport_mode ?? "missing"}'.`
@@ -99,6 +130,60 @@ const assertTransportSurface = async (
     operatorSurface.presentation_mode === transportState.presentation_mode,
     "Expected operator surface and transport state to agree on presentation_mode."
   );
+  assert(
+    operatorSurface.launch_origin === transportState.launch_origin,
+    "Expected operator surface and transport state to agree on launch_origin."
+  );
+  assert(
+    operatorSurface.thread_binding_state === transportState.thread_binding_state,
+    "Expected operator surface and transport state to agree on thread_binding_state."
+  );
+  assert(
+    operatorSurface.app_visibility === transportState.app_visibility,
+    "Expected operator surface and transport state to agree on app_visibility."
+  );
+  if (expectedWorkspaceSurface !== undefined) {
+    assert(
+      operatorSurface.workspace_surface === expectedWorkspaceSurface,
+      `Expected operator surface workspace_surface '${expectedWorkspaceSurface}', received '${operatorSurface.workspace_surface ?? "missing"}'.`
+    );
+  }
+  if (expectedHandoffState !== undefined) {
+    assert(
+      operatorSurface.handoff_state === expectedHandoffState,
+      `Expected operator surface handoff_state '${expectedHandoffState}', received '${operatorSurface.handoff_state ?? "missing"}'.`
+    );
+  }
+  if (expectedResumeSkill !== undefined) {
+    assert(
+      operatorSurface.resume_skill === expectedResumeSkill,
+      `Expected operator surface resume_skill '${expectedResumeSkill}', received '${operatorSurface.resume_skill ?? "missing"}'.`
+    );
+  }
+  if (expectedRequiresCodexApp !== undefined) {
+    assert(
+      operatorSurface.requires_codex_app === expectedRequiresCodexApp,
+      `Expected operator surface requires_codex_app '${expectedRequiresCodexApp}', received '${operatorSurface.requires_codex_app ?? "missing"}'.`
+    );
+  }
+  if (expectedWorktreeId !== undefined) {
+    assert(
+      operatorSurface.worktree_id === expectedWorktreeId,
+      `Expected operator surface worktree_id '${expectedWorktreeId}', received '${operatorSurface.worktree_id ?? "missing"}'.`
+    );
+  }
+  if (expectedWorktreePath !== undefined) {
+    assert(
+      operatorSurface.worktree_path === expectedWorktreePath,
+      `Expected operator surface worktree_path '${expectedWorktreePath}', received '${operatorSurface.worktree_path ?? "missing"}'.`
+    );
+  }
+  if (expectedThreadId !== undefined) {
+    assert(
+      operatorSurface.thread_id === expectedThreadId,
+      `Expected operator surface thread_id '${expectedThreadId}', received '${operatorSurface.thread_id ?? "missing"}'.`
+    );
+  }
 
   if (expectAppServerLive) {
     assert(
@@ -198,6 +283,16 @@ const runAttachedAppServerValidation = async (fakeAppServerPath, attempt) => {
     expectedControllerMode: "attached",
     expectedTransportMode: "app-server",
     expectedTransportStatus: "completed",
+    expectedRoundCount: 1,
+    expectedPresentationMode: "background-automation",
+    expectedLaunchOrigin: "embedded-client",
+    expectedThreadBindingState: "bound",
+    expectedUiBindingMode: "embedded-app-server",
+    expectedAppVisibility: "embedded-only",
+    expectedWorkspaceSurface: "local",
+    expectedHandoffState: "none",
+    expectedResumeSkill: "run-resume",
+    expectedRequiresCodexApp: false,
     expectedWarning:
       "App Server transport is an embedded background-automation surface",
     expectAppServerLive: true
@@ -228,7 +323,18 @@ const main = async () => {
   const fakeAppServerPath = join(process.cwd(), "scripts", "testing", "fake-app-server.mjs");
   const currentThreadExecution = await runLoop(
     ["--single", "--controller-mode", "attached", "--transport", "current-thread"],
-    { silent: true }
+    {
+      silent: true,
+      env: {
+        ...process.env,
+        CODEX_THREAD_ID: "",
+        HARNESS_LAUNCH_ORIGIN: "shell",
+        HARNESS_THREAD_BINDING_STATE: "unbound",
+        HARNESS_SURFACE_OWNER: "external-controller",
+        HARNESS_ENTRYPOINT: "shell",
+        HARNESS_APP_VISIBILITY: "not-visible-in-stock-app"
+      }
+    }
   );
   if (currentThreadExecution.code !== 0) {
     throw new Error(
@@ -240,14 +346,30 @@ const main = async () => {
     expectedControllerMode: "attached",
     expectedTransportMode: "current-thread",
     expectedTransportStatus: "configured",
+    expectedRoundCount: 0,
+    expectedPresentationMode: "manual-protocol",
+    expectedLaunchOrigin: "shell",
+    expectedThreadBindingState: "unbound",
+    expectedUiBindingMode: "none",
+    expectedAppVisibility: "not-visible-in-stock-app",
+    expectedWorkspaceSurface: "local",
+    expectedHandoffState: "manual",
+    expectedResumeSkill: "attached-loop",
+    expectedRequiresCodexApp: false,
     expectedWarning:
-      "Current-thread transport is the stock Codex foreground-thread surface",
+      "Current-thread transport keeps the controller on the active operator surface",
     expectAppServerLive: false
   });
 
   const attachedDefaultExecution = await runLoop(
     ["--single", "--controller-mode", "attached"],
-    { silent: true }
+    {
+      silent: true,
+      env: {
+        ...process.env,
+        CODEX_THREAD_ID: "thread_validate_current"
+      }
+    }
   );
   if (attachedDefaultExecution.code !== 0) {
     throw new Error(
@@ -259,8 +381,61 @@ const main = async () => {
     expectedControllerMode: "attached",
     expectedTransportMode: "current-thread",
     expectedTransportStatus: "configured",
+    expectedRoundCount: 0,
+    expectedPresentationMode: "foreground-thread",
+    expectedLaunchOrigin: "codex-app-thread",
+    expectedThreadBindingState: "bound",
+    expectedUiBindingMode: "stock-current-thread",
+    expectedAppVisibility: "visible-in-stock-app",
+    expectedWorkspaceSurface: "local",
+    expectedHandoffState: "local",
+    expectedResumeSkill: "attached-loop",
+    expectedRequiresCodexApp: true,
+    expectedThreadId: "thread_validate_current",
     expectedWarning:
-      "Current-thread transport is the stock Codex foreground-thread surface",
+      "Current-thread transport keeps the controller on the active operator surface",
+    expectAppServerLive: false
+  });
+
+  const worktreePath = join(process.cwd(), ".tmp", "validate-transport-mode", "worktree-current");
+  const attachedWorktreeExecution = await runLoop(
+    ["--single", "--controller-mode", "attached", "--transport", "current-thread"],
+    {
+      silent: true,
+      env: {
+        ...process.env,
+        CODEX_THREAD_ID: "thread_validate_worktree",
+        HARNESS_WORKSPACE_SURFACE: "worktree",
+        HARNESS_WORKTREE_ID: "wt-validate",
+        HARNESS_WORKTREE_PATH: worktreePath
+      }
+    }
+  );
+  if (attachedWorktreeExecution.code !== 0) {
+    throw new Error(
+      `Attached worktree transport validation run failed.\n${attachedWorktreeExecution.stdout}\n${attachedWorktreeExecution.stderr}`
+    );
+  }
+  const attachedWorktreeRunDirectory = extractRunDirectory(attachedWorktreeExecution.stdout);
+  await assertTransportSurface(attachedWorktreeRunDirectory, {
+    expectedControllerMode: "attached",
+    expectedTransportMode: "current-thread",
+    expectedTransportStatus: "configured",
+    expectedRoundCount: 0,
+    expectedPresentationMode: "foreground-thread",
+    expectedLaunchOrigin: "codex-app-thread",
+    expectedThreadBindingState: "bound",
+    expectedUiBindingMode: "stock-current-thread",
+    expectedAppVisibility: "visible-in-stock-app",
+    expectedWorkspaceSurface: "worktree",
+    expectedHandoffState: "worktree",
+    expectedResumeSkill: "attached-loop",
+    expectedRequiresCodexApp: true,
+    expectedWorktreeId: "wt-validate",
+    expectedWorktreePath: worktreePath,
+    expectedThreadId: "thread_validate_worktree",
+    expectedWarning:
+      "Current-thread transport keeps the controller on the active operator surface",
     expectAppServerLive: false
   });
 

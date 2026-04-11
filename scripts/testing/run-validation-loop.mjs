@@ -19,6 +19,7 @@ const parseTargetScore = (value) => {
 const controllerModes = new Set(["attached", "detached"]);
 const transportModes = new Set(["codex-exec", "current-thread", "app-server"]);
 const controllerRoundPhases = new Set([
+  "planning",
   "negotiation",
   "pre_verification",
   "core_probes",

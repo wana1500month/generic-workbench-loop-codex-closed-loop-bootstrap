@@ -86,6 +86,15 @@ const harnessSurfaceSignals: IntentSignal[] = [
   { label: "operator surface", pattern: /\boperator(?:-|\s+)surface\b/i },
   { label: "operator UX", pattern: /\boperator\s+ux\b/i },
   { label: "Codex app", pattern: /\bcodex\s+app\b/i },
+  { label: "current-thread", pattern: /\bcurrent-thread\b/i },
+  { label: "app-server", pattern: /\bapp-server\b/i },
+  { label: "worktree", pattern: /\bworktree(?:s)?\b/i },
+  { label: "handoff", pattern: /\bhandoff\b/i },
+  { label: "automation", pattern: /\bautomation(?:s)?\b/i },
+  { label: "transport-mode", pattern: /\btransport(?:-|\s+)mode\b/i },
+  { label: "presentation_mode", pattern: /\bpresentation(?:_|\s+)mode\b/i },
+  { label: "plugin", pattern: /\bplugin(?:s)?\b/i },
+  { label: "marketplace", pattern: /\bmarketplace\b/i },
   { label: "skills", pattern: /\.agents\/skills|\.codex\/agents|\bskills\b/i },
   { label: "loop:intent", pattern: /\bloop:intent\b/i },
   { label: "loop:intake", pattern: /\bloop:intake\b/i },
@@ -132,6 +141,9 @@ const harnessChangeSignals: IntentSignal[] = [
   { label: "improve", pattern: /\bimprove\b/i },
   { label: "harden", pattern: /\bharden\b/i },
   { label: "rewrite", pattern: /\brewrite\b/i },
+  { label: "need", pattern: /\bneed(?:s|ed)?\b/i },
+  { label: "want", pattern: /\bwant(?:s|ed)?\b/i },
+  { label: "require", pattern: /\brequire(?:s|d)?\b/i },
   { label: "keep", pattern: /\bkeep\b/i },
   { label: "maintain", pattern: /\bmaintain\b/i },
   { label: "in progress", pattern: /\bin\s+progress\b/i },
@@ -154,6 +166,8 @@ const harnessChangeSignals: IntentSignal[] = [
   , { label: "inspiration (ko)", pattern: /\uC601\uAC10/u }
   , { label: "influenced by (ko)", pattern: /\uC601\uD5A5.{0,4}\uBC1B/u }
   , { label: "aiming for (ko)", pattern: /\uBAA9\uD45C.{0,4}\uC911/u }
+  , { label: "need (ko)", pattern: /\uD544\uC694/u }
+  , { label: "want (ko)", pattern: /\uC6D0(?:\uD568|\uD55C\uB2E4|\uD574)/u }
 ];
 
 const gapSignals: IntentSignal[] = [
@@ -527,6 +541,30 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
   const hasProductContext = productContextPattern.test(sanitizedRequest);
   const hasReferenceNoise = sanitizedRequest !== normalizedRequest;
   const hasHarnessSurface = matchedHarnessSignals.length > 0;
+  const hasStrongHarnessSurface = matchedHarnessSignals.some((signal) =>
+    [
+      "harness",
+      "closed-loop harness",
+      "generic closed-loop harness",
+      "generic workbench",
+      "Codex workbench",
+      "closed-loop",
+      "front door",
+      "planner",
+      "control plane",
+      "operator surface",
+      "operator UX",
+      "loop:intent",
+      "loop:intake",
+      "AGENTS.md",
+      "RUNBOOK.md",
+      "patch-request",
+      "trajectory-decision",
+      "round-contract",
+      "quality-critique",
+      "resume-identity"
+    ].includes(signal)
+  );
   const hasRepoSurface = matchedHarnessSignals.some((signal) =>
     [
       "skills",
@@ -544,7 +582,16 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
       "trajectory-decision",
       "round-contract",
       "quality-critique",
-      "resume-identity"
+      "resume-identity",
+      "current-thread",
+      "app-server",
+      "worktree",
+      "handoff",
+      "automation",
+      "transport-mode",
+      "presentation_mode",
+      "plugin",
+      "marketplace"
     ].includes(signal)
   );
 
@@ -563,7 +610,8 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
     hasHarnessSurface &&
     (matchedHarnessChangeSignals.length > 0 ||
       matchedGapSignals.length > 0 ||
-      matchedSuccessSignals.length > 0);
+      matchedSuccessSignals.length > 0 ||
+      (hasStrongHarnessSurface && hasRepoSurface));
   const harnessScore = explicitHarnessChange
     ? matchedHarnessSignals.length +
       matchedHarnessChangeSignals.length * 2 +
@@ -619,8 +667,7 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
   if (productScore > 0) {
     const explicitHarnessOverride =
       explicitHarnessChange &&
-      !hasProductContext &&
-      (hasRepoSurface || harnessScore >= productScore + 1);
+      (hasRepoSurface || harnessScore >= productScore + 2);
     const explicitEvaluatorOverride =
       explicitEvaluatorChange &&
       !hasProductContext &&

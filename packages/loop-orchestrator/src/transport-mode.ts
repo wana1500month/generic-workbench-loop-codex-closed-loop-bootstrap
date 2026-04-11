@@ -1,11 +1,16 @@
 import type {
   ControllerMode,
   ExecutorMode,
+  OperatorAppVisibility,
+  OperatorEntrypoint,
+  OperatorLaunchOrigin,
+  OperatorSurfaceOwner,
+  ThreadBindingState,
   TransportMode,
   TransportStateArtifact
 } from "./types.js";
 import { resolveCodexCliLaunch } from "./codex-cli.js";
-import { operatorPresentationModeForTransport } from "./operator-surface.js";
+import { resolveOperatorSurfaceContext } from "./operator-surface.js";
 
 export type AppServerTransportSnapshot = NonNullable<
   TransportStateArtifact["app_server"]
@@ -54,7 +59,8 @@ export const transportRuntimeWarningsForMode = (input: {
 }): string[] => {
   if (input.transportMode === "current-thread") {
     return [
-      "Current-thread transport is the stock Codex foreground-thread surface and forbids nested codex exec calls."
+      "Current-thread transport keeps the controller on the active operator surface and forbids nested codex exec calls.",
+      "When no Codex thread binding is present, current-thread degrades to manual-protocol instead of claiming foreground-thread ownership."
     ];
   }
 
@@ -83,37 +89,56 @@ export const buildTransportStateArtifact = (input: {
   notes?: string[];
   lastError?: string;
   appServer?: AppServerTransportSnapshot;
+  launchOrigin?: OperatorLaunchOrigin;
+  surfaceOwner?: OperatorSurfaceOwner;
+  threadBindingState?: ThreadBindingState;
+  entrypoint?: OperatorEntrypoint;
+  appVisibility?: OperatorAppVisibility;
 }): TransportStateArtifact => {
   const defaultAppServerLaunch = resolveCodexCliLaunch({
     commandEnvKeys: ["HARNESS_APP_SERVER_BIN", "HARNESS_CODEX_BIN"],
     argsEnvKeys: ["HARNESS_APP_SERVER_BIN_ARGS", "HARNESS_CODEX_BIN_ARGS"],
     tailArgs: ["app-server"]
   });
+  const context = resolveOperatorSurfaceContext({
+    controllerMode: input.controllerMode,
+    transportMode: input.transportMode,
+    threadId: input.appServer?.thread_id,
+    threadName: input.appServer?.thread_name,
+    launchOrigin: input.launchOrigin,
+    surfaceOwner: input.surfaceOwner,
+    threadBindingState: input.threadBindingState,
+    entrypoint: input.entrypoint,
+    appVisibility: input.appVisibility
+  });
 
   return {
     run_id: input.runId,
     controller_mode: input.controllerMode,
     transport_mode: input.transportMode,
-    presentation_mode: operatorPresentationModeForTransport({
-      controllerMode: input.controllerMode,
-      transportMode: input.transportMode
-    }),
+    presentation_mode: context.presentationMode,
+    launch_origin: context.launchOrigin,
+    surface_owner: context.surfaceOwner,
+    thread_binding_state: context.threadBindingState,
+    entrypoint: context.entrypoint,
+    app_visibility: context.appVisibility,
     ...(input.executorMode ? { executor_mode: input.executorMode } : {}),
     updated_at: new Date().toISOString(),
     status: input.status ?? "configured",
     ...(input.summaryPath ? { summary_path: input.summaryPath } : {}),
     ...(input.protocolPath ? { protocol_path: input.protocolPath } : {}),
     ui_binding_mode:
-      input.transportMode === "app-server"
+      context.surfaceOwner === "embedded-app-server"
         ? "embedded-app-server"
-        : input.transportMode === "current-thread"
+        : context.surfaceOwner === "stock-codex-thread" &&
+            context.threadBindingState !== "unbound"
           ? "stock-current-thread"
           : "none",
-    ...((input.dashboardPath || (input.transportMode === "app-server" && input.appServer?.thread_name))
+    ...((input.dashboardPath || context.threadName)
       ? {
           ui_surface: {
-            ...(input.appServer?.thread_name
-              ? { thread_name: input.appServer.thread_name }
+            ...(context.threadName
+              ? { thread_name: context.threadName }
               : {}),
             ...(input.dashboardPath ? { dashboard_path: input.dashboardPath } : {})
           }

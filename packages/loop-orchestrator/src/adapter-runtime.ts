@@ -1759,7 +1759,8 @@ const execCommand = async (input: {
     const child = spawn(input.command, {
       cwd: input.cwd,
       env: input.env,
-      shell: shellExecutableFor(input.shell)
+      shell: shellExecutableFor(input.shell),
+      windowsHide: true
     });
 
     let stdout = "";

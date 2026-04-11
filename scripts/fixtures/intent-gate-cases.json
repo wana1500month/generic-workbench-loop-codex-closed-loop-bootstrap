@@ -29,6 +29,13 @@
     "expect_route": "harness_design"
   },
   {
+    "id": "english-codex-app-harness-ux",
+    "request": "I'm building a Codex app-native closed-loop generic harness and need attached/current-thread UX, operator surface honesty, worktree handoff, and automation-aware flows in this repository.",
+    "expect_intent": "harness_design",
+    "expect_status": "ask_harness_questions",
+    "expect_route": "harness_design"
+  },
+  {
     "id": "product-build-with-evaluator-context",
     "request": "Build a dashboard app for evaluator calibration. The first version should help operators review false positives and compare heavy-lane thresholds.",
     "expect_intent": "product_build",
