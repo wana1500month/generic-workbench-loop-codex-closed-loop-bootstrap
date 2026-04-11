@@ -15,9 +15,9 @@ import {
 
 const cliPath = resolve(repoRoot, "scripts", "loop-runner.mjs");
 
-const runCli = async (args, options = {}) =>
+const runNodeScript = async (scriptPath, args, options = {}) =>
   new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(process.execPath, [cliPath, ...args], {
+    const child = spawn(process.execPath, [scriptPath, ...args], {
       cwd: repoRoot,
       env: options.env ?? process.env,
       windowsHide: true
@@ -40,6 +40,8 @@ const runCli = async (args, options = {}) =>
       });
     });
   });
+
+const runCli = async (args, options = {}) => runNodeScript(cliPath, args, options);
 
 const assertSucceeded = (execution, label) => {
   if (execution.code !== 0) {
@@ -79,6 +81,60 @@ const helpWithoutPath = await runCli(["--help"], {
   }
 });
 assertSucceeded(helpWithoutPath, "cli help without npm on PATH");
+
+const blockedShellSeed = await runCli(
+  ["--controller-mode", "attached", "--transport", "current-thread", "--single"],
+  {
+    env: shellLikeEnv
+  }
+);
+if (blockedShellSeed.code === 0) {
+  throw new Error("Expected shell current-thread seed to fail without explicit manual flag.");
+}
+assertTextContains(
+  `${blockedShellSeed.stdout}\n${blockedShellSeed.stderr}`,
+  "--allow-manual-protocol-seed",
+  "blocked shell seed"
+);
+assertTextContains(
+  `${blockedShellSeed.stdout}\n${blockedShellSeed.stderr}`,
+  "$attached-loop",
+  "blocked shell seed"
+);
+
+const manualSeed = await runCli(
+  [
+    "--controller-mode",
+    "attached",
+    "--transport",
+    "current-thread",
+    "--single",
+    "--allow-manual-protocol-seed"
+  ],
+  {
+    env: shellLikeEnv
+  }
+);
+assertSucceeded(manualSeed, "manual-protocol shell seed");
+const manualSeedRunDirectory = extractRunDirectory(manualSeed.stdout);
+const manualSeedSummary = await readSummary(manualSeedRunDirectory);
+assertStopReason(manualSeedSummary, "awaiting_current_thread_handoff");
+const manualSeedSurface = await readJsonFile(manualSeedSummary.operator_surface_path);
+if (manualSeedSurface.presentation_mode !== "manual-protocol") {
+  throw new Error(
+    `Expected manual shell seed surface 'manual-protocol', received '${manualSeedSurface.presentation_mode ?? "missing"}'.`
+  );
+}
+if (manualSeedSurface.launch_origin !== "shell") {
+  throw new Error(
+    `Expected manual shell seed launch_origin 'shell', received '${manualSeedSurface.launch_origin ?? "missing"}'.`
+  );
+}
+if (manualSeedSurface.app_visibility !== "not-visible-in-stock-app") {
+  throw new Error(
+    `Expected manual shell seed app_visibility 'not-visible-in-stock-app', received '${manualSeedSurface.app_visibility ?? "missing"}'.`
+  );
+}
 
 const seed = await runLoop(
   ["--controller-mode", "attached", "--transport", "current-thread", "--single"],

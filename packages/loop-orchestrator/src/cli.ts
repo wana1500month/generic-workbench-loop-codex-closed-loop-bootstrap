@@ -38,6 +38,7 @@ type RunCommandArgs = {
   targetFamily?: string;
   resumeRunPath?: string;
   allowResumeMigration?: boolean;
+  allowManualProtocolSeed?: boolean;
   allowShellResumeDowngrade?: boolean;
   forceReopenTerminal?: boolean;
   controllerMode?: "attached" | "detached";
@@ -123,6 +124,7 @@ interface StatusReport {
 }
 
 const helpTokens = new Set(["help", "--help", "-h"]);
+const manualProtocolSeedFlag = "--allow-manual-protocol-seed";
 const shellResumeDowngradeFlag = "--allow-shell-resume-downgrade";
 const phaseAliasMap = new Map<string, ControllerRoundPhase>([
   ["planning", "planning"],
@@ -157,6 +159,7 @@ const usageLines = [
   "  npm run loop:single",
   "  npm run loop:run",
   "  npm run loop:bootstrap",
+  `  node ./scripts/loop-runner.mjs --controller-mode attached --transport current-thread --single ${manualProtocolSeedFlag}`,
   "  npm run loop:status -- --run-dir <run-dir> [--json]",
   `  npm run loop:resume -- --run-dir <run-dir> [--force-reopen-terminal] [--repair] [--resume-phase <phase>] [${shellResumeDowngradeFlag}]`,
   `  npm run loop:phase -- <phase> --run-dir <run-dir> [--force-reopen-terminal] [--repair] [${shellResumeDowngradeFlag}]`,
@@ -169,6 +172,7 @@ const usageLines = [
   `  ${["open", "negotiate", "pre-verify", "core-probes", "post-verify", "evaluate", "commit", "finalize"].join(", ")}`,
   "",
   "Notes:",
+  `  shell-launched attached/current-thread seeds require a bound Codex thread unless you intentionally pass ${manualProtocolSeedFlag}.`,
   "  resume/phase preserve the existing run controller and transport unless you override them explicitly.",
   `  app-visible current-thread runs must continue from the Codex thread unless you intentionally pass ${shellResumeDowngradeFlag}.`,
   "  phase re-enters from the named phase and runs until the next persisted handoff or terminal stop.",
@@ -225,6 +229,7 @@ const parseRunArgs = (argv: readonly string[]): RunCommandArgs => {
   let targetFamily: string | undefined;
   let resumeRunPath: string | undefined;
   let allowResumeMigration = false;
+  let allowManualProtocolSeed = false;
   let allowShellResumeDowngrade = false;
   let forceReopenTerminal = false;
   let controllerMode: "attached" | "detached" | undefined;
@@ -292,6 +297,11 @@ const parseRunArgs = (argv: readonly string[]): RunCommandArgs => {
 
     if (value === "--allow-resume-migration") {
       allowResumeMigration = true;
+      continue;
+    }
+
+    if (value === manualProtocolSeedFlag) {
+      allowManualProtocolSeed = true;
       continue;
     }
 
@@ -435,6 +445,7 @@ const parseRunArgs = (argv: readonly string[]): RunCommandArgs => {
     targetFamily,
     resumeRunPath,
     allowResumeMigration,
+    allowManualProtocolSeed,
     allowShellResumeDowngrade,
     forceReopenTerminal,
     controllerMode,
@@ -793,6 +804,31 @@ const validateResumeOwnership = async (input: {
   ].join(" ");
 };
 
+const validateSeedOwnership = (input: {
+  controllerMode?: ControllerMode;
+  transportMode?: TransportMode;
+  allowManualProtocolSeed: boolean;
+}): string | undefined => {
+  if (
+    input.controllerMode !== "attached" ||
+    input.transportMode !== "current-thread" ||
+    currentInvocationOwnsCodexThread({
+      controllerMode: "attached",
+      transportMode: "current-thread"
+    })
+  ) {
+    return undefined;
+  }
+  if (input.allowManualProtocolSeed) {
+    return undefined;
+  }
+  return [
+    "Shell-launched attached/current-thread seeds require a bound Codex thread.",
+    "Start this run from the Codex app so $attached-loop owns the foreground thread,",
+    `or rerun with ${manualProtocolSeedFlag} if you intentionally want a manual-protocol shell seed.`
+  ].join(" ");
+};
+
 const printRunResult = (
   summary: LoopRunSummary,
   runDirectory: string,
@@ -1024,6 +1060,18 @@ const main = async (): Promise<void> => {
     args.executorMode ??
     envExecutorMode ??
     (args.resumeRunPath ? undefined : defaultExecutorMode);
+  if (!args.resumeRunPath) {
+    const seedOwnershipError = validateSeedOwnership({
+      controllerMode,
+      transportMode,
+      allowManualProtocolSeed: args.allowManualProtocolSeed ?? false
+    });
+    if (seedOwnershipError) {
+      console.error(seedOwnershipError);
+      process.exitCode = 1;
+      return;
+    }
+  }
   if (args.resumeRunPath) {
     const resumeOwnershipError = await validateResumeOwnership({
       resumeRunPath: args.resumeRunPath,
