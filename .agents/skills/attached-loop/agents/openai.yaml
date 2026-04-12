@@ -1,4 +1,4 @@
 interface:
   display_name: "Attached Loop"
   short_description: "Keep the active Codex thread as the harness controller"
-  default_prompt: "Use $attached-loop to keep an already-started run on the current Codex thread and consume same-thread Codex checkpoints until a human stop, external block, or terminal state is reached. Use $loop-control for start, status, stop, or resume entry."
+  default_prompt: "Use $attached-loop to keep an already-started run on the current Codex thread. Treat attention_required = codex as an internal same-thread continuation checkpoint, not a user pause. Consume checkpoints and resume until the run reaches a human stop, an external block, or a terminal state. Use $loop-control for start, status, stop, or resume entry."

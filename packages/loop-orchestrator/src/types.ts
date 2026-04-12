@@ -30,6 +30,8 @@ export type RunStopReason =
   | "adapter_contract_invalid"
   | "awaiting_current_thread_handoff"
   | "awaiting_manual_generator"
+  | "awaiting_human_input"
+  | "awaiting_external_condition"
   | "plateau_limit_reached"
   | "max_rounds_reached";
 export type RoundStopReason = RunStopReason | "continue";

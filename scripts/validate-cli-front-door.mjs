@@ -45,12 +45,21 @@ const runCli = async (args, options = {}) => runNodeScript(cliPath, args, option
 
 const runPackageScript = async (scriptName, options = {}) =>
   new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn("npm", ["run", scriptName, "--silent"], {
-      cwd: repoRoot,
-      env: options.env ?? process.env,
-      shell: process.platform === "win32",
-      windowsHide: true
-    });
+    const child = spawn(
+      "npm",
+      [
+        "run",
+        scriptName,
+        "--silent",
+        ...(options.scriptArgs?.length ? ["--", ...options.scriptArgs] : [])
+      ],
+      {
+        cwd: repoRoot,
+        env: options.env ?? process.env,
+        shell: process.platform === "win32",
+        windowsHide: true
+      }
+    );
 
     let stdout = "";
     let stderr = "";
@@ -168,6 +177,27 @@ if (codexScriptSummary.transport_mode !== "current-thread") {
     `Expected loop:start:codex transport_mode 'current-thread', received '${codexScriptSummary.transport_mode ?? "missing"}'.`
   );
 }
+const codexScriptSeedJson = await runPackageScript("loop:start:codex", {
+  env: foregroundThreadEnv,
+  scriptArgs: ["--json"]
+});
+assertSucceeded(codexScriptSeedJson, "loop:start:codex foreground JSON front door");
+const codexScriptSeedReport = JSON.parse(codexScriptSeedJson.stdout);
+if (codexScriptSeedReport.active.attention_required !== "codex") {
+  throw new Error(
+    `Expected loop:start:codex --json attention_required 'codex', received '${codexScriptSeedReport.active.attention_required ?? "missing"}'.`
+  );
+}
+if (codexScriptSeedReport.active.recommended_skill !== "attached-loop") {
+  throw new Error(
+    `Expected loop:start:codex --json recommended_skill 'attached-loop', received '${codexScriptSeedReport.active.recommended_skill ?? "missing"}'.`
+  );
+}
+if (codexScriptSeedReport.effective_execution_state !== "paused") {
+  throw new Error(
+    `Expected loop:start:codex --json effective_execution_state 'paused', received '${codexScriptSeedReport.effective_execution_state ?? "missing"}'.`
+  );
+}
 
 const blockedShellSeed = await runCli(
   ["--controller-mode", "attached", "--transport", "current-thread", "--single"],
@@ -215,7 +245,7 @@ const manualSeed = await runPackageScript("loop:start:manual", {
 assertSucceeded(manualSeed, "manual-protocol shell seed");
 const manualSeedRunDirectory = extractRunDirectory(manualSeed.stdout);
 const manualSeedSummary = await readSummary(manualSeedRunDirectory);
-assertStopReason(manualSeedSummary, "awaiting_current_thread_handoff");
+assertStopReason(manualSeedSummary, "awaiting_human_input");
 const manualSeedSurface = await readJsonFile(manualSeedSummary.operator_surface_path);
 if (manualSeedSurface.presentation_mode !== "manual-protocol") {
   throw new Error(
@@ -232,9 +262,14 @@ if (manualSeedSurface.app_visibility !== "not-visible-in-stock-app") {
     `Expected manual shell seed app_visibility 'not-visible-in-stock-app', received '${manualSeedSurface.app_visibility ?? "missing"}'.`
   );
 }
-if (manualSeedSurface.attention_required !== "codex") {
+if (manualSeedSurface.attention_required !== "human") {
   throw new Error(
-    `Expected manual shell seed attention_required 'codex', received '${manualSeedSurface.attention_required ?? "missing"}'.`
+    `Expected manual shell seed attention_required 'human', received '${manualSeedSurface.attention_required ?? "missing"}'.`
+  );
+}
+if (manualSeedSurface.recommended_skill !== "loop-control") {
+  throw new Error(
+    `Expected manual shell seed recommended_skill 'loop-control', received '${manualSeedSurface.recommended_skill ?? "missing"}'.`
   );
 }
 

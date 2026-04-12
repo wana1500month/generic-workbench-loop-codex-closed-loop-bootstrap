@@ -434,11 +434,11 @@ const defaultNextActionForTransport = (input: {
       input.transportMode === "current-thread" &&
       input.presentationMode === "foreground-thread"
     ) {
-      return `Codex continuation is pending on this thread. $${input.recommendedSkill} should consume the ${checkpointLabel}${input.autoResumeEligible ? " automatically" : ""}.`;
+      return `This run stays on the current Codex thread. $${input.recommendedSkill} should continue immediately by consuming the ${checkpointLabel}${input.autoResumeEligible ? " automatically" : ""}.`;
     }
     return input.recommendedCommand
-      ? `Codex continuation is pending on the current operator surface. Consume the ${checkpointLabel}, then continue with ${input.recommendedCommand}.`
-      : `Codex continuation is pending on the current operator surface. Consume the ${checkpointLabel}, then resume from persisted artifacts.`;
+      ? `Codex continuation stays on the current operator surface. Consume the ${checkpointLabel}, then continue with ${input.recommendedCommand}.`
+      : `Codex continuation stays on the current operator surface. Consume the ${checkpointLabel}, then resume from persisted artifacts.`;
   }
   if (input.attentionRequired === "human") {
     return "Your decision is required before the run can continue.";

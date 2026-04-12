@@ -24,7 +24,7 @@ npm run loop:stop -- --run-dir evals/runs/run-###
 
 ## Canonical examples
 
-- `루프 시작` -> `npm run loop:start:codex`
+- `루프 시작` -> `npm run loop:start:codex -- --json`
 - `루프 시작 가능하냐?` -> stay in `run_control` and default the eventual start surface to `loop:start:codex`
 - `현재 루프 상태` -> `npm run loop:status -- --run-dir evals/runs/run-###` when a concrete run exists, otherwise inspect the active operator surface first
 - `run-179 상태 보여줘` -> `npm run loop:status -- --run-dir evals/runs/run-179`
@@ -34,10 +34,15 @@ npm run loop:stop -- --run-dir evals/runs/run-###
 
 ## Hard rules
 
-- In the Codex app, default `start` to `npm run loop:start:codex`.
-- In the Codex app, `start` means `npm run loop:start:codex` and then immediate same-thread continuation with `$attached-loop`; do not stop after the first Codex-owned checkpoint.
+- In the Codex app, default `start` to `npm run loop:start:codex -- --json`.
+- In the Codex app, `start` is not complete when `loop:start:codex -- --json` returns.
+- After `npm run loop:start:codex -- --json` succeeds, inspect the returned operator surface immediately.
+- If `attention_required = codex`, do not answer the user yet. Immediately continue on the same thread with `$attached-loop`.
+- In the Codex app, `start` means `npm run loop:start:codex -- --json` and then immediate same-thread continuation with `$attached-loop`; do not stop after the first Codex-owned checkpoint.
 - Only use `loop:start:bg` when the operator explicitly asks for detached or background supervision.
 - Treat `loop:start:manual` as an intentional shell-owned downgrade, not the default attached start path.
 - Do not claim continuous monitoring unless a real background supervisor or automation owns that task.
 - If the request is about deciding whether an existing persisted run should reopen, hold, continue, or close, switch to `run-resume`.
 - When `loop:status --json` or `runtime/operator-surface.json` reports `attention_required = codex`, the next foreground action is `$attached-loop`, not a user-facing pause explanation.
+- Only emit a user-visible reply after the run reaches `attention_required = human`, `attention_required = external`, or a terminal state.
+- Do not describe a Codex-owned checkpoint as "waiting for input" or "handoff pending" to the user.

@@ -43,7 +43,8 @@
     "expect_route": "run_control",
     "expect_run_control_action": "start",
     "expect_run_control_start_surface": "codex",
-    "expect_primary_command": "npm run loop:start:codex"
+    "expect_primary_command": "npm run loop:start:codex -- --json",
+    "expect_follow_up_skills": ["attached-loop"]
   },
   {
     "id": "run-control-korean-loop-start",
@@ -53,7 +54,8 @@
     "expect_route": "run_control",
     "expect_run_control_action": "start",
     "expect_run_control_start_surface": "codex",
-    "expect_primary_command": "npm run loop:start:codex"
+    "expect_primary_command": "npm run loop:start:codex -- --json",
+    "expect_follow_up_skills": ["attached-loop"]
   },
   {
     "id": "run-control-korean-loop-start-possible",
@@ -63,7 +65,8 @@
     "expect_route": "run_control",
     "expect_run_control_action": "start",
     "expect_run_control_start_surface": "codex",
-    "expect_primary_command": "npm run loop:start:codex"
+    "expect_primary_command": "npm run loop:start:codex -- --json",
+    "expect_follow_up_skills": ["attached-loop"]
   },
   {
     "id": "run-control-korean-current-status",

@@ -67,13 +67,19 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `controller_mode` and `transport_mode` are separate axes:
   - `detached` currently requires `--transport codex-exec`
   - `attached` currently allows `--transport current-thread` or `--transport app-server`
-- `npm run loop:start:codex` is the Codex-owned current-thread start surface. Use `npm run loop:start:bg -- ...` or the deprecated `npm run loop:run -- ...` only when the operator explicitly wants detached background supervision.
+- `npm run loop:start:codex` is the Codex-owned current-thread start surface. Use `npm run loop:start:codex -- --json` when a same-thread worker needs machine-readable continuation state immediately after start. Use `npm run loop:start:bg -- ...` or the deprecated `npm run loop:run -- ...` only when the operator explicitly wants detached background supervision.
 - Codex app run-control prompts such as `루프 시작`, `루프 시작 가능하냐?`, `현재 루프 상태`, `run-179 상태 보여줘`, and `모든 루프 정지` should stay in the `run_control` lane and map to `loop:start:*`, `loop:status`, `loop:resume`, or `loop:stop` instead of falling through harness-design guidance.
 - `npm run loop:run:raw -- ...` remains the direct controller debugging surface, and `npm run loop:watch -- ...` keeps the supervisor detached from the launching shell.
 - Supervisor, runner, and bootstrap-generated runtime helper spawns now set `windowsHide: true`, so Windows detached runs stop opening a visible stack of extra `cmd.exe` shells while the harness is working.
 - Attached runs now default to `--transport current-thread`. That is the stock foreground-thread transport surface, but current-thread only claims foreground ownership when a real bound `CODEX_THREAD_ID` is present.
 - Use `--transport current-thread` for the stock Codex foreground-thread protocol. Current-thread attached generator work now persists `attached-generator-prompt.md` / `attached-generator-response.json` as a Codex-owned same-thread checkpoint and still stops honestly with `awaiting_current_thread_handoff`.
 - Current-thread is now the honest foreground default across planner, contract-review, generator-plan, eval, and attached-generator stages. Each current-thread enhancement persists explicit `*-task.json`, `*-prompt.md`, and `*-response.json` artifacts, reports `attention_required = codex` plus `auto_resume_eligible = true` on the operator surface, and resumes from those files instead of pretending the process is still running.
+- Canonical foreground flow:
+  1. `루프 시작`
+  2. `npm run loop:start:codex -- --json`
+  3. If `attention_required = codex`, continue immediately with `$attached-loop`
+  4. Do not surface intermediate checkpoint pauses to the user
+  5. Only stop on human, external, or terminal boundaries
 - Shell-launched `attached/current-thread` seeds now fail closed unless a real bound `CODEX_THREAD_ID` is present. Use `--allow-manual-protocol-seed` only when you intentionally want to start a `manual-protocol` shell run instead of a Codex-owned foreground run.
 - Use `--transport app-server` to open an embedded `codex app-server` stdio session. The runtime initializes the server, starts or resumes a thread, names it, reads runtime state through `thread/read`, opens a turn, and steers that turn at phase boundaries while persisting `thread_id`, `turn_id`, the event cursor, and thread runtime status.
 - `current-thread` and `app-server` are same-thread transports. Both forbid nested `codex exec` calls from shared runtime paths.
@@ -325,10 +331,12 @@ npm run validate:bootstrap-custom-quality-metrics
 npm run validate:bootstrap-profile-aware-verifier
 npm run loop:single
 npm run loop:start:codex
+npm run loop:start:codex -- --json
 npm run loop:start:manual
 npm run loop:start:bg -- --max-rounds 3
 npm run loop:stop -- --run-dir ./evals/runs/run-###
 npm run validate:late-result-restore
+npm run validate:stop-boundaries
 npm run loop:run:raw -- --max-rounds 1
 npm run loop:run -- --adapter ./adapter.example.json --max-rounds 3
 npm run loop:run -- --adapter ./.tmp/semantic-validation/patch-only-success/adapter.json --target-family api-service --max-rounds 3

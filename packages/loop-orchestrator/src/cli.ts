@@ -56,6 +56,7 @@ type RunCommandArgs = {
   mode: "loop" | "single";
   maxRounds?: number;
   targetScore?: number;
+  json?: boolean;
   errors: string[];
 };
 
@@ -169,17 +170,19 @@ const phaseAliasMap = new Map<string, ControllerRoundPhase>([
 const usageLines = [
   "Usage:",
   "  npm run loop:start:codex",
+  "  npm run loop:start:codex -- --json",
   "  npm run loop:start:bg",
   "  npm run loop:start:manual",
+  "  npm run loop:start:manual -- --json",
   "  npm run loop:stop -- --run-dir <run-dir>",
   "  npm run loop:bootstrap",
   `  node ./scripts/loop-runner.mjs --controller-mode attached --transport current-thread --single ${manualProtocolSeedFlag}`,
   "  npm run loop:status -- --run-dir <run-dir> [--json]",
-  `  npm run loop:resume -- --run-dir <run-dir> [--force-reopen-terminal] [--repair] [--resume-phase <phase>] [${shellResumeDowngradeFlag}]`,
-  `  npm run loop:phase -- <phase> --run-dir <run-dir> [--force-reopen-terminal] [--repair] [${shellResumeDowngradeFlag}]`,
+  `  npm run loop:resume -- --run-dir <run-dir> [--json] [--force-reopen-terminal] [--repair] [--resume-phase <phase>] [${shellResumeDowngradeFlag}]`,
+  `  npm run loop:phase -- <phase> --run-dir <run-dir> [--json] [--force-reopen-terminal] [--repair] [${shellResumeDowngradeFlag}]`,
   "  node ./scripts/loop-runner.mjs --controller-mode attached --single",
-  "  node ./scripts/loop-runner.mjs resume --run-dir <run-dir>",
-  "  node ./scripts/loop-runner.mjs phase planning --run-dir <run-dir>",
+  "  node ./scripts/loop-runner.mjs resume --run-dir <run-dir> --json",
+  "  node ./scripts/loop-runner.mjs phase planning --run-dir <run-dir> --json",
   "  node ./scripts/loop-runner.mjs status --run-dir <run-dir> --json",
   "",
   "Phase aliases:",
@@ -201,11 +204,11 @@ const subcommandUsage = {
         "Reads persisted summary/runtime/operator-surface artifacts without starting a new controller."
     ],
     resume: [
-        `Usage: node ./scripts/loop-runner.mjs resume --run-dir <run-dir> [--force-reopen-terminal] [--repair] [--resume-phase <phase>] [${shellResumeDowngradeFlag}]`,
+        `Usage: node ./scripts/loop-runner.mjs resume --run-dir <run-dir> [--json] [--force-reopen-terminal] [--repair] [--resume-phase <phase>] [${shellResumeDowngradeFlag}]`,
         `Re-enters a persisted run using the stored controller/transport defaults unless overridden. App-visible current-thread runs require the same bound Codex thread unless ${shellResumeDowngradeFlag} is supplied.`
     ],
     phase: [
-        `Usage: node ./scripts/loop-runner.mjs phase <phase> --run-dir <run-dir> [--force-reopen-terminal] [--repair] [${shellResumeDowngradeFlag}]`,
+        `Usage: node ./scripts/loop-runner.mjs phase <phase> --run-dir <run-dir> [--json] [--force-reopen-terminal] [--repair] [${shellResumeDowngradeFlag}]`,
         `Friendly phase aliases such as 'open', 'negotiate', 'pre-verify', 'evaluate', and 'finalize' are accepted. App-visible current-thread runs require the same bound Codex thread unless ${shellResumeDowngradeFlag} is supplied.`
     ]
 } as const;
@@ -261,6 +264,7 @@ const parseRunArgs = (argv: readonly string[]): RunCommandArgs => {
   let mode: "loop" | "single" = "loop";
   let maxRounds: number | undefined;
   let targetScore: number | undefined;
+  let json = false;
   const errors: string[] = [];
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -428,6 +432,11 @@ const parseRunArgs = (argv: readonly string[]): RunCommandArgs => {
       continue;
     }
 
+    if (value === "--json") {
+      json = true;
+      continue;
+    }
+
     if (value === "--max-rounds" || value === "--max-iterations") {
       const parsed = Number(argv[index + 1]);
       if (Number.isFinite(parsed) && parsed > 0) {
@@ -477,6 +486,7 @@ const parseRunArgs = (argv: readonly string[]): RunCommandArgs => {
     mode,
     maxRounds,
     targetScore,
+    json,
     errors
   };
 };
@@ -954,7 +964,8 @@ const printRunResult = (
     controllerMode: string;
     transportMode: string;
     executorMode: string;
-  }
+  },
+  statusReport?: StatusReport
 ): void => {
   const runPath = relative(repoRoot, runDirectory);
 
@@ -1028,6 +1039,23 @@ const printRunResult = (
   }
   if (summary.codex_handoff_path) {
     console.log(`Codex handoff: ${relative(repoRoot, summary.codex_handoff_path)}`);
+  }
+  if (statusReport?.active.attention_required) {
+    console.log(`Attention: ${statusReport.active.attention_required}`);
+  }
+  if (statusReport?.active.checkpoint_kind) {
+    console.log(`Checkpoint: ${statusReport.active.checkpoint_kind}`);
+  }
+  if (statusReport?.active.auto_resume_eligible !== undefined) {
+    console.log(`Auto resume: ${statusReport.active.auto_resume_eligible ? "yes" : "no"}`);
+  }
+  if (statusReport?.active.recommended_skill) {
+    console.log(`Recommended continuation: $${statusReport.active.recommended_skill}`);
+  } else if (statusReport?.active.recommended_command) {
+    console.log(`Recommended continuation: ${statusReport.active.recommended_command}`);
+  }
+  if (statusReport?.active.attention_required === "codex") {
+    console.log("This is a Codex-owned checkpoint, not a user-facing pause.");
   }
 };
 
@@ -1300,17 +1328,48 @@ const main = async (): Promise<void> => {
           targetScore
         });
 
-  printRunResult(result.summary, result.runDirectory, {
-    controllerMode:
-      controllerMode ?? result.summary.controller_mode ?? defaultControllerMode,
-    transportMode:
-      transportMode ??
-      result.summary.transport_mode ??
-      defaultTransportModeForControllerMode(
-        controllerMode ?? result.summary.controller_mode ?? defaultControllerMode
-      ),
-    executorMode: executorMode ?? result.summary.executor_mode ?? defaultExecutorMode
-  });
+  const resolvedControllerMode =
+    controllerMode ?? result.summary.controller_mode ?? defaultControllerMode;
+  const resolvedTransportMode =
+    transportMode ??
+    result.summary.transport_mode ??
+    defaultTransportModeForControllerMode(resolvedControllerMode);
+  const resolvedExecutorMode =
+    executorMode ?? result.summary.executor_mode ?? defaultExecutorMode;
+  const statusReport = await buildStatusReport(result.runDirectory);
+
+  if (args.json) {
+    console.log(
+      JSON.stringify(
+        {
+          run_id: result.summary.run_id,
+          run_directory: statusReport.run_directory,
+          stop_reason: result.summary.stop_reason,
+          controller_mode: result.summary.controller_mode ?? resolvedControllerMode,
+          transport_mode: result.summary.transport_mode ?? resolvedTransportMode,
+          executor_mode: result.summary.executor_mode ?? resolvedExecutorMode,
+          active: statusReport.active,
+          operator_surface: statusReport.operator_surface,
+          effective_execution_state: statusReport.effective_execution_state,
+          runtime_health: statusReport.runtime_health
+        },
+        null,
+        2
+      )
+    );
+    return;
+  }
+
+  printRunResult(
+    result.summary,
+    result.runDirectory,
+    {
+      controllerMode: resolvedControllerMode,
+      transportMode: resolvedTransportMode,
+      executorMode: resolvedExecutorMode
+    },
+    statusReport
+  );
 };
 
 main().catch((error: unknown) => {

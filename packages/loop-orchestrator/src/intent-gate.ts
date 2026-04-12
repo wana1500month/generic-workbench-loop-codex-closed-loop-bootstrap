@@ -73,6 +73,7 @@ interface ParsedRunControlRequest {
 export interface RunControlDispatchPlan {
   primary_command: string;
   follow_up_commands: string[];
+  follow_up_skills: string[];
 }
 
 export interface LoopIntentResult {
@@ -93,6 +94,7 @@ export interface LoopIntentResult {
   run_control_diagnostic_focus?: RunControlDiagnosticFocus[];
   run_control_primary_command?: string;
   run_control_follow_up_commands?: string[];
+  run_control_follow_up_skills?: string[];
   intake?: IntakeGateResult;
   intake_status?: IntakeGateResult["status"];
   intake_phase?: IntakeGateResult["phase"];
@@ -531,8 +533,12 @@ export const deriveRunControlDispatchPlan = (input: {
           ? "npm run loop:start:bg -- --max-rounds 3"
           : input.startSurface === "manual"
             ? "npm run loop:start:manual"
-            : "npm run loop:start:codex",
-      follow_up_commands: []
+            : "npm run loop:start:codex -- --json",
+      follow_up_commands: [],
+      follow_up_skills:
+        input.startSurface === "background" || input.startSurface === "manual"
+          ? []
+          : ["attached-loop"]
     };
   }
 
@@ -541,7 +547,8 @@ export const deriveRunControlDispatchPlan = (input: {
       primary_command: commandRunReference
         ? `npm run loop:status -- --run-dir ${commandRunReference}`
         : "npm run loop:status",
-      follow_up_commands: []
+      follow_up_commands: [],
+      follow_up_skills: []
     };
   }
 
@@ -550,7 +557,8 @@ export const deriveRunControlDispatchPlan = (input: {
       primary_command: commandRunReference
         ? `npm run loop:resume -- --run-dir ${commandRunReference}`
         : "npm run loop:resume",
-      follow_up_commands: []
+      follow_up_commands: [],
+      follow_up_skills: []
     };
   }
 
@@ -567,7 +575,8 @@ export const deriveRunControlDispatchPlan = (input: {
         ? commandRunReference
           ? [`npm run loop:status -- --run-dir ${commandRunReference}`]
           : ["npm run loop:status"]
-        : []
+        : [],
+    follow_up_skills: []
   };
 };
 
@@ -858,6 +867,9 @@ const buildRunControlResult = (input: {
     ...(dispatchPlan ? { run_control_primary_command: dispatchPlan.primary_command } : {}),
     ...(dispatchPlan && dispatchPlan.follow_up_commands.length > 0
       ? { run_control_follow_up_commands: dispatchPlan.follow_up_commands }
+      : {}),
+    ...(dispatchPlan && dispatchPlan.follow_up_skills.length > 0
+      ? { run_control_follow_up_skills: dispatchPlan.follow_up_skills }
       : {})
   };
 };
@@ -1372,6 +1384,15 @@ const renderReadyRouteWithDispatch = (result: LoopIntentResult): string => {
         result.locale === "ko"
           ? `\uB2E4\uC74C \uBA85\uB839: ${command}`
           : `Next command: ${command}`
+      );
+    }
+  }
+  if (result.run_control_follow_up_skills && result.run_control_follow_up_skills.length > 0) {
+    for (const skill of result.run_control_follow_up_skills) {
+      lines.push(
+        result.locale === "ko"
+          ? `\uB2E4\uC74C \uC2A4\uD0AC: $${skill}`
+          : `Next skill: $${skill}`
       );
     }
   }

@@ -75,6 +75,14 @@ for (const fixture of fixtures) {
       `${fixture.id}: unexpected run-control diagnostic focus`
     );
   }
+
+  if (fixture.expect_follow_up_skills) {
+    assert.deepEqual(
+      result.run_control_follow_up_skills ?? [],
+      fixture.expect_follow_up_skills,
+      `${fixture.id}: unexpected follow-up skills`
+    );
+  }
 }
 
 const harnessHumanOutput = renderLoopIntentResponse(
@@ -94,7 +102,8 @@ assert.match(runControlHumanOutput, /^Intent:\s+run_control/m);
 assert.match(runControlHumanOutput, /Route:\s+proceed in the run-control lane\./i);
 assert.match(runControlHumanOutput, /^Action:\s+start/m);
 assert.match(runControlHumanOutput, /^Start surface:\s+Codex foreground current-thread/m);
-assert.match(runControlHumanOutput, /^Command:\s+npm run loop:start:codex/m);
+assert.match(runControlHumanOutput, /^Command:\s+npm run loop:start:codex -- --json/m);
+assert.match(runControlHumanOutput, /^Next skill:\s+\$attached-loop/m);
 
 const koreanRunControlRoute = renderLoopIntentResponse(
   evaluateLoopIntent("\uD604\uC7AC \uB8E8\uD504 \uC0C1\uD0DC")
@@ -106,6 +115,12 @@ assert.match(
 );
 assert.match(koreanRunControlRoute, /\uB3D9\uC791:\s+status/);
 assert.match(koreanRunControlRoute, /\uBA85\uB839:\s+npm run loop:status/);
+
+const koreanRunControlStart = renderLoopIntentResponse(
+  evaluateLoopIntent("\uB8E8\uD504 \uC2DC\uC791")
+);
+assert.match(koreanRunControlStart, /^\uBA85\uB839:\s+npm run loop:start:codex -- --json/m);
+assert.match(koreanRunControlStart, /^\uB2E4\uC74C \uC2A4\uD0AC:\s+\$attached-loop/m);
 
 const compoundRunControl = evaluateLoopIntent(
   "\uBAA8\uB4E0 \uB8E8\uD504 \uC815\uC9C0\uD558\uACE0 \uC65C \uD0C0\uC784\uC544\uC6C3 \uB098\uB294\uC9C0 \uC6D0\uC778 \uC0C1\uC138\uD558\uAC8C \uADDC\uBA85"

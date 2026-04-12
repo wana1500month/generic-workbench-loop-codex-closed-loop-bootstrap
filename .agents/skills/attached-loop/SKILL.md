@@ -37,7 +37,7 @@ Keep the current Codex thread attached to the run as an active same-thread worke
 3. If the run is terminal, summarize the result and stop.
 4. If `attention_required` is `human`, ask the user the blocking question and stop.
 5. If `attention_required` is `external`, explain the environment block and stop.
-6. If `attention_required` is `codex`, consume the active checkpoint on the same thread, write the response artifact, resume, and repeat.
+6. If `attention_required` is `codex`, read `active_prompt_path`, consume the checkpoint on the same thread, write `active_response_path`, run `npm run loop:resume -- --run-dir <run> --json` or the equivalent persisted resume surface, and repeat without replying to the user in between.
 7. Stop honestly when the current thread cannot stay attached or when detached controller behavior is required.
 
 ## Manual protocol
@@ -49,3 +49,4 @@ Keep the current Codex thread attached to the run as an active same-thread worke
 5. If `runtime/attached-generator-prompt.md` exists, finish that task first and write `runtime/attached-generator-response.json` with the summary and changed files.
 6. Continue looping until the run reaches `attention_required = human`, `attention_required = external`, or a terminal state.
 7. If a step would require nested Codex execution, fail closed and leave a persisted note instead of bypassing the transport policy.
+8. Do not emit an intermediate user-visible response while `attention_required = codex`.

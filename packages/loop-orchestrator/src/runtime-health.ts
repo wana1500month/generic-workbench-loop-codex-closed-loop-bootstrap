@@ -10,7 +10,9 @@ import type {
 
 export const pausedStopReasons = new Set<RunStopReason>([
   "awaiting_current_thread_handoff",
-  "awaiting_manual_generator"
+  "awaiting_manual_generator",
+  "awaiting_human_input",
+  "awaiting_external_condition"
 ]);
 
 export const defaultStallThresholdMs = 60_000;
