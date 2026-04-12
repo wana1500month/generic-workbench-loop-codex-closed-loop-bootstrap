@@ -232,6 +232,11 @@ if (manualSeedSurface.app_visibility !== "not-visible-in-stock-app") {
     `Expected manual shell seed app_visibility 'not-visible-in-stock-app', received '${manualSeedSurface.app_visibility ?? "missing"}'.`
   );
 }
+if (manualSeedSurface.attention_required !== "codex") {
+  throw new Error(
+    `Expected manual shell seed attention_required 'codex', received '${manualSeedSurface.attention_required ?? "missing"}'.`
+  );
+}
 
 const seed = await runLoop(
   ["--controller-mode", "attached", "--transport", "current-thread", "--single"],
@@ -254,6 +259,11 @@ if (planningReport.active.phase !== "planning") {
     `Expected planning status phase to be 'planning', received '${planningReport.active.phase ?? "missing"}'.`
   );
 }
+if (planningReport.active.phase_status !== "awaiting_codex_work") {
+  throw new Error(
+    `Expected planning status phase_status 'awaiting_codex_work', received '${planningReport.active.phase_status ?? "missing"}'.`
+  );
+}
 if (planningReport.runtime_health.execution_state !== "paused") {
   throw new Error(
     `Expected planning status execution_state 'paused', received '${planningReport.runtime_health.execution_state ?? "missing"}'.`
@@ -266,6 +276,24 @@ if (planningReport.operator_surface?.resume_skill !== "attached-loop") {
 }
 if (planningReport.operator_surface?.resume_command !== undefined) {
   throw new Error("Expected foreground-thread planning status to omit resume_command.");
+}
+if (planningReport.operator_surface?.attention_required !== "codex") {
+  throw new Error(
+    `Expected planning status attention_required 'codex', received '${planningReport.operator_surface?.attention_required ?? "missing"}'.`
+  );
+}
+if (planningReport.operator_surface?.checkpoint_kind !== "planner") {
+  throw new Error(
+    `Expected planning status checkpoint_kind 'planner', received '${planningReport.operator_surface?.checkpoint_kind ?? "missing"}'.`
+  );
+}
+if (planningReport.operator_surface?.auto_resume_eligible !== true) {
+  throw new Error("Expected planning status auto_resume_eligible to be true.");
+}
+if (planningReport.active.recommended_skill !== "attached-loop") {
+  throw new Error(
+    `Expected planning status recommended_skill 'attached-loop', received '${planningReport.active.recommended_skill ?? "missing"}'.`
+  );
 }
 if (planningReport.operator_surface?.presentation_mode !== "foreground-thread") {
   throw new Error(
@@ -338,6 +366,11 @@ if (negotiationReport.active.phase !== "negotiation") {
     `Expected negotiation status phase to be 'negotiation', received '${negotiationReport.active.phase ?? "missing"}'.`
   );
 }
+if (negotiationReport.active.phase_status !== "awaiting_codex_work") {
+  throw new Error(
+    `Expected negotiation status phase_status 'awaiting_codex_work', received '${negotiationReport.active.phase_status ?? "missing"}'.`
+  );
+}
 if (negotiationReport.active.round !== 1) {
   throw new Error(
     `Expected negotiation status round to be '1', received '${negotiationReport.active.round ?? "missing"}'.`
@@ -370,6 +403,11 @@ if (generatorPlanReport.active.phase !== "negotiation") {
     `Expected generator-plan handoff phase 'negotiation', received '${generatorPlanReport.active.phase ?? "missing"}'.`
   );
 }
+if (generatorPlanReport.operator_surface?.checkpoint_kind !== "generator-plan") {
+  throw new Error(
+    `Expected generator-plan checkpoint_kind 'generator-plan', received '${generatorPlanReport.operator_surface?.checkpoint_kind ?? "missing"}'.`
+  );
+}
 await writeFile(generatorPlanReport.active.active_response_path, "{}\n", "utf8");
 
 const attachedGeneratorResume = await runCli(["resume", "--run-dir", runDirectory], {
@@ -390,6 +428,11 @@ const postNegotiationReport = JSON.parse(postNegotiationStatus.stdout);
 
 let evaluationReport = postNegotiationReport;
 if (postNegotiationReport.active.phase === "pre_verification") {
+  if (postNegotiationReport.operator_surface?.checkpoint_kind !== "attached-generator") {
+    throw new Error(
+      `Expected attached-generator checkpoint_kind 'attached-generator', received '${postNegotiationReport.operator_surface?.checkpoint_kind ?? "missing"}'.`
+    );
+  }
   await writeFile(postNegotiationReport.active.active_response_path, "{}\n", "utf8");
 
   const evaluationResume = await runCli(["resume", "--run-dir", runDirectory], {
@@ -416,6 +459,16 @@ if (postNegotiationReport.active.phase === "pre_verification") {
 if (evaluationReport.active.phase !== "evaluation") {
   throw new Error(
     `Expected post-resume phase 'evaluation', received '${evaluationReport.active.phase ?? "missing"}'.`
+  );
+}
+if (evaluationReport.operator_surface?.attention_required !== "codex") {
+  throw new Error(
+    `Expected evaluation attention_required 'codex', received '${evaluationReport.operator_surface?.attention_required ?? "missing"}'.`
+  );
+}
+if (evaluationReport.operator_surface?.checkpoint_kind !== "evaluator") {
+  throw new Error(
+    `Expected evaluation checkpoint_kind 'evaluator', received '${evaluationReport.operator_surface?.checkpoint_kind ?? "missing"}'.`
   );
 }
 if (typeof evaluationReport.active.active_prompt_path !== "string") {

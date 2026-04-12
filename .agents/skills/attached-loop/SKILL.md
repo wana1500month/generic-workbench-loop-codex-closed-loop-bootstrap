@@ -11,7 +11,7 @@ Do not use this skill as a proxy for the `app-server` transport.
 
 ## Goal
 
-Keep the current Codex thread attached to the run while still honoring the harness protocol artifacts and controller state machine.
+Keep the current Codex thread attached to the run as an active same-thread worker while still honoring the harness protocol artifacts and controller state machine.
 
 ## Rules
 
@@ -26,21 +26,26 @@ Keep the current Codex thread attached to the run while still honoring the harne
 - Do not claim continuous monitoring unless a real background automation owns the task.
 - Read `runtime/current-thread-protocol.md` when it exists and treat it as the operator checklist for the active run.
 - When `runtime/attached-generator-prompt.md` exists, complete that generator task on the current thread and write `runtime/attached-generator-response.json` before resuming `pre_verification`.
+- Treat `runtime/operator-surface.json` and `loop:status --json` as the control contract for continuation.
+- `attention_required = codex` is not a user stop boundary. Consume the checkpoint on the same thread and continue.
+- Only stop to the user when `attention_required` is `human` or `external`, or when the run is terminal.
 
 ## Expected flow
 
 1. Restore run state from persisted artifacts if `--resume-run` is in play.
-2. Open or repair the current round by phase, not by a long opaque subprocess.
-3. Write negotiation artifacts before mutation.
-4. Run verification and evaluation through persisted snapshots.
-5. Checkpoint `summary.json` and `current_best.json` after each committed round.
-6. Stop honestly when the current thread cannot stay attached or when detached controller behavior is required.
+2. Read `runtime/operator-surface.json` or `npm run loop:status -- --run-dir <run> --json`.
+3. If the run is terminal, summarize the result and stop.
+4. If `attention_required` is `human`, ask the user the blocking question and stop.
+5. If `attention_required` is `external`, explain the environment block and stop.
+6. If `attention_required` is `codex`, consume the active checkpoint on the same thread, write the response artifact, resume, and repeat.
+7. Stop honestly when the current thread cannot stay attached or when detached controller behavior is required.
 
 ## Manual protocol
 
 1. Restore the active round from `summary.json`, `runtime/live-state.json`, and `runtime/round-phase.json`.
-2. Read the latest `round-contract.json` and `patch-request.json` before acting.
-3. Complete only one controller phase at a time.
-4. After each phase, write the updated protocol artifacts before moving on.
+2. Read the latest `round-contract.json`, `patch-request.json`, and `runtime/operator-surface.json` before acting.
+3. If `attention_required = codex`, complete the active checkpoint immediately instead of stopping at a phase boundary.
+4. After each checkpoint or phase completion, write the updated protocol artifacts before moving on.
 5. If `runtime/attached-generator-prompt.md` exists, finish that task first and write `runtime/attached-generator-response.json` with the summary and changed files.
-6. If a step would require nested Codex execution, fail closed and leave a persisted note instead of bypassing the transport policy.
+6. Continue looping until the run reaches `attention_required = human`, `attention_required = external`, or a terminal state.
+7. If a step would require nested Codex execution, fail closed and leave a persisted note instead of bypassing the transport policy.

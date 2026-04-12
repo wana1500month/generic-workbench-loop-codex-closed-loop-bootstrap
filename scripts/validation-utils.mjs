@@ -64,10 +64,10 @@ export const driveCurrentThreadHandoffs = async ({
   let summary = await readSummary(runDirectory);
   for (let handoff = 0; summary.stop_reason === "awaiting_current_thread_handoff"; handoff += 1) {
     if (handoff >= maxHandoffs) {
-      throw new Error(`${label} exceeded ${maxHandoffs} current-thread handoffs.`);
+      throw new Error(`${label} exceeded ${maxHandoffs} current-thread checkpoints.`);
     }
     if (!summary.operator_surface_path) {
-      throw new Error(`${label} is awaiting current-thread input but has no operator_surface_path.`);
+      throw new Error(`${label} is awaiting a current-thread checkpoint but has no operator_surface_path.`);
     }
     const operatorSurface = await readJsonFile(summary.operator_surface_path);
     if (operatorSurface.transport_mode !== "current-thread") {
@@ -77,7 +77,7 @@ export const driveCurrentThreadHandoffs = async ({
     }
     if (typeof operatorSurface.active_response_path !== "string") {
       throw new Error(
-        `${label} is awaiting current-thread input but has no active_response_path.`
+        `${label} is awaiting a current-thread checkpoint but has no active_response_path.`
       );
     }
     await writeFile(resolve(operatorSurface.active_response_path), responseText, "utf8");

@@ -17,6 +17,13 @@ export const defaultStallThresholdMs = 60_000;
 export const defaultHeartbeatStaleMs = 30_000;
 export const defaultTransportEventStaleMs = 30_000;
 
+const pausedPhaseStatuses = new Set<ControllerPhaseStatus>([
+  "awaiting_input",
+  "awaiting_codex_work",
+  "awaiting_human_input",
+  "awaiting_external_condition"
+]);
+
 const parseTimestamp = (value: string | undefined): number | undefined => {
   if (!value) {
     return undefined;
@@ -141,7 +148,7 @@ export const assessRuntimeHealth = (input: {
   const paused =
     liveExecutionState === "paused" ||
     input.controllerLease?.status === "paused" ||
-    phaseStatus === "awaiting_input" ||
+    (phaseStatus !== undefined && pausedPhaseStatuses.has(phaseStatus)) ||
     (stopReason !== undefined && pausedStopReasons.has(stopReason));
   const terminal =
     stopReason !== undefined &&
@@ -189,9 +196,15 @@ export const assessRuntimeHealth = (input: {
           heartbeatStale ? "stale" : "fresh"
         }.`
       : executionState === "paused"
-        ? `Run is paused${
-            stopReason ? ` (${stopReason}).` : "."
-          }`
+        ? phaseStatus === "awaiting_codex_work"
+          ? "Run is paused for same-thread Codex continuation."
+          : phaseStatus === "awaiting_human_input"
+            ? "Run is paused for human input."
+            : phaseStatus === "awaiting_external_condition"
+              ? "Run is paused for an external condition."
+              : `Run is paused${
+                  stopReason ? ` (${stopReason}).` : "."
+                }`
         : executionState === "completed"
           ? `Run finished${stopReason ? ` with ${stopReason}.` : "."}`
           : executionState === "failed"

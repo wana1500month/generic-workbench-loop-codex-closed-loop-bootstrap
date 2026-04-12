@@ -78,7 +78,17 @@ export type OperatorHandoffState =
   | "automation"
   | "manual"
   | "headless";
+export type OperatorAttentionRequired = "none" | "codex" | "human" | "external";
+export type CurrentThreadCheckpointKind =
+  | "planner"
+  | "contract-review"
+  | "generator-plan"
+  | "evaluator"
+  | "attached-generator";
 export type OperatorResumeSkill = "attached-loop" | "run-resume";
+export type OperatorRecommendedSkill =
+  | "loop-control"
+  | OperatorResumeSkill;
 export type OperatorPresentationMode =
   | "foreground-thread"
   | "manual-protocol"
@@ -108,6 +118,9 @@ export type ControllerPhaseStatus =
   | "in_progress"
   | "completed"
   | "stalled"
+  | "awaiting_codex_work"
+  | "awaiting_human_input"
+  | "awaiting_external_condition"
   | "awaiting_input";
 export type ProbeFailureClassification = "environment_blocked" | "probe_error";
 export type FailureLineagePolicyAction = "patch_only" | "recontract" | "stop";
@@ -1284,6 +1297,9 @@ export interface OperatorSurfaceArtifact {
   round?: number;
   phase?: ControllerRoundPhase;
   phase_status?: ControllerPhaseStatus;
+  attention_required?: OperatorAttentionRequired;
+  checkpoint_kind?: CurrentThreadCheckpointKind;
+  auto_resume_eligible?: boolean;
   summary_path?: string;
   transport_state_path?: string;
   transport_protocol_path?: string;
@@ -1295,6 +1311,8 @@ export interface OperatorSurfaceArtifact {
   thread_name?: string;
   worktree_id?: string;
   worktree_path?: string;
+  recommended_skill?: OperatorRecommendedSkill;
+  recommended_command?: string;
   resume_command?: string;
   notes?: string[];
 }

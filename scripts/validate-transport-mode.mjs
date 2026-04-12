@@ -31,6 +31,10 @@ const assertTransportSurface = async (
     expectedWorkspaceSurface,
     expectedHandoffState,
     expectedResumeSkill,
+    expectedAttentionRequired,
+    expectedCheckpointKind,
+    expectedAutoResumeEligible,
+    expectedRecommendedSkill,
     expectedRequiresCodexApp,
     expectedWorktreeId,
     expectedWorktreePath,
@@ -164,6 +168,30 @@ const assertTransportSurface = async (
     assert(
       operatorSurface.resume_skill === expectedResumeSkill,
       `Expected operator surface resume_skill '${expectedResumeSkill}', received '${operatorSurface.resume_skill ?? "missing"}'.`
+    );
+  }
+  if (expectedAttentionRequired !== undefined) {
+    assert(
+      operatorSurface.attention_required === expectedAttentionRequired,
+      `Expected operator surface attention_required '${expectedAttentionRequired}', received '${operatorSurface.attention_required ?? "missing"}'.`
+    );
+  }
+  if (expectedCheckpointKind !== undefined) {
+    assert(
+      operatorSurface.checkpoint_kind === expectedCheckpointKind,
+      `Expected operator surface checkpoint_kind '${expectedCheckpointKind}', received '${operatorSurface.checkpoint_kind ?? "missing"}'.`
+    );
+  }
+  if (expectedAutoResumeEligible !== undefined) {
+    assert(
+      operatorSurface.auto_resume_eligible === expectedAutoResumeEligible,
+      `Expected operator surface auto_resume_eligible '${expectedAutoResumeEligible}', received '${operatorSurface.auto_resume_eligible ?? "missing"}'.`
+    );
+  }
+  if (expectedRecommendedSkill !== undefined) {
+    assert(
+      operatorSurface.recommended_skill === expectedRecommendedSkill,
+      `Expected operator surface recommended_skill '${expectedRecommendedSkill}', received '${operatorSurface.recommended_skill ?? "missing"}'.`
     );
   }
   if (expectedRequiresCodexApp !== undefined) {
@@ -380,6 +408,10 @@ const main = async () => {
     expectedWorkspaceSurface: "local",
     expectedHandoffState: "manual",
     expectedResumeSkill: "attached-loop",
+    expectedAttentionRequired: "codex",
+    expectedCheckpointKind: "planner",
+    expectedAutoResumeEligible: true,
+    expectedRecommendedSkill: "attached-loop",
     expectedResumeCommandState: "present",
     expectedBindingWarning:
       "When no Codex thread binding is present, current-thread degrades to manual-protocol instead of claiming foreground-thread ownership.",
@@ -423,6 +455,10 @@ const main = async () => {
     expectedWorkspaceSurface: "local",
     expectedHandoffState: "manual",
     expectedResumeSkill: "attached-loop",
+    expectedAttentionRequired: "codex",
+    expectedCheckpointKind: "planner",
+    expectedAutoResumeEligible: true,
+    expectedRecommendedSkill: "attached-loop",
     expectedResumeCommandState: "present",
     expectedBindingWarning:
       "When no Codex thread binding is present, current-thread degrades to manual-protocol instead of claiming foreground-thread ownership.",
@@ -461,6 +497,10 @@ const main = async () => {
     expectedWorkspaceSurface: "local",
     expectedHandoffState: "local",
     expectedResumeSkill: "attached-loop",
+    expectedAttentionRequired: "codex",
+    expectedCheckpointKind: "planner",
+    expectedAutoResumeEligible: true,
+    expectedRecommendedSkill: "attached-loop",
     expectedResumeCommandState: "absent",
     expectedNextActionIncludes: "$attached-loop",
     expectedBindingWarning:
@@ -505,6 +545,10 @@ const main = async () => {
     expectedWorkspaceSurface: "worktree",
     expectedHandoffState: "worktree",
     expectedResumeSkill: "attached-loop",
+    expectedAttentionRequired: "codex",
+    expectedCheckpointKind: "planner",
+    expectedAutoResumeEligible: true,
+    expectedRecommendedSkill: "attached-loop",
     expectedResumeCommandState: "absent",
     expectedBindingWarning:
       "Current-thread transport is bound to the active Codex thread and remains visible in the stock app.",

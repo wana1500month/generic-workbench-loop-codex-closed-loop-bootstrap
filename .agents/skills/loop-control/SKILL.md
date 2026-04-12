@@ -35,7 +35,9 @@ npm run loop:stop -- --run-dir evals/runs/run-###
 ## Hard rules
 
 - In the Codex app, default `start` to `npm run loop:start:codex`.
+- In the Codex app, `start` means `npm run loop:start:codex` and then immediate same-thread continuation with `$attached-loop`; do not stop after the first Codex-owned checkpoint.
 - Only use `loop:start:bg` when the operator explicitly asks for detached or background supervision.
 - Treat `loop:start:manual` as an intentional shell-owned downgrade, not the default attached start path.
 - Do not claim continuous monitoring unless a real background supervisor or automation owns that task.
 - If the request is about deciding whether an existing persisted run should reopen, hold, continue, or close, switch to `run-resume`.
+- When `loop:status --json` or `runtime/operator-surface.json` reports `attention_required = codex`, the next foreground action is `$attached-loop`, not a user-facing pause explanation.

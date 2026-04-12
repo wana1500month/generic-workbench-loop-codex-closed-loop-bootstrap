@@ -71,18 +71,18 @@ ${(input.notes ?? []).length > 0 ? input.notes!.map((note) => `- ${note}`).join(
         ? `## Current-Thread Rules
 
 1. Stay on the current Codex thread. This run is bound to the stock foreground-thread operator surface. Do not call nested \`codex exec\` or \`codex exec resume\`.
-2. Work phase-by-phase. Update persisted protocol artifacts before and after each controller phase.
+2. Treat current-thread enhancement artifacts as durable same-thread checkpoints. Update persisted protocol artifacts before and after each controller phase.
 3. Keep shell usage short-lived and local to the current phase.
 4. Treat \`round-contract.json\`, \`patch-request.json\`, and \`runtime/round-phase.json\` as authoritative over chat memory.
-5. When a current-thread enhancement artifact is active, the controller pauses honestly with \`stop_reason = "awaiting_current_thread_handoff"\`. Complete the active \`*-prompt.md\` file and write the matching \`*-response.json\` before resuming.
-6. When the bootstrap generator surface is active, complete \`runtime/attached-generator-prompt.md\` and write \`runtime/attached-generator-response.json\` before resuming pre_verification.
+5. When a current-thread enhancement artifact is active, the controller pauses honestly with \`stop_reason = "awaiting_current_thread_handoff"\`, but that boundary is a Codex-owned checkpoint rather than a human stop. \`$attached-loop\` should consume the active \`*-prompt.md\` file and write the matching \`*-response.json\` on the same thread before resuming.
+6. When the bootstrap generator surface is active, treat \`runtime/attached-generator-prompt.md\` / \`runtime/attached-generator-response.json\` as the same kind of Codex-owned checkpoint on this thread.
 7. If the route would require child Codex execution, fail closed and leave a persisted note instead of faking attached behavior.
 
-## Manual Phase Loop
+## Same-Thread Loop
 
 1. Restore the latest run state from persisted artifacts.
 2. Read the active round contract and latest patch request.
-3. Complete only the active phase, then checkpoint.
+3. Consume Codex-owned checkpoints automatically on the same thread until the run reaches a human stop, an external block, or a terminal state.
 4. Re-open the next phase from files, not from chat assumptions.
 `
         : `## Current-Thread Rules
@@ -91,7 +91,7 @@ ${(input.notes ?? []).length > 0 ? input.notes!.map((note) => `- ${note}`).join(
 2. Treat the persisted runtime artifacts as the source of truth and keep work phase-local.
 3. Use the same shell or explicitly reattach from a Codex thread before continuing the active phase.
 4. Treat \`round-contract.json\`, \`patch-request.json\`, and \`runtime/round-phase.json\` as authoritative over chat memory.
-5. When a current-thread enhancement artifact is active, the controller pauses honestly with \`stop_reason = "awaiting_current_thread_handoff"\`. Complete the active \`*-prompt.md\` file and write the matching \`*-response.json\` before resuming.
+5. Current-thread enhancement artifacts are still durable checkpoints. If no bound Codex thread is available, the operator must manually complete the active \`*-prompt.md\` file and write the matching \`*-response.json\` before resuming.
 6. When the bootstrap generator surface is active, complete \`runtime/attached-generator-prompt.md\` and write \`runtime/attached-generator-response.json\` before resuming pre_verification.
 7. If the route would require child Codex execution, fail closed and leave a persisted note instead of faking attached behavior.
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "Attached Loop"
   short_description: "Keep the active Codex thread as the harness controller"
-  default_prompt: "Use $attached-loop to keep an already-started run on the current Codex thread and continue phase-by-phase without nested codex exec calls. Use $loop-control for start, status, stop, or resume entry."
+  default_prompt: "Use $attached-loop to keep an already-started run on the current Codex thread and consume same-thread Codex checkpoints until a human stop, external block, or terminal state is reached. Use $loop-control for start, status, stop, or resume entry."

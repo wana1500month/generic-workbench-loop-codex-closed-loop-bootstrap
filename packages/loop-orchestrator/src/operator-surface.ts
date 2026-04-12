@@ -2,7 +2,9 @@ import { dirname, relative, resolve } from "node:path";
 
 import { repoRoot, writeJson, writeText } from "./file-system.js";
 import type {
+  CurrentThreadCheckpointKind,
   OperatorAppVisibility,
+  OperatorAttentionRequired,
   OperatorEntrypoint,
   OperatorHandoffState,
   OperatorLaunchOrigin,
@@ -11,6 +13,7 @@ import type {
   ControllerRoundPhase,
   ExecutionState,
   OperatorPresentationMode,
+  OperatorRecommendedSkill,
   OperatorResumeSkill,
   OperatorSurfaceOwner,
   OperatorSurfaceArtifact,
@@ -343,6 +346,49 @@ export const operatorPresentationModeForTransport = (input: {
   return resolveOperatorSurfaceContext(input).presentationMode;
 };
 
+const defaultAttentionRequiredFor = (input: {
+  executionState: ExecutionState | "configured";
+  transportMode: TransportMode;
+  phaseStatus?: ControllerPhaseStatus;
+}): OperatorAttentionRequired => {
+  if (
+    input.executionState === "completed" ||
+    input.executionState === "failed"
+  ) {
+    return "none";
+  }
+
+  switch (input.phaseStatus) {
+    case "awaiting_codex_work":
+      return "codex";
+    case "awaiting_human_input":
+      return "human";
+    case "awaiting_external_condition":
+      return "external";
+    case "awaiting_input":
+      return input.transportMode === "current-thread" ? "codex" : "human";
+    default:
+      return "none";
+  }
+};
+
+const defaultAutoResumeEligibleFor = (input: {
+  transportMode: TransportMode;
+  attentionRequired: OperatorAttentionRequired;
+}): boolean =>
+  input.transportMode === "current-thread" &&
+  input.attentionRequired === "codex";
+
+const defaultRecommendedSkillFor = (input: {
+  transportMode: TransportMode;
+  attentionRequired: OperatorAttentionRequired;
+  resumeSkill: OperatorResumeSkill;
+}): OperatorRecommendedSkill =>
+  input.transportMode === "current-thread" &&
+  input.attentionRequired === "codex"
+    ? "attached-loop"
+    : input.resumeSkill;
+
 const defaultNextActionForTransport = (input: {
   executionState: ExecutionState | "configured";
   transportMode: TransportMode;
@@ -350,6 +396,11 @@ const defaultNextActionForTransport = (input: {
   appVisibility: OperatorAppVisibility;
   handoffState: OperatorHandoffState;
   resumeSkill: OperatorResumeSkill;
+  attentionRequired: OperatorAttentionRequired;
+  checkpointKind?: CurrentThreadCheckpointKind;
+  autoResumeEligible: boolean;
+  recommendedSkill: OperatorRecommendedSkill;
+  recommendedCommand?: string;
   worktreePath?: string;
   phase?: ControllerRoundPhase;
   phaseStatus?: ControllerPhaseStatus;
@@ -375,19 +426,25 @@ const defaultNextActionForTransport = (input: {
   if (input.handoffState === "automation") {
     return "Treat this run as background automation. Inspect the persisted runtime surface before resuming or triaging it.";
   }
-  if (
-    input.transportMode === "current-thread" &&
-    input.phaseStatus === "awaiting_input" &&
-    input.presentationMode === "foreground-thread"
-  ) {
-    return `Stay on the current Codex thread, complete the active protocol artifact, then continue with $${input.resumeSkill}.`;
+  if (input.attentionRequired === "codex") {
+    const checkpointLabel = input.checkpointKind
+      ? `${input.checkpointKind} checkpoint`
+      : "active checkpoint";
+    if (
+      input.transportMode === "current-thread" &&
+      input.presentationMode === "foreground-thread"
+    ) {
+      return `Codex continuation is pending on this thread. $${input.recommendedSkill} should consume the ${checkpointLabel}${input.autoResumeEligible ? " automatically" : ""}.`;
+    }
+    return input.recommendedCommand
+      ? `Codex continuation is pending on the current operator surface. Consume the ${checkpointLabel}, then continue with ${input.recommendedCommand}.`
+      : `Codex continuation is pending on the current operator surface. Consume the ${checkpointLabel}, then resume from persisted artifacts.`;
   }
-  if (
-    input.transportMode === "current-thread" &&
-    input.phaseStatus === "awaiting_input" &&
-    input.presentationMode === "manual-protocol"
-  ) {
-    return "Complete the active protocol artifact from the current operator surface, then resume.";
+  if (input.attentionRequired === "human") {
+    return "Your decision is required before the run can continue.";
+  }
+  if (input.attentionRequired === "external") {
+    return "An environment fix is required before the run can continue.";
   }
   if (
     input.transportMode === "current-thread" &&
@@ -497,6 +554,9 @@ export const buildOperatorSurfaceArtifact = (input: {
   round?: number;
   phase?: ControllerRoundPhase;
   phaseStatus?: ControllerPhaseStatus;
+  attentionRequired?: OperatorAttentionRequired;
+  checkpointKind?: CurrentThreadCheckpointKind;
+  autoResumeEligible?: boolean;
   summaryPath?: string;
   transportStatePath?: string;
   transportProtocolPath?: string;
@@ -513,6 +573,8 @@ export const buildOperatorSurfaceArtifact = (input: {
   handoffState?: OperatorHandoffState;
   resumeSkill?: OperatorResumeSkill;
   resumeCommand?: string;
+  recommendedSkill?: OperatorRecommendedSkill;
+  recommendedCommand?: string;
   requiresCodexApp?: boolean;
   nextAction?: string;
   notes?: string[];
@@ -561,6 +623,19 @@ export const buildOperatorSurfaceArtifact = (input: {
       appVisibility: context.appVisibility,
       handoffState
     });
+  const attentionRequired =
+    input.attentionRequired ??
+    defaultAttentionRequiredFor({
+      executionState: input.executionState,
+      transportMode: input.transportMode,
+      phaseStatus: input.phaseStatus
+    });
+  const autoResumeEligible =
+    input.autoResumeEligible ??
+    defaultAutoResumeEligibleFor({
+      transportMode: input.transportMode,
+      attentionRequired
+    });
   const runDirectory =
     trimString(input.runDirectory) ??
     (input.summaryPath ? dirname(input.summaryPath) : undefined);
@@ -574,6 +649,14 @@ export const buildOperatorSurfaceArtifact = (input: {
       handoffState,
       appVisibility: context.appVisibility
     });
+  const recommendedSkill =
+    input.recommendedSkill ??
+    defaultRecommendedSkillFor({
+      transportMode: input.transportMode,
+      attentionRequired,
+      resumeSkill
+    });
+  const recommendedCommand = input.recommendedCommand ?? resumeCommand;
   const normalizedNotes =
     input.executionState === "completed"
       ? []
@@ -591,6 +674,11 @@ export const buildOperatorSurfaceArtifact = (input: {
       appVisibility: context.appVisibility,
       handoffState,
       resumeSkill,
+      attentionRequired,
+      checkpointKind: input.checkpointKind,
+      autoResumeEligible,
+      recommendedSkill,
+      recommendedCommand,
       worktreePath,
       phase: input.phase,
       phaseStatus: input.phaseStatus
@@ -615,6 +703,11 @@ export const buildOperatorSurfaceArtifact = (input: {
     ...(input.round !== undefined ? { round: input.round } : {}),
     ...(input.phase ? { phase: input.phase } : {}),
     ...(input.phaseStatus ? { phase_status: input.phaseStatus } : {}),
+    ...(attentionRequired !== "none"
+      ? { attention_required: attentionRequired }
+      : {}),
+    ...(input.checkpointKind ? { checkpoint_kind: input.checkpointKind } : {}),
+    ...(autoResumeEligible ? { auto_resume_eligible: autoResumeEligible } : {}),
     ...(input.summaryPath ? { summary_path: input.summaryPath } : {}),
     ...(input.transportStatePath ? { transport_state_path: input.transportStatePath } : {}),
     ...(input.transportProtocolPath ? { transport_protocol_path: input.transportProtocolPath } : {}),
@@ -625,6 +718,8 @@ export const buildOperatorSurfaceArtifact = (input: {
     ...(context.threadName ? { thread_name: context.threadName } : {}),
     ...(worktreeId ? { worktree_id: worktreeId } : {}),
     ...(worktreePath ? { worktree_path: worktreePath } : {}),
+    ...(recommendedSkill ? { recommended_skill: recommendedSkill } : {}),
+    ...(recommendedCommand ? { recommended_command: recommendedCommand } : {}),
     ...(resumeCommand ? { resume_command: resumeCommand } : {}),
     ...(nextAction ? { next_action: nextAction } : {}),
     ...(normalizedNotes.length > 0 ? { notes: normalizedNotes } : {})
@@ -655,6 +750,9 @@ export const renderOperatorSurfaceMarkdown = (
 - Round: ${artifact.round ?? "none"}
 - Phase: ${artifact.phase ?? "none"}
 - Phase status: ${artifact.phase_status ?? "none"}
+- Attention required: ${artifact.attention_required ?? "none"}
+- Checkpoint kind: ${artifact.checkpoint_kind ?? "none"}
+- Auto resume eligible: ${artifact.auto_resume_eligible ? "yes" : "no"}
 - Summary: ${rel(artifact.summary_path)}
 - Transport state: ${rel(artifact.transport_state_path)}
 - Transport protocol: ${rel(artifact.transport_protocol_path)}
@@ -664,6 +762,8 @@ export const renderOperatorSurfaceMarkdown = (
 - Thread name: ${artifact.thread_name ?? "none"}
 - Worktree id: ${artifact.worktree_id ?? "none"}
 - Worktree path: ${artifact.worktree_path ?? "none"}
+- Recommended skill: ${artifact.recommended_skill ?? "none"}
+- Recommended command: ${artifact.recommended_command ?? "none"}
 - Resume command: ${artifact.resume_command ?? "none"}
 - Next action: ${artifact.next_action ?? "none"}
 

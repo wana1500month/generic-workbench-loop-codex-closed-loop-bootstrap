@@ -154,6 +154,7 @@ import type {
   ControllerMode,
   ControllerPhaseStatus,
   ControllerRoundPhase,
+  CurrentThreadCheckpointKind,
   EvalReport,
   ExecutionState,
   EvaluatorVerdictArtifact,
@@ -162,6 +163,8 @@ import type {
   LoadedAdapterContract,
   LoopRubric,
   LoopRunSummary,
+  OperatorAttentionRequired,
+  OperatorRecommendedSkill,
   PatchRequestArtifact,
   QualityCritiqueArtifact,
   ReleaseThresholdResults,
@@ -537,6 +540,21 @@ const controllerPhaseOrder: readonly ControllerRoundPhase[] = [
 
 const controllerPhaseIndex = (phase: ControllerRoundPhase): number =>
   controllerPhaseOrder.indexOf(phase);
+
+const pausedPhaseStatuses = new Set<ControllerPhaseStatus>([
+  "awaiting_input",
+  "awaiting_codex_work",
+  "awaiting_human_input",
+  "awaiting_external_condition"
+]);
+
+const isPausedPhaseStatus = (
+  status: ControllerPhaseStatus | undefined
+): boolean => Boolean(status && pausedPhaseStatuses.has(status));
+
+const isCodexCheckpointPhaseStatus = (
+  status: ControllerPhaseStatus | undefined
+): boolean => status === "awaiting_codex_work" || status === "awaiting_input";
 
 const phaseCompletedAtOrBeyond = (
   resumeState:
@@ -1335,12 +1353,13 @@ export const runClosedLoop = async (input: {
     | {
         artifacts: Record<string, string>;
         notes: string[];
+        checkpointKind: CurrentThreadCheckpointKind;
       }
     | undefined;
   const resumePlanningEnhancement =
     currentThreadTransport &&
     restoredRun?.runtimeRoundPhase?.phase === "planning" &&
-    restoredRun.runtimeRoundPhase.status === "awaiting_input";
+    isCodexCheckpointPhaseStatus(restoredRun.runtimeRoundPhase.status);
   const ensureEarlyAppServerTransport = async (): Promise<void> => {
     if (transportMode !== "app-server" || appServerTransport) {
       return;
@@ -1407,12 +1426,13 @@ export const runClosedLoop = async (input: {
           plan: basePlan,
           executorMode
         });
-        if (plannerEnhancement.kind === "handoff") {
+        if (plannerEnhancement.kind === "checkpoint") {
           scenario = baseScenario;
           plan = basePlan;
           pendingPlannerEnhancementPause = {
             artifacts: plannerEnhancement.artifacts,
-            notes: plannerEnhancement.notes
+            notes: plannerEnhancement.notes,
+            checkpointKind: plannerEnhancement.checkpointKind
           };
         } else {
           scenario = plannerEnhancement.value.scenario;
@@ -1546,7 +1566,7 @@ export const runClosedLoop = async (input: {
       ? pausedStopReasons.has(currentCheckpointStopReason)
         ? "paused"
         : "completed"
-      : activeHeartbeatPhaseStatus === "awaiting_input"
+      : isPausedPhaseStatus(activeHeartbeatPhaseStatus)
         ? "paused"
         : activeHeartbeatPhaseStatus === "stalled"
           ? "stalled"
@@ -1603,6 +1623,11 @@ export const runClosedLoop = async (input: {
   };
   let { activePromptPath: activePromptArtifactPath, activeResponsePath: activeResponseArtifactPath } =
     activeArtifactPathsFor(restoredRun?.runtimeRoundPhase?.artifacts);
+  let activeAttentionRequired: OperatorAttentionRequired | undefined;
+  let activeCheckpointKind: CurrentThreadCheckpointKind | undefined;
+  let activeAutoResumeEligible: boolean | undefined;
+  let activeRecommendedSkill: OperatorRecommendedSkill | undefined;
+  let activeRecommendedCommand: string | undefined;
   let transportProtocolCurrentPath =
     restoredRun?.summary.transport_protocol_path ?? transportProtocolPath;
   const syncActivePhaseBudget = (): void => {
@@ -1680,6 +1705,11 @@ export const runClosedLoop = async (input: {
     phase?: ControllerRoundPhase;
     phaseStatus?: ControllerPhaseStatus;
     executionState?: ExecutionState | "configured";
+    attentionRequired?: OperatorAttentionRequired;
+    checkpointKind?: CurrentThreadCheckpointKind;
+    autoResumeEligible?: boolean;
+    recommendedSkill?: OperatorRecommendedSkill;
+    recommendedCommand?: string;
     nextAction?: string;
     activePromptPath?: string;
     activeResponsePath?: string;
@@ -1692,6 +1722,21 @@ export const runClosedLoop = async (input: {
     if (input?.activeResponsePath !== undefined) {
       activeResponseArtifactPath = input.activeResponsePath;
     }
+    if (input?.attentionRequired !== undefined) {
+      activeAttentionRequired = input.attentionRequired;
+    }
+    if (input?.checkpointKind !== undefined) {
+      activeCheckpointKind = input.checkpointKind;
+    }
+    if (input?.autoResumeEligible !== undefined) {
+      activeAutoResumeEligible = input.autoResumeEligible;
+    }
+    if (input?.recommendedSkill !== undefined) {
+      activeRecommendedSkill = input.recommendedSkill;
+    }
+    if (input?.recommendedCommand !== undefined) {
+      activeRecommendedCommand = input.recommendedCommand;
+    }
     await writeOperatorSurfaceArtifacts({
       jsonPath: runtimeStatePaths.operatorSurfacePath,
       markdownPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
@@ -1703,6 +1748,10 @@ export const runClosedLoop = async (input: {
         round: input?.round ?? activeHeartbeatRound,
         phase: input?.phase ?? activeHeartbeatPhase,
         phaseStatus: input?.phaseStatus ?? activeHeartbeatPhaseStatus,
+        attentionRequired: input?.attentionRequired ?? activeAttentionRequired,
+        checkpointKind: input?.checkpointKind ?? activeCheckpointKind,
+        autoResumeEligible:
+          input?.autoResumeEligible ?? activeAutoResumeEligible,
         summaryPath,
         transportStatePath: runtimeStatePaths.transportStatePath,
         transportProtocolPath: transportProtocolCurrentPath,
@@ -1712,6 +1761,9 @@ export const runClosedLoop = async (input: {
         dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
         threadId: snapshot?.thread_id,
         threadName: snapshot?.thread_name,
+        recommendedSkill: input?.recommendedSkill ?? activeRecommendedSkill,
+        recommendedCommand:
+          input?.recommendedCommand ?? activeRecommendedCommand,
         nextAction: input?.nextAction,
         notes: input?.notes ?? heartbeatNotes
       })
@@ -1856,10 +1908,17 @@ export const runClosedLoop = async (input: {
     if (inputPhase.status === "in_progress") {
       activeHeartbeatPhaseStartedAt = now;
       setExecutionState("running");
-    } else if (inputPhase.status === "awaiting_input") {
+    } else if (isPausedPhaseStatus(inputPhase.status)) {
       setExecutionState("paused");
     } else if (inputPhase.status === "stalled") {
       setExecutionState("stalled");
+    }
+    if (!isPausedPhaseStatus(inputPhase.status)) {
+      activeAttentionRequired = undefined;
+      activeCheckpointKind = undefined;
+      activeAutoResumeEligible = undefined;
+      activeRecommendedSkill = undefined;
+      activeRecommendedCommand = undefined;
     }
     if (inputPhase.notes?.length) {
       replaceHeartbeatNotes(inputPhase.notes);
@@ -2041,12 +2100,17 @@ export const runClosedLoop = async (input: {
     return summary;
   };
 
-  const finalizeRunAsManualHandoff = async (input: {
+  const finalizeRunAsPausedStop = async (input: {
     stopReason: Extract<
       LoopRunSummary["stop_reason"],
       "awaiting_current_thread_handoff" | "awaiting_manual_generator"
     >;
     notes: string[];
+    attentionRequired?: OperatorAttentionRequired;
+    checkpointKind?: CurrentThreadCheckpointKind;
+    autoResumeEligible?: boolean;
+    recommendedSkill?: OperatorRecommendedSkill;
+    recommendedCommand?: string;
     activePromptPath?: string;
     activeResponsePath?: string;
   }): Promise<ClosedLoopResult> => {
@@ -2055,6 +2119,11 @@ export const runClosedLoop = async (input: {
     await writeLiveTransportProtocol();
     await writeOperatorSurface({
       executionState: "paused",
+      attentionRequired: input.attentionRequired,
+      checkpointKind: input.checkpointKind,
+      autoResumeEligible: input.autoResumeEligible,
+      recommendedSkill: input.recommendedSkill,
+      recommendedCommand: input.recommendedCommand,
       activePromptPath: input.activePromptPath,
       activeResponsePath: input.activeResponsePath,
       notes: heartbeatNotes
@@ -2067,9 +2136,10 @@ export const runClosedLoop = async (input: {
       plannedScenarioPath
     };
   };
-  const pauseForCurrentThreadEnhancement = async (input: {
+  const checkpointForCurrentThreadWork = async (input: {
     round: number;
     phase: ControllerRoundPhase;
+    checkpointKind: CurrentThreadCheckpointKind;
     artifacts: Record<string, string>;
     notes: string[];
   }): Promise<ClosedLoopResult> => {
@@ -2079,13 +2149,17 @@ export const runClosedLoop = async (input: {
     await recordRoundPhase({
       round: input.round,
       phase: input.phase,
-      status: "awaiting_input",
+      status: "awaiting_codex_work",
       artifacts: input.artifacts,
       notes: input.notes
     });
-    return finalizeRunAsManualHandoff({
+    return finalizeRunAsPausedStop({
       stopReason: "awaiting_current_thread_handoff",
       notes: input.notes,
+      attentionRequired: "codex",
+      checkpointKind: input.checkpointKind,
+      autoResumeEligible: true,
+      recommendedSkill: "attached-loop",
       activePromptPath,
       activeResponsePath
     });
@@ -2097,13 +2171,17 @@ export const runClosedLoop = async (input: {
     await recordRoundPhase({
       round: 0,
       phase: "planning",
-      status: "awaiting_input",
+      status: "awaiting_codex_work",
       artifacts: pendingPlannerEnhancementPause.artifacts,
       notes: pendingPlannerEnhancementPause.notes
     });
-    return finalizeRunAsManualHandoff({
+    return finalizeRunAsPausedStop({
       stopReason: "awaiting_current_thread_handoff",
       notes: pendingPlannerEnhancementPause.notes,
+      attentionRequired: "codex",
+      checkpointKind: pendingPlannerEnhancementPause.checkpointKind,
+      autoResumeEligible: true,
+      recommendedSkill: "attached-loop",
       activePromptPath,
       activeResponsePath
     });
@@ -2268,10 +2346,11 @@ export const runClosedLoop = async (input: {
               executorMode
             })
           : undefined;
-      if (currentThreadContractReviewEnhancement?.kind === "handoff") {
-        return pauseForCurrentThreadEnhancement({
+      if (currentThreadContractReviewEnhancement?.kind === "checkpoint") {
+        return checkpointForCurrentThreadWork({
           round,
           phase: "negotiation",
+          checkpointKind: currentThreadContractReviewEnhancement.checkpointKind,
           artifacts: currentThreadContractReviewEnhancement.artifacts,
           notes: currentThreadContractReviewEnhancement.notes
         });
@@ -2335,10 +2414,11 @@ export const runClosedLoop = async (input: {
               executorMode
             })
           : undefined;
-      if (currentThreadGeneratorPlanEnhancement?.kind === "handoff") {
-        return pauseForCurrentThreadEnhancement({
+      if (currentThreadGeneratorPlanEnhancement?.kind === "checkpoint") {
+        return checkpointForCurrentThreadWork({
           round,
           phase: "negotiation",
+          checkpointKind: currentThreadGeneratorPlanEnhancement.checkpointKind,
           artifacts: currentThreadGeneratorPlanEnhancement.artifacts,
           notes: currentThreadGeneratorPlanEnhancement.notes
         });
@@ -2595,29 +2675,32 @@ export const runClosedLoop = async (input: {
             `App Server attached generator completed for round ${round} and wrote ${artifacts.attached_generator_response_path}.`
           ]);
         } else if (transportMode === "current-thread") {
+          const attachedGeneratorNotes = [
+            `Current-thread attached generator checkpoint is ready for round ${round}.`,
+            `The same Codex thread should review ${artifacts.attached_generator_prompt_path} and write ${artifacts.attached_generator_response_path}.`,
+            "This is a same-thread Codex checkpoint, not a human decision stop."
+          ];
           await recordRoundPhase({
             round,
             phase: "pre_verification",
-            status: "awaiting_input",
+            status: "awaiting_codex_work",
             artifacts: {
               attached_generator_task_path:
                 artifacts.attached_generator_task_path,
               attached_generator_response_path:
                 artifacts.attached_generator_response_path
             },
-            notes: [
-              `Current-thread attached generator is paused for round ${round}.`,
-              `Complete ${artifacts.attached_generator_prompt_path} on the current Codex thread.`,
-              `Write ${artifacts.attached_generator_response_path}, then resume the run.`
-            ]
+            notes: attachedGeneratorNotes
           });
-          return finalizeRunAsManualHandoff({
+          return finalizeRunAsPausedStop({
             stopReason: "awaiting_current_thread_handoff",
-            notes: [
-              `Current-thread attached generator is paused for round ${round}.`,
-              `Complete ${artifacts.attached_generator_prompt_path} on the current Codex thread.`,
-              `Write ${artifacts.attached_generator_response_path}, then resume the run.`
-            ]
+            notes: attachedGeneratorNotes,
+            attentionRequired: "codex",
+            checkpointKind: "attached-generator",
+            autoResumeEligible: true,
+            recommendedSkill: "attached-loop",
+            activePromptPath: artifacts.attached_generator_prompt_path,
+            activeResponsePath: artifacts.attached_generator_response_path
           });
         }
       }
@@ -2986,10 +3069,11 @@ export const runClosedLoop = async (input: {
               executorMode
             })
           : undefined;
-      if (evalEnhancement?.kind === "handoff") {
-        return pauseForCurrentThreadEnhancement({
+      if (evalEnhancement?.kind === "checkpoint") {
+        return checkpointForCurrentThreadWork({
           round,
           phase: "evaluation",
+          checkpointKind: evalEnhancement.checkpointKind,
           artifacts: evalEnhancement.artifacts,
           notes: evalEnhancement.notes
         });

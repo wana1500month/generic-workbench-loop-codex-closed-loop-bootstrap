@@ -10,6 +10,7 @@ import type {
   ContractAgreementArtifact,
   ContractReviewArtifact,
   CoreVerificationProbeExecution,
+  CurrentThreadCheckpointKind,
   CurrentThreadEnhancementStage,
   CurrentThreadEnhancementTaskArtifact,
   EvalReport,
@@ -83,7 +84,10 @@ export type CurrentThreadEnhancementOutcome<T> =
       runtimeWarnings: string[];
     }
   | {
-      kind: "handoff";
+      kind: "checkpoint";
+      consumer: "codex";
+      checkpointKind: CurrentThreadCheckpointKind;
+      autoResumeEligible: true;
       notes: string[];
       artifacts: Record<string, string>;
     };
@@ -744,7 +748,7 @@ const applyEvalEnhancementResponse = (input: {
   };
 };
 
-const handoffNotesFor = (input: {
+const checkpointNotesFor = (input: {
   round?: number;
   stageLabel: string;
   promptPath: string;
@@ -755,12 +759,12 @@ const handoffNotesFor = (input: {
     ? [
         `Current-thread ${input.stageLabel} response is invalid${input.round !== undefined ? ` for round ${input.round}` : ""}.`,
         `Rewrite ${input.responsePath} with JSON only after reviewing ${input.promptPath} on the current Codex thread.`,
-        `Resume the run after updating ${input.responsePath}.`
+        `Then continue the same-thread checkpoint with $attached-loop or the persisted resume surface.`
       ]
     : [
-        `Current-thread ${input.stageLabel} is paused${input.round !== undefined ? ` for round ${input.round}` : ""}.`,
-        `Complete ${input.promptPath} on the current Codex thread.`,
-        `Write ${input.responsePath}, then resume the run.`
+        `Current-thread ${input.stageLabel} checkpoint is ready${input.round !== undefined ? ` for round ${input.round}` : ""}.`,
+        `The same Codex thread should review ${input.promptPath} and write ${input.responsePath}.`,
+        "This is a same-thread Codex checkpoint, not a human decision stop."
       ];
 
 export const enhancePlanWithCurrentThread = async (input: {
@@ -807,7 +811,7 @@ export const enhancePlanWithCurrentThread = async (input: {
   }
 
   const invalidResponse = rawResponse !== undefined;
-  const notes = handoffNotesFor({
+  const notes = checkpointNotesFor({
     stageLabel: "planner enhancement",
     promptPath: rel(input.runtimePaths.plannerEnhancementPromptPath),
     responsePath: rel(input.runtimePaths.plannerEnhancementResponsePath),
@@ -830,7 +834,10 @@ export const enhancePlanWithCurrentThread = async (input: {
     notes
   });
   return {
-    kind: "handoff",
+    kind: "checkpoint",
+    consumer: "codex",
+    checkpointKind: "planner",
+    autoResumeEligible: true,
     notes,
     artifacts: {
       planner_enhancement_task_path: input.runtimePaths.plannerEnhancementTaskPath,
@@ -879,7 +886,7 @@ export const enhanceContractReviewWithCurrentThread = async (input: {
   }
 
   const invalidResponse = rawResponse !== undefined;
-  const notes = handoffNotesFor({
+  const notes = checkpointNotesFor({
     round: input.round,
     stageLabel: "contract-review enhancement",
     promptPath: rel(input.artifacts.contract_review_enhancement_prompt_path),
@@ -904,7 +911,10 @@ export const enhanceContractReviewWithCurrentThread = async (input: {
     notes
   });
   return {
-    kind: "handoff",
+    kind: "checkpoint",
+    consumer: "codex",
+    checkpointKind: "contract-review",
+    autoResumeEligible: true,
     notes,
     artifacts: {
       contract_review_enhancement_task_path:
@@ -959,7 +969,7 @@ export const enhanceGeneratorPlanWithCurrentThread = async (input: {
   }
 
   const invalidResponse = rawResponse !== undefined;
-  const notes = handoffNotesFor({
+  const notes = checkpointNotesFor({
     round: input.round,
     stageLabel: "generator-plan enhancement",
     promptPath: rel(input.artifacts.generator_plan_enhancement_prompt_path),
@@ -985,7 +995,10 @@ export const enhanceGeneratorPlanWithCurrentThread = async (input: {
     notes
   });
   return {
-    kind: "handoff",
+    kind: "checkpoint",
+    consumer: "codex",
+    checkpointKind: "generator-plan",
+    autoResumeEligible: true,
     notes,
     artifacts: {
       generator_plan_enhancement_task_path:
@@ -1042,7 +1055,7 @@ export const enhanceEvalReportWithCurrentThread = async (input: {
   }
 
   const invalidResponse = rawResponse !== undefined;
-  const notes = handoffNotesFor({
+  const notes = checkpointNotesFor({
     round: input.round,
     stageLabel: "evaluator enhancement",
     promptPath: rel(input.artifacts.eval_enhancement_prompt_path),
@@ -1068,7 +1081,10 @@ export const enhanceEvalReportWithCurrentThread = async (input: {
     notes
   });
   return {
-    kind: "handoff",
+    kind: "checkpoint",
+    consumer: "codex",
+    checkpointKind: "evaluator",
+    autoResumeEligible: true,
     notes,
     artifacts: {
       eval_enhancement_task_path: input.artifacts.eval_enhancement_task_path,

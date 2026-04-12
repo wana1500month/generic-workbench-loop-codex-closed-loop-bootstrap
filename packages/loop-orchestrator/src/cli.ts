@@ -97,9 +97,14 @@ interface StatusReport {
     round?: number;
     phase?: ControllerRoundPhase;
     phase_status?: string;
+    attention_required?: string;
+    checkpoint_kind?: string;
+    auto_resume_eligible?: boolean;
     next_action?: string;
     active_prompt_path?: string;
     active_response_path?: string;
+    recommended_skill?: string;
+    recommended_command?: string;
   };
   runtime_health: ReturnType<typeof assessRuntimeHealth>;
   effective_execution_state: ReturnType<typeof assessRuntimeHealth>["execution_state"];
@@ -186,8 +191,8 @@ const usageLines = [
   `  shell-launched attached/current-thread seeds require a bound Codex thread id unless you intentionally pass ${manualProtocolSeedFlag}.`,
   "  resume/phase preserve the existing run controller and transport unless you override them explicitly.",
   `  app-visible current-thread runs must continue from the same Codex thread unless you intentionally pass ${shellResumeDowngradeFlag}.`,
-  "  phase re-enters from the named phase and runs until the next persisted handoff or terminal stop.",
-  "  current-thread planning/negotiation/evaluation handoffs remain file-backed through operator-surface.json."
+  "  phase re-enters from the named phase and runs until the next persisted checkpoint or terminal stop.",
+  "  current-thread planning/negotiation/evaluation checkpoints remain file-backed through operator-surface.json."
 ] as const;
 
 const subcommandUsage = {
@@ -780,6 +785,15 @@ const buildStatusReport = async (runDirectory: string): Promise<StatusReport> =>
       ...(activeRound !== undefined ? { round: activeRound } : {}),
       ...(activePhase ? { phase: activePhase } : {}),
       ...(activePhaseStatus ? { phase_status: activePhaseStatus } : {}),
+      ...(operatorSurface?.attention_required
+        ? { attention_required: operatorSurface.attention_required }
+        : {}),
+      ...(operatorSurface?.checkpoint_kind
+        ? { checkpoint_kind: operatorSurface.checkpoint_kind }
+        : {}),
+      ...(operatorSurface?.auto_resume_eligible !== undefined
+        ? { auto_resume_eligible: operatorSurface.auto_resume_eligible }
+        : {}),
       ...(operatorSurface?.next_action
         ? { next_action: operatorSurface.next_action }
         : {}),
@@ -788,6 +802,12 @@ const buildStatusReport = async (runDirectory: string): Promise<StatusReport> =>
         : {}),
       ...(operatorSurface?.active_response_path
         ? { active_response_path: operatorSurface.active_response_path }
+        : {}),
+      ...(operatorSurface?.recommended_skill
+        ? { recommended_skill: operatorSurface.recommended_skill }
+        : {}),
+      ...(operatorSurface?.recommended_command
+        ? { recommended_command: operatorSurface.recommended_command }
         : {})
     },
     runtime_health: runtimeHealth,
@@ -1054,6 +1074,15 @@ const printStatusReport = (report: StatusReport): void => {
       `Active: round ${report.active.round ?? "none"} / ${report.active.phase ?? "none"} / ${report.active.phase_status ?? "none"}`
     );
   }
+  if (
+    report.active.attention_required ||
+    report.active.checkpoint_kind ||
+    report.active.auto_resume_eligible !== undefined
+  ) {
+    console.log(
+      `Attention: ${report.active.attention_required ?? "none"} / Checkpoint: ${report.active.checkpoint_kind ?? "none"} / Auto resume: ${report.active.auto_resume_eligible ? "yes" : "no"}`
+    );
+  }
   console.log(
     `Scores: total ${report.scores.total}, control-plane ${report.scores.control_plane}, proof ${report.scores.proof}, release ${report.scores.release}`
   );
@@ -1063,6 +1092,11 @@ const printStatusReport = (report: StatusReport): void => {
   }
   if (report.operator_surface?.next_action) {
     console.log(`Next action: ${report.operator_surface.next_action}`);
+  }
+  if (report.active.recommended_skill || report.active.recommended_command) {
+    console.log(
+      `Recommended continuation: ${report.active.recommended_skill ? `$${report.active.recommended_skill}` : "none"} / ${report.active.recommended_command ?? "no command"}`
+    );
   }
   if (report.active.active_prompt_path) {
     console.log(
