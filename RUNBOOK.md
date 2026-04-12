@@ -68,6 +68,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
   - `detached` currently requires `--transport codex-exec`
   - `attached` currently allows `--transport current-thread` or `--transport app-server`
 - `npm run loop:start:codex` is the Codex-owned current-thread start surface. Use `npm run loop:start:bg -- ...` or the deprecated `npm run loop:run -- ...` only when the operator explicitly wants detached background supervision.
+- Codex app run-control prompts such as `루프 시작`, `루프 시작 가능하냐?`, `현재 루프 상태`, `run-179 상태 보여줘`, and `모든 루프 정지` should stay in the `run_control` lane and map to `loop:start:*`, `loop:status`, `loop:resume`, or `loop:stop` instead of falling through harness-design guidance.
 - `npm run loop:run:raw -- ...` remains the direct controller debugging surface, and `npm run loop:watch -- ...` keeps the supervisor detached from the launching shell.
 - Supervisor, runner, and bootstrap-generated runtime helper spawns now set `windowsHide: true`, so Windows detached runs stop opening a visible stack of extra `cmd.exe` shells while the harness is working.
 - Attached runs now default to `--transport current-thread`. That is the stock foreground-thread transport surface, but current-thread only claims foreground ownership when a real bound `CODEX_THREAD_ID` is present.
@@ -86,6 +87,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Use `npm run loop:watch -- ...` when the controller should survive outer shell timeouts. The supervisor now polls runtime health while the child is still alive, marks stale-progress runs as `stalled`, restarts from `--resume-run` when needed, persists `runtime/supervisor-state.json` once the run exists, and discovers the owned run through a supervisor marker instead of guessing from the newest run directory.
 - `loop:status` now reports terminal summary truth first and `runtime/supervisor-state.json` second, so stale runtime heartbeats cannot mask a failed supervisor.
 - Bootstrap-generated adapter commands now run as direct `node` invocations with explicit capability timeouts. Timed-out adapter executions kill the full process tree, write an attempt sentinel with `execution_id`, and quarantine late orphaned results under `adapter/late-results/`.
+- Treat `loop:run` as a compatibility alias for detached supervisor execution, not as the preferred Codex app front door.
 - Bootstrap-generated `run_target` now probes `ready_url` first and reuses a live server instead of restarting it every round. When a tracked process must be replaced, Windows cleanup now uses `taskkill /T /F` so stale `node` or `vite` children do not survive after their parent shell exits.
 - Use `--repair` with `--resume-run` when the controller should repair persisted state and stop instead of opening additional rounds.
 - Use `--resume-phase <phase>` to force repair or resume from a known persisted controller phase such as `evaluation` or `round_commit`.
@@ -325,6 +327,7 @@ npm run loop:start:codex
 npm run loop:start:manual
 npm run loop:start:bg -- --max-rounds 3
 npm run loop:stop -- --run-dir ./evals/runs/run-###
+npm run validate:late-result-restore
 npm run loop:run:raw -- --max-rounds 1
 npm run loop:run -- --adapter ./adapter.example.json --max-rounds 3
 npm run loop:run -- --adapter ./.tmp/semantic-validation/patch-only-success/adapter.json --target-family api-service --max-rounds 3

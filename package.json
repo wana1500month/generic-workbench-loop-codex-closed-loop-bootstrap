@@ -67,6 +67,7 @@
     "validate:bootstrap-evidence-integrity": "node ./scripts/validate-bootstrap-evidence-integrity.mjs",
     "validate:bootstrap-deep-intake": "node ./scripts/validate-bootstrap-deep-intake.mjs",
     "validate:bootstrap-runtime-process-management": "node ./scripts/validate-bootstrap-runtime-process-management.mjs",
+    "validate:late-result-restore": "node ./scripts/validate-late-result-restore.mjs",
     "validate:bootstrap-custom-quality-metrics": "node ./scripts/validate-bootstrap-custom-quality-metrics.mjs",
     "validate:bootstrap-profile-aware-verifier": "node ./scripts/validate-bootstrap-profile-aware-verifier.mjs",
     "validate:intake-gate": "node ./scripts/validate-intake-gate.mjs",

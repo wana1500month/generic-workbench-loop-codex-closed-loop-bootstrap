@@ -35,6 +35,30 @@ for (const fixture of fixtures) {
       `${fixture.id}: missing run reference`
     );
   }
+
+  if (fixture.expect_run_control_action) {
+    assert.equal(
+      result.run_control_action,
+      fixture.expect_run_control_action,
+      `${fixture.id}: unexpected run-control action`
+    );
+  }
+
+  if (fixture.expect_targets_all_runs !== undefined) {
+    assert.equal(
+      result.run_control_targets_all_runs,
+      fixture.expect_targets_all_runs,
+      `${fixture.id}: unexpected all-runs targeting flag`
+    );
+  }
+
+  if (fixture.expect_diagnostic_focus) {
+    assert.deepEqual(
+      result.run_control_diagnostic_focus ?? [],
+      fixture.expect_diagnostic_focus,
+      `${fixture.id}: unexpected run-control diagnostic focus`
+    );
+  }
 }
 
 const harnessHumanOutput = renderLoopIntentResponse(
@@ -52,6 +76,22 @@ const runControlHumanOutput = renderLoopIntentResponse(
 );
 assert.match(runControlHumanOutput, /^Intent:\s+run_control/m);
 assert.match(runControlHumanOutput, /Route:\s+proceed in the run-control lane\./i);
+
+const koreanRunControlRoute = renderLoopIntentResponse(
+  evaluateLoopIntent("\uD604\uC7AC \uB8E8\uD504 \uC0C1\uD0DC")
+);
+assert.match(koreanRunControlRoute, /run_control/);
+assert.match(
+  koreanRunControlRoute,
+  /\uACBD\uB85C:\s+run-control \uB808\uC778\uC73C\uB85C \uC9C4\uD589\./
+);
+
+const compoundRunControl = evaluateLoopIntent(
+  "\uBAA8\uB4E0 \uB8E8\uD504 \uC815\uC9C0\uD558\uACE0 \uC65C \uD0C0\uC784\uC544\uC6C3 \uB098\uB294\uC9C0 \uC6D0\uC778 \uC0C1\uC138\uD558\uAC8C \uADDC\uBA85"
+);
+assert.equal(compoundRunControl.intent, "run_control");
+assert.equal(compoundRunControl.run_control_action, "stop");
+assert.deepEqual(compoundRunControl.run_control_diagnostic_focus, ["timeout_root_cause"]);
 
 const koreanHarnessFixture = fixtures.find(
   (fixture) => fixture.id === "korean-harness-design-actual-prompt"

@@ -24,6 +24,7 @@
 - Key lane-centric skills now ship `agents/openai.yaml`, and the repo now ships a repo-root `.codex-plugin/plugin.json` plus `.agents/plugins/marketplace.json` so Codex app discovery can start from app-facing metadata instead of raw script names.
 - The repo now also ships `loop:status`, `loop:resume`, and `loop:phase` as phase-oriented foreground front doors, so operators can inspect a run or re-enter a named persisted phase without dropping back to raw `--resume-run` flag memorization.
 - `loop:intent` now has a dedicated `run_control` lane for loop start/status/stop/resume requests, so Codex app runtime-control prompts stop falling through harness design or raw CLI advice.
+- Direct Korean run-control prompts such as `루프 시작`, `루프 시작 가능하냐?`, `현재 루프 상태`, `run-179 상태 보여줘`, and `모든 루프 정지` now fast-path into `run_control` instead of dropping to `unknown`.
 - The npm front door is now split explicitly: `loop:start:codex` is the Codex-owned current-thread seed, `loop:start:bg` is the detached supervisor surface, `loop:start:manual` is the intentional shell `manual-protocol` seed, and the older `loop:run` / `loop:single:codex` names remain as compatibility aliases.
 - Terminal operator surfaces now clear stale handoff notes and replace old reattach/resume prompts with closeout guidance, and read-only `loop:status` / `--help` no longer force a rebuild when the compiled CLI is already current.
 - Attached validation now includes `validate:attached-resume-smoke`, which covers current-thread resume/repair and app-server resume continuity.
@@ -32,6 +33,7 @@
 - Outer-timeout prevention now has a separate supervisor surface through `npm run loop:run` and `npm run loop:watch`; the raw controller remains available at `npm run loop:run:raw`, and the supervisor restarts from persisted run state while discovering its owned run through a per-session marker.
 - Bootstrap-generated adapter commands now run as direct `node` invocations with explicit capability timeouts, detached `apply_change` defaults to a fresh exec instead of resuming old generator transcripts, and adapter timeout cleanup now kills the process tree instead of only the shell wrapper.
 - Adapter capability execution now writes per-capability attempt sentinels with `execution_id`, quarantines timed-out late result files under `adapter/late-results/`, and lets restore reject stale orphaned results.
+- The repo now also ships `validate:late-result-restore`, which recreates a timed-out orphaned `apply_change` result and verifies that restore quarantines it instead of reviving the stale aggregate.
 - `loop:status` now treats terminal summary state first and `runtime/supervisor-state.json` second, so stale `live-state.json` can no longer hide a failed supervisor.
 - Attached App Server resume repair now also has a dedicated interrupted-generator regression validator through `validate:app-server-interrupted-generator`.
 - The repo now ships `npm run loop:ui`, a lightweight runtime dashboard that prefers `operator-surface.json` and falls back to transport/runtime state plus recent App Server events for the active run.

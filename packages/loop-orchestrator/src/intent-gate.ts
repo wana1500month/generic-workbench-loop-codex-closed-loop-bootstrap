@@ -5,6 +5,12 @@ import {
 } from "./intake-gate.js";
 
 type HarnessIntentFieldId = "change_goal" | "current_gap" | "success_criteria";
+type RunControlAction = "start" | "status" | "stop" | "resume";
+type RunControlDiagnosticFocus =
+  | "timeout_root_cause"
+  | "restart_budget"
+  | "ownership_mismatch"
+  | "status_truth";
 type RunControlIntentFieldId =
   | "action"
   | "run_reference"
@@ -56,6 +62,12 @@ interface IntentFieldState<TFieldId extends IntentFieldId = IntentFieldId> {
   question: string;
 }
 
+interface ParsedRunControlRequest {
+  action?: RunControlAction;
+  targets_all_runs: boolean;
+  diagnostic_focus: RunControlDiagnosticFocus[];
+}
+
 export interface LoopIntentResult {
   intent: LoopIntent;
   status: LoopIntentStatus;
@@ -68,6 +80,9 @@ export interface LoopIntentResult {
   satisfied_fields: IntentFieldId[];
   rationale: string[];
   extracted_run_reference?: string;
+  run_control_action?: RunControlAction;
+  run_control_targets_all_runs?: boolean;
+  run_control_diagnostic_focus?: RunControlDiagnosticFocus[];
   intake?: IntakeGateResult;
   intake_status?: IntakeGateResult["status"];
   intake_phase?: IntakeGateResult["phase"];
@@ -379,6 +394,76 @@ const extractRunReference = (request: string): string | undefined => {
 
 const calculateConfidence = (score: number): number => roundScore(Math.min(0.55 + score * 0.08, 0.97));
 
+const parseRunControlRequest = (request: string): ParsedRunControlRequest => {
+  const normalized = normalizeText(request);
+  const runReference = extractRunReference(normalized);
+  const startRequested =
+    /\b(loop\s+start|start\s+loop|run\s+loop|start\s+run|loop:start:(?:codex|bg|manual))\b/i.test(
+      normalized
+    ) ||
+    /\bcan\s+(?:we|i|you)\s+start(?:\s+the)?\s+loop\b/i.test(normalized) ||
+    /\uB8E8\uD504\s*\uC2DC\uC791/u.test(request);
+  const statusRequested =
+    /\b(loop\s+status|show\s+status|monitor(?:ing)?|current\s+loop\s+status)\b/i.test(
+      normalized
+    ) ||
+    (runReference !== undefined && /\bstatus\b/i.test(normalized)) ||
+    /\uD604\uC7AC\s*\uB8E8\uD504\s*\uC0C1\uD0DC/u.test(request) ||
+    /\uC0C1\uD0DC\s*\uBCF4\uC5EC/u.test(request) ||
+    (runReference !== undefined && /\uC0C1\uD0DC/u.test(request));
+  const stopRequested =
+    /\b(loop:stop|stop(?:\s+all)?(?:\s+loops?)?|halt(?:\s+all)?(?:\s+loops?)?|terminate(?:\s+all)?(?:\s+loops?)?)\b/i.test(
+      normalized
+    ) ||
+    /\uBAA8\uB4E0\s*\uB8E8\uD504\s*\uC815\uC9C0/u.test(request) ||
+    /\uB8E8\uD504\s*(?:\uC815\uC9C0|\uBA48\uCDB0)/u.test(request);
+  const resumeRequested =
+    /\b(resume|continue)\s+(?:the\s+)?(?:run|loop)\b/i.test(normalized) ||
+    /\uB8E8\uD504\s*\uC7AC\uAC1C/u.test(request);
+  const targetsAllRuns =
+    /\b(all\s+loops?|everything)\b/i.test(normalized) ||
+    /\uBAA8\uB4E0\s*\uB8E8\uD504/u.test(request);
+
+  const diagnosticFocus: RunControlDiagnosticFocus[] = [];
+  if (
+    /\b(timeout|timed?\s*out|stall(?:ed)?|root\s+cause|why)\b/i.test(normalized) ||
+    /\uD0C0\uC784\uC544\uC6C3|\uC6D0\uC778|\uADDC\uBA85/u.test(request)
+  ) {
+    diagnosticFocus.push("timeout_root_cause");
+  }
+  if (/\brestart\s+budget|restart_count|supervisor\s+failed\b/i.test(normalized)) {
+    diagnosticFocus.push("restart_budget");
+  }
+  if (
+    /\b(ownership|current-thread|detached|codex-?owned|background\s+supervisor)\b/i.test(
+      normalized
+    ) ||
+    /\uC18C\uC720|\uD604\uC7AC\s*\uC2A4\uB808\uB4DC|\uBC31\uADF8\uB77C\uC6B4\uB4DC/u.test(request)
+  ) {
+    diagnosticFocus.push("ownership_mismatch");
+  }
+  if (
+    /\b(status\s+truth|stale|live-state|supervisor-state)\b/i.test(normalized) ||
+    /\uC5C7\uAC08|\uC2E4\uC81C\s*\uC0C1\uD0DC/u.test(request)
+  ) {
+    diagnosticFocus.push("status_truth");
+  }
+
+  return {
+    action: stopRequested
+      ? "stop"
+      : statusRequested
+        ? "status"
+        : startRequested
+          ? "start"
+          : resumeRequested
+            ? "resume"
+            : undefined,
+    targets_all_runs: targetsAllRuns,
+    diagnostic_focus: diagnosticFocus
+  };
+};
+
 const buildQuestions = (states: IntentFieldState[]): string[] =>
   states.filter((field) => !field.satisfied).map((field) => field.question);
 
@@ -505,7 +590,7 @@ const buildRunControlFieldStates = (
     },
     {
       id: "background_preference",
-      satisfied: !wantsStart || mentionsBackground || mentionsCodexOwnership,
+      satisfied: true,
       question: localizedQuestion({
         locale,
         en: "Should this start stay on the current Codex thread or launch as a background supervisor?",
@@ -514,7 +599,7 @@ const buildRunControlFieldStates = (
     },
     {
       id: "codex_ownership_preference",
-      satisfied: !wantsStart || mentionsCodexOwnership || mentionsBackground,
+      satisfied: true,
       question: localizedQuestion({
         locale,
         en: "Should Codex own the foreground current-thread surface for this run, or should the run stay shell/background-owned?",
@@ -623,6 +708,41 @@ const buildProductResult = (
   intake_missing_fields: intake.missing_fields
 });
 
+const buildRunControlResult = (input: {
+  request: string;
+  locale: "en" | "ko";
+  matchedRunControlSignals: readonly string[];
+  rationale: string[];
+  runReference?: string;
+  parsed: ParsedRunControlRequest;
+  confidenceScore: number;
+}): LoopIntentResult => {
+  const states = buildRunControlFieldStates(
+    input.request,
+    input.locale,
+    input.matchedRunControlSignals
+  );
+  const missingFields = buildMissingFields(states);
+  return {
+    intent: "run_control",
+    status: missingFields.length > 0 ? "ask_run_control_questions" : "ready_for_run_control",
+    phase: missingFields.length > 0 ? "intent" : "handoff",
+    locale: input.locale,
+    confidence: calculateConfidence(input.confidenceScore),
+    route_target: "run_control",
+    questions: buildQuestions(states),
+    missing_fields: missingFields,
+    satisfied_fields: buildSatisfiedFields(states),
+    rationale: input.rationale,
+    extracted_run_reference: input.runReference,
+    ...(input.parsed.action ? { run_control_action: input.parsed.action } : {}),
+    ...(input.parsed.targets_all_runs ? { run_control_targets_all_runs: true } : {}),
+    ...(input.parsed.diagnostic_focus.length > 0
+      ? { run_control_diagnostic_focus: input.parsed.diagnostic_focus }
+      : {})
+  };
+};
+
 export const evaluateLoopIntent = (request: string): LoopIntentResult => {
   const normalizedRequest = normalizeText(request);
   const sanitizedRequest = sanitizeIntentRequest(normalizedRequest);
@@ -640,6 +760,7 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
   const matchedEvaluatorSignals = matchSignals(sanitizedRequest, evaluatorSurfaceSignals);
   const matchedEvaluatorChangeSignals = matchSignals(sanitizedRequest, evaluatorChangeSignals);
   const matchedEvaluatorExampleSignals = matchSignals(sanitizedRequest, evaluatorExampleSignals);
+  const parsedRunControl = parseRunControlRequest(normalizedRequest);
   const hasLocalizedSignalHint = [
     ...matchedHarnessSignals,
     ...matchedHarnessChangeSignals,
@@ -777,6 +898,30 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
       (hasRepoSurface ? 1 : 0)
     : 0;
 
+  const directRunControlFastPath =
+    parsedRunControl.action !== undefined &&
+    !hasProductContext &&
+    matchedHarnessChangeSignals.length === 0 &&
+    matchedEvaluatorChangeSignals.length === 0;
+
+  if (directRunControlFastPath) {
+    return buildRunControlResult({
+      request: normalizedRequest,
+      locale,
+      matchedRunControlSignals,
+      runReference,
+      parsed: parsedRunControl,
+      confidenceScore: Math.max(runControlScore, 6),
+      rationale: buildIntentRationale("run-control", matchedRunControlSignals, [
+        `Direct run-control phrase mapped to '${parsedRunControl.action}'.`,
+        ...(parsedRunControl.diagnostic_focus.length > 0
+          ? [`Secondary analysis: ${parsedRunControl.diagnostic_focus.join(", ")}.`]
+          : []),
+        ...(runReference ? [`Target run reference: ${runReference}.`] : [])
+      ])
+    });
+  }
+
   if (
     resumeScore >= 4 &&
     resumeScore >= productScore &&
@@ -815,27 +960,20 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
     runControlScore >= harnessScore &&
     runControlScore >= evaluatorScore
   ) {
-    const states = buildRunControlFieldStates(
-      normalizedRequest,
+    return buildRunControlResult({
+      request: normalizedRequest,
       locale,
-      matchedRunControlSignals
-    );
-    const missingFields = buildMissingFields(states);
-    return {
-      intent: "run_control",
-      status: missingFields.length > 0 ? "ask_run_control_questions" : "ready_for_run_control",
-      phase: missingFields.length > 0 ? "intent" : "handoff",
-      locale,
-      confidence: calculateConfidence(runControlScore),
-      route_target: "run_control",
-      questions: buildQuestions(states),
-      missing_fields: missingFields,
-      satisfied_fields: buildSatisfiedFields(states),
+      matchedRunControlSignals,
+      runReference,
+      parsed: parsedRunControl,
+      confidenceScore: runControlScore,
       rationale: buildIntentRationale("run-control", matchedRunControlSignals, [
-        ...(runReference ? [runReference] : [])
-      ]),
-      extracted_run_reference: runReference
-    };
+        ...(runReference ? [runReference] : []),
+        ...(parsedRunControl.diagnostic_focus.length > 0
+          ? [`Secondary analysis: ${parsedRunControl.diagnostic_focus.join(", ")}.`]
+          : [])
+      ])
+    });
   }
 
   if (productScore > 0) {
@@ -936,9 +1074,11 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
     confidence: 0.4,
     route_target: "clarify",
     questions: [
-      localizedQuestion({
+      locale === "ko"
+        ? "\uC774 \uC694\uCCAD\uC740 product-build, harness-design, run-control, run-resume, evaluator-tuning \uC911 \uC5B4\uB290 \uB808\uC778\uC778\uAC00?"
+        : localizedQuestion({
         locale,
-        en: "Is this a product-build, harness-design, run-resume, or evaluator-tuning request?",
+        en: "Is this a product-build, harness-design, run-control, run-resume, or evaluator-tuning request?",
         ko: "이 요청은 product-build, harness-design, run-resume, evaluator-tuning 중 어느 쪽인가?"
       }),
       localizedQuestion({
@@ -956,9 +1096,36 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
 };
 
 const renderReadyRoute = (result: LoopIntentResult): string => {
+  const koreanRouteLine =
+    result.route_target === "product_intake"
+      ? "\uACBD\uB85C: product intake\uB85C \uC9C4\uD589."
+      : result.route_target === "harness_design"
+        ? "\uACBD\uB85C: harness-design \uB808\uC778\uC73C\uB85C \uC9C4\uD589."
+        : result.route_target === "run_control"
+          ? "\uACBD\uB85C: run-control \uB808\uC778\uC73C\uB85C \uC9C4\uD589."
+          : result.route_target === "run_resume"
+            ? "\uACBD\uB85C: \uAE30\uC874 run\uC744 \uC774\uC5B4\uC11C \uC9C4\uD589."
+        : result.route_target === "evaluator_tuning"
+          ? "\uACBD\uB85C: evaluator calibration \uB808\uC778\uC73C\uB85C \uC9C4\uD589."
+          : "\uACBD\uB85C: \uC694\uCCAD\uC744 \uBA3C\uC800 \uBD84\uB958\uD574\uC57C \uD568.";
+  const englishRouteLine =
+    result.route_target === "product_intake"
+      ? "Route: proceed through product intake."
+      : result.route_target === "harness_design"
+        ? "Route: proceed in the harness-design lane."
+        : result.route_target === "run_control"
+          ? "Route: proceed in the run-control lane."
+          : result.route_target === "run_resume"
+            ? "Route: resume the existing run."
+            : result.route_target === "evaluator_tuning"
+              ? "Route: proceed in the evaluator-calibration lane."
+              : "Route: clarify the request.";
+  const routeLine = result.locale === "ko" ? koreanRouteLine : englishRouteLine;
+  /*
   const routeLine =
     result.locale === "ko"
-      ? result.route_target === "product_intake"
+      ? koreanRouteLine
+      : result.route_target === "product_intake"
         ? "경로: product intake로 진행."
         : result.route_target === "harness_design"
           ? "경로: harness-design 레인으로 진행."
@@ -978,6 +1145,7 @@ const renderReadyRoute = (result: LoopIntentResult): string => {
           : result.route_target === "evaluator_tuning"
               ? "Route: proceed in the evaluator-calibration lane."
               : "Route: clarify the request.";
+  */
 
   const lines = [
     result.locale === "ko" ? `의도: ${result.intent}` : `Intent: ${result.intent}`,

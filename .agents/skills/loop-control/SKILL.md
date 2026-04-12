@@ -22,6 +22,16 @@ npm run loop:resume -- --run-dir evals/runs/run-###
 npm run loop:stop -- --run-dir evals/runs/run-###
 ```
 
+## Canonical examples
+
+- `루프 시작` -> `npm run loop:start:codex`
+- `루프 시작 가능하냐?` -> stay in `run_control` and default the eventual start surface to `loop:start:codex`
+- `현재 루프 상태` -> `npm run loop:status -- --run-dir evals/runs/run-###` when a concrete run exists, otherwise inspect the active operator surface first
+- `run-179 상태 보여줘` -> `npm run loop:status -- --run-dir evals/runs/run-179`
+- `모든 루프 정지` -> `npm run loop:stop -- --all`
+- `모든 루프 정지하고 왜 타임아웃 나는지 원인 상세하게 규명` -> stop first, then inspect timeout root cause from persisted runtime and adapter artifacts
+- `백그라운드로 루프 시작` -> `npm run loop:start:bg -- --max-rounds 3`
+
 ## Hard rules
 
 - In the Codex app, default `start` to `npm run loop:start:codex`.

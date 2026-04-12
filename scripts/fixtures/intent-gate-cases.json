@@ -40,7 +40,53 @@
     "request": "Start loop with loop:start:codex on the current-thread foreground surface instead of loop:start:bg detached background supervisor mode.",
     "expect_intent": "run_control",
     "expect_status": "ready_for_run_control",
-    "expect_route": "run_control"
+    "expect_route": "run_control",
+    "expect_run_control_action": "start"
+  },
+  {
+    "id": "run-control-korean-loop-start",
+    "request": "\uB8E8\uD504 \uC2DC\uC791",
+    "expect_intent": "run_control",
+    "expect_status": "ready_for_run_control",
+    "expect_route": "run_control",
+    "expect_run_control_action": "start"
+  },
+  {
+    "id": "run-control-korean-loop-start-possible",
+    "request": "\uB8E8\uD504 \uC2DC\uC791 \uAC00\uB2A5\uD558\uB0D0?",
+    "expect_intent": "run_control",
+    "expect_status": "ready_for_run_control",
+    "expect_route": "run_control",
+    "expect_run_control_action": "start"
+  },
+  {
+    "id": "run-control-korean-current-status",
+    "request": "\uD604\uC7AC \uB8E8\uD504 \uC0C1\uD0DC",
+    "expect_intent": "run_control",
+    "expect_status": "ready_for_run_control",
+    "expect_route": "run_control",
+    "expect_run_control_action": "status"
+  },
+  {
+    "id": "run-control-korean-run-status",
+    "request": "run-179 \uC0C1\uD0DC \uBCF4\uC5EC\uC918",
+    "expect_intent": "run_control",
+    "expect_status": "ready_for_run_control",
+    "expect_route": "run_control",
+    "expect_run_reference": "run-179",
+    "expect_run_control_action": "status"
+  },
+  {
+    "id": "run-control-korean-stop-all-timeout-diagnosis",
+    "request": "\uBAA8\uB4E0 \uB8E8\uD504 \uC815\uC9C0\uD558\uACE0 \uC65C \uD0C0\uC784\uC544\uC6C3 \uB098\uB294\uC9C0 \uC6D0\uC778 \uC0C1\uC138\uD558\uAC8C \uADDC\uBA85",
+    "expect_intent": "run_control",
+    "expect_status": "ready_for_run_control",
+    "expect_route": "run_control",
+    "expect_run_control_action": "stop",
+    "expect_targets_all_runs": true,
+    "expect_diagnostic_focus": [
+      "timeout_root_cause"
+    ]
   },
   {
     "id": "product-build-with-evaluator-context",
