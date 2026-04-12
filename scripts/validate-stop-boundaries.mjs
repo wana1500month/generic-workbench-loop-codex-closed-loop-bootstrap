@@ -9,6 +9,7 @@ import {
   repoRoot,
   runLoop
 } from "./validation-utils.mjs";
+import { contractReviewRequiresHumanDecision } from "../packages/loop-orchestrator/dist/current-thread-boundaries.js";
 
 const runPackageScript = async (scriptName, scriptArgs = [], env = process.env) =>
   new Promise((resolvePromise, rejectPromise) => {
@@ -81,6 +82,37 @@ const manualSurface = await readJsonFile(manualSummary.operator_surface_path);
 assert.equal(manualSurface.phase_status, "awaiting_human_input");
 assert.equal(manualSurface.attention_required, "human");
 assert.equal(manualSurface.recommended_skill, "loop-control");
+
+console.log("[validate-stop-boundaries] structural contract-review human classifier");
+assert.equal(
+  contractReviewRequiresHumanDecision({
+    decision: "revise",
+    required_changes: ["Add a behavioral acceptance check."],
+    static_blockers: []
+  }),
+  true,
+  "A structural contract review revision without external blockers should require a human decision."
+);
+assert.equal(
+  contractReviewRequiresHumanDecision({
+    decision: "revise",
+    required_changes: [
+      "Fix the adapter contract before retrying: attach a distinct verification_provider."
+    ],
+    static_blockers: ["No core-owned evaluator profile is attached."]
+  }),
+  false,
+  "Static blockers should stay on the external boundary instead of reusing the human decision path."
+);
+assert.equal(
+  contractReviewRequiresHumanDecision({
+    decision: "accept",
+    required_changes: [],
+    static_blockers: []
+  }),
+  false,
+  "Accepted contract reviews should not require a human boundary."
+);
 
 console.log("[validate-stop-boundaries] current-thread external boundary");
 const externalSeed = await runLoop(

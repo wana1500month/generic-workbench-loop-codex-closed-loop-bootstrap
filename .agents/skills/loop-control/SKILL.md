@@ -14,11 +14,11 @@ Use this skill when the lane is `run_control`.
 3. Use the matching command surface:
 
 ```bash
-npm run loop:start:codex
+npm run loop:start:codex -- --json
 npm run loop:start:bg -- --max-rounds 3
-npm run loop:start:manual
-npm run loop:status -- --run-dir evals/runs/run-###
-npm run loop:resume -- --run-dir evals/runs/run-###
+npm run loop:start:manual -- --json
+npm run loop:status -- --run-dir evals/runs/run-### --json
+npm run loop:resume -- --run-dir evals/runs/run-### --json
 npm run loop:stop -- --run-dir evals/runs/run-###
 ```
 

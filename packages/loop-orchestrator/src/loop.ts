@@ -138,6 +138,7 @@ import {
   enhanceEvalReportWithCurrentThread,
   enhanceGeneratorPlanWithCurrentThread
 } from "./current-thread-enhancement.js";
+import { contractReviewRequiresHumanDecision } from "./current-thread-boundaries.js";
 import {
   pausedStopReasons,
   phaseBudgetToStallThresholdMs
@@ -2416,6 +2417,18 @@ export const runClosedLoop = async (input: {
             })
           : undefined;
       if (currentThreadContractReviewEnhancement?.kind === "checkpoint") {
+        if (contractReviewRequiresHumanDecision(baseContractReviewArtifact)) {
+          return pauseForHumanInput({
+            round,
+            phase: "negotiation",
+            checkpointKind: currentThreadContractReviewEnhancement.checkpointKind,
+            artifacts: currentThreadContractReviewEnhancement.artifacts,
+            notes: unique([
+              ...currentThreadContractReviewEnhancement.notes,
+              "The deterministic contract review already requires structural revisions without an external blocker, so a human operator should decide how to revise the contract before Codex continues."
+            ])
+          });
+        }
         return checkpointForCurrentThreadWork({
           round,
           phase: "negotiation",
