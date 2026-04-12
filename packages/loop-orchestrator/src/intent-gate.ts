@@ -6,6 +6,7 @@ import {
 
 type HarnessIntentFieldId = "change_goal" | "current_gap" | "success_criteria";
 type RunControlAction = "start" | "status" | "stop" | "resume";
+type RunControlStartSurface = "codex" | "background" | "manual";
 type RunControlDiagnosticFocus =
   | "timeout_root_cause"
   | "restart_budget"
@@ -64,8 +65,14 @@ interface IntentFieldState<TFieldId extends IntentFieldId = IntentFieldId> {
 
 interface ParsedRunControlRequest {
   action?: RunControlAction;
+  start_surface?: RunControlStartSurface;
   targets_all_runs: boolean;
   diagnostic_focus: RunControlDiagnosticFocus[];
+}
+
+export interface RunControlDispatchPlan {
+  primary_command: string;
+  follow_up_commands: string[];
 }
 
 export interface LoopIntentResult {
@@ -81,8 +88,11 @@ export interface LoopIntentResult {
   rationale: string[];
   extracted_run_reference?: string;
   run_control_action?: RunControlAction;
+  run_control_start_surface?: RunControlStartSurface;
   run_control_targets_all_runs?: boolean;
   run_control_diagnostic_focus?: RunControlDiagnosticFocus[];
+  run_control_primary_command?: string;
+  run_control_follow_up_commands?: string[];
   intake?: IntakeGateResult;
   intake_status?: IntakeGateResult["status"];
   intake_phase?: IntakeGateResult["phase"];
@@ -420,6 +430,26 @@ const parseRunControlRequest = (request: string): ParsedRunControlRequest => {
   const resumeRequested =
     /\b(resume|continue)\s+(?:the\s+)?(?:run|loop)\b/i.test(normalized) ||
     /\uB8E8\uD504\s*\uC7AC\uAC1C/u.test(request);
+  const explicitStartSurfaces = [
+    { surface: "codex" as const, index: normalized.search(/\bloop:start:codex\b/i) },
+    { surface: "background" as const, index: normalized.search(/\bloop:start:bg\b/i) },
+    { surface: "manual" as const, index: normalized.search(/\bloop:start:manual\b/i) }
+  ]
+    .filter((entry) => entry.index >= 0)
+    .sort((left, right) => left.index - right.index);
+  const hintedStartSurface: RunControlStartSurface | undefined =
+    explicitStartSurfaces[0]?.surface ??
+    (/\b(manual(?:-protocol)?|shell-?owned)\b/i.test(normalized)
+      ? "manual"
+      : /\b(background|detached|supervisor)\b/i.test(normalized)
+        ? "background"
+        : /\b(codex\s+app|codex-?owned|current-thread|attached|foreground)\b/i.test(normalized)
+          ? "codex"
+          : /\uBC31\uADF8\uB77C\uC6B4\uB4DC/u.test(request)
+            ? "background"
+            : /\uCF54\uB371\uC2A4\s*\uC18C\uC720|\uD604\uC7AC\s*\uC2A4\uB808\uB4DC/u.test(request)
+              ? "codex"
+              : undefined);
   const targetsAllRuns =
     /\b(all\s+loops?|everything)\b/i.test(normalized) ||
     /\uBAA8\uB4E0\s*\uB8E8\uD504/u.test(request);
@@ -459,8 +489,85 @@ const parseRunControlRequest = (request: string): ParsedRunControlRequest => {
           : resumeRequested
             ? "resume"
             : undefined,
+    ...(startRequested ? { start_surface: hintedStartSurface ?? "codex" } : {}),
     targets_all_runs: targetsAllRuns,
     diagnostic_focus: diagnosticFocus
+  };
+};
+
+const normalizeRunReferenceForCommand = (runReference: string): string => {
+  const normalized = runReference.replace(/\\/g, "/");
+  if (/evals\/runs\/run-\d+/i.test(normalized)) {
+    return normalized;
+  }
+
+  const simpleRunId = normalized.match(/\brun-\d+\b/i)?.[0];
+  if (simpleRunId) {
+    return `evals/runs/${simpleRunId}`;
+  }
+
+  return normalized;
+};
+
+export const deriveRunControlDispatchPlan = (input: {
+  action?: RunControlAction;
+  runReference?: string;
+  startSurface?: RunControlStartSurface;
+  targetsAllRuns: boolean;
+  diagnosticFocus: readonly RunControlDiagnosticFocus[];
+}): RunControlDispatchPlan | undefined => {
+  if (!input.action) {
+    return undefined;
+  }
+
+  const commandRunReference = input.runReference
+    ? normalizeRunReferenceForCommand(input.runReference)
+    : undefined;
+
+  if (input.action === "start") {
+    return {
+      primary_command:
+        input.startSurface === "background"
+          ? "npm run loop:start:bg -- --max-rounds 3"
+          : input.startSurface === "manual"
+            ? "npm run loop:start:manual"
+            : "npm run loop:start:codex",
+      follow_up_commands: []
+    };
+  }
+
+  if (input.action === "status") {
+    return {
+      primary_command: commandRunReference
+        ? `npm run loop:status -- --run-dir ${commandRunReference}`
+        : "npm run loop:status",
+      follow_up_commands: []
+    };
+  }
+
+  if (input.action === "resume") {
+    return {
+      primary_command: commandRunReference
+        ? `npm run loop:resume -- --run-dir ${commandRunReference}`
+        : "npm run loop:resume",
+      follow_up_commands: []
+    };
+  }
+
+  const stopCommand = input.targetsAllRuns
+    ? "npm run loop:stop -- --all"
+    : commandRunReference
+      ? `npm run loop:stop -- --run-dir ${commandRunReference}`
+      : "npm run loop:stop";
+
+  return {
+    primary_command: stopCommand,
+    follow_up_commands:
+      input.diagnosticFocus.length > 0
+        ? commandRunReference
+          ? [`npm run loop:status -- --run-dir ${commandRunReference}`]
+          : ["npm run loop:status"]
+        : []
   };
 };
 
@@ -723,6 +830,13 @@ const buildRunControlResult = (input: {
     input.matchedRunControlSignals
   );
   const missingFields = buildMissingFields(states);
+  const dispatchPlan = deriveRunControlDispatchPlan({
+    action: input.parsed.action,
+    runReference: input.runReference,
+    startSurface: input.parsed.start_surface,
+    targetsAllRuns: input.parsed.targets_all_runs,
+    diagnosticFocus: input.parsed.diagnostic_focus
+  });
   return {
     intent: "run_control",
     status: missingFields.length > 0 ? "ask_run_control_questions" : "ready_for_run_control",
@@ -736,9 +850,14 @@ const buildRunControlResult = (input: {
     rationale: input.rationale,
     extracted_run_reference: input.runReference,
     ...(input.parsed.action ? { run_control_action: input.parsed.action } : {}),
+    ...(input.parsed.start_surface ? { run_control_start_surface: input.parsed.start_surface } : {}),
     ...(input.parsed.targets_all_runs ? { run_control_targets_all_runs: true } : {}),
     ...(input.parsed.diagnostic_focus.length > 0
       ? { run_control_diagnostic_focus: input.parsed.diagnostic_focus }
+      : {}),
+    ...(dispatchPlan ? { run_control_primary_command: dispatchPlan.primary_command } : {}),
+    ...(dispatchPlan && dispatchPlan.follow_up_commands.length > 0
+      ? { run_control_follow_up_commands: dispatchPlan.follow_up_commands }
       : {})
   };
 };
@@ -1164,6 +1283,104 @@ const renderReadyRoute = (result: LoopIntentResult): string => {
   return lines.join("\n");
 };
 
+const renderReadyRouteWithDispatch = (result: LoopIntentResult): string => {
+  const koreanRouteLine =
+    result.route_target === "product_intake"
+      ? "\uACBD\uB85C: product intake\uB85C \uC9C4\uD589."
+      : result.route_target === "harness_design"
+        ? "\uACBD\uB85C: harness-design \uB808\uC778\uC73C\uB85C \uC9C4\uD589."
+        : result.route_target === "run_control"
+          ? "\uACBD\uB85C: run-control \uB808\uC778\uC73C\uB85C \uC9C4\uD589."
+          : result.route_target === "run_resume"
+            ? "\uACBD\uB85C: \uAE30\uC874 run\uC744 \uC774\uC5B4\uC11C \uC9C4\uD589."
+            : result.route_target === "evaluator_tuning"
+              ? "\uACBD\uB85C: evaluator calibration \uB808\uC778\uC73C\uB85C \uC9C4\uD589."
+              : "\uACBD\uB85C: \uC694\uCCAD\uC744 \uBA3C\uC800 \uBD84\uB958\uD574\uC57C \uD568.";
+  const englishRouteLine =
+    result.route_target === "product_intake"
+      ? "Route: proceed through product intake."
+      : result.route_target === "harness_design"
+        ? "Route: proceed in the harness-design lane."
+        : result.route_target === "run_control"
+          ? "Route: proceed in the run-control lane."
+          : result.route_target === "run_resume"
+            ? "Route: resume the existing run."
+            : result.route_target === "evaluator_tuning"
+              ? "Route: proceed in the evaluator-calibration lane."
+              : "Route: clarify the request.";
+  const routeLine = result.locale === "ko" ? koreanRouteLine : englishRouteLine;
+
+  const lines = [
+    result.locale === "ko"
+      ? `\uC758\uB3C4: ${result.intent}`
+      : `Intent: ${result.intent}`,
+    routeLine
+  ];
+  if (result.run_control_action) {
+    lines.push(
+      result.locale === "ko"
+        ? `\uB3D9\uC791: ${result.run_control_action}`
+        : `Action: ${result.run_control_action}`
+    );
+  }
+  if (result.run_control_action === "start" && result.run_control_start_surface) {
+    const startSurfaceLabel =
+      result.run_control_start_surface === "background"
+        ? result.locale === "ko"
+          ? "\uBC31\uADF8\uB77C\uC6B4\uB4DC supervisor"
+          : "background supervisor"
+        : result.run_control_start_surface === "manual"
+          ? "manual shell-owned protocol"
+          : "Codex foreground current-thread";
+    lines.push(
+      result.locale === "ko"
+        ? `\uC2DC\uC791 \uD45C\uBA74: ${startSurfaceLabel}`
+        : `Start surface: ${startSurfaceLabel}`
+    );
+  }
+  if (result.extracted_run_reference) {
+    lines.push(
+      result.locale === "ko"
+        ? `Run \uCC38\uC870: ${result.extracted_run_reference}`
+        : `Run reference: ${result.extracted_run_reference}`
+    );
+  }
+  if (result.run_control_targets_all_runs) {
+    lines.push(
+      result.locale === "ko"
+        ? "\uB300\uC0C1: \uBAA8\uB4E0 run"
+        : "Target: all runs"
+    );
+  }
+  if (result.run_control_diagnostic_focus && result.run_control_diagnostic_focus.length > 0) {
+    lines.push(
+      result.locale === "ko"
+        ? `\uC9C4\uB2E8 \uD3EC\uCEE4\uC2A4: ${result.run_control_diagnostic_focus.join(", ")}`
+        : `Diagnostic focus: ${result.run_control_diagnostic_focus.join(", ")}`
+    );
+  }
+  if (result.run_control_primary_command) {
+    lines.push(
+      result.locale === "ko"
+        ? `\uBA85\uB839: ${result.run_control_primary_command}`
+        : `Command: ${result.run_control_primary_command}`
+    );
+  }
+  if (result.run_control_follow_up_commands && result.run_control_follow_up_commands.length > 0) {
+    for (const command of result.run_control_follow_up_commands) {
+      lines.push(
+        result.locale === "ko"
+          ? `\uB2E4\uC74C \uBA85\uB839: ${command}`
+          : `Next command: ${command}`
+      );
+    }
+  }
+  if (result.locale === "en" && result.rationale.length > 0) {
+    lines.push(result.rationale[0]!);
+  }
+  return lines.join("\n");
+};
+
 export const renderLoopIntentResponse = (result: LoopIntentResult): string => {
   if (result.intent === "product_build" && result.intake) {
     return renderIntakeGateResponse(result.intake);
@@ -1179,5 +1396,5 @@ export const renderLoopIntentResponse = (result: LoopIntentResult): string => {
     return result.questions.map((question, index) => `${index + 1}. ${question}`).join("\n");
   }
 
-  return renderReadyRoute(result);
+  return renderReadyRouteWithDispatch(result);
 };

@@ -41,7 +41,9 @@
     "expect_intent": "run_control",
     "expect_status": "ready_for_run_control",
     "expect_route": "run_control",
-    "expect_run_control_action": "start"
+    "expect_run_control_action": "start",
+    "expect_run_control_start_surface": "codex",
+    "expect_primary_command": "npm run loop:start:codex"
   },
   {
     "id": "run-control-korean-loop-start",
@@ -49,7 +51,9 @@
     "expect_intent": "run_control",
     "expect_status": "ready_for_run_control",
     "expect_route": "run_control",
-    "expect_run_control_action": "start"
+    "expect_run_control_action": "start",
+    "expect_run_control_start_surface": "codex",
+    "expect_primary_command": "npm run loop:start:codex"
   },
   {
     "id": "run-control-korean-loop-start-possible",
@@ -57,7 +61,9 @@
     "expect_intent": "run_control",
     "expect_status": "ready_for_run_control",
     "expect_route": "run_control",
-    "expect_run_control_action": "start"
+    "expect_run_control_action": "start",
+    "expect_run_control_start_surface": "codex",
+    "expect_primary_command": "npm run loop:start:codex"
   },
   {
     "id": "run-control-korean-current-status",
@@ -65,7 +71,8 @@
     "expect_intent": "run_control",
     "expect_status": "ready_for_run_control",
     "expect_route": "run_control",
-    "expect_run_control_action": "status"
+    "expect_run_control_action": "status",
+    "expect_primary_command": "npm run loop:status"
   },
   {
     "id": "run-control-korean-run-status",
@@ -74,7 +81,8 @@
     "expect_status": "ready_for_run_control",
     "expect_route": "run_control",
     "expect_run_reference": "run-179",
-    "expect_run_control_action": "status"
+    "expect_run_control_action": "status",
+    "expect_primary_command": "npm run loop:status -- --run-dir evals/runs/run-179"
   },
   {
     "id": "run-control-korean-stop-all-timeout-diagnosis",
@@ -84,6 +92,7 @@
     "expect_route": "run_control",
     "expect_run_control_action": "stop",
     "expect_targets_all_runs": true,
+    "expect_primary_command": "npm run loop:stop -- --all",
     "expect_diagnostic_focus": [
       "timeout_root_cause"
     ]

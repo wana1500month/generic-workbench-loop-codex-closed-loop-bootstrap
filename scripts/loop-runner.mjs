@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npmExecutable = "npm";
-const cliDistPath = resolve(repoRoot, "packages", "loop-orchestrator", "dist", "cli.js");
+const cliDistDirectory = resolve(repoRoot, "packages", "loop-orchestrator", "dist");
 const readOnlyCliWatchPaths = [
   resolve(repoRoot, "packages", "loop-orchestrator", "src"),
   resolve(repoRoot, "packages", "loop-orchestrator", "tsconfig.json"),
@@ -118,11 +118,11 @@ const latestModifiedTimeMs = (targetPath) => {
 };
 
 const readOnlyFrontDoorNeedsBuild = () => {
-  if (!existsSync(cliDistPath)) {
+  if (!existsSync(cliDistDirectory)) {
     return true;
   }
 
-  const distMtimeMs = statSync(cliDistPath).mtimeMs;
+  const distMtimeMs = latestModifiedTimeMs(cliDistDirectory);
   const latestWatchMtimeMs = readOnlyCliWatchPaths.reduce(
     (latest, targetPath) => Math.max(latest, latestModifiedTimeMs(targetPath)),
     0
