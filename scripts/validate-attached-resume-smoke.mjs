@@ -102,20 +102,117 @@ const fakeAppServerEnv = () => {
   };
 };
 
-console.log("[validate-attached-resume-smoke] attached current-thread seed");
-const currentThreadSeed = await runLoop([
-  "--single",
-  "--controller-mode",
-  "attached",
-  "--transport",
-  "current-thread",
-  "--adapter",
-  "./.tmp/semantic-validation/patch-only-success/adapter.json",
-  "--target-family",
-  "api-service"
-]);
+const foregroundThreadEnv = {
+  ...process.env,
+  CODEX_THREAD_ID: "thread_validate_attached_resume_smoke",
+  HARNESS_LAUNCH_ORIGIN: "codex-app-thread",
+  HARNESS_THREAD_BINDING_STATE: "bound",
+  HARNESS_SURFACE_OWNER: "stock-codex-thread",
+  HARNESS_ENTRYPOINT: "skill",
+  HARNESS_APP_VISIBILITY: "visible-in-stock-app"
+};
+const shellLikeEnv = {
+  ...process.env,
+  CODEX_THREAD_ID: "",
+  HARNESS_LAUNCH_ORIGIN: "shell",
+  HARNESS_THREAD_BINDING_STATE: "unbound",
+  HARNESS_SURFACE_OWNER: "external-controller",
+  HARNESS_ENTRYPOINT: "shell",
+  HARNESS_APP_VISIBILITY: "not-visible-in-stock-app"
+};
+
+const assertCurrentThreadOperatorSurface = async (
+  summary,
+  {
+    expectedPresentationMode,
+    expectedAttentionRequired,
+    expectedWorkerSkill,
+    expectedRecoverySkill
+  }
+) => {
+  const operatorSurface = await readJsonFile(summary.operator_surface_path);
+  assert(
+    operatorSurface.presentation_mode === expectedPresentationMode,
+    `Expected operator-surface presentation_mode '${expectedPresentationMode}', received '${operatorSurface.presentation_mode ?? "missing"}'.`
+  );
+  assert(
+    operatorSurface.attention_required === expectedAttentionRequired,
+    `Expected operator-surface attention_required '${expectedAttentionRequired}', received '${operatorSurface.attention_required ?? "missing"}'.`
+  );
+  if (expectedWorkerSkill !== undefined) {
+    assert(
+      operatorSurface.worker_skill === expectedWorkerSkill,
+      `Expected operator-surface worker_skill '${expectedWorkerSkill}', received '${operatorSurface.worker_skill ?? "missing"}'.`
+    );
+  }
+  if (expectedRecoverySkill !== undefined) {
+    assert(
+      operatorSurface.recovery_skill === expectedRecoverySkill,
+      `Expected operator-surface recovery_skill '${expectedRecoverySkill}', received '${operatorSurface.recovery_skill ?? "missing"}'.`
+    );
+  }
+};
+
+console.log("[validate-attached-resume-smoke] unbound current-thread manual protocol seed");
+const manualCurrentThreadSeed = await runLoop(
+  [
+    "--single",
+    "--controller-mode",
+    "attached",
+    "--transport",
+    "current-thread",
+    "--allow-manual-protocol-seed",
+    "--adapter",
+    "./.tmp/semantic-validation/patch-only-success/adapter.json",
+    "--target-family",
+    "api-service"
+  ],
+  {
+    env: shellLikeEnv
+  }
+);
+if (manualCurrentThreadSeed.code !== 0) {
+  throw new Error("Unbound current-thread manual-protocol seed run failed.");
+}
+const manualCurrentThreadRunDirectory = extractRunDirectory(manualCurrentThreadSeed.stdout);
+const manualCurrentThreadSeedSummary = await readSummary(manualCurrentThreadRunDirectory);
+assertTargetFamily(manualCurrentThreadSeedSummary, "api-service");
+assertValidationLane(manualCurrentThreadSeedSummary, "deterministic_semantic");
+assertStopReason(manualCurrentThreadSeedSummary, "awaiting_human_input");
+assertRuntimeWarningContains(
+  manualCurrentThreadSeedSummary,
+  "manual protocol"
+);
+await assertAttachedTransportSurface(manualCurrentThreadSeedSummary, {
+  expectedTransportMode: "current-thread",
+  expectedRoundCount: 0
+});
+await assertCurrentThreadOperatorSurface(manualCurrentThreadSeedSummary, {
+  expectedPresentationMode: "manual-protocol",
+  expectedAttentionRequired: "human",
+  expectedWorkerSkill: "loop-control",
+  expectedRecoverySkill: "attached-loop"
+});
+
+console.log("[validate-attached-resume-smoke] bound foreground current-thread seed");
+const currentThreadSeed = await runLoop(
+  [
+    "--single",
+    "--controller-mode",
+    "attached",
+    "--transport",
+    "current-thread",
+    "--adapter",
+    "./.tmp/semantic-validation/patch-only-success/adapter.json",
+    "--target-family",
+    "api-service"
+  ],
+  {
+    env: foregroundThreadEnv
+  }
+);
 if (currentThreadSeed.code !== 0) {
-  throw new Error("Attached current-thread seed run failed.");
+  throw new Error("Bound foreground current-thread seed run failed.");
 }
 const currentThreadRunDirectory = extractRunDirectory(currentThreadSeed.stdout);
 const currentThreadSeedSummary = await readSummary(currentThreadRunDirectory);
@@ -126,8 +223,14 @@ await assertAttachedTransportSurface(currentThreadSeedSummary, {
   expectedTransportMode: "current-thread",
   expectedRoundCount: 0
 });
+await assertCurrentThreadOperatorSurface(currentThreadSeedSummary, {
+  expectedPresentationMode: "foreground-thread",
+  expectedAttentionRequired: "codex",
+  expectedWorkerSkill: "loop-control",
+  expectedRecoverySkill: "attached-loop"
+});
 
-console.log("[validate-attached-resume-smoke] attached current-thread resume from missing summary");
+console.log("[validate-attached-resume-smoke] bound foreground current-thread resume from missing summary");
 await rm(join(currentThreadRunDirectory, "summary.json"));
 const currentThreadResume = await runLoop([
   "--resume-run",
@@ -142,9 +245,11 @@ const currentThreadResume = await runLoop([
   "api-service",
   "--max-rounds",
   "3"
-]);
+], {
+  env: foregroundThreadEnv
+});
 if (currentThreadResume.code !== 0) {
-  throw new Error("Attached current-thread resume failed.");
+  throw new Error("Bound foreground current-thread resume failed.");
 }
 const currentThreadResumedSummary = await driveCurrentThreadHandoffs({
   runDirectory: currentThreadRunDirectory,
@@ -162,7 +267,8 @@ const currentThreadResumedSummary = await driveCurrentThreadHandoffs({
     "--max-rounds",
     "3"
   ],
-  label: "Attached current-thread resume"
+  env: foregroundThreadEnv,
+  label: "Bound foreground current-thread resume"
 });
 assertStopReason(currentThreadResumedSummary, "target_reached");
 assertRuntimeEventCode(currentThreadResumedSummary, "resume.recovered_round_checkpoint");
@@ -172,7 +278,7 @@ await assertAttachedTransportSurface(currentThreadResumedSummary, {
 });
 await assertCompletedOperatorSurface(currentThreadResumedSummary);
 
-console.log("[validate-attached-resume-smoke] attached current-thread interrupted-round repair");
+console.log("[validate-attached-resume-smoke] bound foreground current-thread interrupted-round repair");
 const currentThreadRepairSeed = await runLoop([
   "--single",
   "--controller-mode",
@@ -183,9 +289,11 @@ const currentThreadRepairSeed = await runLoop([
   "./.tmp/semantic-validation/patch-only-success/adapter.json",
   "--target-family",
   "api-service"
-]);
+], {
+  env: foregroundThreadEnv
+});
 if (currentThreadRepairSeed.code !== 0) {
-  throw new Error("Attached current-thread repair seed failed.");
+  throw new Error("Bound foreground current-thread repair seed failed.");
 }
 const currentThreadRepairRunDirectory = extractRunDirectory(currentThreadRepairSeed.stdout);
 await driveCurrentThreadHandoffs({
@@ -204,7 +312,8 @@ await driveCurrentThreadHandoffs({
     "--max-rounds",
     "3"
   ],
-  label: "Attached current-thread repair seed"
+  env: foregroundThreadEnv,
+  label: "Bound foreground current-thread repair seed"
 });
 const currentThreadRoundTwoDirectory = join(currentThreadRepairRunDirectory, "round-002");
 const currentThreadRoundThreeDirectory = join(currentThreadRepairRunDirectory, "round-003");
@@ -298,9 +407,11 @@ const currentThreadRepair = await runLoop([
   "api-service",
   "--max-rounds",
   "3"
-]);
+], {
+  env: foregroundThreadEnv
+});
 if (currentThreadRepair.code !== 0) {
-  throw new Error("Attached current-thread repair failed.");
+  throw new Error("Bound foreground current-thread repair failed.");
 }
 const currentThreadRepairedSummary = await driveCurrentThreadHandoffs({
   runDirectory: currentThreadRepairRunDirectory,
@@ -318,7 +429,8 @@ const currentThreadRepairedSummary = await driveCurrentThreadHandoffs({
     "--max-rounds",
     "3"
   ],
-  label: "Attached current-thread repair resume"
+  env: foregroundThreadEnv,
+  label: "Bound foreground current-thread repair resume"
 });
 assertRuntimeEventCode(currentThreadRepairedSummary, "resume.repaired_interrupted_round");
 assertRuntimeWarningContains(

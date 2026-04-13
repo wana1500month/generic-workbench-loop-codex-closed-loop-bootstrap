@@ -61,6 +61,7 @@ const parseArgs = (argv) => {
   let targetFamily;
   let resumeRunPath;
   let allowResumeMigration = false;
+  let allowManualProtocolSeed = false;
   let forceReopenTerminal = false;
   let controllerMode;
   let transportMode;
@@ -157,6 +158,9 @@ const parseArgs = (argv) => {
       case "--allow-resume-migration":
         allowResumeMigration = true;
         break;
+      case "--allow-manual-protocol-seed":
+        allowManualProtocolSeed = true;
+        break;
       case "--force-reopen-terminal":
         forceReopenTerminal = true;
         break;
@@ -185,6 +189,7 @@ const parseArgs = (argv) => {
     targetFamily,
     resumeRunPath,
     allowResumeMigration,
+    allowManualProtocolSeed,
     forceReopenTerminal,
     controllerMode,
     transportMode,
@@ -210,6 +215,7 @@ const result =
         targetFamily: args.targetFamily,
         resumeRunPath: args.resumeRunPath,
         allowResumeMigration: args.allowResumeMigration,
+        allowManualProtocolSeed: args.allowManualProtocolSeed,
         forceReopenTerminal: args.forceReopenTerminal,
         controllerMode: args.controllerMode,
         transportMode: args.transportMode,
@@ -228,6 +234,7 @@ const result =
         targetFamily: args.targetFamily,
         resumeRunPath: args.resumeRunPath,
         allowResumeMigration: args.allowResumeMigration,
+        allowManualProtocolSeed: args.allowManualProtocolSeed,
         forceReopenTerminal: args.forceReopenTerminal,
         controllerMode: args.controllerMode,
         transportMode: args.transportMode,
