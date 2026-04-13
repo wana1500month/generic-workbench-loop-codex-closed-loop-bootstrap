@@ -116,8 +116,8 @@ const buildContract = (input) => ({
   state: input.state,
   run_id: input.statusReport.run_id,
   run_directory: input.statusReport.run_directory,
-  worker: "loop-control",
-  recovery_skill: "attached-loop",
+  worker: input.statusReport.active?.worker_skill ?? "loop-control",
+  recovery_skill: input.statusReport.active?.recovery_skill ?? "attached-loop",
   ...(input.statusReport.active?.checkpoint_id
     ? { checkpoint_id: input.statusReport.active.checkpoint_id }
     : {}),
@@ -191,11 +191,12 @@ const renderContract = (contract) => {
     return [
       `State: ${contract.state}`,
       `Run: ${contract.run_id}`,
+      `Worker: $${contract.worker}`,
+      `Recovery skill: $${contract.recovery_skill}`,
       `Checkpoint: ${contract.checkpoint_kind ?? "none"} / ${contract.checkpoint_id ?? "none"}`,
       `Prompt: ${contract.active_prompt_path ?? "none"}`,
       `Response: ${contract.active_response_path ?? "none"}`,
-      `Resume command: ${contract.resume_command}`,
-      `Recovery skill: $${contract.recovery_skill}`
+      `Resume command: ${contract.resume_command}`
     ].join("\n");
   }
 
@@ -315,7 +316,6 @@ const main = async () => {
       const contract = buildContract({
         state: "codex_checkpoint",
         statusReport,
-        recommendedSkill: "attached-loop",
         hopLimit: args.hopLimit,
         hopIndex,
         repeatedCheckpointCount

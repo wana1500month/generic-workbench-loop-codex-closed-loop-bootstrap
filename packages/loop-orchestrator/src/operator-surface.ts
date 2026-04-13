@@ -8,6 +8,7 @@ import type {
   OperatorEntrypoint,
   OperatorHandoffState,
   OperatorLaunchOrigin,
+  OperatorRecoverySkill,
   ControllerMode,
   ControllerPhaseStatus,
   ControllerRoundPhase,
@@ -17,6 +18,7 @@ import type {
   OperatorResumeSkill,
   OperatorSurfaceOwner,
   OperatorSurfaceArtifact,
+  OperatorWorkerSkill,
   OperatorWorkspaceSurface,
   ThreadBindingState,
   TransportMode
@@ -379,6 +381,14 @@ const defaultAutoResumeEligibleFor = (input: {
   input.transportMode === "current-thread" &&
   input.attentionRequired === "codex";
 
+const defaultWorkerSkillFor = (input: {
+  transportMode: TransportMode;
+}): OperatorWorkerSkill | undefined =>
+  input.transportMode === "current-thread" ? "loop-control" : undefined;
+
+const defaultRecoverySkillFor = (resumeSkill: OperatorResumeSkill): OperatorRecoverySkill =>
+  resumeSkill;
+
 const defaultRecommendedSkillFor = (input: {
   transportMode: TransportMode;
   attentionRequired: OperatorAttentionRequired;
@@ -408,6 +418,7 @@ const defaultNextActionForTransport = (input: {
   attentionRequired: OperatorAttentionRequired;
   checkpointKind?: CurrentThreadCheckpointKind;
   autoResumeEligible: boolean;
+  workerSkill?: OperatorWorkerSkill;
   recommendedSkill: OperatorRecommendedSkill;
   recommendedCommand?: string;
   worktreePath?: string;
@@ -443,7 +454,7 @@ const defaultNextActionForTransport = (input: {
       input.transportMode === "current-thread" &&
       input.presentationMode === "foreground-thread"
     ) {
-      return `This run stays on the current Codex thread. $${input.recommendedSkill} should keep the same-thread autocontinue chain moving by consuming the ${checkpointLabel}${input.autoResumeEligible ? " automatically" : ""}.`;
+      return `This run stays on the current Codex thread. $${input.workerSkill ?? input.recommendedSkill} should keep the same-thread autocontinue chain moving by consuming the ${checkpointLabel}${input.autoResumeEligible ? " automatically" : ""}.`;
     }
     return input.recommendedCommand
       ? `Codex continuation stays on the current operator surface. Consume the ${checkpointLabel}, then continue with ${input.recommendedCommand}.`
@@ -583,6 +594,8 @@ export const buildOperatorSurfaceArtifact = (input: {
   appVisibility?: OperatorAppVisibility;
   handoffState?: OperatorHandoffState;
   resumeSkill?: OperatorResumeSkill;
+  workerSkill?: OperatorWorkerSkill;
+  recoverySkill?: OperatorRecoverySkill;
   resumeCommand?: string;
   recommendedSkill?: OperatorRecommendedSkill;
   recommendedCommand?: string;
@@ -628,6 +641,14 @@ export const buildOperatorSurfaceArtifact = (input: {
     input.resumeSkill ??
     readResumeSkillOverride() ??
     defaultResumeSkillFor(input.transportMode);
+  const workerSkill =
+    input.workerSkill ??
+    defaultWorkerSkillFor({
+      transportMode: input.transportMode
+    });
+  const recoverySkill =
+    input.recoverySkill ??
+    defaultRecoverySkillFor(resumeSkill);
   const requiresCodexApp =
     input.requiresCodexApp ??
     readRequiresCodexAppOverride() ??
@@ -695,6 +716,7 @@ export const buildOperatorSurfaceArtifact = (input: {
       attentionRequired,
       checkpointKind: input.checkpointKind,
       autoResumeEligible,
+      workerSkill,
       recommendedSkill,
       recommendedCommand,
       worktreePath,
@@ -715,6 +737,8 @@ export const buildOperatorSurfaceArtifact = (input: {
     workspace_surface: workspaceSurface,
     handoff_state: handoffState,
     resume_skill: resumeSkill,
+    ...(workerSkill ? { worker_skill: workerSkill } : {}),
+    ...(recoverySkill ? { recovery_skill: recoverySkill } : {}),
     requires_codex_app: requiresCodexApp,
     updated_at: input.updatedAt ?? new Date().toISOString(),
     execution_state: input.executionState,
@@ -769,7 +793,9 @@ export const renderOperatorSurfaceMarkdown = (
 - App visibility: ${artifact.app_visibility}
 - Workspace surface: ${artifact.workspace_surface}
 - Handoff state: ${artifact.handoff_state}
-- Resume skill: ${artifact.resume_skill}
+- Worker skill: ${artifact.worker_skill ?? "none"}
+- Recovery skill: ${artifact.recovery_skill ?? "none"}
+- Resume skill (legacy alias): ${artifact.resume_skill}
 - Requires Codex app: ${artifact.requires_codex_app ? "yes" : "no"}
 - Execution state: ${artifact.execution_state}
 - Round: ${artifact.round ?? "none"}
@@ -790,7 +816,7 @@ export const renderOperatorSurfaceMarkdown = (
 - Thread name: ${artifact.thread_name ?? "none"}
 - Worktree id: ${artifact.worktree_id ?? "none"}
 - Worktree path: ${artifact.worktree_path ?? "none"}
-- Recommended skill: ${artifact.recommended_skill ?? "none"}
+- Recommended skill (legacy alias): ${artifact.recommended_skill ?? "none"}
 - Recommended command: ${artifact.recommended_command ?? "none"}
 - Resume command: ${artifact.resume_command ?? "none"}
 - Next action: ${artifact.next_action ?? "none"}

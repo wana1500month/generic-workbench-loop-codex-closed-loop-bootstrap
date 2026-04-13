@@ -159,7 +159,7 @@ const render = async (runDirectory) => {
   );
   console.log(`Workspace: ${operatorSurface?.workspace_surface ?? "unknown"}`);
   console.log(
-    `Handoff: ${operatorSurface?.handoff_state ?? "unknown"} / Resume skill: ${operatorSurface?.resume_skill ?? "unknown"} / Requires Codex app: ${operatorSurface?.requires_codex_app === undefined ? "unknown" : operatorSurface.requires_codex_app ? "yes" : "no"}`
+    `Handoff: ${operatorSurface?.handoff_state ?? "unknown"} / Worker: ${operatorSurface?.worker_skill ?? "unknown"} / Recovery: ${operatorSurface?.recovery_skill ?? operatorSurface?.resume_skill ?? "unknown"} / Requires Codex app: ${operatorSurface?.requires_codex_app === undefined ? "unknown" : operatorSurface.requires_codex_app ? "yes" : "no"}`
   );
   console.log(
     `Worktree: ${operatorSurface?.worktree_id ?? "none"} / ${operatorSurface?.worktree_path ?? "none"}`

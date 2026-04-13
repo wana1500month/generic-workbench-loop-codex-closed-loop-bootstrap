@@ -1230,7 +1230,7 @@ export const runClosedLoop = async (input: {
         ...restoredRun.repairNotes,
         ...(transportMode === "current-thread"
           ? [
-              "Use the attached-loop skill and keep the current thread as the generator/controller surface."
+              "Keep the current thread as the generator/controller surface. $loop-control owns the same-thread autocontinue chain; use $attached-loop only if this foreground thread needs recovery after interruption."
             ]
           : [])
       ]
@@ -1766,7 +1766,7 @@ export const runClosedLoop = async (input: {
         ...heartbeatNotes,
         ...(transportMode === "current-thread"
           ? [
-              "Use the attached-loop skill and keep the current thread as the generator/controller surface."
+              "Keep the current thread as the generator/controller surface. $loop-control owns the same-thread autocontinue chain; use $attached-loop only if this foreground thread needs recovery after interruption."
             ]
           : [])
       ]
@@ -2190,6 +2190,7 @@ export const runClosedLoop = async (input: {
   const finalizeRunAsPausedStop = async (input: {
     stopReason: Extract<
       LoopRunSummary["stop_reason"],
+      | "awaiting_codex_checkpoint"
       | "awaiting_current_thread_handoff"
       | "awaiting_manual_generator"
       | "awaiting_human_input"
@@ -2342,7 +2343,7 @@ export const runClosedLoop = async (input: {
       notes: input.notes
     });
     return finalizeRunAsPausedStop({
-      stopReason: "awaiting_current_thread_handoff",
+      stopReason: "awaiting_codex_checkpoint",
       notes: input.notes,
       attentionRequired: "codex",
       checkpointKind: input.checkpointKind,

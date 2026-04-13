@@ -9,6 +9,7 @@ import type {
 } from "./types.js";
 
 export const pausedStopReasons = new Set<RunStopReason>([
+  "awaiting_codex_checkpoint",
   "awaiting_current_thread_handoff",
   "awaiting_manual_generator",
   "awaiting_human_input",

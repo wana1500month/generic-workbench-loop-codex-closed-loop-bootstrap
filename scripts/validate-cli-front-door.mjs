@@ -200,6 +200,16 @@ if (codexScriptSeedReport.active.recommended_skill !== "loop-control") {
     `Expected loop:start:codex --json recommended_skill 'loop-control', received '${codexScriptSeedReport.active.recommended_skill ?? "missing"}'.`
   );
 }
+if (codexScriptSeedReport.active.worker_skill !== "loop-control") {
+  throw new Error(
+    `Expected loop:start:codex --json worker_skill 'loop-control', received '${codexScriptSeedReport.active.worker_skill ?? "missing"}'.`
+  );
+}
+if (codexScriptSeedReport.active.recovery_skill !== "attached-loop") {
+  throw new Error(
+    `Expected loop:start:codex --json recovery_skill 'attached-loop', received '${codexScriptSeedReport.active.recovery_skill ?? "missing"}'.`
+  );
+}
 if (codexScriptSeedReport.effective_execution_state !== "paused") {
   throw new Error(
     `Expected loop:start:codex --json effective_execution_state 'paused', received '${codexScriptSeedReport.effective_execution_state ?? "missing"}'.`
@@ -279,6 +289,16 @@ if (manualSeedSurface.recommended_skill !== "loop-control") {
     `Expected manual shell seed recommended_skill 'loop-control', received '${manualSeedSurface.recommended_skill ?? "missing"}'.`
   );
 }
+if (manualSeedSurface.worker_skill !== "loop-control") {
+  throw new Error(
+    `Expected manual shell seed worker_skill 'loop-control', received '${manualSeedSurface.worker_skill ?? "missing"}'.`
+  );
+}
+if (manualSeedSurface.recovery_skill !== "attached-loop") {
+  throw new Error(
+    `Expected manual shell seed recovery_skill 'attached-loop', received '${manualSeedSurface.recovery_skill ?? "missing"}'.`
+  );
+}
 
 const seed = await runLoop(
   ["--controller-mode", "attached", "--transport", "current-thread", "--single"],
@@ -314,6 +334,16 @@ if (planningReport.runtime_health.execution_state !== "paused") {
 if (planningReport.operator_surface?.resume_skill !== "attached-loop") {
   throw new Error(
     `Expected planning status resume_skill 'attached-loop', received '${planningReport.operator_surface?.resume_skill ?? "missing"}'.`
+  );
+}
+if (planningReport.operator_surface?.worker_skill !== "loop-control") {
+  throw new Error(
+    `Expected planning status worker_skill 'loop-control', received '${planningReport.operator_surface?.worker_skill ?? "missing"}'.`
+  );
+}
+if (planningReport.operator_surface?.recovery_skill !== "attached-loop") {
+  throw new Error(
+    `Expected planning status recovery_skill 'attached-loop', received '${planningReport.operator_surface?.recovery_skill ?? "missing"}'.`
   );
 }
 if (planningReport.operator_surface?.resume_command !== undefined) {

@@ -86,6 +86,7 @@ assert.equal(firstContract.worker, "loop-control");
 assert.equal(firstContract.recovery_skill, "attached-loop");
 assert.equal(firstContract.user_visible_pause, false);
 assert.equal(firstContract.checkpoint_kind, "planner");
+assert.equal(firstContract.recommended_skill, undefined);
 assert.equal(typeof firstContract.checkpoint_id, "string");
 assert.equal(typeof firstContract.active_response_path, "string");
 

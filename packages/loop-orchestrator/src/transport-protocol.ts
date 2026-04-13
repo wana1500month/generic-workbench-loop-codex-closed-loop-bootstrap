@@ -74,7 +74,7 @@ ${(input.notes ?? []).length > 0 ? input.notes!.map((note) => `- ${note}`).join(
 2. Treat current-thread enhancement artifacts as durable same-thread checkpoints. Update persisted protocol artifacts before and after each controller phase.
 3. Keep shell usage short-lived and local to the current phase.
 4. Treat \`round-contract.json\`, \`patch-request.json\`, and \`runtime/round-phase.json\` as authoritative over chat memory.
-5. When a current-thread enhancement artifact is active, the controller pauses honestly with \`stop_reason = "awaiting_current_thread_handoff"\`, but that boundary is a Codex-owned checkpoint rather than a human stop. A Codex-owned checkpoint is not a user-facing pause boundary. \`$attached-loop\` should consume the active \`*-prompt.md\` file and write the matching \`*-response.json\` on the same thread before resuming.
+5. When a current-thread enhancement artifact is active, the controller pauses honestly with \`stop_reason = "awaiting_codex_checkpoint"\`, but that boundary is a Codex-owned checkpoint rather than a human stop. A Codex-owned checkpoint is not a user-facing pause boundary. \`$loop-control\` should keep the same-thread autocontinue chain moving by consuming the active \`*-prompt.md\` file and writing the matching \`*-response.json\` on the same thread before resuming. Use \`$attached-loop\` only when a foreground current-thread run must be recovered after interruption.
 6. When the bootstrap generator surface is active, treat \`runtime/attached-generator-prompt.md\` / \`runtime/attached-generator-response.json\` as the same kind of Codex-owned checkpoint on this thread.
 7. If the route would require child Codex execution, fail closed and leave a persisted note instead of faking attached behavior.
 

@@ -52,6 +52,10 @@ export const extractRunDirectory = (stdout) => {
 export const readSummary = async (runDirectory) =>
   JSON.parse(await readFile(resolve(runDirectory, "summary.json"), "utf8"));
 
+export const isCurrentThreadCheckpointStopReason = (stopReason) =>
+  stopReason === "awaiting_codex_checkpoint" ||
+  stopReason === "awaiting_current_thread_handoff";
+
 export const driveCurrentThreadHandoffs = async ({
   runDirectory,
   resumeArgs,
@@ -62,7 +66,7 @@ export const driveCurrentThreadHandoffs = async ({
   maxHandoffs = 12
 }) => {
   let summary = await readSummary(runDirectory);
-  for (let handoff = 0; summary.stop_reason === "awaiting_current_thread_handoff"; handoff += 1) {
+  for (let handoff = 0; isCurrentThreadCheckpointStopReason(summary.stop_reason); handoff += 1) {
     if (handoff >= maxHandoffs) {
       throw new Error(`${label} exceeded ${maxHandoffs} current-thread checkpoints.`);
     }
@@ -111,9 +115,15 @@ export const readJsonFile = async (path) =>
   JSON.parse(await readFile(resolve(path), "utf8"));
 
 export const assertStopReason = (summary, expectedStopReason) => {
-  if (summary.stop_reason !== expectedStopReason) {
+  const actualStopReason = summary.stop_reason;
+  const matched =
+    (expectedStopReason === "awaiting_codex_checkpoint" ||
+      expectedStopReason === "awaiting_current_thread_handoff")
+      ? isCurrentThreadCheckpointStopReason(actualStopReason)
+      : actualStopReason === expectedStopReason;
+  if (!matched) {
     throw new Error(
-      `Expected stop_reason '${expectedStopReason}', received '${summary.stop_reason ?? "none"}'.`
+      `Expected stop_reason '${expectedStopReason}', received '${actualStopReason ?? "none"}'.`
     );
   }
 };

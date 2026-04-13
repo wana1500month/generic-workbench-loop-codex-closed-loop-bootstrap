@@ -104,6 +104,8 @@ interface StatusReport {
     checkpoint_seq?: number;
     auto_resume_eligible?: boolean;
     user_visible_pause?: boolean;
+    worker_skill?: string;
+    recovery_skill?: string;
     next_action?: string;
     active_prompt_path?: string;
     active_response_path?: string;
@@ -816,6 +818,12 @@ const buildStatusReport = async (runDirectory: string): Promise<StatusReport> =>
       ...(operatorSurface?.user_visible_pause !== undefined
         ? { user_visible_pause: operatorSurface.user_visible_pause }
         : {}),
+      ...(operatorSurface?.worker_skill
+        ? { worker_skill: operatorSurface.worker_skill }
+        : {}),
+      ...(operatorSurface?.recovery_skill
+        ? { recovery_skill: operatorSurface.recovery_skill }
+        : {}),
       ...(operatorSurface?.next_action
         ? { next_action: operatorSurface.next_action }
         : {}),
@@ -915,7 +923,10 @@ const validateResumeOwnership = async (input: {
     controllerMode: effectiveControllerMode,
     transportMode: effectiveTransportMode
   });
-  const resumeSkill = operatorSurface?.resume_skill ?? "attached-loop";
+  const recoverySkill =
+    operatorSurface?.recovery_skill ??
+    operatorSurface?.resume_skill ??
+    "attached-loop";
   const persistedThreadId = trimOptionalString(operatorSurface?.thread_id);
   if (!currentInvocationOwnsCodexThread(currentContext)) {
     if (input.allowShellResumeDowngrade) {
@@ -923,20 +934,20 @@ const validateResumeOwnership = async (input: {
     }
     return [
       `Run '${restoredRun.runId}' is currently owned by a visible Codex thread.`,
-      `Resume it from the Codex app with $${resumeSkill} instead of reopening it from a shell.`,
+      `Recover it from the Codex app with $${recoverySkill} instead of reopening it from a shell.`,
       `If you intentionally want to downgrade this run to manual-protocol, rerun with ${shellResumeDowngradeFlag}.`
     ].join(" ");
   }
   if (!persistedThreadId) {
     return [
       `Run '${restoredRun.runId}' requires same-thread Codex continuation, but its persisted operator surface has no thread_id.`,
-      `Reopen it from the original Codex thread with $${resumeSkill} so the run can stay bound.`
+      `Recover it from the original Codex thread with $${recoverySkill} so the run can stay bound.`
     ].join(" ");
   }
   if (trimOptionalString(currentContext.threadId) !== persistedThreadId) {
     return [
       `Run '${restoredRun.runId}' is owned by Codex thread '${persistedThreadId}'.`,
-      `Resume it from that same Codex thread with $${resumeSkill} instead of continuing from '${currentContext.threadId ?? "unknown"}'.`
+      `Recover it from that same Codex thread with $${recoverySkill} instead of continuing from '${currentContext.threadId ?? "unknown"}'.`
     ].join(" ");
   }
   return undefined;
@@ -1064,7 +1075,18 @@ const printRunResult = (
   if (statusReport?.active.auto_resume_eligible !== undefined) {
     console.log(`Auto resume: ${statusReport.active.auto_resume_eligible ? "yes" : "no"}`);
   }
-  if (statusReport?.active.recommended_skill) {
+  const foregroundCurrentThread =
+    statusReport?.operator_surface?.transport_mode === "current-thread" &&
+    statusReport.operator_surface.app_visibility === "visible-in-stock-app";
+  if (foregroundCurrentThread) {
+    if (statusReport?.active.worker_skill) {
+      console.log(`Worker: $${statusReport.active.worker_skill}`);
+    }
+    if (statusReport?.active.recovery_skill) {
+      console.log(`Recovery: $${statusReport.active.recovery_skill}`);
+    }
+    console.log(`CLI fallback: ${statusReport?.resume_commands.resume ?? "no command"}`);
+  } else if (statusReport?.active.recommended_skill) {
     console.log(`Recommended continuation: $${statusReport.active.recommended_skill}`);
   } else if (statusReport?.active.recommended_command) {
     console.log(`Recommended continuation: ${statusReport.active.recommended_command}`);
@@ -1093,7 +1115,7 @@ const printStatusReport = (report: StatusReport): void => {
       `Visibility: ${report.operator_surface.app_visibility} via ${report.operator_surface.entrypoint}`
     );
     console.log(
-      `Handoff: ${report.operator_surface.handoff_state} / Resume skill: ${report.operator_surface.resume_skill} / Requires Codex app: ${report.operator_surface.requires_codex_app ? "yes" : "no"}`
+      `Handoff: ${report.operator_surface.handoff_state} / Worker: ${report.operator_surface.worker_skill ?? "none"} / Recovery: ${report.operator_surface.recovery_skill ?? report.operator_surface.resume_skill} / Requires Codex app: ${report.operator_surface.requires_codex_app ? "yes" : "no"}`
     );
     if (report.operator_surface.worktree_id || report.operator_surface.worktree_path) {
       console.log(
@@ -1139,7 +1161,17 @@ const printStatusReport = (report: StatusReport): void => {
   if (report.operator_surface?.next_action) {
     console.log(`Next action: ${report.operator_surface.next_action}`);
   }
-  if (report.active.recommended_skill || report.active.recommended_command) {
+  const foregroundCurrentThread =
+    report.operator_surface?.transport_mode === "current-thread" &&
+    report.operator_surface.app_visibility === "visible-in-stock-app";
+  if (foregroundCurrentThread) {
+    if (report.active.worker_skill) {
+      console.log(`Worker: $${report.active.worker_skill}`);
+    }
+    if (report.active.recovery_skill) {
+      console.log(`Recovery: $${report.active.recovery_skill}`);
+    }
+  } else if (report.active.recommended_skill || report.active.recommended_command) {
     console.log(
       `Recommended continuation: ${report.active.recommended_skill ? `$${report.active.recommended_skill}` : "none"} / ${report.active.recommended_command ?? "no command"}`
     );
@@ -1163,11 +1195,7 @@ const printStatusReport = (report: StatusReport): void => {
   console.log(
     `Supervisor state: ${displayPath(report.paths.supervisor_state_path) ?? report.paths.supervisor_state_path}`
   );
-  if (
-    report.operator_surface?.app_visibility === "visible-in-stock-app" &&
-    report.operator_surface.resume_skill
-  ) {
-    console.log(`Resume skill: $${report.operator_surface.resume_skill}`);
+  if (foregroundCurrentThread) {
     console.log(`CLI fallback: ${report.resume_commands.resume}`);
     if (report.resume_commands.phase) {
       console.log(`CLI phase fallback: ${report.resume_commands.phase}`);

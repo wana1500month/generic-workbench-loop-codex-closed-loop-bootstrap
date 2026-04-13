@@ -4,6 +4,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
+  assertStopReason,
   driveCurrentThreadHandoffs,
   extractRunDirectory,
   readJsonFile,
@@ -101,11 +102,7 @@ if (negotiationSeed.code !== 0) {
 
 const negotiationRunDirectory = extractRunDirectory(negotiationSeed.stdout);
 const negotiationSeedSummary = await readSummary(negotiationRunDirectory);
-assert.equal(
-  negotiationSeedSummary.stop_reason,
-  "awaiting_current_thread_handoff",
-  "Seed run should stop on the planner checkpoint before the negotiation human-boundary case is exercised."
-);
+assertStopReason(negotiationSeedSummary, "awaiting_codex_checkpoint");
 const negotiationSeedSurface = await readJsonFile(negotiationSeedSummary.operator_surface_path);
 assert.equal(negotiationSeedSurface.checkpoint_kind, "planner");
 assert.equal(negotiationSeedSurface.attention_required, "codex");

@@ -28,6 +28,7 @@ export type RunStopReason =
   | "contract_completed"
   | "environment_blocked"
   | "adapter_contract_invalid"
+  | "awaiting_codex_checkpoint"
   | "awaiting_current_thread_handoff"
   | "awaiting_manual_generator"
   | "awaiting_human_input"
@@ -87,10 +88,12 @@ export type CurrentThreadCheckpointKind =
   | "generator-plan"
   | "evaluator"
   | "attached-generator";
-export type OperatorResumeSkill = "attached-loop" | "run-resume";
+export type OperatorWorkerSkill = "loop-control";
+export type OperatorRecoverySkill = "attached-loop" | "run-resume";
+export type OperatorResumeSkill = OperatorRecoverySkill;
 export type OperatorRecommendedSkill =
-  | "loop-control"
-  | OperatorResumeSkill;
+  | OperatorWorkerSkill
+  | OperatorRecoverySkill;
 export type CurrentThreadAutoContinueState =
   | "codex_checkpoint"
   | "human_stop"
@@ -952,8 +955,8 @@ export interface CurrentThreadAutoContinueContract {
   state: CurrentThreadAutoContinueState;
   run_id: string;
   run_directory: string;
-  worker: "loop-control";
-  recovery_skill: "attached-loop";
+  worker: OperatorWorkerSkill;
+  recovery_skill: Extract<OperatorRecoverySkill, "attached-loop">;
   checkpoint_id?: string;
   checkpoint_seq?: number;
   checkpoint_kind?: CurrentThreadCheckpointKind;
@@ -1330,6 +1333,8 @@ export interface OperatorSurfaceArtifact {
   workspace_surface: OperatorWorkspaceSurface;
   handoff_state: OperatorHandoffState;
   resume_skill: OperatorResumeSkill;
+  worker_skill?: OperatorWorkerSkill;
+  recovery_skill?: OperatorRecoverySkill;
   requires_codex_app: boolean;
   updated_at: string;
   execution_state: ExecutionState | "configured";
