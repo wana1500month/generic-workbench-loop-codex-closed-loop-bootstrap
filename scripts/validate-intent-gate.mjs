@@ -162,6 +162,31 @@ assert.match(
   resumeRunControlOutput,
   /^Command:\s+npm run loop:resume -- --run-dir evals\/runs\/run-179 --json/m
 );
+assert.match(resumeRunControlOutput, /^Autocontinue:\s+same-thread foreground/m);
+assert.match(resumeRunControlOutput, /^Recovery skill:\s+\$attached-loop/m);
+assert.doesNotMatch(resumeRunControlOutput, /^Next skill:\s+\$attached-loop/m);
+
+const koreanResumeRunControlOutput = renderLoopIntentResponse(
+  evaluateLoopIntent("run-179 이어가")
+);
+assert.match(koreanResumeRunControlOutput, /^\uC758\uB3C4:\s+run_control/m);
+assert.match(koreanResumeRunControlOutput, /^\uB3D9\uC791:\s+resume/m);
+assert.match(
+  koreanResumeRunControlOutput,
+  /^\uBA85\uB839:\s+npm run loop:resume -- --run-dir evals\/runs\/run-179 --json/m
+);
+assert.match(
+  koreanResumeRunControlOutput,
+  /^\uC5F0\uC18D \uC2E4\uD589:\s+same-thread autocontinue/m
+);
+assert.match(
+  koreanResumeRunControlOutput,
+  /^\uBCF5\uAD6C \uC2A4\uD0AC:\s+\$attached-loop/m
+);
+assert.doesNotMatch(
+  koreanResumeRunControlOutput,
+  /^\uB2E4\uC74C \uC2A4\uD0AC:\s+\$attached-loop/m
+);
 
 const koreanRunControlStart = renderLoopIntentResponse(
   evaluateLoopIntent("\uB8E8\uD504 \uC2DC\uC791")

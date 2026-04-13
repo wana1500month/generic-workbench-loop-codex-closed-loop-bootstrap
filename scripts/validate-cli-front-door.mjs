@@ -310,7 +310,7 @@ const seed = await runLoop(
 assertSucceeded(seed, "current-thread seed run");
 const runDirectory = extractRunDirectory(seed.stdout);
 let summary = await readSummary(runDirectory);
-assertStopReason(summary, "awaiting_current_thread_handoff");
+assertStopReason(summary, "awaiting_codex_checkpoint");
 assertRoundCount(summary, 0);
 
 const planningStatus = await runCli(["status", "--run-dir", runDirectory, "--json"]);
@@ -432,7 +432,7 @@ const planningPhase = await runCli(["phase", "open", "--run-dir", runDirectory],
 });
 assertSucceeded(planningPhase, "cli phase planning");
 summary = await readSummary(runDirectory);
-assertStopReason(summary, "awaiting_current_thread_handoff");
+assertStopReason(summary, "awaiting_codex_checkpoint");
 
 const negotiationStatus = await runCli(["status", "--run-dir", runDirectory, "--json"]);
 assertSucceeded(negotiationStatus, "cli status negotiation");
@@ -468,7 +468,7 @@ const secondNegotiationPhase = await runCli([
 });
 assertSucceeded(secondNegotiationPhase, "cli phase negotiation");
 summary = await readSummary(runDirectory);
-assertStopReason(summary, "awaiting_current_thread_handoff");
+assertStopReason(summary, "awaiting_codex_checkpoint");
 
 const generatorPlanStatus = await runCli([
   "status",
@@ -499,7 +499,7 @@ const attachedGeneratorResume = await runCli(["resume", "--run-dir", runDirector
 });
 assertSucceeded(attachedGeneratorResume, "cli resume to attached generator");
 summary = await readSummary(runDirectory);
-assertStopReason(summary, "awaiting_current_thread_handoff");
+assertStopReason(summary, "awaiting_codex_checkpoint");
 
 const postNegotiationStatus = await runCli([
   "status",
@@ -528,7 +528,7 @@ if (postNegotiationReport.active.phase === "pre_verification") {
   });
   assertSucceeded(evaluationResume, "cli resume to evaluation");
   summary = await readSummary(runDirectory);
-  assertStopReason(summary, "awaiting_current_thread_handoff");
+assertStopReason(summary, "awaiting_codex_checkpoint");
 
   const evaluationStatus = await runCli([
     "status",

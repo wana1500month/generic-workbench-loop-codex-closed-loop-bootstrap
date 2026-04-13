@@ -121,7 +121,7 @@ const currentThreadRunDirectory = extractRunDirectory(currentThreadSeed.stdout);
 const currentThreadSeedSummary = await readSummary(currentThreadRunDirectory);
 assertTargetFamily(currentThreadSeedSummary, "api-service");
 assertValidationLane(currentThreadSeedSummary, "deterministic_semantic");
-assertStopReason(currentThreadSeedSummary, "awaiting_current_thread_handoff");
+assertStopReason(currentThreadSeedSummary, "awaiting_codex_checkpoint");
 await assertAttachedTransportSurface(currentThreadSeedSummary, {
   expectedTransportMode: "current-thread",
   expectedRoundCount: 0

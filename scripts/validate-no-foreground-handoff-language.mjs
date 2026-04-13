@@ -38,4 +38,26 @@ assert(
   "loop:continue should not recommend attached-loop for codex checkpoints."
 );
 
+console.log("[validate-no-foreground-handoff-language] repo instructions keep foreground ownership inside loop-control");
+const agentsInstructions = await readRepoFile("AGENTS.md");
+assert(
+  agentsInstructions.includes("keep control inside `$loop-control` through `npm run loop:continue -- --run-dir <run> --json`"),
+  "Expected AGENTS.md to keep foreground continuation inside $loop-control."
+);
+assert(
+  !agentsInstructions.includes("then continue on the same thread with `$attached-loop`"),
+  "AGENTS.md should not describe $attached-loop as the canonical foreground continuation."
+);
+
+console.log("[validate-no-foreground-handoff-language] loop-control skill treats attached-loop as recovery only");
+const loopControlSkill = await readRepoFile(".agents/skills/loop-control/SKILL.md");
+assert(
+  loopControlSkill.includes("`start` and `resume` own the same-thread autocontinue chain."),
+  "Expected loop-control skill to state that start and resume own the same-thread autocontinue chain."
+);
+assert(
+  loopControlSkill.includes("use `$attached-loop` only to recover an already-existing foreground run after interruption"),
+  "Expected loop-control skill to demote $attached-loop to recovery-only semantics."
+);
+
 console.log("foreground handoff language validation passed.");

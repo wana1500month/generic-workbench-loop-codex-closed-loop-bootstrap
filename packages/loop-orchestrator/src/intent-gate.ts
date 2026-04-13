@@ -266,6 +266,7 @@ const resumeSignals: IntentSignal[] = [
   { label: "codex-handoff", pattern: /\bcodex-handoff\b/i },
   { label: "summary.json", pattern: /\bsummary\.json\b/i },
   { label: "evals/runs", pattern: /evals[\\/]+runs[\\/]+run-\d+/i },
+  { label: "continue (ko)", pattern: /\uC774\uC5B4\uAC00/u },
   { label: "이어", pattern: /\uC774\uC5B4/u },
   { label: "재개", pattern: /\uC7AC\uAC1C/u },
   { label: "다시 열기", pattern: /\uB2E4\uC2DC.{0,4}\uC5F4\uAE30/u }
@@ -325,6 +326,7 @@ const runActionSignals: IntentSignal[] = [
   { label: "advance", pattern: /\badvance\b/i },
   { label: "close out", pattern: /\bclose\s*out\b/i },
   { label: "next step", pattern: /\bnext\s+step\b/i },
+  { label: "continue (ko)", pattern: /\uC774\uC5B4\uAC00/u },
   { label: "이어가기", pattern: /\uC774\uC5B4\uAC00\uAE30/u },
   { label: "재개", pattern: /\uC7AC\uAC1C/u },
   { label: "결정", pattern: /\uACB0\uC815/u },
@@ -441,6 +443,8 @@ const parseRunControlRequest = (request: string): ParsedRunControlRequest => {
   const resumeRequested =
     /\b(resume|continue)\s+(?:the\s+)?(?:run|loop)\b/i.test(normalized) ||
     (runReference !== undefined && /\b(resume|continue)\b/i.test(normalized)) ||
+    (runReference !== undefined &&
+      /\uC774\uC5B4\uAC00|\uACC4\uC18D|\uC7AC\uAC1C/u.test(request)) ||
     /\uB8E8\uD504\s*\uC7AC\uAC1C/u.test(request);
   const explicitStartSurfaces = [
     { surface: "codex" as const, index: normalized.search(/\bloop:start:codex\b/i) },
@@ -535,6 +539,12 @@ export const deriveRunControlDispatchPlan = (input: {
   const commandRunReference = input.runReference
     ? normalizeRunReferenceForCommand(input.runReference)
     : undefined;
+  const codexAutocontinuePlan = {
+    enabled: true,
+    mode: "same-thread" as const,
+    worker: "loop-control" as const,
+    recovery_skill: "attached-loop" as const
+  };
 
   if (input.action === "start") {
     const codexStart =
@@ -550,12 +560,7 @@ export const deriveRunControlDispatchPlan = (input: {
       follow_up_skills: [],
       ...(codexStart
         ? {
-            autocontinue: {
-              enabled: true,
-              mode: "same-thread" as const,
-              worker: "loop-control" as const,
-              recovery_skill: "attached-loop" as const
-            }
+            autocontinue: codexAutocontinuePlan
           }
         : {})
     };
@@ -577,7 +582,8 @@ export const deriveRunControlDispatchPlan = (input: {
         ? `npm run loop:resume -- --run-dir ${commandRunReference} --json`
         : "npm run loop:resume -- --json",
       follow_up_commands: [],
-      follow_up_skills: []
+      follow_up_skills: [],
+      autocontinue: codexAutocontinuePlan
     };
   }
 
@@ -689,7 +695,7 @@ const buildRunControlFieldStates = (
     /\uC815\uC9C0|\uC911\uC9C0/u.test(request);
   const wantsResume =
     /\b(resume|continue)\b/i.test(request) ||
-    /\uC7AC\uAC1C|\uACC4\uC18D/u.test(request);
+    /\uC7AC\uAC1C|\uACC4\uC18D|\uC774\uC5B4\uAC00/u.test(request);
   const mentionsBackground =
     /\b(background|detached|supervisor)\b/i.test(request) ||
     /\uBC31\uADF8\uB77C\uC6B4\uB4DC/u.test(request);

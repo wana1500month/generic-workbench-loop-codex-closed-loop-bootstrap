@@ -62,6 +62,7 @@ console.log("[validate-canonical-foreground-worker] start JSON exposes canonical
 const startExecution = await runPackageScript("loop:start:codex", ["--json"], foregroundThreadEnv);
 assertSucceeded(startExecution, "loop:start:codex --json");
 const startReport = JSON.parse(startExecution.stdout);
+assert.equal(startReport.stop_reason, "awaiting_codex_checkpoint");
 assert.equal(startReport.active.worker_skill, "loop-control");
 assert.equal(startReport.active.recovery_skill, "attached-loop");
 assert.equal(startReport.operator_surface.worker_skill, "loop-control");

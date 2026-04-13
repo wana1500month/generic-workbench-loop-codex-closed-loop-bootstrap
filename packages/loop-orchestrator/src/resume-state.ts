@@ -25,6 +25,7 @@ import {
   assessRuntimeHealth,
   defaultHeartbeatStaleMs
 } from "./runtime-health.js";
+import { normalizeRunStopReason } from "./stop-reason.js";
 import type {
   ActiveContractFrame,
   ContractAgreementArtifact,
@@ -258,11 +259,12 @@ const hydrateSummaryFromHistory = (input: {
 }): LoopRunSummary => {
   const latestRoundSummary = input.history[input.history.length - 1];
   const bestRoundSummary = bestRoundSummaryFromHistory(input.history);
-  const stopReason =
+  const stopReason = normalizeRunStopReason(
     latestRoundSummary?.round_stop_reason &&
-    latestRoundSummary.round_stop_reason !== "continue"
+      latestRoundSummary.round_stop_reason !== "continue"
       ? latestRoundSummary.round_stop_reason
-      : input.summary?.stop_reason;
+      : input.summary?.stop_reason
+  );
 
   return {
     run_id: input.summary?.run_id ?? input.runId,
@@ -419,7 +421,14 @@ export const restoreRunState = async (
     runId,
     scenario: hydratedScenario,
     rubric,
-    summary,
+    summary: summary
+      ? {
+          ...summary,
+          ...(normalizeRunStopReason(summary.stop_reason)
+            ? { stop_reason: normalizeRunStopReason(summary.stop_reason) }
+            : {})
+        }
+      : undefined,
     history,
     runtimeLiveState,
     runtimeRoundPhase,

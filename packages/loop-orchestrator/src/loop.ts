@@ -143,6 +143,10 @@ import {
   pausedStopReasons,
   phaseBudgetToStallThresholdMs
 } from "./runtime-health.js";
+import {
+  canonicalCodexCheckpointStopReason,
+  normalizeRunStopReason
+} from "./stop-reason.js";
 import { transportProtocolPathForRun, writeTransportProtocol } from "./transport-protocol.js";
 import { buildTrajectoryDecisionArtifact } from "./trajectory-controller.js";
 import type {
@@ -1021,7 +1025,7 @@ export const runClosedLoop = async (input: {
         previous: previousResumeIdentity
       })
     : [];
-  const restoredStopReason = restoredRun?.summary.stop_reason;
+  const restoredStopReason = normalizeRunStopReason(restoredRun?.summary.stop_reason);
   if (resumeIdentityMismatches.length > 0 && !input.allowResumeMigration) {
     throw new Error(
       [
@@ -1545,7 +1549,7 @@ export const runClosedLoop = async (input: {
               restoredRun.summary.stop_reason === "adapter_contract_invalid"
           }
         : undefined;
-  let currentCheckpointStopReason = restoredRun?.summary.stop_reason;
+  let currentCheckpointStopReason = normalizeRunStopReason(restoredRun?.summary.stop_reason);
   let activeHeartbeatRound = restoredRun?.interruptedRound?.round;
   let activeHeartbeatPhase = input.resumePhase ?? restoredRun?.interruptedRound?.resumeFromPhase;
   let activeHeartbeatPhaseStatus = restoredRun?.interruptedRound?.phaseStatus;
@@ -2191,7 +2195,6 @@ export const runClosedLoop = async (input: {
     stopReason: Extract<
       LoopRunSummary["stop_reason"],
       | "awaiting_codex_checkpoint"
-      | "awaiting_current_thread_handoff"
       | "awaiting_manual_generator"
       | "awaiting_human_input"
       | "awaiting_external_condition"
@@ -2343,7 +2346,7 @@ export const runClosedLoop = async (input: {
       notes: input.notes
     });
     return finalizeRunAsPausedStop({
-      stopReason: "awaiting_codex_checkpoint",
+      stopReason: canonicalCodexCheckpointStopReason,
       notes: input.notes,
       attentionRequired: "codex",
       checkpointKind: input.checkpointKind,
@@ -2365,12 +2368,12 @@ export const runClosedLoop = async (input: {
       notes: pendingPlannerEnhancementPause.notes
     });
   }
-  await writeCheckpoint(restoredRun?.summary.stop_reason);
+  await writeCheckpoint(restoredStopReason);
   const repairRoundLimit = input.repairOnly
     ? restoredRun?.interruptedRound?.round
     : undefined;
   if (input.repairOnly && !repairRoundLimit) {
-    const repairedSummary = await writeCheckpoint(restoredRun?.summary.stop_reason);
+    const repairedSummary = await writeCheckpoint(restoredStopReason);
     return {
       plan,
       summary: repairedSummary,

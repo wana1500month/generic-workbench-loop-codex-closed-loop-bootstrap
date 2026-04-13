@@ -12,6 +12,7 @@ import { repoRoot } from "./file-system.js";
 import { runClosedLoop } from "./loop.js";
 import { restoreRunState } from "./resume-state.js";
 import { assessRuntimeHealth, pausedStopReasons } from "./runtime-health.js";
+import { normalizeRunStopReason } from "./stop-reason.js";
 import {
   readOperatorSurfaceArtifact,
   readSupervisorStateArtifact,
@@ -683,10 +684,17 @@ const effectiveStatusFor = (input: {
   summary: string;
   source: "summary_stop_reason" | "supervisor_state" | "runtime_health";
 } => {
-  if (input.summary.stop_reason) {
+  const normalizedSummaryStopReason = normalizeRunStopReason(input.summary.stop_reason);
+  const normalizedSupervisorStopReason = normalizeRunStopReason(
+    input.supervisorState?.stop_reason
+  );
+
+  if (normalizedSummaryStopReason) {
     return {
-      executionState: pausedStopReasons.has(input.summary.stop_reason) ? "paused" : "completed",
-      summary: `Run stop reason: ${input.summary.stop_reason}.`,
+      executionState: pausedStopReasons.has(normalizedSummaryStopReason)
+        ? "paused"
+        : "completed",
+      summary: `Run stop reason: ${normalizedSummaryStopReason}.`,
       source: "summary_stop_reason"
     };
   }
@@ -714,8 +722,8 @@ const effectiveStatusFor = (input: {
       return {
         executionState: "completed",
         summary:
-          input.supervisorState.stop_reason
-            ? `Supervisor completed the run with stop reason '${input.supervisorState.stop_reason}'.`
+          normalizedSupervisorStopReason
+            ? `Supervisor completed the run with stop reason '${normalizedSupervisorStopReason}'.`
             : "Supervisor completed the run.",
         source: "supervisor_state"
       };
@@ -748,6 +756,7 @@ const buildStatusReport = async (runDirectory: string): Promise<StatusReport> =>
     supervisorState: supervisorState ?? undefined
   });
   const summary = restoredRun.summary;
+  const normalizedStopReason = normalizeRunStopReason(summary.stop_reason);
   const activeRound =
     operatorSurface?.round ??
     restoredRun.runtimeRoundPhase?.round ??
@@ -784,7 +793,7 @@ const buildStatusReport = async (runDirectory: string): Promise<StatusReport> =>
     executor_mode: summary.executor_mode,
     ...(summary.target_family ? { target_family: summary.target_family } : {}),
     ...(summary.validation_lane ? { validation_lane: summary.validation_lane } : {}),
-    ...(summary.stop_reason ? { stop_reason: summary.stop_reason } : {}),
+    ...(normalizedStopReason ? { stop_reason: normalizedStopReason } : {}),
     round_count: summary.round_count,
     ...(summary.terminal_round !== undefined
       ? { terminal_round: summary.terminal_round }

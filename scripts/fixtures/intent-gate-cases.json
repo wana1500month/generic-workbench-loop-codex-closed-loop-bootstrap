@@ -108,7 +108,21 @@
     "expect_route": "run_control",
     "expect_run_reference": "run-179",
     "expect_run_control_action": "resume",
-    "expect_primary_command": "npm run loop:resume -- --run-dir evals/runs/run-179 --json"
+    "expect_primary_command": "npm run loop:resume -- --run-dir evals/runs/run-179 --json",
+    "expect_autocontinue_worker": "loop-control",
+    "expect_recovery_skill": "attached-loop"
+  },
+  {
+    "id": "run-control-korean-resume",
+    "request": "run-179 이어가",
+    "expect_intent": "run_control",
+    "expect_status": "ready_for_run_control",
+    "expect_route": "run_control",
+    "expect_run_reference": "run-179",
+    "expect_run_control_action": "resume",
+    "expect_primary_command": "npm run loop:resume -- --run-dir evals/runs/run-179 --json",
+    "expect_autocontinue_worker": "loop-control",
+    "expect_recovery_skill": "attached-loop"
   },
   {
     "id": "run-control-korean-stop-all-timeout-diagnosis",
