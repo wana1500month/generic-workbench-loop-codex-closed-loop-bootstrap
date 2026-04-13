@@ -149,6 +149,7 @@ import type {
   AdapterCapabilityExecution,
   AdapterCapabilityName,
   ActiveContractFrame,
+  AttachedGeneratorTaskArtifact,
   ClosedLoopResult,
   ContractAgreementArtifact,
   ContractReviewArtifact,
@@ -157,6 +158,7 @@ import type {
   ControllerPhaseStatus,
   ControllerRoundPhase,
   CurrentThreadCheckpointKind,
+  CurrentThreadEnhancementTaskArtifact,
   EvalReport,
   ExecutionState,
   EvaluatorVerdictArtifact,
@@ -1623,11 +1625,72 @@ export const runClosedLoop = async (input: {
       )
     };
   };
+  const activeCheckpointMetadataFor = async (
+    artifacts?: Record<string, string>,
+    fallback?: {
+      round: number;
+      phase: ControllerRoundPhase;
+      checkpointKind: CurrentThreadCheckpointKind;
+    }
+  ): Promise<{
+    checkpointId?: string;
+    checkpointSeq?: number;
+  }> => {
+    const artifactValues = artifacts
+      ? Object.values(artifacts).filter((value) => typeof value === "string")
+      : [];
+    const taskPath = artifactValues.find(
+      (value) => value.endsWith(".json") && /task/i.test(value)
+    );
+    if (taskPath) {
+      const taskArtifact = await loadJsonIfExists<
+        AttachedGeneratorTaskArtifact | CurrentThreadEnhancementTaskArtifact
+      >(taskPath);
+      if (taskArtifact && typeof taskArtifact === "object") {
+        const checkpointId =
+          "checkpoint_id" in taskArtifact &&
+          typeof taskArtifact.checkpoint_id === "string"
+            ? taskArtifact.checkpoint_id
+            : undefined;
+        const checkpointSeq =
+          "checkpoint_seq" in taskArtifact &&
+          typeof taskArtifact.checkpoint_seq === "number"
+            ? taskArtifact.checkpoint_seq
+            : undefined;
+        if (checkpointId || checkpointSeq !== undefined) {
+          return {
+            checkpointId,
+            checkpointSeq
+          };
+        }
+      }
+    }
+    if (!fallback) {
+      return {};
+    }
+    const checkpointSeq = Date.now();
+    return {
+      checkpointSeq,
+      checkpointId: [
+        runId,
+        `r${fallback.round}`,
+        fallback.phase,
+        fallback.checkpointKind,
+        String(checkpointSeq)
+      ].join(":")
+    };
+  };
   let { activePromptPath: activePromptArtifactPath, activeResponsePath: activeResponseArtifactPath } =
     activeArtifactPathsFor(restoredRun?.runtimeRoundPhase?.artifacts);
+  const restoredCheckpointMetadata = await activeCheckpointMetadataFor(
+    restoredRun?.runtimeRoundPhase?.artifacts
+  );
   let activeAttentionRequired: OperatorAttentionRequired | undefined;
   let activeCheckpointKind: CurrentThreadCheckpointKind | undefined;
+  let activeCheckpointId: string | undefined = restoredCheckpointMetadata.checkpointId;
+  let activeCheckpointSeq: number | undefined = restoredCheckpointMetadata.checkpointSeq;
   let activeAutoResumeEligible: boolean | undefined;
+  let activeUserVisiblePause: boolean | undefined;
   let activeRecommendedSkill: OperatorRecommendedSkill | undefined;
   let activeRecommendedCommand: string | undefined;
   const operatorSurfaceContext = resolveOperatorSurfaceContext({
@@ -1716,7 +1779,10 @@ export const runClosedLoop = async (input: {
     executionState?: ExecutionState | "configured";
     attentionRequired?: OperatorAttentionRequired;
     checkpointKind?: CurrentThreadCheckpointKind;
+    checkpointId?: string;
+    checkpointSeq?: number;
     autoResumeEligible?: boolean;
+    userVisiblePause?: boolean;
     recommendedSkill?: OperatorRecommendedSkill;
     recommendedCommand?: string;
     nextAction?: string;
@@ -1737,8 +1803,17 @@ export const runClosedLoop = async (input: {
     if (input?.checkpointKind !== undefined) {
       activeCheckpointKind = input.checkpointKind;
     }
+    if (input?.checkpointId !== undefined) {
+      activeCheckpointId = input.checkpointId;
+    }
+    if (input?.checkpointSeq !== undefined) {
+      activeCheckpointSeq = input.checkpointSeq;
+    }
     if (input?.autoResumeEligible !== undefined) {
       activeAutoResumeEligible = input.autoResumeEligible;
+    }
+    if (input?.userVisiblePause !== undefined) {
+      activeUserVisiblePause = input.userVisiblePause;
     }
     if (input?.recommendedSkill !== undefined) {
       activeRecommendedSkill = input.recommendedSkill;
@@ -1759,8 +1834,11 @@ export const runClosedLoop = async (input: {
         phaseStatus: input?.phaseStatus ?? activeHeartbeatPhaseStatus,
         attentionRequired: input?.attentionRequired ?? activeAttentionRequired,
         checkpointKind: input?.checkpointKind ?? activeCheckpointKind,
+        checkpointId: input?.checkpointId ?? activeCheckpointId,
+        checkpointSeq: input?.checkpointSeq ?? activeCheckpointSeq,
         autoResumeEligible:
           input?.autoResumeEligible ?? activeAutoResumeEligible,
+        userVisiblePause: input?.userVisiblePause ?? activeUserVisiblePause,
         summaryPath,
         transportStatePath: runtimeStatePaths.transportStatePath,
         transportProtocolPath: transportProtocolCurrentPath,
@@ -2120,7 +2198,10 @@ export const runClosedLoop = async (input: {
     notes: string[];
     attentionRequired?: OperatorAttentionRequired;
     checkpointKind?: CurrentThreadCheckpointKind;
+    checkpointId?: string;
+    checkpointSeq?: number;
     autoResumeEligible?: boolean;
+    userVisiblePause?: boolean;
     recommendedSkill?: OperatorRecommendedSkill;
     recommendedCommand?: string;
     activePromptPath?: string;
@@ -2133,7 +2214,10 @@ export const runClosedLoop = async (input: {
       executionState: "paused",
       attentionRequired: input.attentionRequired,
       checkpointKind: input.checkpointKind,
+      checkpointId: input.checkpointId,
+      checkpointSeq: input.checkpointSeq,
       autoResumeEligible: input.autoResumeEligible,
+      userVisiblePause: input.userVisiblePause,
       recommendedSkill: input.recommendedSkill,
       recommendedCommand: input.recommendedCommand,
       activePromptPath: input.activePromptPath,
@@ -2157,6 +2241,11 @@ export const runClosedLoop = async (input: {
     recommendedCommand?: string;
   }): Promise<ClosedLoopResult> => {
     const { activePromptPath, activeResponsePath } = activeArtifactPathsFor(input.artifacts);
+    const checkpointMetadata = await activeCheckpointMetadataFor(input.artifacts, {
+      round: input.round,
+      phase: input.phase,
+      checkpointKind: input.checkpointKind ?? "planner"
+    });
     await recordRoundPhase({
       round: input.round,
       phase: input.phase,
@@ -2169,7 +2258,10 @@ export const runClosedLoop = async (input: {
       notes: input.notes,
       attentionRequired: "human",
       checkpointKind: input.checkpointKind,
+      checkpointId: checkpointMetadata.checkpointId,
+      checkpointSeq: checkpointMetadata.checkpointSeq,
       autoResumeEligible: false,
+      userVisiblePause: true,
       recommendedSkill: "loop-control",
       recommendedCommand: input.recommendedCommand,
       activePromptPath,
@@ -2185,6 +2277,11 @@ export const runClosedLoop = async (input: {
     recommendedCommand?: string;
   }): Promise<ClosedLoopResult> => {
     const { activePromptPath, activeResponsePath } = activeArtifactPathsFor(input.artifacts);
+    const checkpointMetadata = await activeCheckpointMetadataFor(input.artifacts, {
+      round: input.round,
+      phase: input.phase,
+      checkpointKind: input.checkpointKind ?? "evaluator"
+    });
     await recordRoundPhase({
       round: input.round,
       phase: input.phase,
@@ -2197,7 +2294,10 @@ export const runClosedLoop = async (input: {
       notes: input.notes,
       attentionRequired: "external",
       checkpointKind: input.checkpointKind,
+      checkpointId: checkpointMetadata.checkpointId,
+      checkpointSeq: checkpointMetadata.checkpointSeq,
       autoResumeEligible: false,
+      userVisiblePause: true,
       recommendedSkill: "loop-control",
       recommendedCommand: input.recommendedCommand,
       activePromptPath,
@@ -2229,6 +2329,11 @@ export const runClosedLoop = async (input: {
     const { activePromptPath, activeResponsePath } = activeArtifactPathsFor(
       input.artifacts
     );
+    const checkpointMetadata = await activeCheckpointMetadataFor(input.artifacts, {
+      round: input.round,
+      phase: input.phase,
+      checkpointKind: input.checkpointKind
+    });
     await recordRoundPhase({
       round: input.round,
       phase: input.phase,
@@ -2241,8 +2346,11 @@ export const runClosedLoop = async (input: {
       notes: input.notes,
       attentionRequired: "codex",
       checkpointKind: input.checkpointKind,
+      checkpointId: checkpointMetadata.checkpointId,
+      checkpointSeq: checkpointMetadata.checkpointSeq,
       autoResumeEligible: true,
-      recommendedSkill: "attached-loop",
+      userVisiblePause: false,
+      recommendedSkill: "loop-control",
       activePromptPath,
       activeResponsePath
     });
@@ -2622,14 +2730,23 @@ export const runClosedLoop = async (input: {
       : [];
     const attachedGeneratorTaskTimeoutMs =
       phaseTimeouts.pre_verification ?? appServerTaskTimeoutMs;
+    const existingAttachedGeneratorTask =
+      attachedGeneratorEligible && attachedGeneratorTargetRoot
+        ? await loadJsonIfExists<AttachedGeneratorTaskArtifact>(
+            artifacts.attached_generator_task_path
+          )
+        : undefined;
+    let attachedGeneratorTask = existingAttachedGeneratorTask;
     if (attachedGeneratorEligible && attachedGeneratorTargetRoot) {
-      await writeAttachedGeneratorTask({
+      attachedGeneratorTask = await writeAttachedGeneratorTask({
         runId,
         round,
         controllerMode: "attached",
         transportMode: isAttachedGeneratorTransport(transportMode)
           ? transportMode
           : "current-thread",
+        checkpointId: existingAttachedGeneratorTask?.checkpoint_id,
+        checkpointSeq: existingAttachedGeneratorTask?.checkpoint_seq,
         targetRoot: attachedGeneratorTargetRoot,
         taskCwd: attachedGeneratorTargetRoot,
         writableRoots: attachedGeneratorWritableRoots,
@@ -2651,7 +2768,8 @@ export const runClosedLoop = async (input: {
     let attachedGeneratorResponse =
       attachedGeneratorEligible
         ? await readAttachedGeneratorResponse(
-            artifacts.attached_generator_response_path
+            artifacts.attached_generator_response_path,
+            attachedGeneratorTask?.checkpoint_id
           )
         : undefined;
     const persistedPreVerificationExecutions =
@@ -2739,7 +2857,8 @@ export const runClosedLoop = async (input: {
             completionTimeoutMs: attachedGeneratorTaskTimeoutMs
           });
           attachedGeneratorResponse = await readAttachedGeneratorResponse(
-            artifacts.attached_generator_response_path
+            artifacts.attached_generator_response_path,
+            attachedGeneratorTask?.checkpoint_id
           );
           await markProgress(
             `App Server attached generator completed for round ${round}.`

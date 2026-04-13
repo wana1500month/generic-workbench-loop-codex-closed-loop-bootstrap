@@ -100,7 +100,10 @@ interface StatusReport {
     phase_status?: string;
     attention_required?: string;
     checkpoint_kind?: string;
+    checkpoint_id?: string;
+    checkpoint_seq?: number;
     auto_resume_eligible?: boolean;
+    user_visible_pause?: boolean;
     next_action?: string;
     active_prompt_path?: string;
     active_response_path?: string;
@@ -801,8 +804,17 @@ const buildStatusReport = async (runDirectory: string): Promise<StatusReport> =>
       ...(operatorSurface?.checkpoint_kind
         ? { checkpoint_kind: operatorSurface.checkpoint_kind }
         : {}),
+      ...(operatorSurface?.checkpoint_id
+        ? { checkpoint_id: operatorSurface.checkpoint_id }
+        : {}),
+      ...(operatorSurface?.checkpoint_seq !== undefined
+        ? { checkpoint_seq: operatorSurface.checkpoint_seq }
+        : {}),
       ...(operatorSurface?.auto_resume_eligible !== undefined
         ? { auto_resume_eligible: operatorSurface.auto_resume_eligible }
+        : {}),
+      ...(operatorSurface?.user_visible_pause !== undefined
+        ? { user_visible_pause: operatorSurface.user_visible_pause }
         : {}),
       ...(operatorSurface?.next_action
         ? { next_action: operatorSurface.next_action }
@@ -1046,6 +1058,9 @@ const printRunResult = (
   if (statusReport?.active.checkpoint_kind) {
     console.log(`Checkpoint: ${statusReport.active.checkpoint_kind}`);
   }
+  if (statusReport?.active.checkpoint_id) {
+    console.log(`Checkpoint id: ${statusReport.active.checkpoint_id}`);
+  }
   if (statusReport?.active.auto_resume_eligible !== undefined) {
     console.log(`Auto resume: ${statusReport.active.auto_resume_eligible ? "yes" : "no"}`);
   }
@@ -1110,6 +1125,9 @@ const printStatusReport = (report: StatusReport): void => {
     console.log(
       `Attention: ${report.active.attention_required ?? "none"} / Checkpoint: ${report.active.checkpoint_kind ?? "none"} / Auto resume: ${report.active.auto_resume_eligible ? "yes" : "no"}`
     );
+  }
+  if (report.active.checkpoint_id) {
+    console.log(`Checkpoint id: ${report.active.checkpoint_id}`);
   }
   console.log(
     `Scores: total ${report.scores.total}, control-plane ${report.scores.control_plane}, proof ${report.scores.proof}, release ${report.scores.release}`

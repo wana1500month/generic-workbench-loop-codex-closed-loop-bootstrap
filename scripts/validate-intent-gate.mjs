@@ -84,6 +84,27 @@ for (const fixture of fixtures) {
     );
   }
 
+  if (fixture.expect_autocontinue_worker) {
+    assert.equal(
+      result.run_control_dispatch_plan?.autocontinue?.worker,
+      fixture.expect_autocontinue_worker,
+      `${fixture.id}: unexpected autocontinue worker`
+    );
+    assert.equal(
+      result.run_control_dispatch_plan?.autocontinue?.enabled,
+      true,
+      `${fixture.id}: autocontinue should be enabled`
+    );
+  }
+
+  if (fixture.expect_recovery_skill) {
+    assert.equal(
+      result.run_control_dispatch_plan?.autocontinue?.recovery_skill,
+      fixture.expect_recovery_skill,
+      `${fixture.id}: unexpected recovery skill`
+    );
+  }
+
   if (fixture.expect_follow_up_commands) {
     assert.deepEqual(
       result.run_control_follow_up_commands ?? [],
@@ -111,7 +132,9 @@ assert.match(runControlHumanOutput, /Route:\s+proceed in the run-control lane\./
 assert.match(runControlHumanOutput, /^Action:\s+start/m);
 assert.match(runControlHumanOutput, /^Start surface:\s+Codex foreground current-thread/m);
 assert.match(runControlHumanOutput, /^Command:\s+npm run loop:start:codex -- --json/m);
-assert.match(runControlHumanOutput, /^Next skill:\s+\$attached-loop/m);
+assert.match(runControlHumanOutput, /^Autocontinue:\s+same-thread foreground/m);
+assert.match(runControlHumanOutput, /^Recovery skill:\s+\$attached-loop/m);
+assert.doesNotMatch(runControlHumanOutput, /^Next skill:\s+\$attached-loop/m);
 
 const koreanRunControlRoute = renderLoopIntentResponse(
   evaluateLoopIntent("\uD604\uC7AC \uB8E8\uD504 \uC0C1\uD0DC")
@@ -144,7 +167,14 @@ const koreanRunControlStart = renderLoopIntentResponse(
   evaluateLoopIntent("\uB8E8\uD504 \uC2DC\uC791")
 );
 assert.match(koreanRunControlStart, /^\uBA85\uB839:\s+npm run loop:start:codex -- --json/m);
-assert.match(koreanRunControlStart, /^\uB2E4\uC74C \uC2A4\uD0AC:\s+\$attached-loop/m);
+assert.match(
+  koreanRunControlStart,
+  /^\uC5F0\uC18D \uC2E4\uD589:\s+same-thread autocontinue/m
+);
+assert.match(
+  koreanRunControlStart,
+  /^\uBCF5\uAD6C \uC2A4\uD0AC:\s+\$attached-loop/m
+);
 
 const compoundRunControl = evaluateLoopIntent(
   "\uBAA8\uB4E0 \uB8E8\uD504 \uC815\uC9C0\uD558\uACE0 \uC65C \uD0C0\uC784\uC544\uC6C3 \uB098\uB294\uC9C0 \uC6D0\uC778 \uC0C1\uC138\uD558\uAC8C \uADDC\uBA85"

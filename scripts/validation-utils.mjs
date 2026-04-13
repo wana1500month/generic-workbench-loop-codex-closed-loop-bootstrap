@@ -58,7 +58,7 @@ export const driveCurrentThreadHandoffs = async ({
   env,
   silent = true,
   label = "current-thread run",
-  responseText = "{}\n",
+  responseText,
   maxHandoffs = 12
 }) => {
   let summary = await readSummary(runDirectory);
@@ -80,7 +80,16 @@ export const driveCurrentThreadHandoffs = async ({
         `${label} is awaiting a current-thread checkpoint but has no active_response_path.`
       );
     }
-    await writeFile(resolve(operatorSurface.active_response_path), responseText, "utf8");
+    const effectiveResponseText =
+      responseText ??
+      `${JSON.stringify(
+        operatorSurface.checkpoint_id
+          ? { checkpoint_id: operatorSurface.checkpoint_id }
+          : {},
+        null,
+        2
+      )}\n`;
+    await writeFile(resolve(operatorSurface.active_response_path), effectiveResponseText, "utf8");
     const execution = await runLoop(resumeArgs, {
       env,
       silent

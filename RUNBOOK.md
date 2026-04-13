@@ -67,19 +67,20 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `controller_mode` and `transport_mode` are separate axes:
   - `detached` currently requires `--transport codex-exec`
   - `attached` currently allows `--transport current-thread` or `--transport app-server`
-- `npm run loop:start:codex` is the Codex-owned current-thread start surface. Use `npm run loop:start:codex -- --json` when a same-thread worker needs machine-readable continuation state immediately after start. Use `npm run loop:start:bg -- ...` or the deprecated `npm run loop:run -- ...` only when the operator explicitly wants detached background supervision.
+- `npm run loop:start:codex` is the Codex-owned current-thread start surface. Use `npm run loop:start:codex -- --json` when a same-thread worker needs machine-readable continuation state immediately after start, and use `npm run loop:continue -- --run-dir <evals/runs/run-###> --json` for the same-thread autocontinue dispatcher. Use `npm run loop:start:bg -- ...` or the deprecated `npm run loop:run -- ...` only when the operator explicitly wants detached background supervision.
 - Codex app run-control prompts such as `루프 시작`, `루프 시작 가능하냐?`, `현재 루프 상태`, `run-179 상태 보여줘`, and `모든 루프 정지` should stay in the `run_control` lane and map to `loop:start:*`, `loop:status`, `loop:resume`, or `loop:stop` instead of falling through harness-design guidance.
 - `npm run loop:run:raw -- ...` remains the direct controller debugging surface, and `npm run loop:watch -- ...` keeps the supervisor detached from the launching shell.
 - Supervisor, runner, and bootstrap-generated runtime helper spawns now set `windowsHide: true`, so Windows detached runs stop opening a visible stack of extra `cmd.exe` shells while the harness is working.
 - Attached runs now default to `--transport current-thread`. That is the stock foreground-thread transport surface, but current-thread only claims foreground ownership when a real bound `CODEX_THREAD_ID` is present.
 - Use `--transport current-thread` for the stock Codex foreground-thread protocol. Current-thread attached generator work now persists `attached-generator-prompt.md` / `attached-generator-response.json` as a Codex-owned same-thread checkpoint and still stops honestly with `awaiting_current_thread_handoff`.
-- Current-thread is now the honest foreground default across planner, contract-review, generator-plan, eval, and attached-generator stages. Each current-thread enhancement persists explicit `*-task.json`, `*-prompt.md`, and `*-response.json` artifacts, reports `attention_required = codex` plus `auto_resume_eligible = true` on the operator surface, and resumes from those files instead of pretending the process is still running.
+- Current-thread is now the honest foreground default across planner, contract-review, generator-plan, eval, and attached-generator stages. Each current-thread enhancement persists explicit `*-task.json`, `*-prompt.md`, and `*-response.json` artifacts, reports `attention_required = codex` plus `auto_resume_eligible = true` on the operator surface, echoes a strict `checkpoint_id` in same-thread responses, and resumes from those files instead of pretending the process is still running.
 - Canonical foreground flow:
   1. `루프 시작`
   2. `npm run loop:start:codex -- --json`
-  3. If `attention_required = codex`, continue immediately with `$attached-loop`
+  3. If `attention_required = codex`, continue immediately inside `$loop-control` with `npm run loop:continue -- --run-dir <run> --json`
   4. Do not surface intermediate checkpoint pauses to the user
-  5. Only stop on human, external, or terminal boundaries
+  5. Use `$attached-loop` only as the recovery skill when an existing foreground run must be re-entered after interruption
+  6. Only stop on human, external, or terminal boundaries
 - Shell-launched `attached/current-thread` seeds now fail closed unless a real bound `CODEX_THREAD_ID` is present. Use `--allow-manual-protocol-seed` only when you intentionally want to start a `manual-protocol` shell run instead of a Codex-owned foreground run.
 - Use `--transport app-server` to open an embedded `codex app-server` stdio session. The runtime initializes the server, starts or resumes a thread, names it, reads runtime state through `thread/read`, opens a turn, and steers that turn at phase boundaries while persisting `thread_id`, `turn_id`, the event cursor, and thread runtime status.
 - `current-thread` and `app-server` are same-thread transports. Both forbid nested `codex exec` calls from shared runtime paths.
@@ -117,7 +118,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Current-thread operator surfaces now distinguish shell-launched `manual-protocol` runs from stock Codex `foreground-thread` runs by requiring a real bound `CODEX_THREAD_ID`; launch-origin overrides alone no longer promote foreground ownership.
 - Operator-surface and transport-state now also persist `launch_origin`, `surface_owner`, `thread_binding_state`, `entrypoint`, and `app_visibility`, so stock Codex visibility is explicit instead of inferred from transport labels alone.
 - Operator-surface now also persists `handoff_state`, `resume_skill`, `resume_command`, `requires_codex_app`, `worktree_id`, and `worktree_path`, so `loop:status` and `loop:ui` can tell the operator whether the next continuation belongs in a local thread, worktree, automation surface, or manual shell resume.
-- App-visible `current-thread` runs now prefer `resume_skill = attached-loop` plus skill-first `next_action` guidance, while shell/manual runs continue to publish explicit CLI resume commands.
+- App-visible `current-thread` runs now distinguish `recommended_skill = loop-control` for the canonical foreground autocontinue chain from `resume_skill = attached-loop` for recovery after interruption, while shell or manual runs continue to publish explicit CLI resume commands.
 - `loop:status` now prints shell fallback commands for app-visible `current-thread` runs only as explicit downgrade commands that include `--allow-shell-resume-downgrade`, and `resume` / `phase` require the same persisted Codex `thread_id` instead of accepting any foreground-looking shell context.
 - Completed operator surfaces now clear stale handoff notes and replace resume-style `next_action` text with closeout guidance, so terminal runs do not keep obsolete reattach instructions.
 - Use `HARNESS_WORKSPACE_SURFACE`, `HARNESS_WORKTREE_ID`, `HARNESS_WORKTREE_PATH`, `HARNESS_HANDOFF_STATE`, `HARNESS_RESUME_SKILL`, or `HARNESS_REQUIRES_CODEX_APP` only when an outer launcher already knows the Codex app resume surface and needs the persisted operator surface to reflect it explicitly.

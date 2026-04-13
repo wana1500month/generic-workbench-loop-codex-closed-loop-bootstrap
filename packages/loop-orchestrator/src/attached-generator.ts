@@ -49,6 +49,7 @@ const promptText = (input: {
     `Run id: ${input.task.run_id}`,
     `Round: ${input.task.round}`,
     `Transport: ${input.task.transport_mode}`,
+    `Checkpoint id: ${input.task.checkpoint_id}`,
     `Target root: ${input.targetRoot}`,
     `Task cwd: ${input.task.task_cwd}`,
     `Writable roots: ${input.task.writable_roots.join(", ")}`,
@@ -57,10 +58,11 @@ const promptText = (input: {
     "",
     "Keep the generator work on the same attached transport. Do not spawn nested `codex exec` calls.",
     "Apply the smallest coherent mutation that satisfies the active round contract and write the response JSON before finishing.",
+    `Echo "checkpoint_id": "${input.task.checkpoint_id}" in the response JSON.`,
     "",
     `ATTACHED_GENERATOR_RESPONSE_PATH: ${input.task.response_path}`,
     `ATTACHED_GENERATOR_TARGET_ROOT: ${input.targetRoot}`,
-    "ATTACHED_GENERATOR_RESPONSE_SCHEMA: {\"status\":\"applied|noop|blocked\",\"summary\":\"string\",\"changed_files\":[\"relative/path\"],\"notes\":[\"string\"],\"generated_at\":\"ISO-8601\"}",
+    "ATTACHED_GENERATOR_RESPONSE_SCHEMA: {\"checkpoint_id\":\"string\",\"status\":\"applied|noop|blocked\",\"summary\":\"string\",\"changed_files\":[\"relative/path\"],\"notes\":[\"string\"],\"generated_at\":\"ISO-8601\"}",
     "",
     "## Contract objective",
     input.contract.objective,
@@ -98,6 +100,8 @@ export const writeAttachedGeneratorTask = async (input: {
   round: number;
   controllerMode: "attached";
   transportMode: Extract<TransportMode, "current-thread" | "app-server">;
+  checkpointId?: string;
+  checkpointSeq?: number;
   targetRoot: string;
   taskCwd: string;
   writableRoots: string[];
@@ -112,11 +116,23 @@ export const writeAttachedGeneratorTask = async (input: {
   notes?: string[];
 }): Promise<AttachedGeneratorTaskArtifact> => {
   const createdAt = new Date().toISOString();
+  const checkpointSeq = input.checkpointSeq ?? Date.now();
+  const checkpointId =
+    input.checkpointId ??
+    [
+      input.runId,
+      `r${input.round}`,
+      "pre_verification",
+      "attached-generator",
+      String(checkpointSeq)
+    ].join(":");
   const task: AttachedGeneratorTaskArtifact = {
     run_id: input.runId,
     round: input.round,
     controller_mode: input.controllerMode,
     transport_mode: input.transportMode,
+    checkpoint_id: checkpointId,
+    checkpoint_seq: checkpointSeq,
     target_root: input.targetRoot,
     task_cwd: input.taskCwd,
     writable_roots: input.writableRoots,
@@ -160,7 +176,8 @@ export const writeAttachedGeneratorTask = async (input: {
 };
 
 export const readAttachedGeneratorResponse = async (
-  path: string
+  path: string,
+  expectedCheckpointId?: string
 ): Promise<AttachedGeneratorResponseArtifact | undefined> => {
   const parsed = await loadJsonIfExists<AttachedGeneratorResponseArtifact>(path);
   if (!parsed || typeof parsed !== "object") {
@@ -176,6 +193,12 @@ export const readAttachedGeneratorResponse = async (
   }
 
   if (typeof parsed.summary !== "string" || parsed.summary.trim().length === 0) {
+    return undefined;
+  }
+  if (
+    expectedCheckpointId &&
+    parsed.checkpoint_id !== expectedCheckpointId
+  ) {
     return undefined;
   }
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "Loop Control"
   short_description: "Start, inspect, resume, or stop harness runs from the right surface"
-  default_prompt: "Use $loop-control for loop start, status, stop, or resume. In the Codex app, `start` means `npm run loop:start:codex -- --json` followed by immediate same-thread continuation with $attached-loop whenever attention_required = codex. Do not stop after the first Codex-owned checkpoint. Only use detached supervisor mode when the operator explicitly asks for background execution."
+  default_prompt: "Use $loop-control for loop start, status, stop, or resume. In the Codex app, `start` and `resume` mean entering the same-thread autocontinue chain through `npm run loop:start:codex -- --json` or `npm run loop:resume -- --run-dir <run> --json`, then repeatedly using `npm run loop:continue -- --run-dir <run> --json` whenever attention_required = codex. Do not stop after the first Codex-owned checkpoint. Use $attached-loop only when recovering an already-existing current-thread run after interruption. Only use detached supervisor mode when the operator explicitly asks for background execution."

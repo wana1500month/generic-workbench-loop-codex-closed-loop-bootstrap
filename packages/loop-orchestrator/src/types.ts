@@ -91,6 +91,11 @@ export type OperatorResumeSkill = "attached-loop" | "run-resume";
 export type OperatorRecommendedSkill =
   | "loop-control"
   | OperatorResumeSkill;
+export type CurrentThreadAutoContinueState =
+  | "codex_checkpoint"
+  | "human_stop"
+  | "external_stop"
+  | "terminal";
 export type OperatorPresentationMode =
   | "foreground-thread"
   | "manual-protocol"
@@ -888,6 +893,8 @@ export interface AttachedGeneratorTaskArtifact {
   round: number;
   controller_mode: ControllerMode;
   transport_mode: Extract<TransportMode, "current-thread" | "app-server">;
+  checkpoint_id: string;
+  checkpoint_seq: number;
   target_root: string;
   task_cwd: string;
   writable_roots: string[];
@@ -920,6 +927,8 @@ export interface CurrentThreadEnhancementTaskArtifact {
   stage: CurrentThreadEnhancementStage;
   controller_mode: "attached";
   transport_mode: "current-thread";
+  checkpoint_id: string;
+  checkpoint_seq: number;
   prompt_path: string;
   response_path: string;
   transport_protocol_path?: string;
@@ -930,12 +939,40 @@ export interface CurrentThreadEnhancementTaskArtifact {
 }
 
 export interface AttachedGeneratorResponseArtifact {
+  checkpoint_id?: string;
   status: "applied" | "noop" | "blocked";
   summary: string;
   changed_files?: string[];
   notes?: string[];
   evidence_paths?: string[];
   generated_at: string;
+}
+
+export interface CurrentThreadAutoContinueContract {
+  state: CurrentThreadAutoContinueState;
+  run_id: string;
+  run_directory: string;
+  worker: "loop-control";
+  recovery_skill: "attached-loop";
+  checkpoint_id?: string;
+  checkpoint_seq?: number;
+  checkpoint_kind?: CurrentThreadCheckpointKind;
+  attention_required?: OperatorAttentionRequired;
+  active_prompt_path?: string;
+  active_response_path?: string;
+  recommended_skill?: OperatorRecommendedSkill;
+  resume_command?: string;
+  stop_reason?: RunStopReason;
+  user_visible_pause?: boolean;
+  hop_limit?: number;
+  hop_index?: number;
+  repeated_checkpoint_count?: number;
+  guard_reason?:
+    | "hop_limit_reached"
+    | "checkpoint_loop_detected"
+    | "checkpoint_no_progress"
+    | "stale_checkpoint_response";
+  notes?: string[];
 }
 
 export interface RoundContractArtifact {
@@ -1301,7 +1338,10 @@ export interface OperatorSurfaceArtifact {
   phase_status?: ControllerPhaseStatus;
   attention_required?: OperatorAttentionRequired;
   checkpoint_kind?: CurrentThreadCheckpointKind;
+  checkpoint_id?: string;
+  checkpoint_seq?: number;
   auto_resume_eligible?: boolean;
+  user_visible_pause?: boolean;
   summary_path?: string;
   transport_state_path?: string;
   transport_protocol_path?: string;

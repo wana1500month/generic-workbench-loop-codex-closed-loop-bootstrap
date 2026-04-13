@@ -19,6 +19,7 @@ npm run loop:start:bg -- --max-rounds 3
 npm run loop:start:manual -- --json
 npm run loop:status -- --run-dir evals/runs/run-### --json
 npm run loop:resume -- --run-dir evals/runs/run-### --json
+npm run loop:continue -- --run-dir evals/runs/run-### --json
 npm run loop:stop -- --run-dir evals/runs/run-###
 ```
 
@@ -26,8 +27,8 @@ npm run loop:stop -- --run-dir evals/runs/run-###
 
 - `루프 시작` -> `npm run loop:start:codex -- --json`
 - `루프 시작 가능하냐?` -> stay in `run_control` and default the eventual start surface to `loop:start:codex`
-- `현재 루프 상태` -> `npm run loop:status -- --run-dir evals/runs/run-###` when a concrete run exists, otherwise inspect the active operator surface first
-- `run-179 상태 보여줘` -> `npm run loop:status -- --run-dir evals/runs/run-179`
+- `현재 루프 상태` -> `npm run loop:status -- --run-dir evals/runs/run-### --json` when a concrete run exists, otherwise inspect the active operator surface first
+- `run-179 상태 보여줘` -> `npm run loop:status -- --run-dir evals/runs/run-179 --json`
 - `모든 루프 정지` -> `npm run loop:stop -- --all`
 - `모든 루프 정지하고 왜 타임아웃 나는지 원인 상세하게 규명` -> stop first, then inspect timeout root cause from persisted runtime and adapter artifacts
 - `백그라운드로 루프 시작` -> `npm run loop:start:bg -- --max-rounds 3`
@@ -36,13 +37,14 @@ npm run loop:stop -- --run-dir evals/runs/run-###
 
 - In the Codex app, default `start` to `npm run loop:start:codex -- --json`.
 - In the Codex app, `start` is not complete when `loop:start:codex -- --json` returns.
-- After `npm run loop:start:codex -- --json` succeeds, inspect the returned operator surface immediately.
-- If `attention_required = codex`, do not answer the user yet. Immediately continue on the same thread with `$attached-loop`.
-- In the Codex app, `start` means `npm run loop:start:codex -- --json` and then immediate same-thread continuation with `$attached-loop`; do not stop after the first Codex-owned checkpoint.
+- In the Codex app, `start` and `resume` own the same-thread autocontinue chain.
+- After `npm run loop:start:codex -- --json` or `npm run loop:resume -- --run-dir <run> --json` succeeds, inspect the returned operator surface immediately.
+- If `attention_required = codex`, do not answer the user yet. Keep control inside `$loop-control` by calling `npm run loop:continue -- --run-dir <run> --json` until the run reaches a user-visible boundary.
+- In the Codex app, `start` means `npm run loop:start:codex -- --json` and then immediate same-thread continuation through `loop:continue`; do not stop after the first Codex-owned checkpoint.
 - Only use `loop:start:bg` when the operator explicitly asks for detached or background supervision.
 - Treat `loop:start:manual` as an intentional shell-owned downgrade, not the default attached start path.
 - Do not claim continuous monitoring unless a real background supervisor or automation owns that task.
 - If the request is about deciding whether an existing persisted run should reopen, hold, continue, or close, switch to `run-resume`.
-- When `loop:status --json` or `runtime/operator-surface.json` reports `attention_required = codex`, the next foreground action is `$attached-loop`, not a user-facing pause explanation.
+- When `loop:status --json` or `runtime/operator-surface.json` reports `attention_required = codex`, the next foreground action stays inside `$loop-control`; use `$attached-loop` only to recover an already-existing foreground run after interruption.
 - Only emit a user-visible reply after the run reaches `attention_required = human`, `attention_required = external`, or a terminal state.
 - Do not describe a Codex-owned checkpoint as "waiting for input" or "handoff pending" to the user.

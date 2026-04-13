@@ -85,6 +85,13 @@ const assertSucceeded = (execution, label) => {
   }
 };
 
+const checkpointResponseText = (report) =>
+  `${JSON.stringify(
+    report.active?.checkpoint_id ? { checkpoint_id: report.active.checkpoint_id } : {},
+    null,
+    2
+  )}\n`;
+
 const foregroundThreadEnv = {
   ...process.env,
   CODEX_THREAD_ID: "thread_validate_cli",
@@ -188,9 +195,9 @@ if (codexScriptSeedReport.active.attention_required !== "codex") {
     `Expected loop:start:codex --json attention_required 'codex', received '${codexScriptSeedReport.active.attention_required ?? "missing"}'.`
   );
 }
-if (codexScriptSeedReport.active.recommended_skill !== "attached-loop") {
+if (codexScriptSeedReport.active.recommended_skill !== "loop-control") {
   throw new Error(
-    `Expected loop:start:codex --json recommended_skill 'attached-loop', received '${codexScriptSeedReport.active.recommended_skill ?? "missing"}'.`
+    `Expected loop:start:codex --json recommended_skill 'loop-control', received '${codexScriptSeedReport.active.recommended_skill ?? "missing"}'.`
   );
 }
 if (codexScriptSeedReport.effective_execution_state !== "paused") {
@@ -325,9 +332,9 @@ if (planningReport.operator_surface?.checkpoint_kind !== "planner") {
 if (planningReport.operator_surface?.auto_resume_eligible !== true) {
   throw new Error("Expected planning status auto_resume_eligible to be true.");
 }
-if (planningReport.active.recommended_skill !== "attached-loop") {
+if (planningReport.active.recommended_skill !== "loop-control") {
   throw new Error(
-    `Expected planning status recommended_skill 'attached-loop', received '${planningReport.active.recommended_skill ?? "missing"}'.`
+    `Expected planning status recommended_skill 'loop-control', received '${planningReport.active.recommended_skill ?? "missing"}'.`
   );
 }
 if (planningReport.operator_surface?.presentation_mode !== "foreground-thread") {
@@ -340,9 +347,9 @@ if (planningReport.operator_surface?.thread_binding_state === "unbound") {
     "Foreground-thread planning status should not report an unbound thread binding state."
   );
 }
-if (!planningReport.operator_surface?.next_action?.includes("$attached-loop")) {
+if (!planningReport.operator_surface?.next_action?.includes("$loop-control")) {
   throw new Error(
-    `Expected foreground-thread planning next_action to reference $attached-loop, received '${planningReport.operator_surface?.next_action ?? "missing"}'.`
+    `Expected foreground-thread planning next_action to reference $loop-control, received '${planningReport.operator_surface?.next_action ?? "missing"}'.`
   );
 }
 const planningStatusWithoutPath = await runCli(["status", "--run-dir", runDirectory, "--json"], {
@@ -384,7 +391,11 @@ assertTextContains(
   "thread_validate_other",
   "blocked other-thread phase"
 );
-await writeFile(planningReport.active.active_response_path, "{}\n", "utf8");
+await writeFile(
+  planningReport.active.active_response_path,
+  checkpointResponseText(planningReport),
+  "utf8"
+);
 
 const planningPhase = await runCli(["phase", "open", "--run-dir", runDirectory], {
   env: foregroundThreadEnv
@@ -411,7 +422,11 @@ if (negotiationReport.active.round !== 1) {
     `Expected negotiation status round to be '1', received '${negotiationReport.active.round ?? "missing"}'.`
   );
 }
-await writeFile(negotiationReport.active.active_response_path, "{}\n", "utf8");
+await writeFile(
+  negotiationReport.active.active_response_path,
+  checkpointResponseText(negotiationReport),
+  "utf8"
+);
 
 const secondNegotiationPhase = await runCli([
   "phase",
@@ -443,7 +458,11 @@ if (generatorPlanReport.operator_surface?.checkpoint_kind !== "generator-plan") 
     `Expected generator-plan checkpoint_kind 'generator-plan', received '${generatorPlanReport.operator_surface?.checkpoint_kind ?? "missing"}'.`
   );
 }
-await writeFile(generatorPlanReport.active.active_response_path, "{}\n", "utf8");
+await writeFile(
+  generatorPlanReport.active.active_response_path,
+  checkpointResponseText(generatorPlanReport),
+  "utf8"
+);
 
 const attachedGeneratorResume = await runCli(["resume", "--run-dir", runDirectory], {
   env: foregroundThreadEnv
@@ -468,7 +487,11 @@ if (postNegotiationReport.active.phase === "pre_verification") {
       `Expected attached-generator checkpoint_kind 'attached-generator', received '${postNegotiationReport.operator_surface?.checkpoint_kind ?? "missing"}'.`
     );
   }
-  await writeFile(postNegotiationReport.active.active_response_path, "{}\n", "utf8");
+  await writeFile(
+    postNegotiationReport.active.active_response_path,
+    checkpointResponseText(postNegotiationReport),
+    "utf8"
+  );
 
   const evaluationResume = await runCli(["resume", "--run-dir", runDirectory], {
     env: foregroundThreadEnv

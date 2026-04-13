@@ -1,4 +1,4 @@
 interface:
   display_name: "Attached Loop"
-  short_description: "Keep the active Codex thread as the harness controller"
-  default_prompt: "Use $attached-loop to keep an already-started run on the current Codex thread. Treat attention_required = codex as an internal same-thread continuation checkpoint, not a user pause. Consume checkpoints and resume until the run reaches a human stop, an external block, or a terminal state. Use $loop-control for start, status, stop, or resume entry."
+  short_description: "Recover an existing Codex current-thread run after interruption"
+  default_prompt: "Use $attached-loop only to recover or re-enter an already-existing current-thread run after interruption. Treat attention_required = codex as an internal same-thread checkpoint, call `npm run loop:continue -- --run-dir <run> --json` to inspect the contract, and keep going until the run reaches a human stop, an external block, or a terminal state. Use $loop-control for normal start, status, and resume entry."

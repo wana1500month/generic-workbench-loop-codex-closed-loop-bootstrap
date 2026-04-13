@@ -117,7 +117,17 @@ mutatedPlan.planner_acceptance_checks = [
   "qa_review_surface_reserved"
 ];
 await writeFile(join(negotiationRunDirectory, "plan.json"), `${JSON.stringify(mutatedPlan, null, 2)}\n`, "utf8");
-await writeFile(negotiationSeedSurface.active_response_path, "{}\n", "utf8");
+await writeFile(
+  negotiationSeedSurface.active_response_path,
+  `${JSON.stringify(
+    negotiationSeedSurface.checkpoint_id
+      ? { checkpoint_id: negotiationSeedSurface.checkpoint_id }
+      : {},
+    null,
+    2
+  )}\n`,
+  "utf8"
+);
 
 const negotiationResume = await runLoop(
   [

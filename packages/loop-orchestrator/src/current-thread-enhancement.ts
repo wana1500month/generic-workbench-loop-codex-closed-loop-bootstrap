@@ -3,7 +3,7 @@ import { relative } from "node:path";
 
 import { resolvedAdapterTargetRoot } from "./adapter-paths.js";
 import { buildExecutorModePrompt } from "./codex-agent-manifest.js";
-import { repoRoot, writeJson, writeText } from "./file-system.js";
+import { loadJsonIfExists, repoRoot, writeJson, writeText } from "./file-system.js";
 import type { RuntimeStatePaths } from "./runtime-state.js";
 import type {
   AdapterCapabilityExecution,
@@ -30,6 +30,7 @@ import type {
 } from "./types.js";
 
 type CodexPlannerPatch = {
+  checkpoint_id?: string;
   scenario_title?: string;
   scenario_description?: string;
   user_goals?: string[];
@@ -42,6 +43,7 @@ type CodexPlannerPatch = {
 };
 
 type CodexContractReviewPatch = {
+  checkpoint_id?: string;
   decision?: "accept" | "revise";
   concerns?: string[];
   required_changes?: string[];
@@ -51,6 +53,7 @@ type CodexContractReviewPatch = {
 };
 
 type CodexGeneratorPlanPatch = {
+  checkpoint_id?: string;
   implementation_intent?: string;
   files_to_touch?: string[];
   expected_proof?: string[];
@@ -60,6 +63,7 @@ type CodexGeneratorPlanPatch = {
 };
 
 type CodexEvaluatorPatch = {
+  checkpoint_id?: string;
   overall_verdict?: RoundVerdict;
   strengths?: string[];
   blockers?: string[];
@@ -110,6 +114,23 @@ const verdictSeverity: Record<RoundVerdict, number> = {
 const rel = (path: string): string => relative(repoRoot, path);
 
 const unique = <T>(values: readonly T[]): T[] => [...new Set(values)];
+
+const checkpointSeqForNewTask = (): number => Date.now();
+
+const buildCheckpointId = (input: {
+  runId: string;
+  round?: number;
+  phase: "planning" | "negotiation" | "evaluation";
+  stage: CurrentThreadEnhancementStage;
+  checkpointSeq: number;
+}): string =>
+  [
+    input.runId,
+    `r${input.round ?? 0}`,
+    input.phase,
+    input.stage,
+    String(input.checkpointSeq)
+  ].join(":");
 
 const trimString = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
@@ -197,13 +218,15 @@ const promptText = (input: {
     `Round: ${input.task.round ?? "bootstrap"}`,
     `Phase: ${input.task.phase}`,
     `Stage: ${input.task.stage}`,
+    `Checkpoint id: ${input.task.checkpoint_id}`,
     `Prompt path: ${rel(input.task.prompt_path)}`,
     `Response path: ${rel(input.task.response_path)}`,
     "",
     "Keep this work on the same current-thread operator surface.",
     "Do not call nested `codex exec` or `codex exec resume`.",
     `Write JSON only to ${rel(input.task.response_path)}.`,
-    "If no changes are needed, write {}.",
+    `Echo "checkpoint_id": "${input.task.checkpoint_id}" in the JSON response.`,
+    "If no changes are needed, write an empty patch object plus the checkpoint_id.",
     "",
     "## Summary",
     input.task.summary,
@@ -225,6 +248,8 @@ const writeCurrentThreadEnhancementTask = async (input: {
   round?: number;
   phase: "planning" | "negotiation" | "evaluation";
   stage: CurrentThreadEnhancementStage;
+  checkpointId?: string;
+  checkpointSeq?: number;
   taskPath: string;
   promptPath: string;
   responsePath: string;
@@ -234,6 +259,16 @@ const writeCurrentThreadEnhancementTask = async (input: {
   contextPaths: Record<string, string>;
   notes?: string[];
 }): Promise<CurrentThreadEnhancementTaskArtifact> => {
+  const checkpointSeq = input.checkpointSeq ?? checkpointSeqForNewTask();
+  const checkpointId =
+    input.checkpointId ??
+    buildCheckpointId({
+      runId: input.runId,
+      round: input.round,
+      phase: input.phase,
+      stage: input.stage,
+      checkpointSeq
+    });
   const task: CurrentThreadEnhancementTaskArtifact = {
     run_id: input.runId,
     ...(input.round !== undefined ? { round: input.round } : {}),
@@ -241,6 +276,8 @@ const writeCurrentThreadEnhancementTask = async (input: {
     stage: input.stage,
     controller_mode: "attached",
     transport_mode: "current-thread",
+    checkpoint_id: checkpointId,
+    checkpoint_seq: checkpointSeq,
     prompt_path: input.promptPath,
     response_path: input.responsePath,
     ...(input.transportProtocolPath
@@ -265,6 +302,21 @@ const writeCurrentThreadEnhancementTask = async (input: {
 
   return task;
 };
+
+const invalidCheckpointResponseWarnings = (input: {
+  warning?: string;
+  stageLabel: string;
+  expectedCheckpointId?: string;
+  actualCheckpointId?: string;
+  reason: "missing" | "mismatch";
+  fallbackMessage: string;
+}): string[] => [
+  ...(input.warning ? [input.warning] : []),
+  input.reason === "missing"
+    ? `Current-thread ${input.stageLabel} response omitted checkpoint_id${input.expectedCheckpointId ? `; expected '${input.expectedCheckpointId}'.` : "."}`
+    : `Current-thread ${input.stageLabel} response checkpoint_id '${input.actualCheckpointId ?? "missing"}' did not match '${input.expectedCheckpointId ?? "missing"}'.`,
+  input.fallbackMessage
+];
 
 const buildPlannerEnhancementPrompt = async (input: {
   idea: IdeaBrief;
@@ -315,6 +367,7 @@ const applyPlannerEnhancementResponse = (input: {
   scenario: LoopScenario;
   plan: LoopPlan;
   responseText: string;
+  expectedCheckpointId?: string;
   warning?: string;
 }): AppliedEnhancementResult<{ scenario: LoopScenario; plan: LoopPlan }> => {
   const parsed = parseJsonResponse<CodexPlannerPatch>(input.responseText);
@@ -328,6 +381,24 @@ const applyPlannerEnhancementResponse = (input: {
         ...(input.warning ? [input.warning] : []),
         "Current-thread planner enhancement response was not valid JSON; deterministic planner output remains active."
       ],
+      usedResponse: false
+    };
+  }
+  if (input.expectedCheckpointId && trimString(parsed.checkpoint_id) !== input.expectedCheckpointId) {
+    return {
+      value: {
+        scenario: input.scenario,
+        plan: input.plan
+      },
+      runtimeWarnings: invalidCheckpointResponseWarnings({
+        warning: input.warning,
+        stageLabel: "planner enhancement",
+        expectedCheckpointId: input.expectedCheckpointId,
+        actualCheckpointId: trimString(parsed.checkpoint_id),
+        reason: trimString(parsed.checkpoint_id) ? "mismatch" : "missing",
+        fallbackMessage:
+          "Deterministic planner output remains active until the matching checkpoint response is written."
+      }),
       usedResponse: false
     };
   }
@@ -439,6 +510,7 @@ const applyContractReviewEnhancementResponse = (input: {
   contractArtifact: RoundContractArtifact;
   contractReviewArtifact: ContractReviewArtifact;
   responseText: string;
+  expectedCheckpointId?: string;
   warning?: string;
 }): AppliedEnhancementResult<ContractReviewArtifact> => {
   const parsed = parseJsonResponse<CodexContractReviewPatch>(input.responseText);
@@ -449,6 +521,21 @@ const applyContractReviewEnhancementResponse = (input: {
         ...(input.warning ? [input.warning] : []),
         "Current-thread contract-review enhancement response was not valid JSON; deterministic contract review remains active."
       ],
+      usedResponse: false
+    };
+  }
+  if (input.expectedCheckpointId && trimString(parsed.checkpoint_id) !== input.expectedCheckpointId) {
+    return {
+      value: input.contractReviewArtifact,
+      runtimeWarnings: invalidCheckpointResponseWarnings({
+        warning: input.warning,
+        stageLabel: "contract-review enhancement",
+        expectedCheckpointId: input.expectedCheckpointId,
+        actualCheckpointId: trimString(parsed.checkpoint_id),
+        reason: trimString(parsed.checkpoint_id) ? "mismatch" : "missing",
+        fallbackMessage:
+          "Deterministic contract review remains active until the matching checkpoint response is written."
+      }),
       usedResponse: false
     };
   }
@@ -545,6 +632,7 @@ const buildGeneratorPlanEnhancementPrompt = async (input: {
 const applyGeneratorPlanEnhancementResponse = (input: {
   generatorPlanArtifact: GeneratorPlanArtifact;
   responseText: string;
+  expectedCheckpointId?: string;
   warning?: string;
 }): AppliedEnhancementResult<GeneratorPlanArtifact> => {
   const parsed = parseJsonResponse<CodexGeneratorPlanPatch>(input.responseText);
@@ -555,6 +643,21 @@ const applyGeneratorPlanEnhancementResponse = (input: {
         ...(input.warning ? [input.warning] : []),
         "Current-thread generator-plan enhancement response was not valid JSON; deterministic generator plan remains active."
       ],
+      usedResponse: false
+    };
+  }
+  if (input.expectedCheckpointId && trimString(parsed.checkpoint_id) !== input.expectedCheckpointId) {
+    return {
+      value: input.generatorPlanArtifact,
+      runtimeWarnings: invalidCheckpointResponseWarnings({
+        warning: input.warning,
+        stageLabel: "generator-plan enhancement",
+        expectedCheckpointId: input.expectedCheckpointId,
+        actualCheckpointId: trimString(parsed.checkpoint_id),
+        reason: trimString(parsed.checkpoint_id) ? "mismatch" : "missing",
+        fallbackMessage:
+          "Deterministic generator plan remains active until the matching checkpoint response is written."
+      }),
       usedResponse: false
     };
   }
@@ -698,6 +801,7 @@ const buildEvalEnhancementPrompt = async (input: {
 const applyEvalEnhancementResponse = (input: {
   evalReport: EvalReport;
   responseText: string;
+  expectedCheckpointId?: string;
   warning?: string;
 }): AppliedEnhancementResult<EvalReport> => {
   const parsed = parseJsonResponse<CodexEvaluatorPatch>(input.responseText);
@@ -708,6 +812,21 @@ const applyEvalEnhancementResponse = (input: {
         ...(input.warning ? [input.warning] : []),
         "Current-thread evaluator enhancement response was not valid JSON; deterministic evaluator report remains active."
       ],
+      usedResponse: false
+    };
+  }
+  if (input.expectedCheckpointId && trimString(parsed.checkpoint_id) !== input.expectedCheckpointId) {
+    return {
+      value: input.evalReport,
+      runtimeWarnings: invalidCheckpointResponseWarnings({
+        warning: input.warning,
+        stageLabel: "evaluator enhancement",
+        expectedCheckpointId: input.expectedCheckpointId,
+        actualCheckpointId: trimString(parsed.checkpoint_id),
+        reason: trimString(parsed.checkpoint_id) ? "mismatch" : "missing",
+        fallbackMessage:
+          "Deterministic evaluator report remains active until the matching checkpoint response is written."
+      }),
       usedResponse: false
     };
   }
@@ -751,6 +870,7 @@ const applyEvalEnhancementResponse = (input: {
 const checkpointNotesFor = (input: {
   round?: number;
   stageLabel: string;
+  checkpointId: string;
   promptPath: string;
   responsePath: string;
   invalidResponse: boolean;
@@ -758,12 +878,12 @@ const checkpointNotesFor = (input: {
   input.invalidResponse
     ? [
         `Current-thread ${input.stageLabel} response is invalid${input.round !== undefined ? ` for round ${input.round}` : ""}.`,
-        `Rewrite ${input.responsePath} with JSON only after reviewing ${input.promptPath} on the current Codex thread.`,
-        `Then continue the same-thread checkpoint with $attached-loop or the persisted resume surface.`
+        `Rewrite ${input.responsePath} with JSON only after reviewing ${input.promptPath} on the current Codex thread and echoing checkpoint_id '${input.checkpointId}'.`,
+        "Then continue the same-thread autocontinue chain with $loop-control or recover through $attached-loop if the foreground thread was interrupted."
       ]
     : [
         `Current-thread ${input.stageLabel} checkpoint is ready${input.round !== undefined ? ` for round ${input.round}` : ""}.`,
-        `The same Codex thread should review ${input.promptPath} and write ${input.responsePath}.`,
+        `The same Codex thread should review ${input.promptPath}, write ${input.responsePath}, and echo checkpoint_id '${input.checkpointId}'.`,
         "This is a same-thread Codex checkpoint, not a human decision stop."
       ];
 
@@ -790,12 +910,16 @@ export const enhancePlanWithCurrentThread = async (input: {
     writeJson(input.plannedScenarioPath, input.scenario),
     writeJson(input.planPath, input.plan)
   ]);
+  const existingTask = await loadJsonIfExists<CurrentThreadEnhancementTaskArtifact>(
+    input.runtimePaths.plannerEnhancementTaskPath
+  );
   const rawResponse = await readTextIfExists(input.runtimePaths.plannerEnhancementResponsePath);
   if (rawResponse !== undefined) {
     const applied = applyPlannerEnhancementResponse({
       scenario: input.scenario,
       plan: input.plan,
       responseText: rawResponse,
+      expectedCheckpointId: existingTask?.checkpoint_id,
       warning: preparedPrompt.warning
     });
     if (applied.usedResponse) {
@@ -811,8 +935,19 @@ export const enhancePlanWithCurrentThread = async (input: {
   }
 
   const invalidResponse = rawResponse !== undefined;
+  const checkpointId =
+    existingTask?.checkpoint_id ??
+    buildCheckpointId({
+      runId: input.runId,
+      phase: "planning",
+      stage: "planner",
+      checkpointSeq: existingTask?.checkpoint_seq ?? checkpointSeqForNewTask()
+    });
+  const checkpointSeq =
+    existingTask?.checkpoint_seq ?? Number(checkpointId.split(":").at(-1));
   const notes = checkpointNotesFor({
     stageLabel: "planner enhancement",
+    checkpointId,
     promptPath: rel(input.runtimePaths.plannerEnhancementPromptPath),
     responsePath: rel(input.runtimePaths.plannerEnhancementResponsePath),
     invalidResponse
@@ -821,6 +956,8 @@ export const enhancePlanWithCurrentThread = async (input: {
     runId: input.runId,
     phase: "planning",
     stage: "planner",
+    checkpointId,
+    checkpointSeq,
     taskPath: input.runtimePaths.plannerEnhancementTaskPath,
     promptPath: input.runtimePaths.plannerEnhancementPromptPath,
     responsePath: input.runtimePaths.plannerEnhancementResponsePath,
@@ -863,6 +1000,9 @@ export const enhanceContractReviewWithCurrentThread = async (input: {
     loadedAdapter: input.loadedAdapter,
     executorMode: input.executorMode
   });
+  const existingTask = await loadJsonIfExists<CurrentThreadEnhancementTaskArtifact>(
+    input.artifacts.contract_review_enhancement_task_path
+  );
   const rawResponse = await readTextIfExists(
     input.artifacts.contract_review_enhancement_response_path
   );
@@ -871,6 +1011,7 @@ export const enhanceContractReviewWithCurrentThread = async (input: {
       contractArtifact: input.contractArtifact,
       contractReviewArtifact: input.contractReviewArtifact,
       responseText: rawResponse,
+      expectedCheckpointId: existingTask?.checkpoint_id,
       warning: preparedPrompt.warning
     });
     if (applied.usedResponse) {
@@ -886,9 +1027,21 @@ export const enhanceContractReviewWithCurrentThread = async (input: {
   }
 
   const invalidResponse = rawResponse !== undefined;
+  const checkpointId =
+    existingTask?.checkpoint_id ??
+    buildCheckpointId({
+      runId: input.runId,
+      round: input.round,
+      phase: "negotiation",
+      stage: "contract-review",
+      checkpointSeq: existingTask?.checkpoint_seq ?? checkpointSeqForNewTask()
+    });
+  const checkpointSeq =
+    existingTask?.checkpoint_seq ?? Number(checkpointId.split(":").at(-1));
   const notes = checkpointNotesFor({
     round: input.round,
     stageLabel: "contract-review enhancement",
+    checkpointId,
     promptPath: rel(input.artifacts.contract_review_enhancement_prompt_path),
     responsePath: rel(input.artifacts.contract_review_enhancement_response_path),
     invalidResponse
@@ -898,6 +1051,8 @@ export const enhanceContractReviewWithCurrentThread = async (input: {
     round: input.round,
     phase: "negotiation",
     stage: "contract-review",
+    checkpointId,
+    checkpointSeq,
     taskPath: input.artifacts.contract_review_enhancement_task_path,
     promptPath: input.artifacts.contract_review_enhancement_prompt_path,
     responsePath: input.artifacts.contract_review_enhancement_response_path,
@@ -947,6 +1102,9 @@ export const enhanceGeneratorPlanWithCurrentThread = async (input: {
     previousPatchRequest: input.previousPatchRequest,
     executorMode: input.executorMode
   });
+  const existingTask = await loadJsonIfExists<CurrentThreadEnhancementTaskArtifact>(
+    input.artifacts.generator_plan_enhancement_task_path
+  );
   const rawResponse = await readTextIfExists(
     input.artifacts.generator_plan_enhancement_response_path
   );
@@ -954,6 +1112,7 @@ export const enhanceGeneratorPlanWithCurrentThread = async (input: {
     const applied = applyGeneratorPlanEnhancementResponse({
       generatorPlanArtifact: input.generatorPlanArtifact,
       responseText: rawResponse,
+      expectedCheckpointId: existingTask?.checkpoint_id,
       warning: preparedPrompt.warning
     });
     if (applied.usedResponse) {
@@ -969,9 +1128,21 @@ export const enhanceGeneratorPlanWithCurrentThread = async (input: {
   }
 
   const invalidResponse = rawResponse !== undefined;
+  const checkpointId =
+    existingTask?.checkpoint_id ??
+    buildCheckpointId({
+      runId: input.runId,
+      round: input.round,
+      phase: "negotiation",
+      stage: "generator-plan",
+      checkpointSeq: existingTask?.checkpoint_seq ?? checkpointSeqForNewTask()
+    });
+  const checkpointSeq =
+    existingTask?.checkpoint_seq ?? Number(checkpointId.split(":").at(-1));
   const notes = checkpointNotesFor({
     round: input.round,
     stageLabel: "generator-plan enhancement",
+    checkpointId,
     promptPath: rel(input.artifacts.generator_plan_enhancement_prompt_path),
     responsePath: rel(input.artifacts.generator_plan_enhancement_response_path),
     invalidResponse
@@ -981,6 +1152,8 @@ export const enhanceGeneratorPlanWithCurrentThread = async (input: {
     round: input.round,
     phase: "negotiation",
     stage: "generator-plan",
+    checkpointId,
+    checkpointSeq,
     taskPath: input.artifacts.generator_plan_enhancement_task_path,
     promptPath: input.artifacts.generator_plan_enhancement_prompt_path,
     responsePath: input.artifacts.generator_plan_enhancement_response_path,
@@ -1035,11 +1208,15 @@ export const enhanceEvalReportWithCurrentThread = async (input: {
     targetManifest: input.targetManifest,
     executorMode: input.executorMode
   });
+  const existingTask = await loadJsonIfExists<CurrentThreadEnhancementTaskArtifact>(
+    input.artifacts.eval_enhancement_task_path
+  );
   const rawResponse = await readTextIfExists(input.artifacts.eval_enhancement_response_path);
   if (rawResponse !== undefined) {
     const applied = applyEvalEnhancementResponse({
       evalReport: input.evalReport,
       responseText: rawResponse,
+      expectedCheckpointId: existingTask?.checkpoint_id,
       warning: preparedPrompt.warning
     });
     if (applied.usedResponse) {
@@ -1055,9 +1232,21 @@ export const enhanceEvalReportWithCurrentThread = async (input: {
   }
 
   const invalidResponse = rawResponse !== undefined;
+  const checkpointId =
+    existingTask?.checkpoint_id ??
+    buildCheckpointId({
+      runId: input.runId,
+      round: input.round,
+      phase: "evaluation",
+      stage: "evaluator",
+      checkpointSeq: existingTask?.checkpoint_seq ?? checkpointSeqForNewTask()
+    });
+  const checkpointSeq =
+    existingTask?.checkpoint_seq ?? Number(checkpointId.split(":").at(-1));
   const notes = checkpointNotesFor({
     round: input.round,
     stageLabel: "evaluator enhancement",
+    checkpointId,
     promptPath: rel(input.artifacts.eval_enhancement_prompt_path),
     responsePath: rel(input.artifacts.eval_enhancement_response_path),
     invalidResponse
@@ -1067,6 +1256,8 @@ export const enhanceEvalReportWithCurrentThread = async (input: {
     round: input.round,
     phase: "evaluation",
     stage: "evaluator",
+    checkpointId,
+    checkpointSeq,
     taskPath: input.artifacts.eval_enhancement_task_path,
     promptPath: input.artifacts.eval_enhancement_prompt_path,
     responsePath: input.artifacts.eval_enhancement_response_path,

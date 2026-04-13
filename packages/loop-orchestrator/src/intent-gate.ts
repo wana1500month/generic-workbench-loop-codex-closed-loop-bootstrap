@@ -70,10 +70,18 @@ interface ParsedRunControlRequest {
   diagnostic_focus: RunControlDiagnosticFocus[];
 }
 
+export interface RunControlAutocontinuePlan {
+  enabled: boolean;
+  mode: "same-thread";
+  worker: "loop-control";
+  recovery_skill: "attached-loop";
+}
+
 export interface RunControlDispatchPlan {
   primary_command: string;
   follow_up_commands: string[];
   follow_up_skills: string[];
+  autocontinue?: RunControlAutocontinuePlan;
 }
 
 export interface LoopIntentResult {
@@ -92,6 +100,7 @@ export interface LoopIntentResult {
   run_control_start_surface?: RunControlStartSurface;
   run_control_targets_all_runs?: boolean;
   run_control_diagnostic_focus?: RunControlDiagnosticFocus[];
+  run_control_dispatch_plan?: RunControlDispatchPlan;
   run_control_primary_command?: string;
   run_control_follow_up_commands?: string[];
   run_control_follow_up_skills?: string[];
@@ -528,6 +537,8 @@ export const deriveRunControlDispatchPlan = (input: {
     : undefined;
 
   if (input.action === "start") {
+    const codexStart =
+      input.startSurface !== "background" && input.startSurface !== "manual";
     return {
       primary_command:
         input.startSurface === "background"
@@ -536,10 +547,17 @@ export const deriveRunControlDispatchPlan = (input: {
             ? "npm run loop:start:manual -- --json"
             : "npm run loop:start:codex -- --json",
       follow_up_commands: [],
-      follow_up_skills:
-        input.startSurface === "background" || input.startSurface === "manual"
-          ? []
-          : ["attached-loop"]
+      follow_up_skills: [],
+      ...(codexStart
+        ? {
+            autocontinue: {
+              enabled: true,
+              mode: "same-thread" as const,
+              worker: "loop-control" as const,
+              recovery_skill: "attached-loop" as const
+            }
+          }
+        : {})
     };
   }
 
@@ -870,6 +888,7 @@ const buildRunControlResult = (input: {
     ...(input.parsed.diagnostic_focus.length > 0
       ? { run_control_diagnostic_focus: input.parsed.diagnostic_focus }
       : {}),
+    ...(dispatchPlan ? { run_control_dispatch_plan: dispatchPlan } : {}),
     ...(dispatchPlan ? { run_control_primary_command: dispatchPlan.primary_command } : {}),
     ...(dispatchPlan && dispatchPlan.follow_up_commands.length > 0
       ? { run_control_follow_up_commands: dispatchPlan.follow_up_commands }
@@ -1401,6 +1420,18 @@ const renderReadyRouteWithDispatch = (result: LoopIntentResult): string => {
           : `Next skill: $${skill}`
       );
     }
+  }
+  if (result.run_control_dispatch_plan?.autocontinue?.enabled) {
+    lines.push(
+      result.locale === "ko"
+        ? "\uC5F0\uC18D \uC2E4\uD589: same-thread autocontinue"
+        : "Autocontinue: same-thread foreground"
+    );
+    lines.push(
+      result.locale === "ko"
+        ? `\uBCF5\uAD6C \uC2A4\uD0AC: $${result.run_control_dispatch_plan.autocontinue.recovery_skill}`
+        : `Recovery skill: $${result.run_control_dispatch_plan.autocontinue.recovery_skill}`
+    );
   }
   if (result.locale === "en" && result.rationale.length > 0) {
     lines.push(result.rationale[0]!);

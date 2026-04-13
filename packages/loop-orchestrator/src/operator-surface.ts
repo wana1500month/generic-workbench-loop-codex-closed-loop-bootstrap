@@ -386,8 +386,17 @@ const defaultRecommendedSkillFor = (input: {
 }): OperatorRecommendedSkill =>
   input.transportMode === "current-thread" &&
   input.attentionRequired === "codex"
-    ? "attached-loop"
+    ? "loop-control"
     : input.resumeSkill;
+
+const defaultUserVisiblePauseFor = (input: {
+  transportMode: TransportMode;
+  attentionRequired: OperatorAttentionRequired;
+}): boolean =>
+  !(
+    input.transportMode === "current-thread" &&
+    input.attentionRequired === "codex"
+  );
 
 const defaultNextActionForTransport = (input: {
   executionState: ExecutionState | "configured";
@@ -434,7 +443,7 @@ const defaultNextActionForTransport = (input: {
       input.transportMode === "current-thread" &&
       input.presentationMode === "foreground-thread"
     ) {
-      return `This run stays on the current Codex thread. $${input.recommendedSkill} should continue immediately by consuming the ${checkpointLabel}${input.autoResumeEligible ? " automatically" : ""}.`;
+      return `This run stays on the current Codex thread. $${input.recommendedSkill} should keep the same-thread autocontinue chain moving by consuming the ${checkpointLabel}${input.autoResumeEligible ? " automatically" : ""}.`;
     }
     return input.recommendedCommand
       ? `Codex continuation stays on the current operator surface. Consume the ${checkpointLabel}, then continue with ${input.recommendedCommand}.`
@@ -562,6 +571,8 @@ export const buildOperatorSurfaceArtifact = (input: {
   transportProtocolPath?: string;
   activePromptPath?: string;
   activeResponsePath?: string;
+  checkpointId?: string;
+  checkpointSeq?: number;
   dashboardPath?: string;
   threadId?: string;
   threadName?: string;
@@ -576,6 +587,7 @@ export const buildOperatorSurfaceArtifact = (input: {
   recommendedSkill?: OperatorRecommendedSkill;
   recommendedCommand?: string;
   requiresCodexApp?: boolean;
+  userVisiblePause?: boolean;
   nextAction?: string;
   notes?: string[];
 }): OperatorSurfaceArtifact => {
@@ -656,6 +668,12 @@ export const buildOperatorSurfaceArtifact = (input: {
       attentionRequired,
       resumeSkill
     });
+  const userVisiblePause =
+    input.userVisiblePause ??
+    defaultUserVisiblePauseFor({
+      transportMode: input.transportMode,
+      attentionRequired
+    });
   const recommendedCommand = input.recommendedCommand ?? resumeCommand;
   const normalizedNotes =
     input.executionState === "completed"
@@ -707,7 +725,14 @@ export const buildOperatorSurfaceArtifact = (input: {
       ? { attention_required: attentionRequired }
       : {}),
     ...(input.checkpointKind ? { checkpoint_kind: input.checkpointKind } : {}),
-    ...(autoResumeEligible ? { auto_resume_eligible: autoResumeEligible } : {}),
+    ...(input.checkpointId ? { checkpoint_id: input.checkpointId } : {}),
+    ...(input.checkpointSeq !== undefined
+      ? { checkpoint_seq: input.checkpointSeq }
+      : {}),
+    ...(autoResumeEligible !== undefined
+      ? { auto_resume_eligible: autoResumeEligible }
+      : {}),
+    ...(userVisiblePause !== undefined ? { user_visible_pause: userVisiblePause } : {}),
     ...(input.summaryPath ? { summary_path: input.summaryPath } : {}),
     ...(input.transportStatePath ? { transport_state_path: input.transportStatePath } : {}),
     ...(input.transportProtocolPath ? { transport_protocol_path: input.transportProtocolPath } : {}),
@@ -752,7 +777,10 @@ export const renderOperatorSurfaceMarkdown = (
 - Phase status: ${artifact.phase_status ?? "none"}
 - Attention required: ${artifact.attention_required ?? "none"}
 - Checkpoint kind: ${artifact.checkpoint_kind ?? "none"}
+- Checkpoint id: ${artifact.checkpoint_id ?? "none"}
+- Checkpoint seq: ${artifact.checkpoint_seq ?? "none"}
 - Auto resume eligible: ${artifact.auto_resume_eligible ? "yes" : "no"}
+- User visible pause: ${artifact.user_visible_pause === false ? "no" : "yes"}
 - Summary: ${rel(artifact.summary_path)}
 - Transport state: ${rel(artifact.transport_state_path)}
 - Transport protocol: ${rel(artifact.transport_protocol_path)}
