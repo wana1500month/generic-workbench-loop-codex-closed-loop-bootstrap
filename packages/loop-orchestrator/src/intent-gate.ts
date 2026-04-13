@@ -431,6 +431,7 @@ const parseRunControlRequest = (request: string): ParsedRunControlRequest => {
     /\uB8E8\uD504\s*(?:\uC815\uC9C0|\uBA48\uCDB0)/u.test(request);
   const resumeRequested =
     /\b(resume|continue)\s+(?:the\s+)?(?:run|loop)\b/i.test(normalized) ||
+    (runReference !== undefined && /\b(resume|continue)\b/i.test(normalized)) ||
     /\uB8E8\uD504\s*\uC7AC\uAC1C/u.test(request);
   const explicitStartSurfaces = [
     { surface: "codex" as const, index: normalized.search(/\bloop:start:codex\b/i) },
@@ -532,7 +533,7 @@ export const deriveRunControlDispatchPlan = (input: {
         input.startSurface === "background"
           ? "npm run loop:start:bg -- --max-rounds 3"
           : input.startSurface === "manual"
-            ? "npm run loop:start:manual"
+            ? "npm run loop:start:manual -- --json"
             : "npm run loop:start:codex -- --json",
       follow_up_commands: [],
       follow_up_skills:
@@ -545,8 +546,8 @@ export const deriveRunControlDispatchPlan = (input: {
   if (input.action === "status") {
     return {
       primary_command: commandRunReference
-        ? `npm run loop:status -- --run-dir ${commandRunReference}`
-        : "npm run loop:status",
+        ? `npm run loop:status -- --run-dir ${commandRunReference} --json`
+        : "npm run loop:status -- --json",
       follow_up_commands: [],
       follow_up_skills: []
     };
@@ -555,8 +556,8 @@ export const deriveRunControlDispatchPlan = (input: {
   if (input.action === "resume") {
     return {
       primary_command: commandRunReference
-        ? `npm run loop:resume -- --run-dir ${commandRunReference}`
-        : "npm run loop:resume",
+        ? `npm run loop:resume -- --run-dir ${commandRunReference} --json`
+        : "npm run loop:resume -- --json",
       follow_up_commands: [],
       follow_up_skills: []
     };
@@ -573,8 +574,8 @@ export const deriveRunControlDispatchPlan = (input: {
     follow_up_commands:
       input.diagnosticFocus.length > 0
         ? commandRunReference
-          ? [`npm run loop:status -- --run-dir ${commandRunReference}`]
-          : ["npm run loop:status"]
+          ? [`npm run loop:status -- --run-dir ${commandRunReference} --json`]
+          : ["npm run loop:status -- --json"]
         : [],
     follow_up_skills: []
   };
@@ -668,6 +669,9 @@ const buildRunControlFieldStates = (
   const wantsStop =
     /\b(stop|halt|terminate)\b/i.test(request) ||
     /\uC815\uC9C0|\uC911\uC9C0/u.test(request);
+  const wantsResume =
+    /\b(resume|continue)\b/i.test(request) ||
+    /\uC7AC\uAC1C|\uACC4\uC18D/u.test(request);
   const mentionsBackground =
     /\b(background|detached|supervisor)\b/i.test(request) ||
     /\uBC31\uADF8\uB77C\uC6B4\uB4DC/u.test(request);
@@ -683,7 +687,8 @@ const buildRunControlFieldStates = (
   return [
     {
       id: "action",
-      satisfied: wantsStart || wantsStatus || wantsStop || matchedRunControlSignals.length > 0,
+      satisfied:
+        wantsStart || wantsStatus || wantsStop || wantsResume || matchedRunControlSignals.length > 0,
       question: localizedQuestion({
         locale,
         en: "Which run-control action should happen next: start, status, stop, or resume?",
@@ -695,6 +700,7 @@ const buildRunControlFieldStates = (
       satisfied:
         runReference !== undefined ||
         wantsStart ||
+        wantsResume ||
         stopAll ||
         (wantsStatus && referencesCurrentRun) ||
         (wantsStop && referencesCurrentRun),

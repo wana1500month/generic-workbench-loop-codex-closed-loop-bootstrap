@@ -83,6 +83,14 @@ for (const fixture of fixtures) {
       `${fixture.id}: unexpected follow-up skills`
     );
   }
+
+  if (fixture.expect_follow_up_commands) {
+    assert.deepEqual(
+      result.run_control_follow_up_commands ?? [],
+      fixture.expect_follow_up_commands,
+      `${fixture.id}: unexpected follow-up commands`
+    );
+  }
 }
 
 const harnessHumanOutput = renderLoopIntentResponse(
@@ -114,7 +122,23 @@ assert.match(
   /\uACBD\uB85C:\s+run-control \uB808\uC778\uC73C\uB85C \uC9C4\uD589\./
 );
 assert.match(koreanRunControlRoute, /\uB3D9\uC791:\s+status/);
-assert.match(koreanRunControlRoute, /\uBA85\uB839:\s+npm run loop:status/);
+assert.match(koreanRunControlRoute, /\uBA85\uB839:\s+npm run loop:status -- --json/);
+
+const manualRunControlOutput = renderLoopIntentResponse(
+  evaluateLoopIntent("Start loop with loop:start:manual on a shell-owned manual protocol.")
+);
+assert.match(manualRunControlOutput, /^Action:\s+start/m);
+assert.match(manualRunControlOutput, /^Start surface:\s+manual shell-owned protocol/m);
+assert.match(manualRunControlOutput, /^Command:\s+npm run loop:start:manual -- --json/m);
+
+const resumeRunControlOutput = renderLoopIntentResponse(
+  evaluateLoopIntent("Resume run-179 on the current thread.")
+);
+assert.match(resumeRunControlOutput, /^Action:\s+resume/m);
+assert.match(
+  resumeRunControlOutput,
+  /^Command:\s+npm run loop:resume -- --run-dir evals\/runs\/run-179 --json/m
+);
 
 const koreanRunControlStart = renderLoopIntentResponse(
   evaluateLoopIntent("\uB8E8\uD504 \uC2DC\uC791")
@@ -129,13 +153,13 @@ assert.equal(compoundRunControl.intent, "run_control");
 assert.equal(compoundRunControl.run_control_action, "stop");
 assert.deepEqual(compoundRunControl.run_control_diagnostic_focus, ["timeout_root_cause"]);
 assert.equal(compoundRunControl.run_control_primary_command, "npm run loop:stop -- --all");
-assert.deepEqual(compoundRunControl.run_control_follow_up_commands, ["npm run loop:status"]);
+assert.deepEqual(compoundRunControl.run_control_follow_up_commands, ["npm run loop:status -- --json"]);
 const compoundRunControlOutput = renderLoopIntentResponse(compoundRunControl);
 assert.match(compoundRunControlOutput, /^\uB3D9\uC791:\s+stop/m);
 assert.match(compoundRunControlOutput, /^\uB300\uC0C1:\s+\uBAA8\uB4E0 run/m);
 assert.match(compoundRunControlOutput, /^\uC9C4\uB2E8 \uD3EC\uCEE4\uC2A4:\s+timeout_root_cause/m);
 assert.match(compoundRunControlOutput, /^\uBA85\uB839:\s+npm run loop:stop -- --all/m);
-assert.match(compoundRunControlOutput, /^\uB2E4\uC74C \uBA85\uB839:\s+npm run loop:status/m);
+assert.match(compoundRunControlOutput, /^\uB2E4\uC74C \uBA85\uB839:\s+npm run loop:status -- --json/m);
 
 const koreanHarnessFixture = fixtures.find(
   (fixture) => fixture.id === "korean-harness-design-actual-prompt"

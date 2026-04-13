@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import { strict as assert } from "node:assert";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import {
   driveCurrentThreadHandoffs,
@@ -82,6 +84,81 @@ const manualSurface = await readJsonFile(manualSummary.operator_surface_path);
 assert.equal(manualSurface.phase_status, "awaiting_human_input");
 assert.equal(manualSurface.attention_required, "human");
 assert.equal(manualSurface.recommended_skill, "loop-control");
+
+console.log("[validate-stop-boundaries] current-thread negotiation human boundary");
+const negotiationSeed = await runLoop(
+  ["--single", "--controller-mode", "attached", "--transport", "current-thread", "--max-rounds", "3"],
+  {
+    env: foregroundThreadEnv,
+    silent: true
+  }
+);
+if (negotiationSeed.code !== 0) {
+  throw new Error(
+    `Current-thread negotiation human seed failed.\nSTDOUT:\n${negotiationSeed.stdout}\nSTDERR:\n${negotiationSeed.stderr}`
+  );
+}
+
+const negotiationRunDirectory = extractRunDirectory(negotiationSeed.stdout);
+const negotiationSeedSummary = await readSummary(negotiationRunDirectory);
+assert.equal(
+  negotiationSeedSummary.stop_reason,
+  "awaiting_current_thread_handoff",
+  "Seed run should stop on the planner checkpoint before the negotiation human-boundary case is exercised."
+);
+const negotiationSeedSurface = await readJsonFile(negotiationSeedSummary.operator_surface_path);
+assert.equal(negotiationSeedSurface.checkpoint_kind, "planner");
+assert.equal(negotiationSeedSurface.attention_required, "codex");
+
+const mutatedPlan = await readJsonFile(join(negotiationRunDirectory, "plan.json"));
+mutatedPlan.planner_acceptance_checks = [
+  "planner_context_surface_reserved",
+  "generator_brief_surface_reserved",
+  "qa_review_surface_reserved"
+];
+await writeFile(join(negotiationRunDirectory, "plan.json"), `${JSON.stringify(mutatedPlan, null, 2)}\n`, "utf8");
+await writeFile(negotiationSeedSurface.active_response_path, "{}\n", "utf8");
+
+const negotiationResume = await runLoop(
+  [
+    "--single",
+    "--resume-run",
+    negotiationRunDirectory,
+    "--controller-mode",
+    "attached",
+    "--transport",
+    "current-thread",
+    "--max-rounds",
+    "3"
+  ],
+  {
+    env: foregroundThreadEnv,
+    silent: true
+  }
+);
+if (negotiationResume.code !== 0) {
+  throw new Error(
+    `Current-thread negotiation human resume failed.\nSTDOUT:\n${negotiationResume.stdout}\nSTDERR:\n${negotiationResume.stderr}`
+  );
+}
+
+const negotiationSummary = await readSummary(negotiationRunDirectory);
+assert.equal(
+  negotiationSummary.stop_reason,
+  "awaiting_human_input",
+  "A structural contract-review revision should pause the run on a human boundary."
+);
+const negotiationSurface = await readJsonFile(negotiationSummary.operator_surface_path);
+assert.equal(negotiationSurface.phase, "negotiation");
+assert.equal(negotiationSurface.phase_status, "awaiting_human_input");
+assert.equal(negotiationSurface.attention_required, "human");
+assert.equal(negotiationSurface.recommended_skill, "loop-control");
+assert.equal(negotiationSurface.checkpoint_kind, "contract-review");
+assert.equal(
+  typeof negotiationSurface.active_prompt_path,
+  "string",
+  "The negotiation human boundary should still expose the active contract-review prompt."
+);
 
 console.log("[validate-stop-boundaries] structural contract-review human classifier");
 assert.equal(

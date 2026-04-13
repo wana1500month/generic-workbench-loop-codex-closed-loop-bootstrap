@@ -75,7 +75,7 @@
     "expect_status": "ready_for_run_control",
     "expect_route": "run_control",
     "expect_run_control_action": "status",
-    "expect_primary_command": "npm run loop:status"
+    "expect_primary_command": "npm run loop:status -- --json"
   },
   {
     "id": "run-control-korean-run-status",
@@ -85,7 +85,27 @@
     "expect_route": "run_control",
     "expect_run_reference": "run-179",
     "expect_run_control_action": "status",
-    "expect_primary_command": "npm run loop:status -- --run-dir evals/runs/run-179"
+    "expect_primary_command": "npm run loop:status -- --run-dir evals/runs/run-179 --json"
+  },
+  {
+    "id": "run-control-manual-start-explicit",
+    "request": "Start loop with loop:start:manual on a shell-owned manual protocol.",
+    "expect_intent": "run_control",
+    "expect_status": "ready_for_run_control",
+    "expect_route": "run_control",
+    "expect_run_control_action": "start",
+    "expect_run_control_start_surface": "manual",
+    "expect_primary_command": "npm run loop:start:manual -- --json"
+  },
+  {
+    "id": "run-control-resume-explicit",
+    "request": "Resume run-179 on the current thread.",
+    "expect_intent": "run_control",
+    "expect_status": "ready_for_run_control",
+    "expect_route": "run_control",
+    "expect_run_reference": "run-179",
+    "expect_run_control_action": "resume",
+    "expect_primary_command": "npm run loop:resume -- --run-dir evals/runs/run-179 --json"
   },
   {
     "id": "run-control-korean-stop-all-timeout-diagnosis",
@@ -98,6 +118,9 @@
     "expect_primary_command": "npm run loop:stop -- --all",
     "expect_diagnostic_focus": [
       "timeout_root_cause"
+    ],
+    "expect_follow_up_commands": [
+      "npm run loop:status -- --json"
     ]
   },
   {
