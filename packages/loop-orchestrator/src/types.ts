@@ -44,6 +44,7 @@ export type RuntimeEventCode =
   | "resume.repaired_interrupted_round"
   | "resume.partial_init_rebuild"
   | "resume.migration_override"
+  | "adapter.migration_applied"
   | "resume.noop_terminal"
   | "resume.reopened_terminal"
   | "resume.continued"
@@ -157,6 +158,15 @@ export type AdapterDriftKind = "contract" | "runtime";
 export type AdapterDriftSignal =
   | "static_contract_blockers"
   | "missing_target_manifest_keys";
+export type AdapterOrigin = "generated_local" | "external_contract";
+export type AdapterMigrationClass =
+  | "runtime_surface_patch"
+  | "kernel_wiring_patch"
+  | "boundary_break";
+export type AdapterMigrationApplyMode =
+  | "same_run_in_place"
+  | "proposal_only"
+  | "new_run_required";
 export type PatchRequestNextAction = RoundVerdict | "complete" | "recontract_adapter";
 export type LifecycleDecisionSource =
   | "initial_round"
@@ -414,6 +424,64 @@ export interface AdapterDriftReport {
   static_blockers: string[];
   missing_target_manifest_keys: string[];
   suggested_updates: string[];
+}
+
+export interface AdapterMigrationIdentityState {
+  resume_identity_version: number;
+  adapter_attached: boolean;
+  evaluator_bundle_attached: boolean;
+  adapter_contract_path?: string;
+  adapter_contract_sha256?: string;
+  evaluator_profile_path?: string;
+  evaluator_bundle_sha256?: string;
+  rubric_sha256?: string;
+  executor_mode?: ExecutorMode;
+  transport_mode?: TransportMode;
+  target_family?: TargetFamily;
+  validation_lane?: ValidationLane;
+}
+
+export interface AdapterMigrationIdentitySnapshot {
+  adapter_contract_path?: string;
+  adapter_contract_sha256?: string;
+  target_root?: string;
+  adapter_id?: string;
+  provider_id?: string;
+}
+
+export interface AdapterMigrationProposal {
+  proposal_id: string;
+  run_id: string;
+  round: number;
+  source_adapter_drift_report_path: string;
+  adapter_origin: AdapterOrigin;
+  migration_class: AdapterMigrationClass;
+  apply_mode: AdapterMigrationApplyMode;
+  same_run_eligible: boolean;
+  autoapply_eligible: boolean;
+  requires_operator_acceptance: boolean;
+  force_new_run: boolean;
+  current_identity: AdapterMigrationIdentitySnapshot;
+  proposed_identity: AdapterMigrationIdentitySnapshot;
+  affected_files: string[];
+  affected_capabilities: AdapterCapabilityName[];
+  reasons: string[];
+  summary: string;
+  suggested_updates: string[];
+  proposed_runtime_config_patch?: Record<string, unknown>;
+  proposed_contract_patch?: Record<string, unknown>;
+  patch_bundle_path?: string;
+}
+
+export interface AdapterMigrationApplied {
+  proposal_id: string;
+  applied_at: string;
+  apply_mode: AdapterMigrationApplyMode;
+  changed_files: string[];
+  backup_directory: string;
+  old_identity: AdapterMigrationIdentityState;
+  new_identity: AdapterMigrationIdentityState;
+  same_run_authorized: boolean;
 }
 
 export interface RemediationHistory {
@@ -890,6 +958,10 @@ export interface RoundArtifacts {
   failure_lineage_path: string;
   adapter_drift_report_json_path: string;
   adapter_drift_report_md_path: string;
+  adapter_migration_proposal_json_path: string;
+  adapter_migration_proposal_md_path: string;
+  adapter_migration_applied_json_path: string;
+  adapter_migration_applied_md_path: string;
   target_manifest_path: string;
   core_probe_results_path: string;
   pre_verification_executions_path: string;
@@ -1176,6 +1248,8 @@ export interface RoundSummary {
   eval_report_path: string;
   failure_lineage_path?: string;
   adapter_drift_report_path?: string;
+  adapter_migration_proposal_path?: string;
+  adapter_migration_applied_path?: string;
   planner_context_path: string;
   generator_brief_path: string;
   qa_review_path: string;
@@ -1251,6 +1325,7 @@ export interface LoopRunSummary {
   transport_state_path?: string;
   transport_protocol_path?: string;
   operator_surface_path?: string;
+  adapter_migration_applied_path?: string;
   stop_reason?: RunStopReason;
   selection_basis?: "terminal_round";
   best_round?: number;

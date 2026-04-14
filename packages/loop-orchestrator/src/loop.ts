@@ -134,6 +134,12 @@ import {
 } from "./operator-surface.js";
 import { buildAdapterDriftReport } from "./adapter-drift.js";
 import {
+  applyGeneratedLocalAdapterMigration,
+  buildAdapterMigrationProposal,
+  isAuthorizedAdapterMigration,
+  loadAuthorizedAdapterMigration
+} from "./adapter-migration.js";
+import {
   enhancePlanWithCurrentThread,
   enhanceContractReviewWithCurrentThread,
   enhanceEvalReportWithCurrentThread,
@@ -154,6 +160,8 @@ import type {
   AdapterCapabilityExecution,
   AdapterCapabilityName,
   AdapterDriftReport,
+  AdapterMigrationApplied,
+  AdapterMigrationProposal,
   ActiveContractFrame,
   AttachedGeneratorTaskArtifact,
   ClosedLoopResult,
@@ -623,6 +631,7 @@ const buildCheckpointSummary = (input: {
   transportStatePath: string;
   transportProtocolPath?: string;
   operatorSurfacePath?: string;
+  adapterMigrationAppliedPath?: string;
   stopReason?: LoopRunSummary["stop_reason"];
   bestRound?: number;
   bestScore?: number;
@@ -713,6 +722,9 @@ const buildCheckpointSummary = (input: {
       : {}),
     ...(input.operatorSurfacePath
       ? { operator_surface_path: input.operatorSurfacePath }
+      : {}),
+    ...(input.adapterMigrationAppliedPath
+      ? { adapter_migration_applied_path: input.adapterMigrationAppliedPath }
       : {}),
     ...(input.stopReason ? { stop_reason: input.stopReason } : {}),
     ...(terminalRound !== undefined
@@ -1005,7 +1017,7 @@ export const runClosedLoop = async (input: {
   const effectiveRubricPath = join(runDirectory, "effective-rubric.json");
   await writeJson(effectiveRubricPath, hydratedRubric);
 
-  const currentResumeIdentity = await buildResumeIdentityState({
+  let currentResumeIdentity = await buildResumeIdentityState({
     adapterContractPath: loadedAdapter?.contract_path,
     evaluatorProfilePath: bundleSelection.evaluatorProfilePath,
     rubricPath: effectiveRubricPath,
@@ -1022,14 +1034,29 @@ export const runClosedLoop = async (input: {
   const resumeDecisionPath = input.resumeRunPath
     ? join(runDirectory, "resume-decision.json")
     : undefined;
+  const authorizedAdapterMigration = restoredRun
+    ? await loadAuthorizedAdapterMigration(restoredRun.summary)
+    : undefined;
   const resumeIdentityMismatches = restoredRun
     ? compareResumeIdentity({
         current: currentResumeIdentity,
         previous: previousResumeIdentity
       })
     : [];
+  const adapterMigrationAuthorized =
+    restoredRun &&
+    resumeIdentityMismatches.length > 0 &&
+    isAuthorizedAdapterMigration({
+      applied: authorizedAdapterMigration,
+      previousIdentity: previousResumeIdentity,
+      currentIdentity: currentResumeIdentity
+    });
   const restoredStopReason = normalizeRunStopReason(restoredRun?.summary.stop_reason);
-  if (resumeIdentityMismatches.length > 0 && !input.allowResumeMigration) {
+  if (
+    resumeIdentityMismatches.length > 0 &&
+    !input.allowResumeMigration &&
+    !adapterMigrationAuthorized
+  ) {
     throw new Error(
       [
         `Resume identity mismatch for run '${runId}'. Refusing to continue because run history would no longer be directly comparable.`,
@@ -1055,17 +1082,24 @@ export const runClosedLoop = async (input: {
     );
   }
 
-  const resumeMigrationPath =
+  let resumeMigrationPath =
     restoredRun && resumeIdentityMismatches.length > 0
       ? join(runDirectory, "resume-migration.json")
       : undefined;
+  let previousBundleFingerprint = resumeMigrationPath
+    ? resumeIdentityFingerprint(previousResumeIdentity)
+    : undefined;
+  let newBundleFingerprint = resumeMigrationPath
+    ? resumeIdentityFingerprint(currentResumeIdentity)
+    : undefined;
   if (resumeMigrationPath) {
     await writeJson(resumeMigrationPath, {
       run_id: runId,
       migrated_at: new Date().toISOString(),
       mismatches: resumeIdentityMismatches,
       previous_identity: previousResumeIdentity,
-      new_identity: currentResumeIdentity
+      new_identity: currentResumeIdentity,
+      authorized_adapter_migration: Boolean(adapterMigrationAuthorized)
     });
   }
 
@@ -1078,7 +1112,7 @@ export const runClosedLoop = async (input: {
     (warning) => !previousEphemeralEventMessages.has(warning)
   );
 
-  const currentRuntimeEvents = mergeRuntimeEvents([
+  let currentRuntimeEvents = mergeRuntimeEvents([
     ...((restoredRun?.summary.runtime_events ?? []).filter(
       (event) => !ephemeralRuntimeEventCodes.has(event.code)
     ) ?? []),
@@ -1098,10 +1132,13 @@ export const runClosedLoop = async (input: {
       ? [
           buildRuntimeEvent(
             "resume.migration_override",
-            `Resume identity migration override was accepted for run '${runId}'. This run now records a bundle migration.`,
+            adapterMigrationAuthorized
+              ? `Approved adapter migration was accepted automatically for run '${runId}'. This run now records the adapter identity migration without a manual override.`
+              : `Resume identity migration override was accepted for run '${runId}'. This run now records a bundle migration.`,
             {
               mismatch_count: resumeIdentityMismatches.length,
-              resumed_run_id: runId
+              resumed_run_id: runId,
+              authorized_adapter_migration: Boolean(adapterMigrationAuthorized)
             }
           )
         ]
@@ -1606,6 +1643,9 @@ export const runClosedLoop = async (input: {
         )
       : undefined;
   let latestEvalReportPath = restoredRun?.latestRoundSummary?.eval_report_path;
+  let latestAdapterMigrationAppliedPath =
+    restoredRun?.summary.adapter_migration_applied_path ??
+    restoredRun?.latestRoundSummary?.adapter_migration_applied_path;
   const heartbeatNotes = [...(restoredRun?.repairNotes ?? [])];
   const replaceHeartbeatNotes = (notes?: readonly string[]): void => {
     heartbeatNotes.splice(
@@ -2127,12 +2167,9 @@ export const runClosedLoop = async (input: {
       runtimeEvents: currentRuntimeEvents,
       runtimeWarnings,
       resumeMigrationPath,
-      previousBundleFingerprint: resumeMigrationPath
-        ? resumeIdentityFingerprint(previousResumeIdentity)
-        : undefined,
-      newBundleFingerprint: resumeMigrationPath
-        ? resumeIdentityFingerprint(currentResumeIdentity)
-        : undefined,
+      previousBundleFingerprint,
+      newBundleFingerprint,
+      adapterMigrationAppliedPath: latestAdapterMigrationAppliedPath,
       resumeDecisionPath: undefined,
       resumedFromRunId: input.resumeRunPath ? runId : undefined
     });
@@ -2434,6 +2471,104 @@ export const runClosedLoop = async (input: {
       };
     }
     const artifacts = artifactsForRound(roundDirectory);
+    let adapterMigrationProposal: AdapterMigrationProposal | undefined;
+    let adapterMigrationApplied: AdapterMigrationApplied | undefined;
+    const runtimeDriftRecontractSource =
+      lifecycleDecision.negotiation_mode === "recontract" &&
+      lifecycleDecision.recontract_reason === "adapter_runtime_drift" &&
+      previousRoundSummary?.adapter_drift_report_path &&
+      loadedAdapter
+        ? await loadJsonIfExists<AdapterDriftReport>(
+            previousRoundSummary.adapter_drift_report_path
+          )
+        : undefined;
+    if (runtimeDriftRecontractSource && loadedAdapter) {
+      adapterMigrationProposal = await buildAdapterMigrationProposal({
+        runId,
+        round,
+        sourceAdapterDriftReportPath: previousRoundSummary!.adapter_drift_report_path!,
+        loadedAdapter,
+        adapterDriftReport: runtimeDriftRecontractSource
+      });
+      if (adapterMigrationProposal.autoapply_eligible) {
+        const previousAdapterResumeIdentity = currentResumeIdentity;
+        const migrationResult = await applyGeneratedLocalAdapterMigration({
+          proposal: adapterMigrationProposal,
+          loadedAdapter,
+          runtimeDirectory: runRuntimeDirectory
+        });
+        const reloadedAdapter = await loadAdapterContract(loadedAdapter.contract_path);
+        if (!reloadedAdapter) {
+          throw new Error(
+            `Adapter migration '${adapterMigrationProposal.proposal_id}' rewrote '${loadedAdapter.contract_path}' but the adapter could not be reloaded.`
+          );
+        }
+        loadedAdapter = selectedVerificationProfile
+          ? {
+              ...reloadedAdapter,
+              verification_profile: selectedVerificationProfile,
+              verification_profile_source: "core"
+            }
+          : reloadedAdapter;
+        currentResumeIdentity = await buildResumeIdentityState({
+          adapterContractPath: loadedAdapter.contract_path,
+          evaluatorProfilePath: bundleSelection.evaluatorProfilePath,
+          rubricPath: effectiveRubricPath,
+          executorMode,
+          transportMode,
+          targetFamily: resolvedTargetFamily,
+          validationLane: resolvedValidationLane
+        });
+        await writeJson(currentResumeIdentityPath, currentResumeIdentity);
+        const migrationMismatches = compareResumeIdentity({
+          current: currentResumeIdentity,
+          previous: previousAdapterResumeIdentity
+        });
+        resumeMigrationPath = join(runDirectory, "resume-migration.json");
+        previousBundleFingerprint = resumeIdentityFingerprint(
+          previousAdapterResumeIdentity
+        );
+        newBundleFingerprint = resumeIdentityFingerprint(currentResumeIdentity);
+        await writeJson(resumeMigrationPath, {
+          run_id: runId,
+          migrated_at: new Date().toISOString(),
+          mismatches: migrationMismatches,
+          previous_identity: previousAdapterResumeIdentity,
+          new_identity: currentResumeIdentity,
+          authorized_adapter_migration: true,
+          adapter_migration_proposal_path:
+            artifacts.adapter_migration_proposal_json_path
+        });
+        adapterMigrationApplied = {
+          proposal_id: adapterMigrationProposal.proposal_id,
+          applied_at: new Date().toISOString(),
+          apply_mode: adapterMigrationProposal.apply_mode,
+          changed_files: migrationResult.changedFiles,
+          backup_directory: migrationResult.backupDirectory,
+          old_identity: previousAdapterResumeIdentity,
+          new_identity: currentResumeIdentity,
+          same_run_authorized: true
+        };
+        latestAdapterMigrationAppliedPath =
+          artifacts.adapter_migration_applied_json_path;
+        currentRuntimeEvents = mergeRuntimeEvents([
+          ...currentRuntimeEvents,
+          buildRuntimeEvent(
+            "adapter.migration_applied",
+            `Applied adapter migration '${adapterMigrationProposal.proposal_id}' on this run before recontract negotiation continued.`,
+            {
+              round,
+              proposal_id: adapterMigrationProposal.proposal_id,
+              migrated_run_id: runId
+            }
+          )
+        ]);
+        runtimeWarnings = normalizeRuntimeWarnings([
+          ...runtimeWarnings,
+          `Adapter migration '${adapterMigrationProposal.proposal_id}' updated the generated runtime surface before recontract negotiation continued.`
+        ]);
+      }
+    }
     const resumedRoundPhase =
       restoredRun?.interruptedRound?.round === round
         ? {
@@ -3457,7 +3592,9 @@ export const runClosedLoop = async (input: {
         roundResultArtifact,
         evalReport,
         failureLineage,
-        adapterDriftReport
+        adapterDriftReport,
+        adapterMigrationProposal,
+        adapterMigrationApplied
       });
       await markProgress(`Evaluation artifacts saved for round ${round}.`);
       await recordRoundPhase({
@@ -3538,6 +3675,18 @@ export const runClosedLoop = async (input: {
       failure_lineage_path: artifacts.failure_lineage_path,
       ...(adapterDriftReport
         ? { adapter_drift_report_path: artifacts.adapter_drift_report_json_path }
+        : {}),
+      ...(adapterMigrationProposal
+        ? {
+            adapter_migration_proposal_path:
+              artifacts.adapter_migration_proposal_json_path
+          }
+        : {}),
+      ...(adapterMigrationApplied
+        ? {
+            adapter_migration_applied_path:
+              artifacts.adapter_migration_applied_json_path
+          }
         : {}),
       planner_context_path: artifacts.planner_context_path,
       generator_brief_path: artifacts.generator_brief_path,
@@ -3817,12 +3966,9 @@ export const runClosedLoop = async (input: {
     runtimeEvents: finalRuntimeEvents,
     runtimeWarnings,
     resumeMigrationPath,
-    previousBundleFingerprint: resumeMigrationPath
-      ? resumeIdentityFingerprint(previousResumeIdentity)
-      : undefined,
-    newBundleFingerprint: resumeMigrationPath
-      ? resumeIdentityFingerprint(currentResumeIdentity)
-      : undefined,
+    previousBundleFingerprint,
+    newBundleFingerprint,
+    adapterMigrationAppliedPath: latestAdapterMigrationAppliedPath,
     resumeDecisionPath,
     resumedFromRunId: input.resumeRunPath ? runId : undefined
   });

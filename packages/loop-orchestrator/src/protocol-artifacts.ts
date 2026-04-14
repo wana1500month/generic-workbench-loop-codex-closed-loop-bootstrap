@@ -3,6 +3,8 @@ import { join, relative } from "node:path";
 import { writeJson, writeText } from "./file-system.js";
 import { isPureEnvironmentBlockedLineage } from "./failure-lineage.js";
 import type {
+  AdapterMigrationApplied,
+  AdapterMigrationProposal,
   AdapterDriftReport,
   ContractAgreementArtifact,
   ContractReviewArtifact,
@@ -89,6 +91,22 @@ export const artifactsForRound = (roundDirectory: string): RoundArtifacts => {
     failure_lineage_path: join(roundDirectory, "failure-lineage.json"),
     adapter_drift_report_json_path: join(roundDirectory, "adapter-drift-report.json"),
     adapter_drift_report_md_path: join(roundDirectory, "adapter-drift-report.md"),
+    adapter_migration_proposal_json_path: join(
+      roundDirectory,
+      "adapter-migration-proposal.json"
+    ),
+    adapter_migration_proposal_md_path: join(
+      roundDirectory,
+      "adapter-migration-proposal.md"
+    ),
+    adapter_migration_applied_json_path: join(
+      roundDirectory,
+      "adapter-migration-applied.json"
+    ),
+    adapter_migration_applied_md_path: join(
+      roundDirectory,
+      "adapter-migration-applied.md"
+    ),
     target_manifest_path: join(roundDirectory, "target-manifest.json"),
     core_probe_results_path: join(roundDirectory, "core-probe-results.json"),
     pre_verification_executions_path: join(
@@ -1135,6 +1153,8 @@ export const writeRoundArtifacts = async (input: {
   evalReport: EvalReport;
   failureLineage?: FailureLineage;
   adapterDriftReport?: AdapterDriftReport;
+  adapterMigrationProposal?: AdapterMigrationProposal;
+  adapterMigrationApplied?: AdapterMigrationApplied;
 }): Promise<RoundArtifacts> => {
   const artifacts = artifactsForRound(input.roundDirectory);
 
@@ -1197,6 +1217,36 @@ export const writeRoundArtifacts = async (input: {
               input.adapterDriftReport.reasons
             )}\n\n## Suggested Updates\n\n${bulletList(
               input.adapterDriftReport.suggested_updates
+            )}\n`
+          )
+        ]
+      : []),
+    ...(input.adapterMigrationProposal
+      ? [
+          writeJson(
+            artifacts.adapter_migration_proposal_json_path,
+            input.adapterMigrationProposal
+          ),
+          writeText(
+            artifacts.adapter_migration_proposal_md_path,
+            `# Adapter Migration Proposal\n\n## Summary\n\n${input.adapterMigrationProposal.summary}\n\n## Origin\n\n${input.adapterMigrationProposal.adapter_origin}\n\n## Migration Class\n\n${input.adapterMigrationProposal.migration_class}\n\n## Apply Mode\n\n${input.adapterMigrationProposal.apply_mode}\n\n## Same Run Eligible\n\n${input.adapterMigrationProposal.same_run_eligible ? "yes" : "no"}\n\n## Autoapply Eligible\n\n${input.adapterMigrationProposal.autoapply_eligible ? "yes" : "no"}\n\n## Reasons\n\n${bulletList(
+              input.adapterMigrationProposal.reasons
+            )}\n\n## Suggested Updates\n\n${bulletList(
+              input.adapterMigrationProposal.suggested_updates
+            )}\n`
+          )
+        ]
+      : []),
+    ...(input.adapterMigrationApplied
+      ? [
+          writeJson(
+            artifacts.adapter_migration_applied_json_path,
+            input.adapterMigrationApplied
+          ),
+          writeText(
+            artifacts.adapter_migration_applied_md_path,
+            `# Adapter Migration Applied\n\n## Proposal\n\n${input.adapterMigrationApplied.proposal_id}\n\n## Apply Mode\n\n${input.adapterMigrationApplied.apply_mode}\n\n## Same Run Authorized\n\n${input.adapterMigrationApplied.same_run_authorized ? "yes" : "no"}\n\n## Changed Files\n\n${bulletList(
+              input.adapterMigrationApplied.changed_files
             )}\n`
           )
         ]
