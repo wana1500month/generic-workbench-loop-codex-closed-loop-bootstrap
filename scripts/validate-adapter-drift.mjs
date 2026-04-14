@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
+import { join } from "node:path";
 
 import {
-  assertDecisionSource,
   extractRunDirectory,
   readJsonFile,
   readSummary,
@@ -74,7 +74,6 @@ if (runtimeResult.code !== 0) {
 
 const runtimeSummary = await readSummary(extractRunDirectory(runtimeResult.stdout));
 const runtimeRoundOne = runtimeSummary.round_history?.[0];
-const runtimeRoundTwo = runtimeSummary.round_history?.[1];
 assert.equal(
   typeof runtimeRoundOne?.adapter_drift_report_path,
   "string",
@@ -89,12 +88,28 @@ assert(runtimeDriftReport.signals.includes("missing_target_manifest_keys"));
 assert(runtimeDriftReport.missing_target_manifest_keys.includes("app_url"));
 assert.equal(runtimePatchRequest.next_action, "recontract_adapter");
 assert.equal(runtimePatchRequest.adapter_drift_kind, "runtime");
-assert.equal(runtimeRoundTwo?.negotiation_mode, "recontract");
-assert.equal(runtimeRoundTwo?.recontract_reason, "adapter_runtime_drift");
-assertDecisionSource(
-  runtimeRoundTwo,
-  "hard_rule",
-  "runtime adapter drift follow-up round"
+assert.equal(
+  runtimeSummary.stop_reason,
+  "awaiting_human_input",
+  "External runtime drift should pause for adapter migration approval."
 );
+const runtimeOperatorSurface = await readJsonFile(runtimeSummary.operator_surface_path);
+assert.equal(runtimeOperatorSurface.attention_required, "human");
+assert.equal(runtimeOperatorSurface.checkpoint_kind, "adapter-migration-approval");
+assert.deepEqual(runtimeOperatorSurface.decision_options, [
+  "accept",
+  "reject",
+  "open_new_run"
+]);
+const runtimeRoundTwoProposalPath = join(
+  extractRunDirectory(runtimeResult.stdout),
+  "round-002",
+  "adapter-migration-proposal.json"
+);
+const runtimeRoundTwoProposal = await readJsonFile(runtimeRoundTwoProposalPath);
+assert.equal(runtimeRoundTwoProposal.adapter_origin, "external_contract");
+assert.equal(runtimeRoundTwoProposal.apply_mode, "proposal_only");
+assert.equal(runtimeRoundTwoProposal.requires_operator_acceptance, true);
+assert.equal(runtimeRoundTwoProposal.force_new_run, false);
 
 console.log("[validate-adapter-drift] complete");

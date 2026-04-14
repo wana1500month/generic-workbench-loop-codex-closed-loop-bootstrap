@@ -30,6 +30,8 @@ export type RunStopReason =
   | "contract_completed"
   | "environment_blocked"
   | "adapter_contract_invalid"
+  | "adapter_migration_rejected"
+  | "new_run_required"
   | "awaiting_codex_checkpoint"
   | "awaiting_current_thread_handoff"
   | "awaiting_manual_generator"
@@ -45,6 +47,9 @@ export type RuntimeEventCode =
   | "resume.partial_init_rebuild"
   | "resume.migration_override"
   | "adapter.migration_applied"
+  | "adapter.migration_accepted"
+  | "adapter.migration_rejected"
+  | "adapter.migration_new_run_requested"
   | "resume.noop_terminal"
   | "resume.reopened_terminal"
   | "resume.continued"
@@ -90,7 +95,9 @@ export type CurrentThreadCheckpointKind =
   | "contract-review"
   | "generator-plan"
   | "evaluator"
-  | "attached-generator";
+  | "attached-generator"
+  | "adapter-migration-authoring"
+  | "adapter-migration-approval";
 export type OperatorWorkerSkill = "loop-control";
 export type OperatorRecoverySkill = "attached-loop" | "run-resume";
 export type OperatorResumeSkill = OperatorRecoverySkill;
@@ -167,6 +174,10 @@ export type AdapterMigrationApplyMode =
   | "same_run_in_place"
   | "proposal_only"
   | "new_run_required";
+export type AdapterMigrationDecision =
+  | "accept"
+  | "reject"
+  | "open_new_run";
 export type PatchRequestNextAction = RoundVerdict | "complete" | "recontract_adapter";
 export type LifecycleDecisionSource =
   | "initial_round"
@@ -482,6 +493,12 @@ export interface AdapterMigrationApplied {
   old_identity: AdapterMigrationIdentityState;
   new_identity: AdapterMigrationIdentityState;
   same_run_authorized: boolean;
+}
+
+export interface AdapterMigrationResponse {
+  proposal_id: string;
+  decision: AdapterMigrationDecision;
+  note?: string;
 }
 
 export interface RemediationHistory {
@@ -960,6 +977,11 @@ export interface RoundArtifacts {
   adapter_drift_report_md_path: string;
   adapter_migration_proposal_json_path: string;
   adapter_migration_proposal_md_path: string;
+  adapter_migration_approval_prompt_path: string;
+  adapter_migration_response_json_path: string;
+  adapter_migration_response_md_path: string;
+  adapter_migration_patch_path: string;
+  adapter_migration_instructions_path: string;
   adapter_migration_applied_json_path: string;
   adapter_migration_applied_md_path: string;
   target_manifest_path: string;
@@ -1079,6 +1101,8 @@ export interface RoundContractArtifact {
   round: number;
   attempt_kind: AttemptKind;
   negotiation_mode: NegotiationMode;
+  recontract_mode?: boolean;
+  adapter_only_paths?: string[];
   continuation_authority: ContinuationAuthority;
   recontract_reason?: RecontractReason;
   objective: string;
@@ -1450,6 +1474,7 @@ export interface OperatorSurfaceArtifact {
   checkpoint_seq?: number;
   auto_resume_eligible?: boolean;
   user_visible_pause?: boolean;
+  decision_options?: AdapterMigrationDecision[];
   summary_path?: string;
   transport_state_path?: string;
   transport_protocol_path?: string;

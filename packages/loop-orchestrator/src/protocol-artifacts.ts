@@ -1,10 +1,12 @@
-import { join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 
 import { writeJson, writeText } from "./file-system.js";
 import { isPureEnvironmentBlockedLineage } from "./failure-lineage.js";
 import type {
+  AdapterMigrationDecision,
   AdapterMigrationApplied,
   AdapterMigrationProposal,
+  AdapterMigrationResponse,
   AdapterDriftReport,
   ContractAgreementArtifact,
   ContractReviewArtifact,
@@ -49,6 +51,18 @@ const remediationRequiredArtifacts = [
   "agent_handoff/generator-brief.md",
   "agent_handoff/qa-review.md",
   "agent_handoff/controller-decision.md"
+] as const;
+const generatedLocalAdapterOnlyPaths = [
+  "adapter.generated.json",
+  ".generated/codex-adapter/runtime-config.json",
+  ".generated/codex-adapter/scripts"
+] as const;
+const externalAdapterOnlyPaths = [
+  "adapter-migration-proposal.json",
+  "adapter-migration-approval-prompt.md",
+  "adapter-migration-response.json",
+  "adapter-migration.patch",
+  "adapter-migration-instructions.md"
 ] as const;
 const normalizeCarryForwardCheckId = (checkId: string): string =>
   checkId.startsWith("adapter_") ? "adapter_execution_healthy" : checkId;
@@ -98,6 +112,23 @@ export const artifactsForRound = (roundDirectory: string): RoundArtifacts => {
     adapter_migration_proposal_md_path: join(
       roundDirectory,
       "adapter-migration-proposal.md"
+    ),
+    adapter_migration_approval_prompt_path: join(
+      roundDirectory,
+      "adapter-migration-approval-prompt.md"
+    ),
+    adapter_migration_response_json_path: join(
+      roundDirectory,
+      "adapter-migration-response.json"
+    ),
+    adapter_migration_response_md_path: join(
+      roundDirectory,
+      "adapter-migration-response.md"
+    ),
+    adapter_migration_patch_path: join(roundDirectory, "adapter-migration.patch"),
+    adapter_migration_instructions_path: join(
+      roundDirectory,
+      "adapter-migration-instructions.md"
     ),
     adapter_migration_applied_json_path: join(
       roundDirectory,
@@ -163,6 +194,18 @@ export const artifactsForRound = (roundDirectory: string): RoundArtifacts => {
   };
 };
 
+const adapterOnlyPathsFor = (
+  loadedAdapter?: LoadedAdapterContract
+): string[] | undefined => {
+  if (!loadedAdapter) {
+    return undefined;
+  }
+
+  return basename(loadedAdapter.contract_path) === "adapter.generated.json"
+    ? [...generatedLocalAdapterOnlyPaths]
+    : [...externalAdapterOnlyPaths];
+};
+
 export const buildRoundContractArtifact = (input: {
   round: number;
   negotiationMode: RoundContractArtifact["negotiation_mode"];
@@ -202,6 +245,13 @@ export const buildRoundContractArtifact = (input: {
   round: input.round,
   attempt_kind: input.contract.attempt_kind,
   negotiation_mode: input.negotiationMode,
+  ...((input.negotiationMode === "recontract" &&
+    input.recontractReason?.startsWith("adapter_"))
+    ? {
+        recontract_mode: true,
+        adapter_only_paths: adapterOnlyPathsFor(input.loadedAdapter) ?? []
+      }
+    : {}),
   continuation_authority: input.continuationAuthority,
   ...(input.recontractReason ? { recontract_reason: input.recontractReason } : {}),
   objective: input.contract.objective,
@@ -953,6 +1003,14 @@ ${input.contractArtifact.continuation_authority}
 
 ${input.contractArtifact.recontract_reason ?? "none"}
 
+## Recontract Mode
+
+${input.contractArtifact.recontract_mode ? "adapter-only" : "standard"}
+
+## Adapter-Only Paths
+
+${bulletList(input.contractArtifact.adapter_only_paths ?? [])}
+
 ## Trajectory
 
 - Mode: ${input.contractArtifact.trajectory.mode}
@@ -1138,6 +1196,49 @@ export const writeRoundEvaluationPlaceholders = async (input: {
       created_at: createdAt,
       generated_by: "writeRoundEvaluationPlaceholders"
     })
+  ]);
+
+  return artifacts;
+};
+
+export const writeAdapterMigrationProposalArtifacts = async (input: {
+  roundDirectory: string;
+  proposal: AdapterMigrationProposal;
+  responseTemplate?: AdapterMigrationResponse;
+}): Promise<RoundArtifacts> => {
+  const artifacts = artifactsForRound(input.roundDirectory);
+  const decisionOptions: AdapterMigrationDecision[] = input.proposal.force_new_run
+    ? ["open_new_run", "reject"]
+    : ["accept", "reject", "open_new_run"];
+  const responseTemplate =
+    input.responseTemplate ?? {
+      proposal_id: input.proposal.proposal_id,
+      decision: input.proposal.force_new_run ? "open_new_run" : "accept",
+      note: ""
+    };
+
+  await Promise.all([
+    writeJson(artifacts.adapter_migration_proposal_json_path, input.proposal),
+    writeText(
+      artifacts.adapter_migration_proposal_md_path,
+      `# Adapter Migration Proposal\n\n## Summary\n\n${input.proposal.summary}\n\n## Origin\n\n${input.proposal.adapter_origin}\n\n## Migration Class\n\n${input.proposal.migration_class}\n\n## Apply Mode\n\n${input.proposal.apply_mode}\n\n## Same Run Eligible\n\n${input.proposal.same_run_eligible ? "yes" : "no"}\n\n## Autoapply Eligible\n\n${input.proposal.autoapply_eligible ? "yes" : "no"}\n\n## Requires Operator Acceptance\n\n${input.proposal.requires_operator_acceptance ? "yes" : "no"}\n\n## Force New Run\n\n${input.proposal.force_new_run ? "yes" : "no"}\n\n## Reasons\n\n${bulletList(
+        input.proposal.reasons
+      )}\n\n## Suggested Updates\n\n${bulletList(
+        input.proposal.suggested_updates
+      )}\n`
+    ),
+    writeText(
+      artifacts.adapter_migration_approval_prompt_path,
+      `# Adapter Migration Approval\n\n## Proposal Summary\n\n${input.proposal.summary}\n\n## Proposal\n\n- JSON: ${relative(input.roundDirectory, artifacts.adapter_migration_proposal_json_path).replaceAll("\\", "/")}\n- Markdown: ${relative(input.roundDirectory, artifacts.adapter_migration_proposal_md_path).replaceAll("\\", "/")}\n\n## Allowed decisions\n\n${bulletList(decisionOptions)}\n\n## Response contract\n\nWrite JSON to ${relative(input.roundDirectory, artifacts.adapter_migration_response_json_path).replaceAll("\\", "/")} with:\n\n\`\`\`json\n${JSON.stringify(responseTemplate, null, 2)}\n\`\`\`\n`
+    ),
+    writeText(
+      artifacts.adapter_migration_response_md_path,
+      `# Adapter Migration Response\n\nWrite JSON to \`${relative(input.roundDirectory, artifacts.adapter_migration_response_json_path).replaceAll("\\", "/")}\` with one of these decisions: ${decisionOptions.join(", ")}.\n`
+    ),
+    writeText(
+      artifacts.adapter_migration_instructions_path,
+      `# Adapter Migration Instructions\n\n- Treat this as an adapter recontract decision, not a product patch request.\n- Review the proposal artifacts before responding.\n- Same-run in-place migration is ${input.proposal.same_run_eligible ? "eligible" : "not eligible"} for this proposal.\n- If the proposal says force_new_run, prefer \`open_new_run\`.\n`
+    )
   ]);
 
   return artifacts;

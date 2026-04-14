@@ -2,6 +2,7 @@ import { dirname, relative, resolve } from "node:path";
 
 import { repoRoot, writeJson, writeText } from "./file-system.js";
 import type {
+  AdapterMigrationDecision,
   CurrentThreadCheckpointKind,
   OperatorAppVisibility,
   OperatorAttentionRequired,
@@ -601,6 +602,7 @@ export const buildOperatorSurfaceArtifact = (input: {
   recommendedCommand?: string;
   requiresCodexApp?: boolean;
   userVisiblePause?: boolean;
+  decisionOptions?: AdapterMigrationDecision[];
   nextAction?: string;
   notes?: string[];
 }): OperatorSurfaceArtifact => {
@@ -757,6 +759,9 @@ export const buildOperatorSurfaceArtifact = (input: {
       ? { auto_resume_eligible: autoResumeEligible }
       : {}),
     ...(userVisiblePause !== undefined ? { user_visible_pause: userVisiblePause } : {}),
+    ...(input.decisionOptions?.length
+      ? { decision_options: unique(input.decisionOptions) }
+      : {}),
     ...(input.summaryPath ? { summary_path: input.summaryPath } : {}),
     ...(input.transportStatePath ? { transport_state_path: input.transportStatePath } : {}),
     ...(input.transportProtocolPath ? { transport_protocol_path: input.transportProtocolPath } : {}),
@@ -807,6 +812,7 @@ export const renderOperatorSurfaceMarkdown = (
 - Checkpoint seq: ${artifact.checkpoint_seq ?? "none"}
 - Auto resume eligible: ${artifact.auto_resume_eligible ? "yes" : "no"}
 - User visible pause: ${artifact.user_visible_pause === false ? "no" : "yes"}
+- Decision options: ${artifact.decision_options?.join(", ") ?? "none"}
 - Summary: ${rel(artifact.summary_path)}
 - Transport state: ${rel(artifact.transport_state_path)}
 - Transport protocol: ${rel(artifact.transport_protocol_path)}

@@ -6,9 +6,11 @@ import { resumeIdentityFingerprint } from "./resume-identity.js";
 import type {
   AdapterDriftReport,
   AdapterMigrationApplied,
+  AdapterMigrationDecision,
   AdapterMigrationClass,
   AdapterMigrationIdentityState,
   AdapterMigrationProposal,
+  AdapterMigrationResponse,
   AdapterMigrationApplyMode,
   AdapterOrigin,
   LoadedAdapterContract,
@@ -34,6 +36,9 @@ const fileSafeToken = (value: string): string =>
 
 const normalizeString = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+
+const boundaryBreakBlockerPattern =
+  /(verification provider|provider[_\s-]?id|required capability|missing capability|contract version|target root|adapter id)/i;
 
 export const generatedAdapterRuntimeConfigPath = (adapterContractPath: string): string =>
   join(dirname(adapterContractPath), ".generated", "codex-adapter", "runtime-config.json");
@@ -95,6 +100,23 @@ const classifyAdapterMigration = (input: {
     };
   }
 
+  const boundaryBreakDetected =
+    (input.adapterOrigin === "external_contract" &&
+      input.adapterDriftReport.kind === "contract") ||
+    input.adapterDriftReport.static_blockers.some((blocker) =>
+      boundaryBreakBlockerPattern.test(blocker)
+    );
+  if (boundaryBreakDetected) {
+    return {
+      migrationClass: "boundary_break",
+      applyMode: "new_run_required",
+      sameRunEligible: false,
+      autoapplyEligible: false,
+      requiresOperatorAcceptance: true,
+      forceNewRun: true
+    };
+  }
+
   return {
     migrationClass:
       input.adapterDriftReport.kind === "contract"
@@ -107,6 +129,13 @@ const classifyAdapterMigration = (input: {
     forceNewRun: false
   };
 };
+
+export const decisionOptionsForAdapterMigrationProposal = (
+  proposal: AdapterMigrationProposal
+): AdapterMigrationDecision[] =>
+  proposal.force_new_run
+    ? ["open_new_run", "reject"]
+    : ["accept", "reject", "open_new_run"];
 
 export const buildAdapterMigrationProposal = async (input: {
   runId: string;
@@ -257,6 +286,30 @@ export const applyGeneratedLocalAdapterMigration = async (input: {
   return {
     changedFiles: [adapterContractPath, runtimeConfigPath],
     backupDirectory
+  };
+};
+
+const isAdapterMigrationDecision = (
+  value: string | undefined
+): value is AdapterMigrationDecision =>
+  value === "accept" || value === "reject" || value === "open_new_run";
+
+export const loadAdapterMigrationResponse = async (
+  path: string
+): Promise<AdapterMigrationResponse | undefined> => {
+  const artifact = await loadJsonIfExists<Record<string, unknown>>(path);
+  if (!artifact) {
+    return undefined;
+  }
+  const proposalId = normalizeString(artifact.proposal_id);
+  const decision = normalizeString(artifact.decision);
+  if (!proposalId || !isAdapterMigrationDecision(decision)) {
+    return undefined;
+  }
+  return {
+    proposal_id: proposalId,
+    decision,
+    ...(normalizeString(artifact.note) ? { note: normalizeString(artifact.note)! } : {})
   };
 };
 

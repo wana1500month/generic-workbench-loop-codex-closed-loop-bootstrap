@@ -147,6 +147,7 @@ try {
   const [
     roundOneDriftReport,
     roundOnePatchRequest,
+    roundTwoContract,
     proposal,
     applied,
     resumeMigration,
@@ -155,6 +156,7 @@ try {
   ] = await Promise.all([
     readJsonFile(roundOne.adapter_drift_report_path),
     readJsonFile(roundOne.patch_request_path),
+    readJsonFile(roundTwo.contract_path),
     readJsonFile(roundTwo.adapter_migration_proposal_path),
     readJsonFile(roundTwo.adapter_migration_applied_path),
     readJsonFile(summary.resume_migration_path),
@@ -184,6 +186,22 @@ try {
   assert.equal(applied.proposal_id, proposal.proposal_id);
   assert.equal(applied.apply_mode, "same_run_in_place");
   assert.equal(applied.same_run_authorized, true);
+  assert.equal(roundTwoContract.recontract_mode, true);
+  assert.deepEqual(roundTwoContract.adapter_only_paths, [
+    "adapter.generated.json",
+    ".generated/codex-adapter/runtime-config.json",
+    ".generated/codex-adapter/scripts"
+  ]);
+  for (const changedFile of applied.changed_files) {
+    const normalizedChangedFile = String(changedFile).replace(/\\/g, "/");
+    assert(
+      normalizedChangedFile.endsWith("adapter.generated.json") ||
+        normalizedChangedFile.endsWith(
+          ".generated/codex-adapter/runtime-config.json"
+        ),
+      `Changed file '${changedFile}' should stay inside the adapter-only recontract scope.`
+    );
+  }
   assert.notEqual(
     applied.old_identity.adapter_contract_sha256,
     applied.new_identity.adapter_contract_sha256,
