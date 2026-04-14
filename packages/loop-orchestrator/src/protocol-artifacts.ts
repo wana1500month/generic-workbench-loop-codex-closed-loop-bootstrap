@@ -3,6 +3,7 @@ import { join, relative } from "node:path";
 import { writeJson, writeText } from "./file-system.js";
 import { isPureEnvironmentBlockedLineage } from "./failure-lineage.js";
 import type {
+  AdapterDriftReport,
   ContractAgreementArtifact,
   ContractReviewArtifact,
   EvalReport,
@@ -86,6 +87,8 @@ export const artifactsForRound = (roundDirectory: string): RoundArtifacts => {
     round_result_json_path: join(roundDirectory, "round-result.json"),
     eval_report_path: join(roundDirectory, "eval_report.json"),
     failure_lineage_path: join(roundDirectory, "failure-lineage.json"),
+    adapter_drift_report_json_path: join(roundDirectory, "adapter-drift-report.json"),
+    adapter_drift_report_md_path: join(roundDirectory, "adapter-drift-report.md"),
     target_manifest_path: join(roundDirectory, "target-manifest.json"),
     core_probe_results_path: join(roundDirectory, "core-probe-results.json"),
     pre_verification_executions_path: join(
@@ -638,6 +641,7 @@ export const buildPatchRequestArtifact = (input: {
   adapterAttached: boolean;
   staticContractBlockers?: string[];
   failureLineage?: FailureLineage;
+  adapterDriftReport?: AdapterDriftReport;
 }): PatchRequestArtifact => {
   const environmentBlockedOnly = isPureEnvironmentBlockedLineage(input.failureLineage);
   const failedChecks = input.evalReport.check_results.filter(
@@ -694,6 +698,19 @@ export const buildPatchRequestArtifact = (input: {
           }
         ]
       : [];
+  const missingManifestFixItems =
+    input.failureLineage?.missing_target_manifest_keys.length
+      ? [
+          {
+            id: `repair-adapter-runtime-round-${String(input.round).padStart(2, "0")}`,
+            why: `Required target manifest keys are missing: ${input.failureLineage.missing_target_manifest_keys.join(", ")}.`,
+            expected_change:
+              "Re-contract the adapter runtime surface so release-gate probes can resolve the required manifest keys before another remediation round opens.",
+            target_check_ids: ["independent_target_probe_present"],
+            source_round: input.round
+          }
+        ]
+      : [];
   const qualityFixItems = input.qualityCritiqueArtifact.findings.map((finding) => ({
     id: finding.finding_id,
     why: finding.summary,
@@ -702,6 +719,10 @@ export const buildPatchRequestArtifact = (input: {
     source_round: input.round
   })).filter((item) => item.target_check_ids.length > 0);
   const needsTargetSignalRemediation = thresholdFixItems.length > 0;
+  const adapterDriftFixItems = [
+    ...staticContractFixItems,
+    ...missingManifestFixItems
+  ];
   const nextAction =
     input.evaluatorVerdictArtifact.contract_completed &&
     !needsTargetSignalRemediation &&
@@ -709,6 +730,8 @@ export const buildPatchRequestArtifact = (input: {
       ? "complete"
       : environmentBlockedOnly && staticContractFixItems.length === 0
         ? "hold"
+        : input.adapterDriftReport
+          ? "recontract_adapter"
         : "revise";
 
   const mustFix =
@@ -716,9 +739,25 @@ export const buildPatchRequestArtifact = (input: {
         ? []
       : nextAction === "hold"
         ? environmentFixItems
+      : nextAction === "recontract_adapter"
+        ? adapterDriftFixItems.length > 0
+          ? adapterDriftFixItems
+          : [
+              {
+                id: `recontract-adapter-round-${String(input.round).padStart(2, "0")}`,
+                why:
+                  input.adapterDriftReport?.summary ??
+                  "The adapter boundary drifted outside the active remediation envelope.",
+                expected_change:
+                  "Re-contract the adapter execution and verification boundary before reopening another remediation round.",
+                target_check_ids: [],
+                source_round: input.round
+              }
+            ]
       : qualityFixItems.length > 0
         ? [
             ...staticContractFixItems,
+            ...missingManifestFixItems,
             ...environmentFixItems,
             ...thresholdFixItems,
             ...qualityFixItems
@@ -726,6 +765,7 @@ export const buildPatchRequestArtifact = (input: {
       : failedChecks.length > 0
         ? [
             ...staticContractFixItems,
+            ...missingManifestFixItems,
             ...environmentFixItems,
             ...thresholdFixItems,
             ...failedChecks.slice(0, 4).map((result, index) => ({
@@ -738,6 +778,8 @@ export const buildPatchRequestArtifact = (input: {
           ].slice(0, 4)
         : staticContractFixItems.length > 0
           ? staticContractFixItems
+        : missingManifestFixItems.length > 0
+          ? missingManifestFixItems
         : environmentFixItems.length > 0
           ? environmentFixItems
         : thresholdFixItems.length > 0
@@ -769,6 +811,13 @@ export const buildPatchRequestArtifact = (input: {
     must_fix: mustFix,
     quality_findings: input.qualityCritiqueArtifact.findings,
     ...(environmentBlockers.length > 0 ? { environment_blockers: environmentBlockers } : {}),
+    ...(input.adapterDriftReport
+      ? {
+          adapter_drift_kind: input.adapterDriftReport.kind,
+          adapter_drift_signals: input.adapterDriftReport.signals,
+          adapter_drift_summary: input.adapterDriftReport.summary
+        }
+      : {}),
     preserve_signals: input.qualityCritiqueArtifact.preserve_signals,
     must_preserve: unique([
       ...defaultPreserveSignals,
@@ -788,6 +837,10 @@ export const buildPatchRequestArtifact = (input: {
             : "Stop after recording contract completion for the current attempt without claiming target_reached."
           : nextAction === "hold"
             ? "Stop the run until validation can resume in an unblocked environment or a deterministic lane."
+          : nextAction === "recontract_adapter"
+            ? input.adapterDriftReport?.kind === "contract"
+              ? "Stop the run and re-contract the adapter execution or verification boundary before another remediation round opens."
+              : "Stop the run and re-contract the adapter runtime surface before another remediation round opens."
           : staticContractFixItems.length > 0
             ? "Stop the run and repair the static adapter contract before retrying."
           : needsTargetSignalRemediation
@@ -1081,6 +1134,7 @@ export const writeRoundArtifacts = async (input: {
   roundResultArtifact: RoundResultArtifact;
   evalReport: EvalReport;
   failureLineage?: FailureLineage;
+  adapterDriftReport?: AdapterDriftReport;
 }): Promise<RoundArtifacts> => {
   const artifacts = artifactsForRound(input.roundDirectory);
 
@@ -1100,7 +1154,7 @@ export const writeRoundArtifacts = async (input: {
           (item) =>
             `- ${item.id}: ${item.expected_change} [targets: ${item.target_check_ids.join(", ") || "none"}]`
         )
-        .join("\n") || "- none"}\n\n## Remediation Strategy\n\n${input.patchRequestArtifact.remediation_strategy ?? "tighten"}\n\n## Environment Blockers\n\n${bulletList(
+        .join("\n") || "- none"}\n\n## Remediation Strategy\n\n${input.patchRequestArtifact.remediation_strategy ?? "tighten"}\n\n## Adapter Drift\n\n${input.patchRequestArtifact.adapter_drift_summary ?? "none"}\n\n## Environment Blockers\n\n${bulletList(
         input.patchRequestArtifact.environment_blockers ?? []
       )}\n`
     ),
@@ -1131,6 +1185,21 @@ export const writeRoundArtifacts = async (input: {
     writeJson(artifacts.eval_report_path, input.evalReport),
     ...(input.failureLineage
       ? [writeJson(artifacts.failure_lineage_path, input.failureLineage)]
+      : []),
+    ...(input.adapterDriftReport
+      ? [
+          writeJson(artifacts.adapter_drift_report_json_path, input.adapterDriftReport),
+          writeText(
+            artifacts.adapter_drift_report_md_path,
+            `# Adapter Drift Report\n\n## Summary\n\n${input.adapterDriftReport.summary}\n\n## Kind\n\n${input.adapterDriftReport.kind}\n\n## Signals\n\n${bulletList(
+              input.adapterDriftReport.signals
+            )}\n\n## Reasons\n\n${bulletList(
+              input.adapterDriftReport.reasons
+            )}\n\n## Suggested Updates\n\n${bulletList(
+              input.adapterDriftReport.suggested_updates
+            )}\n`
+          )
+        ]
       : [])
   ]);
 

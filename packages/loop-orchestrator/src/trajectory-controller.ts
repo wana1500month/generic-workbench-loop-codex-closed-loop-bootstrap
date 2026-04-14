@@ -119,6 +119,13 @@ const reasonForTrajectory = (input: {
   if (policyReasons.length > 0) {
     return policyReasons.join(" ");
   }
+  if (input.patchRequest.next_action === "recontract_adapter") {
+    return (
+      input.patchRequest.adapter_drift_summary ??
+      input.patchRequest.promotion_rule ??
+      "Adapter drift requires a fresh contract boundary before remediation can continue."
+    );
+  }
   if (input.patchRequest.next_action === "complete") {
     return "The contract completed cleanly, so preserve the strongest signals and keep any follow-up polish bounded.";
   }
@@ -199,6 +206,9 @@ export const buildTrajectoryDecisionArtifact = (input: {
   if (input.patchRequest.next_action === "complete") {
     mode = "refine";
     decisionSource = "terminal_complete";
+  } else if (input.patchRequest.next_action === "recontract_adapter") {
+    mode = modeForFailurePolicy(input.failureLineage, "pivot");
+    decisionSource = input.failureLineage?.policy_snapshot ? "failure_policy" : "quality_critique";
   } else if (
     input.failureLineage?.policy_snapshot?.recommended_action === "recontract" ||
     input.qualityCritique.remediation_strategy === "pivot"

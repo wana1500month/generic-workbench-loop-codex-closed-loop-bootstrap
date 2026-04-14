@@ -13,6 +13,8 @@ export type ContinuationAuthority = "planner_contract" | "patch_request";
 export type RecontractReason =
   | "missing_active_contract_frame"
   | "no_actionable_patch_ids"
+  | "adapter_contract_drift"
+  | "adapter_runtime_drift"
   | "repeated_same_failure_signature"
   | "release_gate_regression"
   | "scope_drift"
@@ -151,6 +153,11 @@ export type FailureLineageClassification =
   | "mixed";
 export type PatchAuthorityState = "healthy" | "strained" | "collapsed";
 export type FailureLineagePolicySource = "hard_rule" | "weighted_policy";
+export type AdapterDriftKind = "contract" | "runtime";
+export type AdapterDriftSignal =
+  | "static_contract_blockers"
+  | "missing_target_manifest_keys";
+export type PatchRequestNextAction = RoundVerdict | "complete" | "recontract_adapter";
 export type LifecycleDecisionSource =
   | "initial_round"
   | "missing_active_contract_frame"
@@ -392,6 +399,21 @@ export interface FailureLineagePolicySnapshot {
   plateau_limit_reached: boolean;
   environment_blocked: boolean;
   scope_drift_detected: boolean;
+}
+
+export interface AdapterDriftReport {
+  report_id: string;
+  contract_id: string;
+  round: number;
+  kind: AdapterDriftKind;
+  signals: AdapterDriftSignal[];
+  recommended_action: "recontract_adapter";
+  recontract_reason: RecontractReason;
+  summary: string;
+  reasons: string[];
+  static_blockers: string[];
+  missing_target_manifest_keys: string[];
+  suggested_updates: string[];
 }
 
 export interface RemediationHistory {
@@ -866,6 +888,8 @@ export interface RoundArtifacts {
   round_result_json_path: string;
   eval_report_path: string;
   failure_lineage_path: string;
+  adapter_drift_report_json_path: string;
+  adapter_drift_report_md_path: string;
   target_manifest_path: string;
   core_probe_results_path: string;
   pre_verification_executions_path: string;
@@ -1079,12 +1103,15 @@ export interface PatchRequestItem {
 export interface PatchRequestArtifact {
   request_id: string;
   derived_from_verdict_id: string;
-  next_action: RoundVerdict | "complete";
+  next_action: PatchRequestNextAction;
   priority: "blocking" | "important" | "polish";
   remediation_strategy?: RemediationStrategy;
   must_fix: PatchRequestItem[];
   quality_findings?: QualityFinding[];
   environment_blockers?: string[];
+  adapter_drift_kind?: AdapterDriftKind;
+  adapter_drift_signals?: AdapterDriftSignal[];
+  adapter_drift_summary?: string;
   preserve_signals?: string[];
   must_preserve: string[];
   forbidden_scope_expansion: string[];
@@ -1148,6 +1175,7 @@ export interface RoundSummary {
   trajectory_decision_path: string;
   eval_report_path: string;
   failure_lineage_path?: string;
+  adapter_drift_report_path?: string;
   planner_context_path: string;
   generator_brief_path: string;
   qa_review_path: string;

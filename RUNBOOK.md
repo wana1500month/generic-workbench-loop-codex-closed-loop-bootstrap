@@ -201,6 +201,8 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Surface those same resolved values in `summary.json.round_history[]` and `round_summary.json`, not only in human-readable handoff text.
 - Persist `failure-lineage.json` for every evaluated attempt and treat it as the controller's first-class explanation of release regressions, manifest breakage, repeated unresolved signatures, and environment blockers.
 - Persist `failure-lineage.json.policy_snapshot` for every evaluated attempt and treat it as the controller's reviewable recommendation surface for `patch_only`, `recontract`, or `stop`.
+- Persist `adapter-drift-report.json` plus `.md` whenever static contract blockers or missing target-manifest keys indicate that the adapter execution or verification boundary drifted outside the active remediation envelope.
+- When `patch-request.json.next_action = "recontract_adapter"`, treat that as a first-class recontract surface: reopen planner-owned contract negotiation for the adapter boundary instead of pretending the next step is ordinary patch-only remediation.
 - Classify blocked browser or live-target probes as `environment_blocked` when the failure comes from the host environment rather than the product under test.
 - When the latest patch request is purely `environment_blocked`, stop with `patch-request.next_action = "hold"` and `stop_reason = "environment_blocked"` instead of spending remediation budget on product repair.
 - Reject adapter-backed target rounds during contract review when no independent verification provider is attached.

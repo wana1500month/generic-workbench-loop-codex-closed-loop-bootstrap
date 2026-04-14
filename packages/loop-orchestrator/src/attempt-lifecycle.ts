@@ -1,4 +1,5 @@
 import type {
+  AdapterDriftKind,
   ActiveContractFrame,
   AttemptLifecycleDecision,
   RemediationHistory,
@@ -45,6 +46,11 @@ const recontractReasonForTrigger = (
       return "plateau_without_progress";
   }
 };
+
+const recontractReasonForAdapterDrift = (
+  kind: AdapterDriftKind | undefined
+): RecontractReason =>
+  kind === "contract" ? "adapter_contract_drift" : "adapter_runtime_drift";
 
 export const targetCheckIdsFromPatchRequest = (
   patchRequest?: PatchRequestArtifact
@@ -97,6 +103,25 @@ export const decideAttemptLifecycle = (input: {
       decision_source: "missing_active_contract_frame",
       reason: "No active contract frame is locked, so remediation cannot stay patch-only yet.",
       recontract_reason: "missing_active_contract_frame",
+      trajectory
+    };
+  }
+
+  if (input.previousPatchRequest?.next_action === "recontract_adapter") {
+    return {
+      negotiation_mode: "recontract",
+      continuation_authority: "planner_contract",
+      persist_contract_review: true,
+      persist_contract_agreement: true,
+      reopen_contract: true,
+      decision_source: "hard_rule",
+      reason:
+        input.previousPatchRequest.adapter_drift_summary ??
+        input.previousPatchRequest.promotion_rule ??
+        "The previous round flagged adapter drift, so the execution boundary must be re-contracted before remediation continues.",
+      recontract_reason: recontractReasonForAdapterDrift(
+        input.previousPatchRequest.adapter_drift_kind
+      ),
       trajectory
     };
   }

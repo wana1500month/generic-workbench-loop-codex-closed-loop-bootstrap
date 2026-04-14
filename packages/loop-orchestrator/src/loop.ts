@@ -132,6 +132,7 @@ import {
   resolveOperatorSurfaceContext,
   writeOperatorSurfaceArtifacts
 } from "./operator-surface.js";
+import { buildAdapterDriftReport } from "./adapter-drift.js";
 import {
   enhancePlanWithCurrentThread,
   enhanceContractReviewWithCurrentThread,
@@ -152,6 +153,7 @@ import { buildTrajectoryDecisionArtifact } from "./trajectory-controller.js";
 import type {
   AdapterCapabilityExecution,
   AdapterCapabilityName,
+  AdapterDriftReport,
   ActiveContractFrame,
   AttachedGeneratorTaskArtifact,
   ClosedLoopResult,
@@ -406,6 +408,7 @@ const stopReasonFromState = (input: {
 }): LoopRunSummary["stop_reason"] | undefined => {
   const continuationRequested =
     input.latestPatchNextAction === "advance" ||
+    input.latestPatchNextAction === "recontract_adapter" ||
     (input.latestPatchNextAction === "revise" && input.latestMustFixCount > 0);
   const continuationStillPlanned =
     input.completedRounds < input.maxRounds && continuationRequested;
@@ -3197,6 +3200,7 @@ export const runClosedLoop = async (input: {
     let trajectoryDecisionArtifact!: TrajectoryDecisionArtifact;
     let roundResultArtifact!: RoundResultArtifact;
     let failureLineage: FailureLineage | undefined;
+    let adapterDriftReport: AdapterDriftReport | undefined;
 
     if (phaseCompletedAtOrBeyond(resumedRoundPhase, "evaluation")) {
       evalReport = await loadJson<EvalReport>(artifacts.eval_report_path);
@@ -3222,6 +3226,9 @@ export const runClosedLoop = async (input: {
           loadedAdapter,
           previousRoundSummary
         });
+      adapterDriftReport = await loadJsonIfExists<AdapterDriftReport>(
+        artifacts.adapter_drift_report_json_path
+      );
       previousPatchRequestResolved =
         roundResultArtifact.previous_patch_request_resolved;
     } else {
@@ -3388,6 +3395,12 @@ export const runClosedLoop = async (input: {
             plateauLimit: hydratedRubric.stop_after_plateau_rounds
           })
         : undefined;
+      adapterDriftReport = buildAdapterDriftReport({
+        contractId: contractArtifact.contract_id,
+        round,
+        contractReviewArtifact,
+        failureLineage
+      });
       qualityCritiqueArtifact = buildQualityCritiqueArtifact({
         round,
         contractArtifact,
@@ -3402,7 +3415,8 @@ export const runClosedLoop = async (input: {
         qualityCritiqueArtifact,
         adapterAttached: Boolean(loadedAdapter),
         staticContractBlockers: contractReviewArtifact.static_blockers,
-        failureLineage
+        failureLineage,
+        adapterDriftReport
       });
       trajectoryDecisionArtifact = buildTrajectoryDecisionArtifact({
         round,
@@ -3442,7 +3456,8 @@ export const runClosedLoop = async (input: {
         trajectoryDecisionArtifact,
         roundResultArtifact,
         evalReport,
-        failureLineage
+        failureLineage,
+        adapterDriftReport
       });
       await markProgress(`Evaluation artifacts saved for round ${round}.`);
       await recordRoundPhase({
@@ -3452,7 +3467,10 @@ export const runClosedLoop = async (input: {
         artifacts: {
           eval_report_path: artifacts.eval_report_path,
           patch_request_path: artifacts.patch_request_json_path,
-          round_result_path: artifacts.round_result_json_path
+          round_result_path: artifacts.round_result_json_path,
+          ...(adapterDriftReport
+            ? { adapter_drift_report_path: artifacts.adapter_drift_report_json_path }
+            : {})
         }
       });
         }
@@ -3518,6 +3536,9 @@ export const runClosedLoop = async (input: {
       trajectory_decision_path: artifacts.trajectory_decision_json_path,
       eval_report_path: artifacts.eval_report_path,
       failure_lineage_path: artifacts.failure_lineage_path,
+      ...(adapterDriftReport
+        ? { adapter_drift_report_path: artifacts.adapter_drift_report_json_path }
+        : {}),
       planner_context_path: artifacts.planner_context_path,
       generator_brief_path: artifacts.generator_brief_path,
       qa_review_path: artifacts.qa_review_path,
