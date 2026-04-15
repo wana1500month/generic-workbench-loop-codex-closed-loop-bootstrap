@@ -144,6 +144,10 @@ import {
   loadAuthorizedAdapterMigration
 } from "./adapter-migration.js";
 import {
+  readAdapterMigrationAuthoringResponse,
+  writeAdapterMigrationAuthoringTask
+} from "./adapter-migration-authoring.js";
+import {
   enhancePlanWithCurrentThread,
   enhanceContractReviewWithCurrentThread,
   enhanceEvalReportWithCurrentThread,
@@ -156,6 +160,7 @@ import {
 } from "./runtime-health.js";
 import {
   canonicalCodexCheckpointStopReason,
+  isCurrentThreadCheckpointStopReason,
   normalizeRunStopReason
 } from "./stop-reason.js";
 import { transportProtocolPathForRun, writeTransportProtocol } from "./transport-protocol.js";
@@ -164,6 +169,7 @@ import type {
   AdapterCapabilityExecution,
   AdapterCapabilityName,
   AdapterDriftReport,
+  AdapterMigrationAuthoringTaskArtifact,
   AdapterMigrationApplied,
   AdapterMigrationDecision,
   AdapterMigrationProposal,
@@ -193,6 +199,7 @@ import type {
   ReleaseThresholdResults,
   RemediationHistory,
   ResumeDecisionArtifact,
+  RoundArtifacts,
   RoundContractArtifact,
   RoundResultArtifact,
   RoundSummary,
@@ -1655,6 +1662,7 @@ export const runClosedLoop = async (input: {
   let latestAdapterMigrationAppliedPath =
     restoredRun?.summary.adapter_migration_applied_path ??
     restoredRun?.latestRoundSummary?.adapter_migration_applied_path;
+  const preappliedAdapterMigrationRounds = new Set<number>();
   const heartbeatNotes = [...(restoredRun?.repairNotes ?? [])];
   const replaceHeartbeatNotes = (notes?: readonly string[]): void => {
     heartbeatNotes.splice(
@@ -1700,7 +1708,9 @@ export const runClosedLoop = async (input: {
     );
     if (taskPath) {
       const taskArtifact = await loadJsonIfExists<
-        AttachedGeneratorTaskArtifact | CurrentThreadEnhancementTaskArtifact
+        | AdapterMigrationAuthoringTaskArtifact
+        | AttachedGeneratorTaskArtifact
+        | CurrentThreadEnhancementTaskArtifact
       >(taskPath);
       if (taskArtifact && typeof taskArtifact === "object") {
         const checkpointId =
@@ -2486,6 +2496,299 @@ export const runClosedLoop = async (input: {
       activeResponsePath
     });
   };
+  const applyAuthorizedGeneratedLocalMigrationForRound = async (input: {
+    round: number;
+    artifacts: RoundArtifacts;
+    proposal: AdapterMigrationProposal;
+  }): Promise<AdapterMigrationApplied> => {
+    if (!loadedAdapter) {
+      throw new Error(
+        `Adapter migration '${input.proposal.proposal_id}' cannot apply because no adapter is loaded.`
+      );
+    }
+    const previousAdapterResumeIdentity = currentResumeIdentity;
+    const adapterContractPath = loadedAdapter.contract_path;
+    const migrationResult = await applyGeneratedLocalAdapterMigration({
+      proposal: input.proposal,
+      loadedAdapter,
+      runtimeDirectory: runRuntimeDirectory
+    });
+    const generatedAdapterRoot = dirname(resolve(adapterContractPath));
+    const generatedScriptRoot = resolve(
+      generatedAdapterRoot,
+      ".generated",
+      "codex-adapter",
+      "scripts"
+    );
+    const generatedRuntimeConfig = resolve(
+      generatedAdapterRuntimeConfigPath(adapterContractPath)
+    );
+    const scopeViolation = migrationResult.changedFiles.find((changedFile) => {
+      const resolvedChangedFile = resolve(changedFile);
+      return !(
+        resolvedChangedFile === resolve(adapterContractPath) ||
+        resolvedChangedFile === generatedRuntimeConfig ||
+        resolvedChangedFile.startsWith(`${generatedScriptRoot}\\`) ||
+        resolvedChangedFile.startsWith(`${generatedScriptRoot}/`)
+      );
+    });
+    if (scopeViolation) {
+      throw new Error(
+        `Adapter recontract scope violation: '${scopeViolation}' is outside the generated adapter write surface.`
+      );
+    }
+    const reloadedAdapter = await loadAdapterContract(adapterContractPath);
+    if (!reloadedAdapter) {
+      throw new Error(
+        `Adapter migration '${input.proposal.proposal_id}' rewrote '${adapterContractPath}' but the adapter could not be reloaded.`
+      );
+    }
+    loadedAdapter = selectedVerificationProfile
+      ? {
+          ...reloadedAdapter,
+          verification_profile: selectedVerificationProfile,
+          verification_profile_source: "core"
+        }
+      : reloadedAdapter;
+    currentResumeIdentity = await buildResumeIdentityState({
+      adapterContractPath: loadedAdapter.contract_path,
+      evaluatorProfilePath: bundleSelection.evaluatorProfilePath,
+      rubricPath: effectiveRubricPath,
+      executorMode,
+      transportMode,
+      targetFamily: resolvedTargetFamily,
+      validationLane: resolvedValidationLane
+    });
+    await writeJson(currentResumeIdentityPath, currentResumeIdentity);
+    const migrationMismatches = compareResumeIdentity({
+      current: currentResumeIdentity,
+      previous: previousAdapterResumeIdentity
+    });
+    resumeMigrationPath = join(runDirectory, "resume-migration.json");
+    previousBundleFingerprint = resumeIdentityFingerprint(
+      previousAdapterResumeIdentity
+    );
+    newBundleFingerprint = resumeIdentityFingerprint(currentResumeIdentity);
+    await writeJson(resumeMigrationPath, {
+      run_id: runId,
+      migrated_at: new Date().toISOString(),
+      mismatches: migrationMismatches,
+      previous_identity: previousAdapterResumeIdentity,
+      new_identity: currentResumeIdentity,
+      authorized_adapter_migration: true,
+      adapter_migration_proposal_path:
+        input.artifacts.adapter_migration_proposal_json_path
+    });
+    const appliedMigration: AdapterMigrationApplied = {
+      proposal_id: input.proposal.proposal_id,
+      applied_at: new Date().toISOString(),
+      apply_mode: input.proposal.apply_mode,
+      changed_files: migrationResult.changedFiles,
+      backup_directory: migrationResult.backupDirectory,
+      old_identity: previousAdapterResumeIdentity,
+      new_identity: currentResumeIdentity,
+      same_run_authorized: true
+    };
+    await writeJson(
+      input.artifacts.adapter_migration_applied_json_path,
+      appliedMigration
+    );
+    latestAdapterMigrationAppliedPath =
+      input.artifacts.adapter_migration_applied_json_path;
+    currentRuntimeEvents = mergeRuntimeEvents([
+      ...currentRuntimeEvents,
+      buildRuntimeEvent(
+        "adapter.migration_applied",
+        `Applied adapter migration '${input.proposal.proposal_id}' on this run before recontract negotiation continued.`,
+        {
+          round: input.round,
+          proposal_id: input.proposal.proposal_id,
+          migrated_run_id: runId
+        }
+      )
+    ]);
+    runtimeWarnings = normalizeRuntimeWarnings([
+      ...runtimeWarnings,
+      `Adapter migration '${input.proposal.proposal_id}' updated the generated adapter surface before recontract negotiation continued.`
+    ]);
+    return appliedMigration;
+  };
+  const hydrateRestoredAdapterMigrationProposal = async (input: {
+    artifacts: RoundArtifacts;
+    proposal: AdapterMigrationProposal;
+    authoringTask?: AdapterMigrationAuthoringTaskArtifact;
+  }): Promise<AdapterMigrationProposal> => {
+    if (!loadedAdapter) {
+      return input.proposal;
+    }
+    const authoringTask =
+      input.authoringTask ??
+      (await loadJsonIfExists<AdapterMigrationAuthoringTaskArtifact>(
+        input.artifacts.adapter_migration_authoring_task_path
+      ));
+    if (!authoringTask) {
+      return input.proposal;
+    }
+    const authoringResponse = await readAdapterMigrationAuthoringResponse(
+      input.artifacts.adapter_migration_authoring_response_path,
+      authoringTask.checkpoint_id
+    );
+    if (!authoringResponse || authoringResponse.status !== "authored") {
+      return input.proposal;
+    }
+    const authoredPatchBundlePath = resolve(
+      authoringResponse.patch_bundle_path ??
+        input.artifacts.adapter_migration_patch_path
+    );
+    if (!(await pathExists(authoredPatchBundlePath))) {
+      return input.proposal;
+    }
+    const authoredAdapterRoot = dirname(loadedAdapter.contract_path);
+    const hydratedProposal: AdapterMigrationProposal = {
+      ...input.proposal,
+      patch_bundle_path: authoredPatchBundlePath,
+      affected_files: unique([
+        ...input.proposal.affected_files,
+        ...(authoringResponse.changed_files ?? []).map((changedFile) =>
+          resolve(authoredAdapterRoot, changedFile)
+        )
+      ])
+    };
+    await writeAdapterMigrationProposalArtifacts({
+      roundDirectory: input.artifacts.round_directory,
+      proposal: hydratedProposal
+    });
+    return hydratedProposal;
+  };
+  const adapterMigrationApprovalReadyNote = (
+    proposal: AdapterMigrationProposal
+  ): string =>
+    proposal.force_new_run
+      ? "This migration crosses an adapter boundary that cannot be authorized in place, so opening a new run is the canonical next step."
+      : proposal.same_run_eligible && proposal.patch_bundle_path
+        ? "A same-run migration bundle is ready. Accept applies it on this run, reject closes the proposal, and open_new_run moves the migration to a fresh run."
+        : proposal.patch_bundle_path
+          ? "A proposal bundle is ready. Accept pauses on external/manual apply, reject closes the proposal, and open_new_run moves the migration to a fresh run."
+          : "This migration cannot auto-apply safely, so an operator must accept, reject, or open a new run before recontract negotiation continues.";
+  const adapterMigrationAuthoringNotes = (
+    proposal: AdapterMigrationProposal
+  ): string[] =>
+    proposal.same_run_eligible
+      ? [
+          "Author a patch bundle for the generated adapter surface before human approval opens.",
+          "Keep the migration inside adapter.generated.json or .generated/codex-adapter/* only.",
+          "This is a same-thread Codex checkpoint, not a human decision stop."
+        ]
+      : [
+          "Author an advisory migration bundle for the external adapter surface before human approval opens.",
+          "Keep the bundle scoped to the external adapter workspace so it can be applied outside this run.",
+          "This is a same-thread Codex checkpoint, not a human decision stop."
+        ];
+  if (
+    restoredRun &&
+    isCurrentThreadCheckpointStopReason(restoredStopReason) &&
+    restoredRun.interruptedRound?.resumeFromPhase === "negotiation"
+  ) {
+    const restoredRoundArtifacts = artifactsForRound(
+      restoredRun.interruptedRound.roundDirectory
+    );
+    const restoredAuthoringTask =
+      await loadJsonIfExists<AdapterMigrationAuthoringTaskArtifact>(
+        restoredRoundArtifacts.adapter_migration_authoring_task_path
+      );
+    if (restoredAuthoringTask) {
+      const restoredAuthoringResponse = await readAdapterMigrationAuthoringResponse(
+        restoredRoundArtifacts.adapter_migration_authoring_response_path,
+        restoredAuthoringTask.checkpoint_id
+      );
+      const authoringArtifacts: Record<string, string> = {
+        adapter_migration_authoring_task_path:
+          restoredRoundArtifacts.adapter_migration_authoring_task_path,
+        adapter_migration_authoring_prompt_path:
+          restoredRoundArtifacts.adapter_migration_authoring_prompt_path,
+        adapter_migration_authoring_response_path:
+          restoredRoundArtifacts.adapter_migration_authoring_response_path,
+        adapter_migration_patch_path:
+          restoredRoundArtifacts.adapter_migration_patch_path,
+        adapter_migration_proposal_json_path:
+          restoredRoundArtifacts.adapter_migration_proposal_json_path,
+        adapter_migration_instructions_path:
+          restoredRoundArtifacts.adapter_migration_instructions_path
+      };
+      if (!restoredAuthoringResponse) {
+        return checkpointForCurrentThreadWork({
+          round: restoredRun.interruptedRound.round,
+          phase: "negotiation",
+          checkpointKind: "adapter-migration-authoring",
+          artifacts: authoringArtifacts,
+          notes: unique([
+            `Adapter migration authoring checkpoint '${restoredAuthoringTask.checkpoint_id}' is still waiting for a response.`,
+            `Write ${restoredRoundArtifacts.adapter_migration_authoring_response_path} after authoring ${restoredRoundArtifacts.adapter_migration_patch_path}.`
+          ])
+        });
+      }
+      if (restoredAuthoringResponse.status !== "authored") {
+        return checkpointForCurrentThreadWork({
+          round: restoredRun.interruptedRound.round,
+          phase: "negotiation",
+          checkpointKind: "adapter-migration-authoring",
+          artifacts: authoringArtifacts,
+          notes: unique([
+            `Adapter migration authoring response for proposal round ${restoredRun.interruptedRound.round} reported status '${restoredAuthoringResponse.status}'.`,
+            `Rewrite ${restoredRoundArtifacts.adapter_migration_authoring_response_path} with status 'authored' after updating ${restoredRoundArtifacts.adapter_migration_patch_path}.`,
+            ...(restoredAuthoringResponse.notes ?? [])
+          ])
+        });
+      }
+      const restoredProposal = await loadJsonIfExists<AdapterMigrationProposal>(
+        restoredRoundArtifacts.adapter_migration_proposal_json_path
+      );
+      if (restoredProposal) {
+        const hydratedRestoredProposal =
+          await hydrateRestoredAdapterMigrationProposal({
+            artifacts: restoredRoundArtifacts,
+            proposal: restoredProposal,
+            authoringTask: restoredAuthoringTask
+          });
+        const restoredResponse = await loadAdapterMigrationResponse(
+          restoredRoundArtifacts.adapter_migration_response_json_path
+        );
+        if (!restoredResponse) {
+          const decisionOptions = decisionOptionsForAdapterMigrationProposal(
+            hydratedRestoredProposal
+          );
+          return pauseForHumanInput({
+            round: restoredRun.interruptedRound.round,
+            phase: "negotiation",
+            checkpointKind: "adapter-migration-approval",
+            artifacts: {
+              adapter_migration_proposal_json_path:
+                restoredRoundArtifacts.adapter_migration_proposal_json_path,
+              adapter_migration_proposal_md_path:
+                restoredRoundArtifacts.adapter_migration_proposal_md_path,
+              adapter_migration_approval_prompt_path:
+                restoredRoundArtifacts.adapter_migration_approval_prompt_path,
+              adapter_migration_response_json_path:
+                restoredRoundArtifacts.adapter_migration_response_json_path,
+              adapter_migration_response_md_path:
+                restoredRoundArtifacts.adapter_migration_response_md_path,
+              adapter_migration_instructions_path:
+                restoredRoundArtifacts.adapter_migration_instructions_path
+            },
+            decisionOptions,
+            notes: unique([
+              `Adapter migration proposal '${hydratedRestoredProposal.proposal_id}' is ready for review on this thread.`,
+              adapterMigrationApprovalReadyNote(hydratedRestoredProposal),
+              `Review ${restoredRoundArtifacts.adapter_migration_proposal_md_path} and write ${restoredRoundArtifacts.adapter_migration_response_json_path} with an explicit migration decision.`,
+              ...(hydratedRestoredProposal.force_new_run
+                ? ["Prefer 'open_new_run' unless you are explicitly rejecting the migration proposal."]
+                : [])
+            ])
+          });
+        }
+      }
+    }
+  }
   if (
     restoredRun &&
     restoredStopReason === "awaiting_human_input" &&
@@ -2494,6 +2797,55 @@ export const runClosedLoop = async (input: {
     const restoredRoundArtifacts = artifactsForRound(
       restoredRun.interruptedRound.roundDirectory
     );
+    const authoringArtifacts: Record<string, string> = {
+      adapter_migration_authoring_task_path:
+        restoredRoundArtifacts.adapter_migration_authoring_task_path,
+      adapter_migration_authoring_prompt_path:
+        restoredRoundArtifacts.adapter_migration_authoring_prompt_path,
+      adapter_migration_authoring_response_path:
+        restoredRoundArtifacts.adapter_migration_authoring_response_path,
+      adapter_migration_patch_path:
+        restoredRoundArtifacts.adapter_migration_patch_path,
+      adapter_migration_proposal_json_path:
+        restoredRoundArtifacts.adapter_migration_proposal_json_path,
+      adapter_migration_instructions_path:
+        restoredRoundArtifacts.adapter_migration_instructions_path
+    };
+    const restoredAuthoringTask =
+      await loadJsonIfExists<AdapterMigrationAuthoringTaskArtifact>(
+        restoredRoundArtifacts.adapter_migration_authoring_task_path
+      );
+    if (restoredAuthoringTask) {
+      const restoredAuthoringResponse = await readAdapterMigrationAuthoringResponse(
+        restoredRoundArtifacts.adapter_migration_authoring_response_path,
+        restoredAuthoringTask.checkpoint_id
+      );
+      if (!restoredAuthoringResponse) {
+        return pauseForHumanInput({
+          round: restoredRun.interruptedRound.round,
+          phase: "negotiation",
+          checkpointKind: "adapter-migration-authoring",
+          artifacts: authoringArtifacts,
+          notes: unique([
+            `Adapter migration authoring checkpoint '${restoredAuthoringTask.checkpoint_id}' is still waiting for a response.`,
+            `Write ${restoredRoundArtifacts.adapter_migration_authoring_response_path} after authoring ${restoredRoundArtifacts.adapter_migration_patch_path}.`
+          ])
+        });
+      }
+      if (restoredAuthoringResponse.status !== "authored") {
+        return pauseForHumanInput({
+          round: restoredRun.interruptedRound.round,
+          phase: "negotiation",
+          checkpointKind: "adapter-migration-authoring",
+          artifacts: authoringArtifacts,
+          notes: unique([
+            `Adapter migration authoring checkpoint '${restoredAuthoringTask.checkpoint_id}' reported status '${restoredAuthoringResponse.status}'.`,
+            `Rewrite ${restoredRoundArtifacts.adapter_migration_authoring_response_path} with status 'authored' after updating ${restoredRoundArtifacts.adapter_migration_patch_path}.`,
+            ...(restoredAuthoringResponse.notes ?? [])
+          ])
+        });
+      }
+    }
     const approvalArtifacts: Record<string, string> = {
       adapter_migration_proposal_json_path:
         restoredRoundArtifacts.adapter_migration_proposal_json_path,
@@ -2512,11 +2864,17 @@ export const runClosedLoop = async (input: {
       approvalArtifacts.adapter_migration_proposal_json_path
     );
     if (restoredProposal) {
+      const hydratedRestoredProposal =
+        await hydrateRestoredAdapterMigrationProposal({
+          artifacts: restoredRoundArtifacts,
+          proposal: restoredProposal,
+          authoringTask: restoredAuthoringTask ?? undefined
+        });
       const restoredResponse = await loadAdapterMigrationResponse(
         approvalArtifacts.adapter_migration_response_json_path
       );
       const decisionOptions = decisionOptionsForAdapterMigrationProposal(
-        restoredProposal
+        hydratedRestoredProposal
       );
       if (!restoredResponse) {
         return pauseForHumanInput({
@@ -2526,12 +2884,12 @@ export const runClosedLoop = async (input: {
           artifacts: approvalArtifacts,
           decisionOptions,
           notes: unique([
-            `Adapter migration proposal '${restoredProposal.proposal_id}' is still waiting for an explicit approval response.`,
+            `Adapter migration proposal '${hydratedRestoredProposal.proposal_id}' is still waiting for an explicit approval response.`,
             `Write ${approvalArtifacts.adapter_migration_response_json_path} with one of: ${decisionOptions.join(", ")}.`
           ])
         });
       }
-      if (restoredResponse.proposal_id !== restoredProposal.proposal_id) {
+      if (restoredResponse.proposal_id !== hydratedRestoredProposal.proposal_id) {
         return pauseForHumanInput({
           round: restoredRun.interruptedRound.round,
           phase: "negotiation",
@@ -2539,7 +2897,7 @@ export const runClosedLoop = async (input: {
           artifacts: approvalArtifacts,
           decisionOptions,
           notes: unique([
-            `Adapter migration response '${approvalArtifacts.adapter_migration_response_json_path}' targets proposal '${restoredResponse.proposal_id}', but the active proposal is '${restoredProposal.proposal_id}'.`,
+            `Adapter migration response '${approvalArtifacts.adapter_migration_response_json_path}' targets proposal '${restoredResponse.proposal_id}', but the active proposal is '${hydratedRestoredProposal.proposal_id}'.`,
             "Rewrite the response artifact so it references the active proposal before resuming this run."
           ])
         });
@@ -2552,7 +2910,7 @@ export const runClosedLoop = async (input: {
           artifacts: approvalArtifacts,
           decisionOptions,
           notes: unique([
-            `Decision '${restoredResponse.decision}' is not valid for adapter migration proposal '${restoredProposal.proposal_id}'.`,
+            `Decision '${restoredResponse.decision}' is not valid for adapter migration proposal '${hydratedRestoredProposal.proposal_id}'.`,
             `Allowed decisions: ${decisionOptions.join(", ")}.`
           ])
         });
@@ -2564,16 +2922,16 @@ export const runClosedLoop = async (input: {
           stopReason: "adapter_migration_rejected",
           artifacts: approvalArtifacts,
           notes: unique([
-            `Adapter migration proposal '${restoredProposal.proposal_id}' was rejected by the operator.`,
+            `Adapter migration proposal '${hydratedRestoredProposal.proposal_id}' was rejected by the operator.`,
             ...(restoredResponse.note
               ? [`Operator note: ${restoredResponse.note}`]
               : [])
           ]),
           runtimeEventCode: "adapter.migration_rejected",
-          runtimeEventMessage: `Adapter migration proposal '${restoredProposal.proposal_id}' was rejected on this run.`,
+          runtimeEventMessage: `Adapter migration proposal '${hydratedRestoredProposal.proposal_id}' was rejected on this run.`,
           runtimeEventMetadata: {
             round: restoredRun.interruptedRound.round,
-            proposal_id: restoredProposal.proposal_id,
+            proposal_id: hydratedRestoredProposal.proposal_id,
             decision: restoredResponse.decision,
             migrated_run_id: runId
           }
@@ -2586,54 +2944,89 @@ export const runClosedLoop = async (input: {
           stopReason: "new_run_required",
           artifacts: approvalArtifacts,
           notes: unique([
-            `Adapter migration proposal '${restoredProposal.proposal_id}' was routed to a new run by the operator.`,
+            `Adapter migration proposal '${hydratedRestoredProposal.proposal_id}' was routed to a new run by the operator.`,
             ...(restoredResponse.note
               ? [`Operator note: ${restoredResponse.note}`]
               : [])
           ]),
           runtimeEventCode: "adapter.migration_new_run_requested",
-          runtimeEventMessage: `Adapter migration proposal '${restoredProposal.proposal_id}' was routed to a new run after operator review.`,
+          runtimeEventMessage: `Adapter migration proposal '${hydratedRestoredProposal.proposal_id}' was routed to a new run after operator review.`,
           runtimeEventMetadata: {
             round: restoredRun.interruptedRound.round,
-            proposal_id: restoredProposal.proposal_id,
+            proposal_id: hydratedRestoredProposal.proposal_id,
             decision: restoredResponse.decision,
             migrated_run_id: runId
           }
         });
       }
-      currentRuntimeEvents = mergeRuntimeEvents([
-        ...currentRuntimeEvents,
-        buildRuntimeEvent(
-          "adapter.migration_accepted",
-          `Adapter migration proposal '${restoredProposal.proposal_id}' was accepted and now waits for external or manual apply work before this run can continue.`,
-          {
-            round: restoredRun.interruptedRound.round,
-            proposal_id: restoredProposal.proposal_id,
-            decision: restoredResponse.decision,
-            migrated_run_id: runId
-          }
+      if (
+        hydratedRestoredProposal.adapter_origin === "generated_local" &&
+        hydratedRestoredProposal.same_run_eligible &&
+        hydratedRestoredProposal.patch_bundle_path
+      ) {
+        currentRuntimeEvents = mergeRuntimeEvents([
+          ...currentRuntimeEvents,
+          buildRuntimeEvent(
+            "adapter.migration_accepted",
+            `Adapter migration proposal '${hydratedRestoredProposal.proposal_id}' was accepted for same-run apply on this run.`,
+            {
+              round: restoredRun.interruptedRound.round,
+              proposal_id: hydratedRestoredProposal.proposal_id,
+              decision: restoredResponse.decision,
+              migrated_run_id: runId
+            }
+          )
+        ]);
+        await applyAuthorizedGeneratedLocalMigrationForRound({
+          round: restoredRun.interruptedRound.round,
+          artifacts: restoredRoundArtifacts,
+          proposal: hydratedRestoredProposal
+        });
+        preappliedAdapterMigrationRounds.add(
+          restoredRun.interruptedRound.round
+        );
+      }
+      if (
+        !(
+          hydratedRestoredProposal.adapter_origin === "generated_local" &&
+          hydratedRestoredProposal.same_run_eligible &&
+          hydratedRestoredProposal.patch_bundle_path
         )
-      ]);
-      runtimeWarnings = normalizeRuntimeWarnings([
-        ...runtimeWarnings,
-        `Adapter migration proposal '${restoredProposal.proposal_id}' was accepted but still requires external or manual apply work before same-run continuation can resume.`
-      ]);
-      return pauseForExternalCondition({
-        round: restoredRun.interruptedRound.round,
-        phase: "negotiation",
-        checkpointKind: "adapter-migration-approval",
-        artifacts: approvalArtifacts,
-        notes: unique([
-          `Adapter migration proposal '${restoredProposal.proposal_id}' was accepted.`,
-          restoredProposal.force_new_run
-            ? "This proposal still requires opening a new run because it cannot be migrated in place."
-            : "This proposal cannot auto-apply in place. Apply the proposal bundle or complete the adapter migration manually before resuming this run.",
-          `Reference ${approvalArtifacts.adapter_migration_proposal_md_path}, ${approvalArtifacts.adapter_migration_response_json_path}, and ${approvalArtifacts.adapter_migration_instructions_path} while applying the migration.`,
-          ...(restoredResponse.note
-            ? [`Operator note: ${restoredResponse.note}`]
-            : [])
-        ])
-      });
+      ) {
+        currentRuntimeEvents = mergeRuntimeEvents([
+          ...currentRuntimeEvents,
+          buildRuntimeEvent(
+            "adapter.migration_accepted",
+            `Adapter migration proposal '${hydratedRestoredProposal.proposal_id}' was accepted and now waits for external or manual apply work before this run can continue.`,
+            {
+              round: restoredRun.interruptedRound.round,
+              proposal_id: hydratedRestoredProposal.proposal_id,
+              decision: restoredResponse.decision,
+              migrated_run_id: runId
+            }
+          )
+        ]);
+        runtimeWarnings = normalizeRuntimeWarnings([
+          ...runtimeWarnings,
+          `Adapter migration proposal '${hydratedRestoredProposal.proposal_id}' was accepted but still requires external or manual apply work before same-run continuation can resume.`
+        ]);
+        return pauseForExternalCondition({
+          round: restoredRun.interruptedRound.round,
+          phase: "negotiation",
+          checkpointKind: "adapter-migration-approval",
+          artifacts: approvalArtifacts,
+          notes: unique([
+            `Adapter migration proposal '${hydratedRestoredProposal.proposal_id}' was accepted.`,
+            hydratedRestoredProposal.force_new_run
+              ? "This proposal still requires opening a new run because it cannot be migrated in place."
+              : "This proposal cannot auto-apply in place. Apply the proposal bundle or complete the adapter migration manually before resuming this run.",
+            `Reference ${approvalArtifacts.adapter_migration_proposal_md_path}, ${approvalArtifacts.adapter_migration_response_json_path}, and ${approvalArtifacts.adapter_migration_instructions_path} while applying the migration.`,
+            ...(restoredResponse.note
+              ? [`Operator note: ${restoredResponse.note}`]
+              : [])
+          ])
+        });
+      }
     }
   }
   if (pendingPlannerEnhancementPause) {
@@ -2710,6 +3103,14 @@ export const runClosedLoop = async (input: {
     const artifacts = artifactsForRound(roundDirectory);
     let adapterMigrationProposal: AdapterMigrationProposal | undefined;
     let adapterMigrationApplied: AdapterMigrationApplied | undefined;
+    if (preappliedAdapterMigrationRounds.has(round)) {
+      adapterMigrationProposal = await loadJsonIfExists<AdapterMigrationProposal>(
+        artifacts.adapter_migration_proposal_json_path
+      );
+      adapterMigrationApplied = await loadJsonIfExists<AdapterMigrationApplied>(
+        artifacts.adapter_migration_applied_json_path
+      );
+    }
     const adapterDriftRecontractSource =
       lifecycleDecision.negotiation_mode === "recontract" &&
       (lifecycleDecision.recontract_reason === "adapter_runtime_drift" ||
@@ -2720,7 +3121,21 @@ export const runClosedLoop = async (input: {
             previousRoundSummary.adapter_drift_report_path
           )
         : undefined;
-    if (adapterDriftRecontractSource && loadedAdapter) {
+    const applyAuthorizedGeneratedLocalMigration = async (
+      proposal: AdapterMigrationProposal
+    ): Promise<void> => {
+      adapterMigrationApplied =
+        await applyAuthorizedGeneratedLocalMigrationForRound({
+          round,
+          artifacts,
+          proposal
+        });
+    };
+    if (
+      !preappliedAdapterMigrationRounds.has(round) &&
+      adapterDriftRecontractSource &&
+      loadedAdapter
+    ) {
       adapterMigrationProposal = await buildAdapterMigrationProposal({
         runId,
         round,
@@ -2729,112 +3144,107 @@ export const runClosedLoop = async (input: {
         adapterDriftReport: adapterDriftRecontractSource
       });
       if (adapterMigrationProposal.autoapply_eligible) {
-        const previousAdapterResumeIdentity = currentResumeIdentity;
-        const adapterContractPath = loadedAdapter.contract_path;
-        const migrationResult = await applyGeneratedLocalAdapterMigration({
-          proposal: adapterMigrationProposal,
-          loadedAdapter,
-          runtimeDirectory: runRuntimeDirectory
-        });
-        const generatedAdapterRoot = dirname(resolve(adapterContractPath));
-        const generatedScriptRoot = resolve(
-          generatedAdapterRoot,
-          ".generated",
-          "codex-adapter",
-          "scripts"
-        );
-        const generatedRuntimeConfig = resolve(
-          generatedAdapterRuntimeConfigPath(adapterContractPath)
-        );
-        const scopeViolation = migrationResult.changedFiles.find((changedFile) => {
-          const resolvedChangedFile = resolve(changedFile);
-          return !(
-            resolvedChangedFile === resolve(adapterContractPath) ||
-            resolvedChangedFile === generatedRuntimeConfig ||
-            resolvedChangedFile.startsWith(`${generatedScriptRoot}\\`) ||
-            resolvedChangedFile.startsWith(`${generatedScriptRoot}/`)
-          );
-        });
-        if (scopeViolation) {
-          throw new Error(
-            `Adapter recontract scope violation: '${scopeViolation}' is outside the generated adapter write surface.`
-          );
-        }
-        const reloadedAdapter = await loadAdapterContract(adapterContractPath);
-        if (!reloadedAdapter) {
-          throw new Error(
-            `Adapter migration '${adapterMigrationProposal.proposal_id}' rewrote '${adapterContractPath}' but the adapter could not be reloaded.`
-          );
-        }
-        loadedAdapter = selectedVerificationProfile
-          ? {
-              ...reloadedAdapter,
-              verification_profile: selectedVerificationProfile,
-              verification_profile_source: "core"
-            }
-          : reloadedAdapter;
-        currentResumeIdentity = await buildResumeIdentityState({
-          adapterContractPath: loadedAdapter.contract_path,
-          evaluatorProfilePath: bundleSelection.evaluatorProfilePath,
-          rubricPath: effectiveRubricPath,
-          executorMode,
-          transportMode,
-          targetFamily: resolvedTargetFamily,
-          validationLane: resolvedValidationLane
-        });
-        await writeJson(currentResumeIdentityPath, currentResumeIdentity);
-        const migrationMismatches = compareResumeIdentity({
-          current: currentResumeIdentity,
-          previous: previousAdapterResumeIdentity
-        });
-        resumeMigrationPath = join(runDirectory, "resume-migration.json");
-        previousBundleFingerprint = resumeIdentityFingerprint(
-          previousAdapterResumeIdentity
-        );
-        newBundleFingerprint = resumeIdentityFingerprint(currentResumeIdentity);
-        await writeJson(resumeMigrationPath, {
-          run_id: runId,
-          migrated_at: new Date().toISOString(),
-          mismatches: migrationMismatches,
-          previous_identity: previousAdapterResumeIdentity,
-          new_identity: currentResumeIdentity,
-          authorized_adapter_migration: true,
-          adapter_migration_proposal_path:
-            artifacts.adapter_migration_proposal_json_path
-        });
-        adapterMigrationApplied = {
-          proposal_id: adapterMigrationProposal.proposal_id,
-          applied_at: new Date().toISOString(),
-          apply_mode: adapterMigrationProposal.apply_mode,
-          changed_files: migrationResult.changedFiles,
-          backup_directory: migrationResult.backupDirectory,
-          old_identity: previousAdapterResumeIdentity,
-          new_identity: currentResumeIdentity,
-          same_run_authorized: true
-        };
-        latestAdapterMigrationAppliedPath =
-          artifacts.adapter_migration_applied_json_path;
-        currentRuntimeEvents = mergeRuntimeEvents([
-          ...currentRuntimeEvents,
-          buildRuntimeEvent(
-            "adapter.migration_applied",
-            `Applied adapter migration '${adapterMigrationProposal.proposal_id}' on this run before recontract negotiation continued.`,
-            {
-              round,
-              proposal_id: adapterMigrationProposal.proposal_id,
-              migrated_run_id: runId
-            }
-          )
-        ]);
-        runtimeWarnings = normalizeRuntimeWarnings([
-          ...runtimeWarnings,
-          `Adapter migration '${adapterMigrationProposal.proposal_id}' updated the generated runtime surface before recontract negotiation continued.`
-        ]);
+        await applyAuthorizedGeneratedLocalMigration(adapterMigrationProposal);
       } else if (adapterMigrationProposal.requires_operator_acceptance) {
         await writeAdapterMigrationProposalArtifacts({
           roundDirectory,
           proposal: adapterMigrationProposal
         });
+        const requiresSameThreadAuthoring =
+          transportMode === "current-thread" &&
+          adapterMigrationProposal.requires_operator_acceptance &&
+          !adapterMigrationProposal.force_new_run;
+        if (requiresSameThreadAuthoring) {
+          const authoringArtifacts = {
+            adapter_migration_authoring_task_path:
+              artifacts.adapter_migration_authoring_task_path,
+            adapter_migration_authoring_prompt_path:
+              artifacts.adapter_migration_authoring_prompt_path,
+            adapter_migration_authoring_response_path:
+              artifacts.adapter_migration_authoring_response_path,
+            adapter_migration_patch_path:
+              artifacts.adapter_migration_patch_path,
+            adapter_migration_proposal_json_path:
+              artifacts.adapter_migration_proposal_json_path,
+            adapter_migration_instructions_path:
+              artifacts.adapter_migration_instructions_path
+          };
+          const existingAuthoringTask =
+            await loadJsonIfExists<AdapterMigrationAuthoringTaskArtifact>(
+              artifacts.adapter_migration_authoring_task_path
+            );
+          const authoringTask = await writeAdapterMigrationAuthoringTask({
+            runId,
+            round,
+            checkpointId: existingAuthoringTask?.checkpoint_id,
+            checkpointSeq: existingAuthoringTask?.checkpoint_seq,
+            artifacts,
+            proposal: adapterMigrationProposal,
+            loadedAdapter,
+            transportProtocolPath: transportProtocolCurrentPath,
+            notes: adapterMigrationAuthoringNotes(adapterMigrationProposal)
+          });
+          const authoringResponse = await readAdapterMigrationAuthoringResponse(
+            artifacts.adapter_migration_authoring_response_path,
+            authoringTask.checkpoint_id
+          );
+          if (!authoringResponse) {
+            return checkpointForCurrentThreadWork({
+              round,
+              phase: "negotiation",
+              checkpointKind: "adapter-migration-authoring",
+              artifacts: authoringArtifacts,
+              notes: unique([
+                `Adapter migration authoring checkpoint '${authoringTask.checkpoint_id}' is ready for round ${round}.`,
+                `Review ${artifacts.adapter_migration_authoring_prompt_path}, write ${artifacts.adapter_migration_patch_path}, and then write ${artifacts.adapter_migration_authoring_response_path}.`
+              ])
+            });
+          }
+          if (authoringResponse.status !== "authored") {
+            return checkpointForCurrentThreadWork({
+              round,
+              phase: "negotiation",
+              checkpointKind: "adapter-migration-authoring",
+              artifacts: authoringArtifacts,
+              notes: unique([
+                `Adapter migration authoring response for proposal '${adapterMigrationProposal.proposal_id}' reported status '${authoringResponse.status}'.`,
+                `Rewrite ${artifacts.adapter_migration_authoring_response_path} with status 'authored' after updating ${artifacts.adapter_migration_patch_path}.`,
+                ...(authoringResponse.notes ?? [])
+              ])
+            });
+          }
+          const authoredPatchBundlePath = resolve(
+            authoringResponse.patch_bundle_path ??
+              artifacts.adapter_migration_patch_path
+          );
+          if (!(await pathExists(authoredPatchBundlePath))) {
+            return checkpointForCurrentThreadWork({
+              round,
+              phase: "negotiation",
+              checkpointKind: "adapter-migration-authoring",
+              artifacts: authoringArtifacts,
+              notes: unique([
+                `Adapter migration authoring response referenced '${authoredPatchBundlePath}', but no patch bundle exists there yet.`,
+                `Write ${artifacts.adapter_migration_patch_path} before resuming this run.`
+              ])
+            });
+          }
+          const authoredAdapterRoot = dirname(loadedAdapter.contract_path);
+          adapterMigrationProposal = {
+            ...adapterMigrationProposal,
+            patch_bundle_path: authoredPatchBundlePath,
+            affected_files: unique([
+              ...adapterMigrationProposal.affected_files,
+              ...(authoringResponse.changed_files ?? []).map((changedFile) =>
+                resolve(authoredAdapterRoot, changedFile)
+              )
+            ])
+          };
+          await writeAdapterMigrationProposalArtifacts({
+            roundDirectory,
+            proposal: adapterMigrationProposal
+          });
+        }
         const adapterMigrationResponse = await loadAdapterMigrationResponse(
           artifacts.adapter_migration_response_json_path
         );
@@ -2862,16 +3272,14 @@ export const runClosedLoop = async (input: {
             checkpointKind: "adapter-migration-approval",
             artifacts: approvalArtifacts,
             decisionOptions,
-            notes: unique([
-              `Adapter migration proposal '${adapterMigrationProposal.proposal_id}' is ready for review on this thread.`,
-              adapterMigrationProposal.force_new_run
-                ? "This migration crosses an adapter boundary that cannot be authorized in place, so opening a new run is the canonical next step."
-                : "This migration cannot auto-apply safely, so an operator must accept, reject, or open a new run before recontract negotiation continues.",
-              `Review ${artifacts.adapter_migration_proposal_md_path} and write ${artifacts.adapter_migration_response_json_path} with an explicit migration decision.`,
-              ...(adapterMigrationProposal.force_new_run
-                ? ["Prefer 'open_new_run' unless you are explicitly rejecting the migration proposal."]
-                : [])
-            ])
+          notes: unique([
+            `Adapter migration proposal '${adapterMigrationProposal.proposal_id}' is ready for review on this thread.`,
+            adapterMigrationApprovalReadyNote(adapterMigrationProposal),
+            `Review ${artifacts.adapter_migration_proposal_md_path} and write ${artifacts.adapter_migration_response_json_path} with an explicit migration decision.`,
+            ...(adapterMigrationProposal.force_new_run
+              ? ["Prefer 'open_new_run' unless you are explicitly rejecting the migration proposal."]
+              : [])
+          ])
           });
         }
         if (adapterMigrationResponse.proposal_id !== adapterMigrationProposal.proposal_id) {
@@ -2948,7 +3356,10 @@ export const runClosedLoop = async (input: {
           ...currentRuntimeEvents,
           buildRuntimeEvent(
             "adapter.migration_accepted",
-            `Adapter migration proposal '${adapterMigrationProposal.proposal_id}' was accepted and now waits for external or manual apply work before this run can continue.`,
+            adapterMigrationProposal.same_run_eligible &&
+            adapterMigrationProposal.patch_bundle_path
+              ? `Adapter migration proposal '${adapterMigrationProposal.proposal_id}' was accepted for same-run apply on this run.`
+              : `Adapter migration proposal '${adapterMigrationProposal.proposal_id}' was accepted and now waits for external or manual apply work before this run can continue.`,
             {
               round,
               proposal_id: adapterMigrationProposal.proposal_id,
@@ -2957,6 +3368,13 @@ export const runClosedLoop = async (input: {
             }
           )
         ]);
+        if (
+          adapterMigrationProposal.adapter_origin === "generated_local" &&
+          adapterMigrationProposal.same_run_eligible &&
+          adapterMigrationProposal.patch_bundle_path
+        ) {
+          await applyAuthorizedGeneratedLocalMigration(adapterMigrationProposal);
+        } else {
         runtimeWarnings = normalizeRuntimeWarnings([
           ...runtimeWarnings,
           `Adapter migration proposal '${adapterMigrationProposal.proposal_id}' was accepted but still requires external or manual apply work before same-run continuation can resume.`
@@ -2977,6 +3395,7 @@ export const runClosedLoop = async (input: {
               : [])
           ])
         });
+        }
       }
     }
     const resumedRoundPhase =
@@ -3746,6 +4165,7 @@ export const runClosedLoop = async (input: {
     let roundResultArtifact!: RoundResultArtifact;
     let failureLineage: FailureLineage | undefined;
     let adapterDriftReport: AdapterDriftReport | undefined;
+    let adapterMigrationStopPreview: AdapterMigrationProposal | undefined;
 
     if (phaseCompletedAtOrBeyond(resumedRoundPhase, "evaluation")) {
       evalReport = await loadJson<EvalReport>(artifacts.eval_report_path);
@@ -3774,6 +4194,11 @@ export const runClosedLoop = async (input: {
       adapterDriftReport = await loadJsonIfExists<AdapterDriftReport>(
         artifacts.adapter_drift_report_json_path
       );
+      adapterMigrationStopPreview =
+        adapterMigrationProposal ??
+        (await loadJsonIfExists<AdapterMigrationProposal>(
+          artifacts.adapter_migration_proposal_json_path
+        ));
       previousPatchRequestResolved =
         roundResultArtifact.previous_patch_request_resolved;
     } else {
@@ -3946,6 +4371,16 @@ export const runClosedLoop = async (input: {
         contractReviewArtifact,
         failureLineage
       });
+      adapterMigrationStopPreview =
+        adapterDriftReport && loadedAdapter
+          ? await buildAdapterMigrationProposal({
+              runId,
+              round: round + 1,
+              sourceAdapterDriftReportPath: artifacts.adapter_drift_report_json_path,
+              loadedAdapter,
+              adapterDriftReport
+            })
+          : undefined;
       qualityCritiqueArtifact = buildQualityCritiqueArtifact({
         round,
         contractArtifact,
@@ -4111,18 +4546,21 @@ export const runClosedLoop = async (input: {
       dimension_scores: evalReport.dimension_scores,
       ...(failureLineage ? { failure_lineage: failureLineage } : {})
     };
-    latestRoundState = {
-      score: evalReport.total_score,
-      controlPlaneScore: evalReport.control_plane_score,
-      proofScore: evalReport.proof_score,
-      verdict: evalReport.overall_verdict,
-      unresolvedCheckIds: roundResultArtifact.unresolved_check_ids,
-      patchNextAction: patchRequestArtifact.next_action,
-      patchMustFixCount: patchRequestArtifact.must_fix.length,
-      thresholdResults: evalReport.threshold_results,
-      failureLineage,
-      staticAdapterContractInvalid: contractReviewArtifact.static_blockers.length > 0
-    };
+      latestRoundState = {
+        score: evalReport.total_score,
+        controlPlaneScore: evalReport.control_plane_score,
+        proofScore: evalReport.proof_score,
+        verdict: evalReport.overall_verdict,
+        unresolvedCheckIds: roundResultArtifact.unresolved_check_ids,
+        patchNextAction: patchRequestArtifact.next_action,
+        patchMustFixCount: patchRequestArtifact.must_fix.length,
+        thresholdResults: evalReport.threshold_results,
+        failureLineage,
+        staticAdapterContractInvalid:
+          contractReviewArtifact.static_blockers.length > 0 &&
+          (!adapterMigrationStopPreview ||
+            adapterMigrationStopPreview.apply_mode === "new_run_required")
+      };
     const roundStopReason =
       stopReasonFromState({
         latestVerdict: latestRoundState.verdict,

@@ -474,6 +474,7 @@ export interface AdapterMigrationProposal {
   force_new_run: boolean;
   current_identity: AdapterMigrationIdentitySnapshot;
   proposed_identity: AdapterMigrationIdentitySnapshot;
+  expected_post_apply_identity: AdapterMigrationIdentitySnapshot;
   affected_files: string[];
   affected_capabilities: AdapterCapabilityName[];
   reasons: string[];
@@ -984,6 +985,9 @@ export interface RoundArtifacts {
   adapter_migration_instructions_path: string;
   adapter_migration_applied_json_path: string;
   adapter_migration_applied_md_path: string;
+  adapter_migration_authoring_task_path: string;
+  adapter_migration_authoring_prompt_path: string;
+  adapter_migration_authoring_response_path: string;
   target_manifest_path: string;
   core_probe_results_path: string;
   pre_verification_executions_path: string;
@@ -1033,6 +1037,40 @@ export interface AttachedGeneratorTaskArtifact {
   must_preserve: string[];
   notes?: string[];
   created_at: string;
+}
+
+export interface AdapterMigrationAuthoringTaskArtifact {
+  run_id: string;
+  round: number;
+  controller_mode: "attached";
+  transport_mode: "current-thread";
+  authoring_mode: "same_run_apply" | "proposal_bundle";
+  checkpoint_id: string;
+  checkpoint_seq: number;
+  prompt_path: string;
+  response_path: string;
+  proposal_path: string;
+  patch_path: string;
+  instructions_path: string;
+  adapter_contract_path: string;
+  target_root: string;
+  writable_roots: string[];
+  transport_protocol_path?: string;
+  summary: string;
+  expected_post_apply_identity: AdapterMigrationIdentitySnapshot;
+  allowed_paths: string[];
+  notes?: string[];
+  created_at: string;
+}
+
+export interface AdapterMigrationAuthoringResponseArtifact {
+  checkpoint_id?: string;
+  status: "authored" | "blocked" | "noop";
+  summary: string;
+  patch_bundle_path?: string;
+  changed_files?: string[];
+  notes?: string[];
+  generated_at: string;
 }
 
 export type CurrentThreadEnhancementStage =

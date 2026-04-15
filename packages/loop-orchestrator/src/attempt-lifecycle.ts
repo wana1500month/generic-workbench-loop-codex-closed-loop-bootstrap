@@ -93,20 +93,6 @@ export const decideAttemptLifecycle = (input: {
     };
   }
 
-  if (!input.hasActiveContractFrame) {
-    return {
-      negotiation_mode: "recontract",
-      continuation_authority: "planner_contract",
-      persist_contract_review: true,
-      persist_contract_agreement: true,
-      reopen_contract: true,
-      decision_source: "missing_active_contract_frame",
-      reason: "No active contract frame is locked, so remediation cannot stay patch-only yet.",
-      recontract_reason: "missing_active_contract_frame",
-      trajectory
-    };
-  }
-
   if (input.previousPatchRequest?.next_action === "recontract_adapter") {
     return {
       negotiation_mode: "recontract",
@@ -122,6 +108,20 @@ export const decideAttemptLifecycle = (input: {
       recontract_reason: recontractReasonForAdapterDrift(
         input.previousPatchRequest.adapter_drift_kind
       ),
+      trajectory
+    };
+  }
+
+  if (!input.hasActiveContractFrame) {
+    return {
+      negotiation_mode: "recontract",
+      continuation_authority: "planner_contract",
+      persist_contract_review: true,
+      persist_contract_agreement: true,
+      reopen_contract: true,
+      decision_source: "missing_active_contract_frame",
+      reason: "No active contract frame is locked, so remediation cannot stay patch-only yet.",
+      recontract_reason: "missing_active_contract_frame",
       trajectory
     };
   }

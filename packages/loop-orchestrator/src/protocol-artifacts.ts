@@ -1,9 +1,12 @@
 import { basename, join, relative } from "node:path";
 
+import {
+  approvalSemanticsForAdapterMigrationProposal,
+  decisionOptionsForAdapterMigrationProposal
+} from "./adapter-migration.js";
 import { writeJson, writeText } from "./file-system.js";
 import { isPureEnvironmentBlockedLineage } from "./failure-lineage.js";
 import type {
-  AdapterMigrationDecision,
   AdapterMigrationApplied,
   AdapterMigrationProposal,
   AdapterMigrationResponse,
@@ -71,6 +74,47 @@ const defaultPreserveSignals = [
   "Keep protocol files authoritative and file-based."
 ] as const;
 const qualityCritiqueNoteOnlyDimensions = new Set<string>(["repair_convergence"]);
+const normalizeArtifactPath = (path: string): string => path.replaceAll("\\", "/");
+const relativeArtifactPath = (roundDirectory: string, path: string): string =>
+  normalizeArtifactPath(relative(roundDirectory, path));
+const identitySnapshotLines = (
+  identity: AdapterMigrationProposal["expected_post_apply_identity"]
+): string[] => [
+  `adapter_contract_path: ${identity.adapter_contract_path ?? "unchanged"}`,
+  `target_root: ${identity.target_root ?? "unchanged"}`,
+  `adapter_id: ${identity.adapter_id ?? "unchanged"}`,
+  `provider_id: ${identity.provider_id ?? "unchanged"}`
+];
+const decisionSemanticsLines = (proposal: AdapterMigrationProposal): string[] => {
+  const semantics = approvalSemanticsForAdapterMigrationProposal(proposal);
+  return decisionOptionsForAdapterMigrationProposal(proposal).map(
+    (decision) => `\`${decision}\`: ${semantics[decision]}`
+  );
+};
+const proposalAffectedFileLines = (
+  roundDirectory: string,
+  proposal: AdapterMigrationProposal
+): string[] =>
+  proposal.affected_files.map((path) => relativeArtifactPath(roundDirectory, path));
+const renderAdapterMigrationProposalMarkdown = (
+  roundDirectory: string,
+  proposal: AdapterMigrationProposal
+): string =>
+  `# Adapter Migration Proposal\n\n## Summary\n\n${proposal.summary}\n\n## Origin\n\n${proposal.adapter_origin}\n\n## Migration Class\n\n${proposal.migration_class}\n\n## Apply Mode\n\n${proposal.apply_mode}\n\n## Same Run Eligible\n\n${proposal.same_run_eligible ? "yes" : "no"}\n\n## Autoapply Eligible\n\n${proposal.autoapply_eligible ? "yes" : "no"}\n\n## Requires Operator Acceptance\n\n${proposal.requires_operator_acceptance ? "yes" : "no"}\n\n## Force New Run\n\n${proposal.force_new_run ? "yes" : "no"}\n\n## Current Identity\n\n${bulletList(
+    identitySnapshotLines(proposal.current_identity)
+  )}\n\n## Proposed Identity\n\n${bulletList(
+    identitySnapshotLines(proposal.proposed_identity)
+  )}\n\n## Expected Post-Apply Identity\n\n${bulletList(
+    identitySnapshotLines(proposal.expected_post_apply_identity)
+  )}\n\n## Affected Files\n\n${bulletList(
+    proposalAffectedFileLines(roundDirectory, proposal)
+  )}\n\n## Patch Bundle\n\n${proposal.patch_bundle_path ? relativeArtifactPath(roundDirectory, proposal.patch_bundle_path) : "not authored yet"}\n\n## Reasons\n\n${bulletList(
+    proposal.reasons
+  )}\n\n## Suggested Updates\n\n${bulletList(
+    proposal.suggested_updates
+  )}\n\n## Decision Semantics\n\n${bulletList(
+    decisionSemanticsLines(proposal)
+  )}\n`;
 const carryForwardSafeTargetCheckIds = (checkIds: readonly string[]): string[] =>
   unique(
     checkIds
@@ -137,6 +181,18 @@ export const artifactsForRound = (roundDirectory: string): RoundArtifacts => {
     adapter_migration_applied_md_path: join(
       roundDirectory,
       "adapter-migration-applied.md"
+    ),
+    adapter_migration_authoring_task_path: join(
+      runtimeDirectory,
+      "adapter-migration-authoring-task.json"
+    ),
+    adapter_migration_authoring_prompt_path: join(
+      runtimeDirectory,
+      "adapter-migration-authoring-prompt.md"
+    ),
+    adapter_migration_authoring_response_path: join(
+      runtimeDirectory,
+      "adapter-migration-authoring-response.json"
     ),
     target_manifest_path: join(roundDirectory, "target-manifest.json"),
     core_probe_results_path: join(roundDirectory, "core-probe-results.json"),
@@ -1207,9 +1263,8 @@ export const writeAdapterMigrationProposalArtifacts = async (input: {
   responseTemplate?: AdapterMigrationResponse;
 }): Promise<RoundArtifacts> => {
   const artifacts = artifactsForRound(input.roundDirectory);
-  const decisionOptions: AdapterMigrationDecision[] = input.proposal.force_new_run
-    ? ["open_new_run", "reject"]
-    : ["accept", "reject", "open_new_run"];
+  const decisionOptions = decisionOptionsForAdapterMigrationProposal(input.proposal);
+  const decisionSemantics = approvalSemanticsForAdapterMigrationProposal(input.proposal);
   const responseTemplate =
     input.responseTemplate ?? {
       proposal_id: input.proposal.proposal_id,
@@ -1221,23 +1276,29 @@ export const writeAdapterMigrationProposalArtifacts = async (input: {
     writeJson(artifacts.adapter_migration_proposal_json_path, input.proposal),
     writeText(
       artifacts.adapter_migration_proposal_md_path,
-      `# Adapter Migration Proposal\n\n## Summary\n\n${input.proposal.summary}\n\n## Origin\n\n${input.proposal.adapter_origin}\n\n## Migration Class\n\n${input.proposal.migration_class}\n\n## Apply Mode\n\n${input.proposal.apply_mode}\n\n## Same Run Eligible\n\n${input.proposal.same_run_eligible ? "yes" : "no"}\n\n## Autoapply Eligible\n\n${input.proposal.autoapply_eligible ? "yes" : "no"}\n\n## Requires Operator Acceptance\n\n${input.proposal.requires_operator_acceptance ? "yes" : "no"}\n\n## Force New Run\n\n${input.proposal.force_new_run ? "yes" : "no"}\n\n## Reasons\n\n${bulletList(
-        input.proposal.reasons
-      )}\n\n## Suggested Updates\n\n${bulletList(
-        input.proposal.suggested_updates
-      )}\n`
+      renderAdapterMigrationProposalMarkdown(input.roundDirectory, input.proposal)
     ),
     writeText(
       artifacts.adapter_migration_approval_prompt_path,
-      `# Adapter Migration Approval\n\n## Proposal Summary\n\n${input.proposal.summary}\n\n## Proposal\n\n- JSON: ${relative(input.roundDirectory, artifacts.adapter_migration_proposal_json_path).replaceAll("\\", "/")}\n- Markdown: ${relative(input.roundDirectory, artifacts.adapter_migration_proposal_md_path).replaceAll("\\", "/")}\n\n## Allowed decisions\n\n${bulletList(decisionOptions)}\n\n## Response contract\n\nWrite JSON to ${relative(input.roundDirectory, artifacts.adapter_migration_response_json_path).replaceAll("\\", "/")} with:\n\n\`\`\`json\n${JSON.stringify(responseTemplate, null, 2)}\n\`\`\`\n`
+      `# Adapter Migration Approval\n\n## Proposal Summary\n\n${input.proposal.summary}\n\n## Proposal\n\n- JSON: ${relativeArtifactPath(input.roundDirectory, artifacts.adapter_migration_proposal_json_path)}\n- Markdown: ${relativeArtifactPath(input.roundDirectory, artifacts.adapter_migration_proposal_md_path)}\n${input.proposal.patch_bundle_path ? `- Patch bundle: ${relativeArtifactPath(input.roundDirectory, input.proposal.patch_bundle_path)}\n` : ""}\n## Expected Post-Apply Identity\n\n${bulletList(
+        identitySnapshotLines(input.proposal.expected_post_apply_identity)
+      )}\n\n## Allowed decisions\n\n${bulletList(
+        decisionOptions.map((decision) => `\`${decision}\``)
+      )}\n\n## Decision semantics\n\n${bulletList(
+        decisionOptions.map((decision) => `\`${decision}\`: ${decisionSemantics[decision]}`)
+      )}\n\n## Response contract\n\nWrite JSON to ${relativeArtifactPath(input.roundDirectory, artifacts.adapter_migration_response_json_path)} with:\n\n\`\`\`json\n${JSON.stringify(responseTemplate, null, 2)}\n\`\`\`\n`
     ),
     writeText(
       artifacts.adapter_migration_response_md_path,
-      `# Adapter Migration Response\n\nWrite JSON to \`${relative(input.roundDirectory, artifacts.adapter_migration_response_json_path).replaceAll("\\", "/")}\` with one of these decisions: ${decisionOptions.join(", ")}.\n`
+      `# Adapter Migration Response\n\nWrite JSON to \`${relativeArtifactPath(input.roundDirectory, artifacts.adapter_migration_response_json_path)}\` with one of these decisions: ${decisionOptions.join(", ")}.\n`
     ),
     writeText(
       artifacts.adapter_migration_instructions_path,
-      `# Adapter Migration Instructions\n\n- Treat this as an adapter recontract decision, not a product patch request.\n- Review the proposal artifacts before responding.\n- Same-run in-place migration is ${input.proposal.same_run_eligible ? "eligible" : "not eligible"} for this proposal.\n- If the proposal says force_new_run, prefer \`open_new_run\`.\n`
+      `# Adapter Migration Instructions\n\n- Treat this as an adapter recontract decision, not a product patch request.\n- Review the proposal artifacts before responding.\n- Same-run in-place migration is ${input.proposal.same_run_eligible ? "eligible" : "not eligible"} for this proposal.\n- Expected post-apply identity:\n${bulletList(
+        identitySnapshotLines(input.proposal.expected_post_apply_identity)
+      )}\n- Decision semantics:\n${bulletList(
+        decisionOptions.map((decision) => `\`${decision}\`: ${decisionSemantics[decision]}`)
+      )}\n- If a patch bundle is authored, it lives at ${relativeArtifactPath(input.roundDirectory, artifacts.adapter_migration_patch_path)}.\n- Same-run generated-local bundles must stay inside the generated adapter write surface.\n- Proposal-only external bundles are advisory: apply them in the external adapter workspace, verify the expected post-apply identity, and resume this run only after that external/manual work is complete.\n`
     )
   ]);
 
@@ -1330,11 +1391,10 @@ export const writeRoundArtifacts = async (input: {
           ),
           writeText(
             artifacts.adapter_migration_proposal_md_path,
-            `# Adapter Migration Proposal\n\n## Summary\n\n${input.adapterMigrationProposal.summary}\n\n## Origin\n\n${input.adapterMigrationProposal.adapter_origin}\n\n## Migration Class\n\n${input.adapterMigrationProposal.migration_class}\n\n## Apply Mode\n\n${input.adapterMigrationProposal.apply_mode}\n\n## Same Run Eligible\n\n${input.adapterMigrationProposal.same_run_eligible ? "yes" : "no"}\n\n## Autoapply Eligible\n\n${input.adapterMigrationProposal.autoapply_eligible ? "yes" : "no"}\n\n## Reasons\n\n${bulletList(
-              input.adapterMigrationProposal.reasons
-            )}\n\n## Suggested Updates\n\n${bulletList(
-              input.adapterMigrationProposal.suggested_updates
-            )}\n`
+            renderAdapterMigrationProposalMarkdown(
+              input.roundDirectory,
+              input.adapterMigrationProposal
+            )
           )
         ]
       : []),

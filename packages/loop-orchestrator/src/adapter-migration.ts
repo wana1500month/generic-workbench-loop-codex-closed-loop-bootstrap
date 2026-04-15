@@ -1,7 +1,14 @@
-import { copyFile, mkdir } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { spawn } from "node:child_process";
+import { copyFile, cp, mkdir, readFile } from "node:fs/promises";
+import { basename, dirname, join, relative, resolve } from "node:path";
 
-import { loadJson, loadJsonIfExists, writeJson } from "./file-system.js";
+import {
+  loadJson,
+  loadJsonIfExists,
+  pathExists,
+  repoRoot,
+  writeJson
+} from "./file-system.js";
 import { resumeIdentityFingerprint } from "./resume-identity.js";
 import type {
   AdapterDriftReport,
@@ -39,6 +46,106 @@ const normalizeString = (value: unknown): string | undefined =>
 
 const boundaryBreakBlockerPattern =
   /(verification provider|provider[_\s-]?id|required capability|missing capability|contract version|target root|adapter id)/i;
+
+const normalizePatchPath = (value: string): string => value.replaceAll("\\", "/");
+
+const isGeneratedLocalAdapterSurfacePath = (relativePath: string): boolean => {
+  const normalized = normalizePatchPath(relativePath)
+    .replace(/^(\.\/)+/, "")
+    .replace(/^\/+/, "");
+  if (!normalized || normalized.split("/").includes("..")) {
+    return false;
+  }
+
+  return (
+    normalized === "adapter.generated.json" ||
+    normalized === ".generated/codex-adapter/runtime-config.json" ||
+    normalized.startsWith(".generated/codex-adapter/scripts/")
+  );
+};
+
+const parsePatchChangedFiles = (patchText: string): string[] => {
+  const changedFiles = new Set<string>();
+  const diffMatches = patchText.matchAll(/^diff --git a\/(.+?) b\/(.+)$/gm);
+  for (const match of diffMatches) {
+    const nextPath = normalizePatchPath(match[2] ?? "")
+      .replace(/^(\.\/)+/, "")
+      .replace(/^\/+/, "");
+    if (nextPath) {
+      changedFiles.add(nextPath);
+    }
+  }
+  if (changedFiles.size > 0) {
+    return [...changedFiles];
+  }
+
+  const plusMatches = patchText.matchAll(/^\+\+\+ b\/(.+)$/gm);
+  for (const match of plusMatches) {
+    const nextPath = normalizePatchPath(match[1] ?? "")
+      .replace(/^(\.\/)+/, "")
+      .replace(/^\/+/, "");
+    if (nextPath && nextPath !== "/dev/null") {
+      changedFiles.add(nextPath);
+    }
+  }
+
+  return [...changedFiles];
+};
+
+const isPathInside = (rootPath: string, candidatePath: string): boolean => {
+  const resolvedRoot = resolve(rootPath);
+  const resolvedCandidate = resolve(candidatePath);
+  return (
+    resolvedCandidate === resolvedRoot ||
+    resolvedCandidate.startsWith(`${resolvedRoot}\\`) ||
+    resolvedCandidate.startsWith(`${resolvedRoot}/`)
+  );
+};
+
+const runGitApply = async (input: {
+  cwd: string;
+  patchPath: string;
+  directory?: string;
+}): Promise<void> =>
+  new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn(
+      "git",
+      [
+        "apply",
+        "--whitespace=nowarn",
+        "--unsafe-paths",
+        ...(input.directory ? [`--directory=${input.directory}`] : []),
+        input.patchPath
+      ],
+      {
+        cwd: input.cwd,
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true
+      }
+    );
+    let stderr = "";
+    let stdout = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", (error) => {
+      rejectPromise(error);
+    });
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolvePromise();
+        return;
+      }
+      rejectPromise(
+        new Error(
+          `git apply failed for '${input.patchPath}' in '${input.cwd}'.${stdout.trim() ? `\n${stdout.trim()}` : ""}${stderr.trim() ? `\n${stderr.trim()}` : ""}`
+        )
+      );
+    });
+  });
 
 export const generatedAdapterRuntimeConfigPath = (adapterContractPath: string): string =>
   join(dirname(adapterContractPath), ".generated", "codex-adapter", "runtime-config.json");
@@ -122,8 +229,14 @@ const classifyAdapterMigration = (input: {
       input.adapterDriftReport.kind === "contract"
         ? "kernel_wiring_patch"
         : "runtime_surface_patch",
-    applyMode: input.adapterOrigin === "generated_local" ? "proposal_only" : "proposal_only",
-    sameRunEligible: false,
+    applyMode:
+      input.adapterOrigin === "generated_local" &&
+      input.adapterDriftReport.kind === "contract"
+        ? "same_run_in_place"
+        : "proposal_only",
+    sameRunEligible:
+      input.adapterOrigin === "generated_local" &&
+      input.adapterDriftReport.kind === "contract",
     autoapplyEligible: false,
     requiresOperatorAcceptance: true,
     forceNewRun: false
@@ -136,6 +249,23 @@ export const decisionOptionsForAdapterMigrationProposal = (
   proposal.force_new_run
     ? ["open_new_run", "reject"]
     : ["accept", "reject", "open_new_run"];
+
+export const approvalSemanticsForAdapterMigrationProposal = (
+  proposal: AdapterMigrationProposal
+): Record<AdapterMigrationDecision, string> => ({
+  accept:
+    proposal.same_run_eligible && proposal.patch_bundle_path
+      ? "Apply the authored migration bundle on this run, record the migrated adapter identity, and continue the same run."
+      : proposal.apply_mode === "proposal_only"
+        ? "Approve the proposal bundle and pause on external/manual apply before this run can continue."
+        : "Approve the migration plan and continue with the migration workflow.",
+  reject:
+    "Reject the migration proposal and close the current run with adapter_migration_rejected.",
+  open_new_run:
+    proposal.force_new_run
+      ? "Open a fresh run around the new adapter boundary instead of continuing in place."
+      : "Close the current run with new_run_required so the migration can reopen on a fresh run."
+});
 
 export const buildAdapterMigrationProposal = async (input: {
   runId: string;
@@ -199,6 +329,12 @@ export const buildAdapterMigrationProposal = async (input: {
       adapter_id: input.loadedAdapter.contract.adapter_id,
       provider_id: providerId
     },
+    expected_post_apply_identity: {
+      adapter_contract_path: input.loadedAdapter.contract_path,
+      target_root: input.loadedAdapter.contract.target_root,
+      adapter_id: input.loadedAdapter.contract.adapter_id,
+      provider_id: providerId
+    },
     affected_files: [
       input.loadedAdapter.contract_path,
       ...(runtimeConfigRelativePath ? [runtimeConfigRelativePath] : [])
@@ -210,16 +346,23 @@ export const buildAdapterMigrationProposal = async (input: {
         ? `Generated adapter runtime surface drift can be repaired in-place by updating ${Object.keys(
             proposedRuntimeConfigPatch
           ).join(", ")} before the recontract round continues.`
+        : classification.sameRunEligible &&
+            classification.migrationClass === "kernel_wiring_patch"
+          ? "Generated adapter kernel wiring drift can be repaired on this run after Codex authors a migration bundle and an operator accepts it."
         : input.adapterDriftReport.summary,
     suggested_updates: input.adapterDriftReport.suggested_updates,
     ...(proposedRuntimeConfigPatch
       ? { proposed_runtime_config_patch: proposedRuntimeConfigPatch }
       : {}),
-    ...(classification.autoapplyEligible
+    ...((classification.autoapplyEligible || classification.sameRunEligible)
       ? {
           proposed_contract_patch: {
             append_notes: [
-              `Applied runtime-surface migration ${proposalId} after ${input.adapterDriftReport.recontract_reason}.`
+              `${
+                classification.migrationClass === "kernel_wiring_patch"
+                  ? "Applied kernel-wiring migration"
+                  : "Applied runtime-surface migration"
+              } ${proposalId} after ${input.adapterDriftReport.recontract_reason}.`
             ]
           }
         }
@@ -237,8 +380,7 @@ export const applyGeneratedLocalAdapterMigration = async (input: {
 }> => {
   if (
     input.proposal.adapter_origin !== "generated_local" ||
-    input.proposal.apply_mode !== "same_run_in_place" ||
-    !input.proposal.proposed_runtime_config_patch
+    input.proposal.apply_mode !== "same_run_in_place"
   ) {
     throw new Error(
       `Adapter migration proposal '${input.proposal.proposal_id}' is not eligible for same-run generated-local apply.`
@@ -246,7 +388,9 @@ export const applyGeneratedLocalAdapterMigration = async (input: {
   }
 
   const adapterContractPath = resolve(input.loadedAdapter.contract_path);
+  const adapterRoot = dirname(adapterContractPath);
   const runtimeConfigPath = generatedAdapterRuntimeConfigPath(adapterContractPath);
+  const generatedAdapterRoot = resolve(adapterRoot, ".generated", "codex-adapter");
   const backupDirectory = join(
     input.runtimeDirectory,
     "adapter-migrations",
@@ -254,37 +398,81 @@ export const applyGeneratedLocalAdapterMigration = async (input: {
     "before"
   );
   await mkdir(backupDirectory, { recursive: true });
-  await Promise.all([
-    copyFile(adapterContractPath, join(backupDirectory, "adapter.generated.json")),
-    copyFile(runtimeConfigPath, join(backupDirectory, "runtime-config.json"))
-  ]);
+  await copyFile(adapterContractPath, join(backupDirectory, "adapter.generated.json"));
+  if (await pathExists(generatedAdapterRoot)) {
+    await cp(generatedAdapterRoot, join(backupDirectory, ".generated", "codex-adapter"), {
+      recursive: true
+    });
+  }
 
-  const [adapterContract, runtimeConfig] = await Promise.all([
-    loadJson<Record<string, unknown>>(adapterContractPath),
-    loadJson<GeneratedRuntimeConfig>(runtimeConfigPath)
-  ]);
-  const nextRuntimeConfig = {
-    ...runtimeConfig,
-    ...input.proposal.proposed_runtime_config_patch
-  };
+  const changedFiles = new Set<string>();
+  if (input.proposal.patch_bundle_path) {
+    const patchPath = resolve(input.proposal.patch_bundle_path);
+    const patchText = await readFile(patchPath, "utf8");
+    const patchChangedFiles = parsePatchChangedFiles(patchText);
+    if (patchChangedFiles.length === 0) {
+      throw new Error(
+        `Adapter migration patch bundle '${patchPath}' did not declare any changed files.`
+      );
+    }
+    const invalidPath = patchChangedFiles.find(
+      (relativePath) => !isGeneratedLocalAdapterSurfacePath(relativePath)
+    );
+    if (invalidPath) {
+      throw new Error(
+        `Adapter migration patch bundle '${patchPath}' touched '${invalidPath}', which is outside the generated adapter write surface.`
+      );
+    }
+    await runGitApply({
+      cwd: isPathInside(repoRoot, adapterRoot) ? repoRoot : adapterRoot,
+      patchPath,
+      ...(isPathInside(repoRoot, adapterRoot)
+        ? {
+            directory:
+              normalizePatchPath(relative(repoRoot, adapterRoot)).replace(
+                /^$/,
+                "."
+              )
+          }
+        : {})
+    });
+    for (const relativePath of patchChangedFiles) {
+      changedFiles.add(resolve(adapterRoot, relativePath));
+    }
+  }
+
+  if (input.proposal.proposed_runtime_config_patch) {
+    const runtimeConfig = await loadJson<GeneratedRuntimeConfig>(runtimeConfigPath);
+    const nextRuntimeConfig = {
+      ...runtimeConfig,
+      ...input.proposal.proposed_runtime_config_patch
+    };
+    await writeJson(runtimeConfigPath, nextRuntimeConfig);
+    changedFiles.add(resolve(runtimeConfigPath));
+  }
+
+  const adapterContract = await loadJson<Record<string, unknown>>(adapterContractPath);
   const currentNotes = Array.isArray(adapterContract.notes)
     ? adapterContract.notes.filter((note): note is string => typeof note === "string")
     : [];
-  const migrationNote = `Applied runtime-surface migration ${input.proposal.proposal_id}.`;
+  const migrationNote =
+    input.proposal.proposed_contract_patch &&
+    typeof input.proposal.proposed_contract_patch === "object" &&
+    Array.isArray(input.proposal.proposed_contract_patch.append_notes) &&
+    input.proposal.proposed_contract_patch.append_notes.length > 0
+      ? String(input.proposal.proposed_contract_patch.append_notes[0])
+      : `Applied adapter migration ${input.proposal.proposal_id}.`;
   const nextAdapterContract = {
     ...adapterContract,
     notes: currentNotes.includes(migrationNote)
       ? currentNotes
       : [...currentNotes, migrationNote]
   };
-
-  await Promise.all([
-    writeJson(runtimeConfigPath, nextRuntimeConfig),
-    writeJson(adapterContractPath, nextAdapterContract)
-  ]);
+  await writeJson(adapterContractPath, nextAdapterContract);
+  changedFiles.add(resolve(adapterContractPath));
 
   return {
-    changedFiles: [adapterContractPath, runtimeConfigPath],
+    changedFiles: [...changedFiles],
     backupDirectory
   };
 };
