@@ -1,0 +1,4 @@
+interface:
+  display_name: "App Builder Loop"
+  short_description: "Question-gated same-thread app build flow"
+  default_prompt: "Use $app-builder-loop when the user asks to build an app, product, tool, service, dashboard, or agent and the right UX is discovery -> prepare -> running on the same Codex thread. Ask only the necessary questions, then write runtime/build-brief.json, runtime/run-contract.json, runtime/operator-surface.json, runtime/open-questions.json, and docs/EXECUTION_PLAN.md before heavy implementation."

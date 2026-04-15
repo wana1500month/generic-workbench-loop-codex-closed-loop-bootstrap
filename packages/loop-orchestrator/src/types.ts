@@ -1347,6 +1347,188 @@ export interface LoopPlan {
   idea_source_path?: string;
 }
 
+export type BuildBriefSurface =
+  | "web"
+  | "mobile"
+  | "desktop"
+  | "api"
+  | "dashboard"
+  | "editor"
+  | "agent";
+export type BuildBriefAuthMode = "required" | "optional" | "none" | "unknown";
+export type BuildBriefDataMode =
+  | "mock"
+  | "seeded"
+  | "real"
+  | "hybrid"
+  | "unknown";
+export type BuildBriefDeliveryLevel =
+  | "prototype"
+  | "mvp"
+  | "usable"
+  | "production-like"
+  | "custom";
+export type BuildBriefExecutionPreference =
+  | "speed"
+  | "balanced"
+  | "correctness";
+export type SessionRunMode = "foreground_same_thread";
+export type SessionLoopStatus =
+  | "asking"
+  | "preparing"
+  | "running"
+  | "needs_steering"
+  | "blocked_externally"
+  | "ready_for_review"
+  | "done";
+export type SessionReadiness =
+  | "needs_input"
+  | "ready_to_run"
+  | "running"
+  | "blocked"
+  | "ready_for_review"
+  | "complete";
+export type SessionAttention = "codex" | "human" | "external" | "review" | "none";
+export type SessionReviewBoundary =
+  | "diff_ready"
+  | "milestone_scope_complete"
+  | "risk_gate"
+  | "release_candidate";
+export type SessionApprovalBoundary =
+  | "scope_change"
+  | "destructive_change"
+  | "external_access"
+  | "deploy"
+  | "new_run_required";
+export type SessionSteeringTrigger =
+  | "product_ambiguity"
+  | "priority_conflict"
+  | "blocked_external"
+  | "review_feedback"
+  | "risk_gate_failure";
+
+export interface BuildBriefArtifact {
+  brief_id: string;
+  source_request: string;
+  created_at: string;
+  updated_at: string;
+  product: {
+    title: string;
+    summary: string;
+    target_users: string[];
+    core_workflows: string[];
+    success_definition: string[];
+    references: string[];
+  };
+  surface: {
+    primary_surface: BuildBriefSurface;
+    secondary_surfaces?: BuildBriefSurface[];
+    auth_mode: BuildBriefAuthMode;
+  };
+  delivery: {
+    level: BuildBriefDeliveryLevel;
+    execution_preference: BuildBriefExecutionPreference;
+  };
+  execution_context: {
+    project_mode: "new" | "existing";
+    target_root: string;
+    workspace_mode_preference: OperatorWorkspaceSurface;
+    run_command?: string;
+    check_command?: string;
+    target_manifest_hints?: Partial<Record<TargetManifestKey, string>>;
+  };
+  constraints: {
+    stack_preferences: string[];
+    data_mode: BuildBriefDataMode;
+    integrations: string[];
+    non_goals: string[];
+    repo_constraints: string[];
+  };
+  defaults_accepted: string[];
+  unresolved_questions: string[];
+  operator_status_vocabulary: SessionLoopStatus[];
+}
+
+export interface SessionRunContractArtifact {
+  contract_id: string;
+  brief_id: string;
+  created_at: string;
+  updated_at: string;
+  run_mode: SessionRunMode;
+  current_thread_required: boolean;
+  workspace_mode: OperatorWorkspaceSurface;
+  objective: string;
+  non_goals: string[];
+  discovery_policy: {
+    max_questions_per_turn: number;
+    ask_only_missing_high_impact_questions: boolean;
+    prefer_defaults_over_low_value_questions: boolean;
+  };
+  execution_controls: {
+    project_mode: "new" | "existing";
+    target_root: string;
+    target_score: number;
+    max_rounds: number;
+    run_command?: string;
+    check_command?: string;
+    target_manifest_hints?: Partial<Record<TargetManifestKey, string>>;
+  };
+  validation_strategy: {
+    iteration_mode: "patch_oriented";
+    evaluator_mode: "risk_triggered";
+    review_surface: "codex_review_pane";
+  };
+  review_boundaries: SessionReviewBoundary[];
+  approval_boundaries: SessionApprovalBoundary[];
+  steering_triggers: SessionSteeringTrigger[];
+  required_prepare_artifacts: string[];
+  derived_attempt_artifacts: string[];
+  operator_surface_path: string;
+  open_questions_path: string;
+  execution_plan_path: string;
+  stop_rule: {
+    done_when: string[];
+    stop_on: string[];
+  };
+}
+
+export interface SessionStatusArtifact {
+  run_id: string;
+  updated_at: string;
+  session_status: SessionLoopStatus;
+  readiness: SessionReadiness;
+  next_attention: SessionAttention;
+  objective: string;
+  workspace_mode: OperatorWorkspaceSurface;
+  current_thread_required: boolean;
+  deferred_question_count: number;
+  steering_note_count: number;
+  review_feedback_count: number;
+  external_blocker_count: number;
+  latest_round?: number;
+  latest_stop_reason?: string;
+  artifacts: {
+    build_brief_path: string;
+    run_contract_path: string;
+    open_questions_path: string;
+    operator_surface_path: string;
+    execution_plan_path: string;
+  };
+}
+
+export interface OperatorSurfaceSessionProjection {
+  objective: string;
+  session_status: SessionLoopStatus;
+  readiness: SessionReadiness;
+  next_attention: SessionAttention;
+  deferred_question_count: number;
+  steering_note_count: number;
+  review_feedback_count: number;
+  external_blocker_count: number;
+  latest_round?: number;
+  latest_stop_reason?: string;
+}
+
 export interface LoopRunSummary {
   run_id: string;
   round_count: number;
@@ -1387,6 +1569,7 @@ export interface LoopRunSummary {
   transport_state_path?: string;
   transport_protocol_path?: string;
   operator_surface_path?: string;
+  session_status_path?: string;
   adapter_migration_applied_path?: string;
   stop_reason?: RunStopReason;
   selection_basis?: "terminal_round";
@@ -1516,6 +1699,7 @@ export interface OperatorSurfaceArtifact {
   summary_path?: string;
   transport_state_path?: string;
   transport_protocol_path?: string;
+  session_status_path?: string;
   next_action?: string;
   active_prompt_path?: string;
   active_response_path?: string;
@@ -1527,6 +1711,7 @@ export interface OperatorSurfaceArtifact {
   recommended_skill?: OperatorRecommendedSkill;
   recommended_command?: string;
   resume_command?: string;
+  session?: OperatorSurfaceSessionProjection;
   notes?: string[];
 }
 
@@ -1556,6 +1741,8 @@ export interface TransportStateArtifact {
   ui_surface?: {
     thread_name?: string;
     dashboard_path?: string;
+    session_status_path?: string;
+    session?: OperatorSurfaceSessionProjection;
   };
   notes?: string[];
   last_error?: string;

@@ -344,3 +344,64 @@ Validation:
 - `npm run validate:score-policy`
 - `npm run validate:quality-lift`
 - `npm run reference-adapter:scaffold-quality-lane -- --profile ./.tmp/semantic-validation/verification-profile-score-policy-lenient.json --out ./.tmp/external-quality-lane.json`
+
+## M7. Session-Supervised Foreground App Builder
+
+Goal:
+Make product-build work feel like one Codex-owned foreground session: question
+gate first, then prepare durable session artifacts, then continue execution and
+review on the same thread.
+
+Acceptance:
+- The repo ships a dedicated `app-builder-loop` skill for session-supervised
+  product-build work in the Codex app.
+- The repo documents `runtime/build-brief.json` as the normalized product brief
+  for the session.
+- The repo documents `runtime/run-contract.json` as the session-level execution
+  contract for the same-thread foreground loop.
+- The exact field sets for both artifacts are locked in documentation and
+  mirrored in `packages/loop-orchestrator/src/types.ts`.
+- The session-level contract explicitly coexists with, and does not replace,
+  attempt-level `round-###/round-contract.json`.
+- The harness core writes `runtime/build-brief.json`,
+  `runtime/run-contract.json`, `runtime/open-questions.json`,
+  `runtime/session-status.json`, and `docs/EXECUTION_PLAN.md` as part of run
+  initialization once discovery has
+  produced a resumable plan.
+- Those session surfaces refresh when round review feedback, human steering,
+  or external blockers materially change the active session context.
+- `runtime/session-status.json` is the normalized session-layer
+  readiness/status artifact, and `runtime/operator-surface.json` should project
+  that session layer directly instead of forcing UI consumers to infer it.
+- `loop:ui` should consume `runtime/session-status.json` as its first-class
+  session feed, with `operator-surface.json.session` only as a compatibility
+  fallback.
+- `transport-state.json.ui_surface` should carry the same session feed for
+  attached App Server consumers, so embedded UI clients do not need to infer
+  session state from mixed control-plane files.
+- The operator-facing session vocabulary is fixed to `asking`, `preparing`,
+  `running`, `needs_steering`, `blocked_externally`, `ready_for_review`, and
+  `done`.
+- The skill instructs Codex to ask only the missing high-impact questions, ask
+  at most 1 to 3 short questions per turn, and prefer defaults over low-value
+  intake turns.
+- The skill instructs Codex to prepare `runtime/build-brief.json`,
+  `runtime/run-contract.json`, `runtime/operator-surface.json`,
+  `runtime/open-questions.json`, `runtime/session-status.json`, and
+  `docs/EXECUTION_PLAN.md` before heavy implementation.
+- The skill treats automation as a later schedule layer, not as the front door
+  for product-build work.
+
+Validation:
+- `docs/CODEX_SESSION_SUPERVISED_CLOSED_LOOP.md` exists and defines the exact
+  `build-brief.json` and `run-contract.json` field sets.
+- `.agents/skills/app-builder-loop/SKILL.md` exists and matches the
+  question-gated same-thread workflow.
+- `.agents/skills/app-builder-loop/agents/openai.yaml` exists for Codex app
+  discovery.
+- `npm run validate:session-preparation-artifacts` proves the emitted field
+  set, path contract, execution-plan scaffold, and refresh behavior.
+- `npm run validate:loop-ui-session-status` proves the runtime dashboard
+  prefers `runtime/session-status.json` over stale operator-surface session
+  projections.
+- `npm run build`

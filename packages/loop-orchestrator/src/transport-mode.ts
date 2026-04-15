@@ -4,6 +4,7 @@ import type {
   OperatorAppVisibility,
   OperatorEntrypoint,
   OperatorLaunchOrigin,
+  OperatorSurfaceSessionProjection,
   OperatorSurfaceOwner,
   ThreadBindingState,
   TransportMode,
@@ -88,6 +89,8 @@ export const buildTransportStateArtifact = (input: {
   summaryPath?: string;
   protocolPath?: string;
   dashboardPath?: string;
+  sessionStatusPath?: string;
+  session?: OperatorSurfaceSessionProjection;
   status?: TransportStateArtifact["status"];
   notes?: string[];
   lastError?: string;
@@ -137,13 +140,17 @@ export const buildTransportStateArtifact = (input: {
             context.threadBindingState !== "unbound"
           ? "stock-current-thread"
           : "none",
-    ...((input.dashboardPath || context.threadName)
+    ...((input.dashboardPath || context.threadName || input.sessionStatusPath || input.session)
       ? {
           ui_surface: {
             ...(context.threadName
               ? { thread_name: context.threadName }
               : {}),
-            ...(input.dashboardPath ? { dashboard_path: input.dashboardPath } : {})
+            ...(input.dashboardPath ? { dashboard_path: input.dashboardPath } : {}),
+            ...(input.sessionStatusPath
+              ? { session_status_path: input.sessionStatusPath }
+              : {}),
+            ...(input.session ? { session: input.session } : {})
           }
         }
       : {}),

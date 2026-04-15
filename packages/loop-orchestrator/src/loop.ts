@@ -133,6 +133,10 @@ import {
   resolveOperatorSurfaceContext,
   writeOperatorSurfaceArtifacts
 } from "./operator-surface.js";
+import {
+  buildOperatorSurfaceSessionProjection,
+  writeSessionPreparationArtifacts
+} from "./session-artifacts.js";
 import { buildAdapterDriftReport } from "./adapter-drift.js";
 import {
   applyGeneratedLocalAdapterMigration,
@@ -203,6 +207,8 @@ import type {
   RoundContractArtifact,
   RoundResultArtifact,
   RoundSummary,
+  SessionStatusArtifact,
+  SessionLoopStatus,
   TransportMode,
   RuntimeEvent,
   RuntimeEventCode,
@@ -647,6 +653,7 @@ const buildCheckpointSummary = (input: {
   transportStatePath: string;
   transportProtocolPath?: string;
   operatorSurfacePath?: string;
+  sessionStatusPath?: string;
   adapterMigrationAppliedPath?: string;
   stopReason?: LoopRunSummary["stop_reason"];
   bestRound?: number;
@@ -739,6 +746,9 @@ const buildCheckpointSummary = (input: {
     ...(input.operatorSurfacePath
       ? { operator_surface_path: input.operatorSurfacePath }
       : {}),
+    ...(input.sessionStatusPath
+      ? { session_status_path: input.sessionStatusPath }
+      : {}),
     ...(input.adapterMigrationAppliedPath
       ? { adapter_migration_applied_path: input.adapterMigrationAppliedPath }
       : {}),
@@ -813,16 +823,18 @@ const writeRunCheckpoint = async (input: {
     bestScoringEvalReportPath?: string;
   };
 }): Promise<void> => {
-  const normalizedSummary: LoopRunSummary = input.summary.operator_surface_path
-    ? input.summary
-    : {
-        ...input.summary,
-        operator_surface_path: join(
-          input.runDirectory,
-          "runtime",
-          "operator-surface.json"
-        )
-      };
+  const normalizedSummary: LoopRunSummary =
+    input.summary.operator_surface_path && input.summary.session_status_path
+      ? input.summary
+      : {
+          ...input.summary,
+          operator_surface_path:
+            input.summary.operator_surface_path ??
+            join(input.runDirectory, "runtime", "operator-surface.json"),
+          session_status_path:
+            input.summary.session_status_path ??
+            join(input.runDirectory, "runtime", "session-status.json")
+        };
   const writes: Promise<unknown>[] = [
     writeJson(join(input.runDirectory, "summary.json"), normalizedSummary),
     writeRunControllerSummary({
@@ -1235,6 +1247,7 @@ export const runClosedLoop = async (input: {
       summaryPath,
       protocolPath: transportProtocolPath,
       dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
+      sessionStatusPath: runtimeStatePaths.sessionStatusPath,
       status: "configured",
       notes: transportRuntimeWarningsForMode({
         controllerMode,
@@ -1242,23 +1255,24 @@ export const runClosedLoop = async (input: {
       })
     })
   );
+  const initialOperatorSurfaceArtifact = buildOperatorSurfaceArtifact({
+    runId,
+    controllerMode,
+    transportMode,
+    executionState: "configured",
+    summaryPath,
+    transportStatePath: runtimeStatePaths.transportStatePath,
+    transportProtocolPath: transportProtocolPath,
+    dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
+    notes: transportRuntimeWarningsForMode({
+      controllerMode,
+      transportMode
+    })
+  });
   await writeOperatorSurfaceArtifacts({
     jsonPath: runtimeStatePaths.operatorSurfacePath,
     markdownPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
-    artifact: buildOperatorSurfaceArtifact({
-      runId,
-      controllerMode,
-      transportMode,
-      executionState: "configured",
-      summaryPath,
-      transportStatePath: runtimeStatePaths.transportStatePath,
-      transportProtocolPath: transportProtocolPath,
-      dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
-      notes: transportRuntimeWarningsForMode({
-        controllerMode,
-        transportMode
-      })
-    })
+    artifact: initialOperatorSurfaceArtifact
   });
 
   if (
@@ -1367,6 +1381,7 @@ export const runClosedLoop = async (input: {
       controller_lease_path: runtimeStatePaths.controllerLeasePath,
       transport_state_path: runtimeStatePaths.transportStatePath,
       transport_protocol_path: noopTransportProtocolPath,
+      session_status_path: runtimeStatePaths.sessionStatusPath,
       runtime_events: noopRuntimeEvents,
       ...(resumeDecisionPath ? { resume_decision_path: resumeDecisionPath } : {}),
       ...(runtimeWarnings.length > 0 ? { runtime_warnings: runtimeWarnings } : {}),
@@ -1412,6 +1427,7 @@ export const runClosedLoop = async (input: {
   const plannedScenarioPath =
     restoredRun?.plannedScenarioPath ?? join(runDirectory, "planned-scenario.json");
   const planPath = restoredRun?.planPath ?? join(runDirectory, "plan.json");
+  const executionPlanPath = join(runDirectory, "docs", "EXECUTION_PLAN.md");
   let plannerBriefPath = restoredRun?.plannerBriefPath;
   let pendingPlannerEnhancementPause:
     | {
@@ -1436,6 +1452,7 @@ export const runClosedLoop = async (input: {
       summaryPath,
       protocolPath: transportProtocolPath,
       dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
+      sessionStatusPath: runtimeStatePaths.sessionStatusPath,
       restoredThreadId: restoredRun?.transportState?.app_server?.thread_id,
       initialRound: restoredRun?.interruptedRound?.round ?? restoredRun?.roundStart ?? 1,
       initialPhase:
@@ -1790,8 +1807,184 @@ export const runClosedLoop = async (input: {
           : nextState === "paused"
             ? "paused"
             : nextState === "stalled"
-              ? "stalled"
+            ? "stalled"
               : "running";
+  };
+  const defaultSessionObjective = durableMemory.context.finishLine
+    ? `Ship a reviewable build that reaches: ${durableMemory.context.finishLine}`
+    : `Ship a reviewable build for ${durableMemory.context.title} without leaving the current Codex thread.`;
+  const reviewFeedbackFromArtifacts = (input: {
+    contractReviewArtifact?: ContractReviewArtifact;
+    patchRequestArtifact?: PatchRequestArtifact;
+    qualityCritiqueArtifact?: QualityCritiqueArtifact;
+    evalReport?: EvalReport;
+  }): string[] =>
+    unique([
+      ...(input.contractReviewArtifact?.required_changes ?? []),
+      ...(input.contractReviewArtifact?.concerns ?? []),
+      ...(input.patchRequestArtifact?.must_fix.map((item) => item.expected_change) ?? []),
+      ...(input.patchRequestArtifact?.quality_findings?.map(
+        (finding) => finding.expected_change
+      ) ?? []),
+      ...(input.evalReport?.blockers ?? []),
+      ...(input.evalReport?.next_actions ?? []),
+      ...(input.qualityCritiqueArtifact?.findings.map(
+        (finding) => finding.expected_change
+      ) ?? [])
+    ]).slice(0, 12);
+  const steeringNotesFromContractReview = (
+    contractReviewArtifact: ContractReviewArtifact | undefined
+  ): string[] =>
+    contractReviewArtifact
+      ? unique([
+          ...contractReviewArtifact.concerns,
+          ...contractReviewArtifact.required_changes
+        ]).slice(0, 12)
+      : [];
+  const externalBlockersFromPatchRequest = (
+    patchRequestArtifact: PatchRequestArtifact | undefined
+  ): string[] =>
+    unique(
+      patchRequestArtifact?.environment_blockers?.map(
+        (blocker) => `Resolve environment blocker: ${blocker}`
+      ) ?? []
+    ).slice(0, 12);
+  const scopeGuardrailsFromPatchRequest = (
+    patchRequestArtifact: PatchRequestArtifact | undefined
+  ): string[] =>
+    unique(patchRequestArtifact?.forbidden_scope_expansion ?? []).slice(0, 12);
+  let sessionCurrentObjective =
+    previousRoundSummary?.objective ?? defaultSessionObjective;
+  let sessionSteeringNotes: string[] = [];
+  let sessionReviewFeedback = reviewFeedbackFromArtifacts({
+    patchRequestArtifact: previousPatchRequest,
+    evalReport: latestEvalReport
+  });
+  let sessionExternalBlockers = externalBlockersFromPatchRequest(previousPatchRequest);
+  let sessionScopeGuardrails = scopeGuardrailsFromPatchRequest(previousPatchRequest);
+  let latestSessionStatusArtifact: SessionStatusArtifact | undefined;
+  let sessionLatestRound: number | undefined = restoredRun?.latestRoundSummary?.round;
+  let sessionLatestStopReason: LoopRunSummary["stop_reason"] | undefined =
+    currentCheckpointStopReason;
+  const sessionStatusForStopReason = (
+    stopReason: LoopRunSummary["stop_reason"] | undefined
+  ): SessionLoopStatus | undefined => {
+    switch (stopReason) {
+      case "awaiting_human_input":
+      case "new_run_required":
+        return "needs_steering";
+      case "awaiting_external_condition":
+      case "environment_blocked":
+        return "blocked_externally";
+      case "target_reached":
+      case "contract_completed":
+      case "max_rounds_reached":
+        return "ready_for_review";
+      case "adapter_migration_rejected":
+        return "done";
+      default:
+        return undefined;
+    }
+  };
+  const deriveSessionStatus = (input?: {
+    override?: SessionLoopStatus;
+    stopReason?: LoopRunSummary["stop_reason"];
+    attentionRequired?: OperatorAttentionRequired;
+    executionState?: ExecutionState;
+  }): SessionLoopStatus => {
+    if (input?.override) {
+      return input.override;
+    }
+    const stopReasonStatus = sessionStatusForStopReason(input?.stopReason);
+    if (stopReasonStatus) {
+      return stopReasonStatus;
+    }
+    const executionState = input?.executionState ?? activeExecutionState;
+    const attentionRequired = input?.attentionRequired ?? activeAttentionRequired;
+    if (executionState === "completed") {
+      return "done";
+    }
+    if (executionState === "paused") {
+      if (attentionRequired === "human") {
+        return "needs_steering";
+      }
+      if (attentionRequired === "external") {
+        return "blocked_externally";
+      }
+    }
+    return history.length > 0 ? "running" : "preparing";
+  };
+  const updateSessionRefreshState = (input?: {
+    currentObjective?: string;
+    steeringNotes?: string[];
+    reviewFeedback?: string[];
+    externalBlockers?: string[];
+    scopeGuardrails?: string[];
+    latestRound?: number;
+    latestStopReason?: LoopRunSummary["stop_reason"];
+  }): void => {
+    if (!input) {
+      return;
+    }
+    if (input.currentObjective !== undefined) {
+      sessionCurrentObjective = input.currentObjective;
+    }
+    if (input.steeringNotes !== undefined) {
+      sessionSteeringNotes = unique(input.steeringNotes);
+    }
+    if (input.reviewFeedback !== undefined) {
+      sessionReviewFeedback = unique(input.reviewFeedback);
+    }
+    if (input.externalBlockers !== undefined) {
+      sessionExternalBlockers = unique(input.externalBlockers);
+    }
+    if (input.scopeGuardrails !== undefined) {
+      sessionScopeGuardrails = unique(input.scopeGuardrails);
+    }
+    if (input.latestRound !== undefined) {
+      sessionLatestRound = input.latestRound;
+    }
+    if (input.latestStopReason !== undefined) {
+      sessionLatestStopReason = input.latestStopReason;
+    }
+  };
+  const refreshSessionPreparationArtifacts = async (input?: {
+    status?: SessionLoopStatus;
+    stopReason?: LoopRunSummary["stop_reason"];
+    attentionRequired?: OperatorAttentionRequired;
+    executionState?: ExecutionState;
+  }): Promise<void> => {
+    const result = await writeSessionPreparationArtifacts({
+      runId,
+      runDirectory,
+      rootDirectory: durableMemory.rootDirectory,
+      buildBriefPath: runtimeStatePaths.buildBriefPath,
+      runContractPath: runtimeStatePaths.runContractPath,
+      openQuestionsPath: runtimeStatePaths.openQuestionsPath,
+      sessionStatusPath: runtimeStatePaths.sessionStatusPath,
+      operatorSurfacePath: runtimeStatePaths.operatorSurfacePath,
+      executionPlanPath,
+      idea,
+      durableMemory: durableMemory.context,
+      scenario,
+      plan,
+      workspaceMode: initialOperatorSurfaceArtifact.workspace_surface,
+      targetFamily: resolvedTargetFamily,
+      sessionStatus: deriveSessionStatus({
+        override: input?.status,
+        stopReason: input?.stopReason ?? sessionLatestStopReason,
+        attentionRequired: input?.attentionRequired,
+        executionState: input?.executionState
+      }),
+      currentObjective: sessionCurrentObjective,
+      steeringNotes: sessionSteeringNotes,
+      reviewFeedback: sessionReviewFeedback,
+      externalBlockers: sessionExternalBlockers,
+      scopeGuardrails: sessionScopeGuardrails,
+      latestRound: sessionLatestRound,
+      latestStopReason: input?.stopReason ?? sessionLatestStopReason
+    });
+    latestSessionStatusArtifact = result.sessionStatus;
   };
   const assertPhaseBudget = (): void => {
     if (
@@ -1893,6 +2086,32 @@ export const runClosedLoop = async (input: {
     if (input?.recommendedCommand !== undefined) {
       activeRecommendedCommand = input.recommendedCommand;
     }
+    if (transportMode !== "app-server") {
+      await writeTransportStateArtifact(
+        runtimeStatePaths.transportStatePath,
+        buildTransportStateArtifact({
+          runId,
+          controllerMode,
+          transportMode,
+          executorMode,
+          summaryPath,
+          protocolPath: transportProtocolCurrentPath,
+          dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
+          sessionStatusPath: runtimeStatePaths.sessionStatusPath,
+          ...(latestSessionStatusArtifact
+            ? {
+                session:
+                  buildOperatorSurfaceSessionProjection(latestSessionStatusArtifact)
+              }
+            : {}),
+          status: "configured",
+          notes: transportRuntimeWarningsForMode({
+            controllerMode,
+            transportMode
+          })
+        })
+      );
+    }
     await writeOperatorSurfaceArtifacts({
       jsonPath: runtimeStatePaths.operatorSurfacePath,
       markdownPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
@@ -1915,6 +2134,7 @@ export const runClosedLoop = async (input: {
         summaryPath,
         transportStatePath: runtimeStatePaths.transportStatePath,
         transportProtocolPath: transportProtocolCurrentPath,
+        sessionStatusPath: runtimeStatePaths.sessionStatusPath,
         activePromptPath: input?.activePromptPath ?? activePromptArtifactPath,
         activeResponsePath:
           input?.activeResponsePath ?? activeResponseArtifactPath,
@@ -1924,11 +2144,19 @@ export const runClosedLoop = async (input: {
         recommendedSkill: input?.recommendedSkill ?? activeRecommendedSkill,
         recommendedCommand:
           input?.recommendedCommand ?? activeRecommendedCommand,
+        session: latestSessionStatusArtifact
+          ? buildOperatorSurfaceSessionProjection(latestSessionStatusArtifact)
+          : undefined,
         nextAction: input?.nextAction,
         notes: input?.notes ?? heartbeatNotes
       })
     });
   };
+  await refreshSessionPreparationArtifacts({
+    stopReason: currentCheckpointStopReason,
+    executionState: activeExecutionState
+  });
+  await writeOperatorSurface();
   let heartbeat: ReturnType<typeof startRuntimeHeartbeat> | undefined;
   let runtimeStopped = false;
   const stopRuntime = async (): Promise<void> => {
@@ -1955,6 +2183,7 @@ export const runClosedLoop = async (input: {
       summaryPath,
       protocolPath: transportProtocolCurrentPath,
       dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
+      sessionStatusPath: runtimeStatePaths.sessionStatusPath,
       restoredThreadId: restoredRun?.transportState?.app_server?.thread_id,
       initialRound: activeHeartbeatRound ?? restoredRun?.roundStart ?? history.length + 1,
       initialPhase: activeHeartbeatPhase ?? "negotiation",
@@ -1975,6 +2204,13 @@ export const runClosedLoop = async (input: {
         summaryPath,
         protocolPath: transportProtocolCurrentPath,
         dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
+        sessionStatusPath: runtimeStatePaths.sessionStatusPath,
+        ...(latestSessionStatusArtifact
+          ? {
+              session:
+                buildOperatorSurfaceSessionProjection(latestSessionStatusArtifact)
+            }
+          : {}),
         status: "configured",
         notes: transportRuntimeWarningsForMode({
           controllerMode,
@@ -2181,6 +2417,7 @@ export const runClosedLoop = async (input: {
       transportStatePath: runtimeStatePaths.transportStatePath,
       transportProtocolPath: transportProtocolCurrentPath,
       operatorSurfacePath: runtimeStatePaths.operatorSurfacePath,
+      sessionStatusPath: runtimeStatePaths.sessionStatusPath,
       stopReason,
       bestRound,
       bestScore,
@@ -2249,6 +2486,14 @@ export const runClosedLoop = async (input: {
       }
     }
     currentCheckpointStopReason = summary.stop_reason;
+    updateSessionRefreshState({
+      latestStopReason: summary.stop_reason,
+      latestRound: history[history.length - 1]?.round
+    });
+    await refreshSessionPreparationArtifacts({
+      stopReason: summary.stop_reason,
+      executionState: activeExecutionState
+    });
     await writeOperatorSurface({
       executionState: activeExecutionState,
       notes: heartbeatNotes
@@ -2294,6 +2539,20 @@ export const runClosedLoop = async (input: {
   }): Promise<ClosedLoopResult> => {
     runtimeWarnings = unique([...runtimeWarnings, ...input.notes]);
     replaceHeartbeatNotes(unique([...heartbeatNotes, ...input.notes]));
+    updateSessionRefreshState({
+      ...(input.attentionRequired === "human"
+        ? { steeringNotes: input.notes }
+        : {}),
+      ...(input.attentionRequired === "external"
+        ? { externalBlockers: input.notes }
+        : {}),
+      latestStopReason: input.stopReason
+    });
+    await refreshSessionPreparationArtifacts({
+      stopReason: input.stopReason,
+      attentionRequired: input.attentionRequired,
+      executionState: "paused"
+    });
     await writeLiveTransportProtocol();
     await writeOperatorSurface({
       executionState: "paused",
@@ -2347,6 +2606,15 @@ export const runClosedLoop = async (input: {
       input.runtimeEventMessage
     ]);
     replaceHeartbeatNotes(unique([...heartbeatNotes, ...input.notes]));
+    updateSessionRefreshState({
+      steeringNotes: input.notes,
+      latestStopReason: input.stopReason
+    });
+    await refreshSessionPreparationArtifacts({
+      stopReason: input.stopReason,
+      attentionRequired: "human",
+      executionState: "completed"
+    });
     await recordRoundPhase({
       round: input.round,
       phase: input.phase,
@@ -3497,6 +3765,12 @@ export const runClosedLoop = async (input: {
           : undefined;
       if (currentThreadContractReviewEnhancement?.kind === "checkpoint") {
         if (contractReviewRequiresHumanDecision(baseContractReviewArtifact)) {
+          updateSessionRefreshState({
+            currentObjective: contractArtifact.objective,
+            steeringNotes: steeringNotesFromContractReview(
+              baseContractReviewArtifact
+            )
+          });
           return pauseForHumanInput({
             round,
             phase: "negotiation",
@@ -4636,6 +4910,20 @@ export const runClosedLoop = async (input: {
     previousTrajectoryDecision = trajectoryDecisionArtifact;
     previousTrajectoryDecisionPath = artifacts.trajectory_decision_json_path;
     previousRoundSummary = roundSummary;
+    updateSessionRefreshState({
+      currentObjective: contractAgreementArtifact.objective,
+      steeringNotes: [],
+      reviewFeedback: reviewFeedbackFromArtifacts({
+        contractReviewArtifact,
+        patchRequestArtifact,
+        qualityCritiqueArtifact,
+        evalReport
+      }),
+      externalBlockers: externalBlockersFromPatchRequest(patchRequestArtifact),
+      scopeGuardrails: scopeGuardrailsFromPatchRequest(patchRequestArtifact),
+      latestRound: round,
+      latestStopReason: stopReason
+    });
     const checkpointSummary = await writeCheckpoint(stopReason);
     await markProgress(`Run checkpoint saved after round ${round}.`);
     await recordRoundPhase({
@@ -4802,6 +5090,7 @@ export const runClosedLoop = async (input: {
     controllerLeasePath: runtimeStatePaths.controllerLeasePath,
     transportStatePath: runtimeStatePaths.transportStatePath,
     transportProtocolPath: transportProtocolCurrentPath,
+    sessionStatusPath: runtimeStatePaths.sessionStatusPath,
     stopReason: finalStopReason ?? resolvedStopReason,
     bestRound,
     bestScore: bestScore ?? terminalTotalScore,
@@ -4877,6 +5166,16 @@ export const runClosedLoop = async (input: {
     await markProgress(`Final run artifacts saved for ${runId}.`);
     replaceHeartbeatNotes();
     setExecutionState("completed");
+    updateSessionRefreshState({
+      currentObjective:
+        terminalRoundSummary?.objective ?? sessionCurrentObjective,
+      latestRound: terminalRound,
+      latestStopReason: summary.stop_reason
+    });
+    await refreshSessionPreparationArtifacts({
+      stopReason: summary.stop_reason,
+      executionState: "completed"
+    });
     await recordRoundPhase({
       round: terminalRound ?? 0,
       phase: "run_finalize",

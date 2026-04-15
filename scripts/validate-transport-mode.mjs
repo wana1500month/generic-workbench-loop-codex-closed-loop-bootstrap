@@ -72,11 +72,16 @@ const assertTransportSurface = async (
     typeof summary.operator_surface_path === "string",
     "Expected summary.operator_surface_path to be present."
   );
+  assert(
+    typeof summary.session_status_path === "string",
+    "Expected summary.session_status_path to be present."
+  );
 
-  const [transportState, resumeIdentity, operatorSurface] = await Promise.all([
+  const [transportState, resumeIdentity, operatorSurface, sessionStatus] = await Promise.all([
     readJsonFile(summary.transport_state_path),
     readJsonFile(summary.resume_identity_path),
-    readJsonFile(summary.operator_surface_path)
+    readJsonFile(summary.operator_surface_path),
+    readJsonFile(summary.session_status_path)
   ]);
   assert(
     transportState.controller_mode === expectedControllerMode,
@@ -118,6 +123,31 @@ const assertTransportSurface = async (
     "Expected transport-state ui_surface.dashboard_path to point at operator-surface.md."
   );
   assert(
+    transportState.ui_surface?.session_status_path === summary.session_status_path,
+    "Expected transport-state ui_surface.session_status_path to point at summary.session_status_path."
+  );
+  assert(
+    transportState.ui_surface?.session?.objective === sessionStatus.objective,
+    "Expected transport-state ui_surface.session.objective to mirror session-status."
+  );
+  assert(
+    transportState.ui_surface?.session?.session_status === sessionStatus.session_status,
+    "Expected transport-state ui_surface.session.session_status to mirror session-status."
+  );
+  assert(
+    transportState.ui_surface?.session?.readiness === sessionStatus.readiness,
+    "Expected transport-state ui_surface.session.readiness to mirror session-status."
+  );
+  assert(
+    transportState.ui_surface?.session?.next_attention === sessionStatus.next_attention,
+    "Expected transport-state ui_surface.session.next_attention to mirror session-status."
+  );
+  assert(
+    transportState.ui_surface?.session?.deferred_question_count ===
+      sessionStatus.deferred_question_count,
+    "Expected transport-state ui_surface.session.deferred_question_count to mirror session-status."
+  );
+  assert(
     resumeIdentity.transport_mode === expectedTransportMode,
     `Expected resume identity transport_mode '${expectedTransportMode}', received '${resumeIdentity.transport_mode ?? "missing"}'.`
   );
@@ -151,6 +181,14 @@ const assertTransportSurface = async (
   assert(
     operatorSurface.app_visibility === transportState.app_visibility,
     "Expected operator surface and transport state to agree on app_visibility."
+  );
+  assert(
+    operatorSurface.session_status_path === summary.session_status_path,
+    "Expected operator surface session_status_path to point at summary.session_status_path."
+  );
+  assert(
+    operatorSurface.session?.session_status === sessionStatus.session_status,
+    "Expected operator surface session.session_status to mirror session-status."
   );
   if (expectedWorkspaceSurface !== undefined) {
     assert(

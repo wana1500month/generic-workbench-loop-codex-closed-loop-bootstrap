@@ -14,11 +14,13 @@
 - Attached runs now default to `current-thread`, while `app-server` is an explicit embedded automation surface rather than the default meaning of “attached”.
 - Same-thread transports now fail-close every nested `runCodexCommand()` path, including bootstrap `apply_change` and subjective-quality review, instead of relying on per-call-site guards.
 - Every run now persists `runtime/transport-state.json` plus `summary.transport_protocol_path`, so live App Server thread/turn state and current-thread manual protocol surfaces stay reviewable alongside controller journals.
+- `transport-state.json.ui_surface` now also carries `session_status_path` plus a normalized session projection, so attached App Server consumers can subscribe to the same session feed that powers `loop:ui`.
 - Every run now also projects `runtime/operator-surface.json` plus `.md`, and `loop:ui` reads that projection so the operator sees one honest foreground/background/headless status surface instead of reverse-engineering raw transport files.
+- Run initialization now also emits `runtime/build-brief.json`, `runtime/run-contract.json`, `runtime/open-questions.json`, `runtime/session-status.json`, and `docs/EXECUTION_PLAN.md`, and those session surfaces now refresh at round checkpoints, human steering pauses, external-block pauses, and terminal review stops instead of staying frozen after bootstrap.
 - Operator-surface and transport-state now distinguish `foreground-thread` from `manual-protocol` using a real bound `CODEX_THREAD_ID`, and both artifacts now persist launch origin, surface owner, binding state, entrypoint, and app visibility without letting launch-origin overrides impersonate stock-app ownership.
 - Current-thread is now the default foreground surface across planner / contract-review / generator-plan / eval / attached-generator stages; each same-thread enhancement now pauses honestly with persisted prompt/response artifacts, marks `attention_required = codex` on the operator surface, and resumes from file-backed checkpoints instead of skipping nested enhancement paths.
 - Shell-launched `attached/current-thread` seeds now fail closed unless a real bound `CODEX_THREAD_ID` is present. Starting a shell `manual-protocol` run is still possible, but only with explicit `--allow-manual-protocol-seed`.
-- Operator-surface now also persists `handoff_state`, `resume_skill`, `resume_command`, `requires_codex_app`, `worktree_id`, and `worktree_path`, and both `loop:status` and `loop:ui` now surface that resume guidance directly.
+- Operator-surface now also persists `handoff_state`, `resume_skill`, `resume_command`, `requires_codex_app`, `worktree_id`, `worktree_path`, `session_status_path`, and a normalized `session` projection, and both `loop:status` and `loop:ui` now surface that resume guidance plus foreground session readiness directly.
 - App-visible foreground runs now use `worker_skill = loop-control` for the canonical same-thread autocontinue chain, keep `recovery_skill = attached-loop` as the recovery surface after interruption, preserve `recommended_skill` / `resume_skill` as compatibility aliases, omit `resume_command` from `operator-surface.json`, and let `loop:status` treat CLI commands as fallback guidance instead of the default next step.
 - New current-thread writes now use `stop_reason = awaiting_codex_checkpoint`; the older `awaiting_current_thread_handoff` name remains read-only compatibility for restore, status normalization, and validation.
 - App-visible `current-thread` runs now fail closed when a shell tries to `resume` or `phase` them outside the same bound Codex `thread_id`. Shell continuation is only allowed with explicit `--allow-shell-resume-downgrade`, which makes the downgrade back to `manual-protocol` intentional.
@@ -40,7 +42,7 @@
 - The repo now also ships `validate:late-result-restore`, which recreates a timed-out orphaned `apply_change` result and verifies that restore quarantines it instead of reviving the stale aggregate.
 - `loop:status` now treats terminal summary state first and `runtime/supervisor-state.json` second, so stale `live-state.json` can no longer hide a failed supervisor.
 - Attached App Server resume repair now also has a dedicated interrupted-generator regression validator through `validate:app-server-interrupted-generator`.
-- The repo now ships `npm run loop:ui`, a lightweight runtime dashboard that prefers `operator-surface.json` and falls back to transport/runtime state plus recent App Server events for the active run.
+- The repo now ships `npm run loop:ui`, a lightweight runtime dashboard that consumes `runtime/session-status.json` as a first-class session feed, falls back to `operator-surface.json.session` only for compatibility, and layers that on top of transport/runtime state plus recent App Server events for the active run.
 - A real App Server smoke validator now exists for trusted environments. Hosts without a usable `codex app-server` report `environment_blocked` instead of pretending the smoke ran.
 - Generated evaluator bundles now preserve the selected family bundle as a floor by merging family probes, criteria, and assertion-tag minima with intake-derived overlay probes.
 - Runtime profile loading now preserves `quality_contract`, per-criterion and per-probe `quality_axis_id`, and generated `subjective_metrics`, so intake-authored quality metadata survives into grading, critique, and patch requests.
@@ -61,6 +63,7 @@
 
 - Generic idea intake through `IDEA.md`
 - A staged intake gate that now separates product questions, execution-control questions, and confirmation before bootstrap
+- The repo now also ships a session-supervised foreground-loop design doc plus an `app-builder-loop` skill, so product-build work can be modeled as discovery -> prepare -> running on one Codex thread instead of as a background automation-first flow
 - Interactive bootstrap now asks for direct `target score` and `max rounds`, keeps target-family inference internal, and only asks run/check/URL hints when they are needed for an existing target
 - Interactive bootstrap now also collects deeper quality intent such as must-not-break experiences, failure expectations, continuity boundaries, reference signals, non-goals, probe hints, and optional subjective metrics with requested minimum scores
 - Interactive bootstrap now also emits evaluator-owned `quality_contract` axes, generated journey probes, and generated `subjective_metrics`, so the first run starts from intake-derived release criteria instead of only family defaults
@@ -222,5 +225,6 @@
 ## Next actions
 
 1. Attach a real production companion adapter beyond the canonical scaffold so deep intake, subjective metrics, and the stricter external quality lane can be exercised on a non-synthetic target.
-2. Add benchmark and component-ablation reporting so planner, critique, subjective grading, and external-quality-lane lift are measurable per change.
-3. Add frontier memory beyond best score, especially `best_novel`, so trajectory control can revive qualitatively stronger earlier candidates instead of only stable or passing anchors.
+2. Emit structured session-change events or a dedicated App Server status stream on top of the same `session-status.json` source so attached clients can react incrementally instead of polling transport-state snapshots.
+3. Add benchmark and component-ablation reporting so planner, critique, subjective grading, and external-quality-lane lift are measurable per change.
+4. Add frontier memory beyond best score, especially `best_novel`, so trajectory control can revive qualitatively stronger earlier candidates instead of only stable or passing anchors.

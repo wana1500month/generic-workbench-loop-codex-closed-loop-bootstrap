@@ -17,6 +17,7 @@ import type {
   OperatorPresentationMode,
   OperatorRecommendedSkill,
   OperatorResumeSkill,
+  OperatorSurfaceSessionProjection,
   OperatorSurfaceOwner,
   OperatorSurfaceArtifact,
   OperatorWorkerSkill,
@@ -581,6 +582,7 @@ export const buildOperatorSurfaceArtifact = (input: {
   summaryPath?: string;
   transportStatePath?: string;
   transportProtocolPath?: string;
+  sessionStatusPath?: string;
   activePromptPath?: string;
   activeResponsePath?: string;
   checkpointId?: string;
@@ -603,6 +605,7 @@ export const buildOperatorSurfaceArtifact = (input: {
   requiresCodexApp?: boolean;
   userVisiblePause?: boolean;
   decisionOptions?: AdapterMigrationDecision[];
+  session?: OperatorSurfaceSessionProjection;
   nextAction?: string;
   notes?: string[];
 }): OperatorSurfaceArtifact => {
@@ -765,6 +768,7 @@ export const buildOperatorSurfaceArtifact = (input: {
     ...(input.summaryPath ? { summary_path: input.summaryPath } : {}),
     ...(input.transportStatePath ? { transport_state_path: input.transportStatePath } : {}),
     ...(input.transportProtocolPath ? { transport_protocol_path: input.transportProtocolPath } : {}),
+    ...(input.sessionStatusPath ? { session_status_path: input.sessionStatusPath } : {}),
     ...(input.activePromptPath ? { active_prompt_path: input.activePromptPath } : {}),
     ...(input.activeResponsePath ? { active_response_path: input.activeResponsePath } : {}),
     ...(input.dashboardPath ? { dashboard_path: input.dashboardPath } : {}),
@@ -776,6 +780,7 @@ export const buildOperatorSurfaceArtifact = (input: {
     ...(recommendedCommand ? { recommended_command: recommendedCommand } : {}),
     ...(resumeCommand ? { resume_command: resumeCommand } : {}),
     ...(nextAction ? { next_action: nextAction } : {}),
+    ...(input.session ? { session: input.session } : {}),
     ...(normalizedNotes.length > 0 ? { notes: normalizedNotes } : {})
   };
 };
@@ -816,6 +821,7 @@ export const renderOperatorSurfaceMarkdown = (
 - Summary: ${rel(artifact.summary_path)}
 - Transport state: ${rel(artifact.transport_state_path)}
 - Transport protocol: ${rel(artifact.transport_protocol_path)}
+- Session status: ${rel(artifact.session_status_path)}
 - Active prompt: ${rel(artifact.active_prompt_path)}
 - Active response: ${rel(artifact.active_response_path)}
 - Thread id: ${artifact.thread_id ?? "none"}
@@ -826,6 +832,19 @@ export const renderOperatorSurfaceMarkdown = (
 - Recommended command: ${artifact.recommended_command ?? "none"}
 - Resume command: ${artifact.resume_command ?? "none"}
 - Next action: ${artifact.next_action ?? "none"}
+
+## Session
+
+- Objective: ${artifact.session?.objective ?? "none"}
+- Status: ${artifact.session?.session_status ?? "none"}
+- Readiness: ${artifact.session?.readiness ?? "none"}
+- Next attention: ${artifact.session?.next_attention ?? "none"}
+- Deferred questions: ${artifact.session?.deferred_question_count ?? 0}
+- Steering notes: ${artifact.session?.steering_note_count ?? 0}
+- Review feedback: ${artifact.session?.review_feedback_count ?? 0}
+- External blockers: ${artifact.session?.external_blocker_count ?? 0}
+- Latest round: ${artifact.session?.latest_round ?? "none"}
+- Latest stop reason: ${artifact.session?.latest_stop_reason ?? "none"}
 
 ## Notes
 

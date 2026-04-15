@@ -4,7 +4,8 @@ import { join } from "node:path";
 import readline from "node:readline";
 
 import { resolveCodexCliLaunch } from "./codex-cli.js";
-import { repoRoot, writeText } from "./file-system.js";
+import { loadJsonIfExists, repoRoot, writeText } from "./file-system.js";
+import { buildOperatorSurfaceSessionProjection } from "./session-artifacts.js";
 import {
   buildTransportStateArtifact,
   type AppServerTransportSnapshot
@@ -14,7 +15,8 @@ import type {
   ControllerMode,
   ControllerPhaseStatus,
   ControllerRoundPhase,
-  ExecutorMode
+  ExecutorMode,
+  SessionStatusArtifact
 } from "./types.js";
 
 type JsonRpcRequest = {
@@ -144,6 +146,7 @@ class LiveAppServerTransport implements AppServerTransportController {
   private readonly summaryPath: string;
   private readonly protocolPath: string;
   private readonly dashboardPath: string;
+  private readonly sessionStatusPath: string;
   private readonly command: string;
   private readonly args: string[];
   private readonly cwd: string;
@@ -178,6 +181,7 @@ class LiveAppServerTransport implements AppServerTransportController {
     summaryPath: string;
     protocolPath: string;
     dashboardPath: string;
+    sessionStatusPath: string;
     restoredThreadId?: string;
     threadName: string;
     defaultTaskTimeoutMs: number;
@@ -191,6 +195,7 @@ class LiveAppServerTransport implements AppServerTransportController {
     this.summaryPath = input.summaryPath;
     this.protocolPath = input.protocolPath;
     this.dashboardPath = input.dashboardPath;
+    this.sessionStatusPath = input.sessionStatusPath;
     this.command = command;
     this.args = args;
     this.cwd = repoRoot;
@@ -1139,6 +1144,8 @@ class LiveAppServerTransport implements AppServerTransportController {
     explicitStatus?: PersistedTransportStatus
   ): Promise<void> {
     const effectiveStatus = explicitStatus ?? this.terminalTransportStatus;
+    const sessionStatus =
+      await loadJsonIfExists<SessionStatusArtifact>(this.sessionStatusPath);
     const notes = unique([
       "App Server transport is an embedded background-automation surface that keeps a live thread/turn container through codex app-server.",
       `Request log: ${this.requestsPath}`,
@@ -1156,6 +1163,13 @@ class LiveAppServerTransport implements AppServerTransportController {
           summaryPath: this.summaryPath,
           protocolPath: this.protocolPath,
           dashboardPath: this.dashboardPath,
+          sessionStatusPath: this.sessionStatusPath,
+          ...(sessionStatus
+            ? {
+                session:
+                  buildOperatorSurfaceSessionProjection(sessionStatus)
+              }
+            : {}),
           status: this.deriveTransportStatus(effectiveStatus, Boolean(lastError)),
           notes,
           ...(lastError ? { lastError } : {}),
@@ -1175,6 +1189,7 @@ export const startAppServerTransport = async (input: {
   summaryPath: string;
   protocolPath: string;
   dashboardPath: string;
+  sessionStatusPath: string;
   restoredThreadId?: string;
   initialRound: number;
   initialPhase: ControllerRoundPhase;
@@ -1192,6 +1207,7 @@ export const startAppServerTransport = async (input: {
     summaryPath: input.summaryPath,
     protocolPath: input.protocolPath,
     dashboardPath: input.dashboardPath,
+    sessionStatusPath: input.sessionStatusPath,
     restoredThreadId: input.restoredThreadId,
     threadName: input.threadName,
     defaultTaskTimeoutMs: input.defaultTaskTimeoutMs,

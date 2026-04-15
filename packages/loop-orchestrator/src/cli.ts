@@ -130,6 +130,7 @@ interface StatusReport {
     summary_path: string;
     operator_surface_path: string;
     operator_surface_markdown_path: string;
+    session_status_path: string;
     live_state_path: string;
     round_phase_path: string;
     controller_lease_path: string;
@@ -863,6 +864,7 @@ const buildStatusReport = async (runDirectory: string): Promise<StatusReport> =>
       summary_path: joinRunPath(restoredRun.runDirectory, "summary.json"),
       operator_surface_path: runtimePaths.operatorSurfacePath,
       operator_surface_markdown_path: runtimePaths.operatorSurfaceMarkdownPath,
+      session_status_path: runtimePaths.sessionStatusPath,
       live_state_path: runtimePaths.liveStatePath,
       round_phase_path: runtimePaths.roundPhasePath,
       controller_lease_path: runtimePaths.controllerLeasePath,
@@ -1131,6 +1133,12 @@ const printStatusReport = (report: StatusReport): void => {
         `Worktree: ${report.operator_surface.worktree_id ?? "none"} / ${report.operator_surface.worktree_path ?? "none"}`
       );
     }
+    if (report.operator_surface.session) {
+      console.log(
+        `Session: ${report.operator_surface.session.session_status} / ${report.operator_surface.session.readiness} / attention ${report.operator_surface.session.next_attention} / questions ${report.operator_surface.session.deferred_question_count}`
+      );
+      console.log(`Session objective: ${report.operator_surface.session.objective}`);
+    }
   }
   if (report.supervisor_state) {
     console.log(
@@ -1200,6 +1208,9 @@ const printStatusReport = (report: StatusReport): void => {
   );
   console.log(
     `Operator surface: ${displayPath(report.paths.operator_surface_path) ?? report.paths.operator_surface_path}`
+  );
+  console.log(
+    `Session status: ${displayPath(report.paths.session_status_path) ?? report.paths.session_status_path}`
   );
   console.log(
     `Supervisor state: ${displayPath(report.paths.supervisor_state_path) ?? report.paths.supervisor_state_path}`

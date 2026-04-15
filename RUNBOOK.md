@@ -15,6 +15,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `PLANS.md`: current milestone map
 - `STATUS.md`: current state of the harness
 - `AGENT_PROTOCOL.md`: authoritative round file protocol
+- `docs/CODEX_SESSION_SUPERVISED_CLOSED_LOOP.md`: session-level foreground-thread design for question-gated product-build work
 - `ADAPTER_CONTRACT.md`: external adapter capability contract
 - `feature_list.generated.json`: append-safe long-horizon feature ledger for what is still planned, done, or blocked
 - `progress.md`: operator-facing summary of the latest decisions, blockers, and next actions
@@ -22,6 +23,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `done_when.md`: human-readable stop condition that should stay aligned with the real closeout bar
 - `init.sh`: fast session bootstrap for workbench setup, `evals/runs` storage creation, and canonical front-door commands
 - `.agents/skills/*/SKILL.md`: repo-local Codex app operator surfaces, with lane-centric entry skills such as `intent-router`, `product-intake`, `harness-design`, `run-resume`, `evaluator-tuning`, `run-attempt`, and `closeout`; compatibility aliases such as `harness-intake`, `harness-run-attempt`, and `harness-closeout` remain only for older automation
+- `.agents/skills/app-builder-loop/SKILL.md`: session-supervised product-build skill for discovery -> prepare -> running on one Codex foreground thread
 - `.agents/skills/*/agents/openai.yaml`: UI-facing Codex app metadata for the key lane-centric skills
 - `.codex-plugin/plugin.json` and `.agents/plugins/marketplace.json`: repo-root local plugin metadata for Codex app discovery
 - `evals/rubrics/generic-harness-rubric.json`: stop policy and required artifact list
@@ -104,7 +106,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Bootstrap-generated `run_target` now probes `ready_url` first and reuses a live server instead of restarting it every round. When a tracked process must be replaced, Windows cleanup now uses `taskkill /T /F` so stale `node` or `vite` children do not survive after their parent shell exits.
 - Use `--repair` with `--resume-run` when the controller should repair persisted state and stop instead of opening additional rounds.
 - Use `--resume-phase <phase>` to force repair or resume from a known persisted controller phase such as `evaluation` or `round_commit`.
-- Use `npm run loop:status -- --run-dir <evals/runs/run-###>` to inspect `summary.json`, runtime journals, and `operator-surface.json` without starting a new controller process. Add `--json` when another tool should consume the report.
+- Use `npm run loop:status -- --run-dir <evals/runs/run-###>` to inspect `summary.json`, runtime journals, `runtime/session-status.json`, and `operator-surface.json` without starting a new controller process. Add `--json` when another tool should consume the report.
 - `loop:status` and `--help` now reuse the current compiled CLI when `dist/` is already fresh, so read-only inspection does not force an unnecessary rebuild before printing status.
 - Use `npm run loop:resume -- --run-dir <evals/runs/run-###> --json` as the explicit machine-readable foreground re-entry surface instead of remembering the raw `--resume-run` form.
 - Use `npm run loop:phase -- <phase> --run-dir <evals/runs/run-###>` to re-enter from a named controller phase. Friendly aliases such as `open`, `negotiate`, `pre-verify`, `evaluate`, and `finalize` resolve to the canonical persisted phase names.
@@ -119,10 +121,12 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `runtime/live-state.json` now separates `execution_state` from transport liveness and records `last_progress_at` / `last_progress_note`, so a fresh heartbeat is no longer treated as proof of real forward progress.
 - `runtime/round-phase.json` and `runtime/controller-lease.json` now also carry progress timestamps plus `stalled`, `awaiting_codex_work`, and the legacy `awaiting_input` status, so pause and stall surfaces survive resume and supervision flows.
 - Every run now also persists `runtime/transport-state.json`, and `summary.json.transport_state_path` points at the active transport contract and live thread/turn state.
+- `transport-state.json.ui_surface` now also carries `session_status_path` plus a normalized session projection, so attached UI consumers can read one session feed without reopening mixed controller files first.
 - Every run now also persists `runtime/operator-surface.json` plus `.md`, and `summary.json.operator_surface_path` points at the operator-facing projection that tells humans whether the active surface is foreground-thread, background-automation, or headless.
+- Every run now also persists `runtime/session-status.json`, and both `summary.json.session_status_path` and `operator-surface.json.session_status_path` point at the normalized session-layer status and readiness surface for the active run.
 - Current-thread operator surfaces now distinguish shell-launched `manual-protocol` runs from stock Codex `foreground-thread` runs by requiring a real bound `CODEX_THREAD_ID`; launch-origin overrides alone no longer promote foreground ownership.
 - Operator-surface and transport-state now also persist `launch_origin`, `surface_owner`, `thread_binding_state`, `entrypoint`, and `app_visibility`, so stock Codex visibility is explicit instead of inferred from transport labels alone.
-- Operator-surface now also persists `handoff_state`, `worker_skill`, `recovery_skill`, legacy `resume_skill`, `resume_command`, `requires_codex_app`, `worktree_id`, and `worktree_path`, so `loop:status` and `loop:ui` can tell the operator whether the next continuation belongs in a local thread, worktree, automation surface, or manual shell resume.
+- Operator-surface now also persists `handoff_state`, `worker_skill`, `recovery_skill`, legacy `resume_skill`, `resume_command`, `requires_codex_app`, `worktree_id`, `worktree_path`, and a normalized `session` projection, so `loop:status` and `loop:ui` can tell the operator whether the next continuation belongs in a local thread, worktree, automation surface, or manual shell resume while also exposing foreground session readiness directly.
 - App-visible `current-thread` runs now distinguish `worker_skill = loop-control` for the canonical foreground autocontinue chain from `recovery_skill = attached-loop` for recovery after interruption, while legacy `recommended_skill` / `resume_skill` fields remain as compatibility aliases and shell or manual runs continue to publish explicit CLI resume commands.
 - `loop:status` now prints shell fallback commands for app-visible `current-thread` runs only as explicit downgrade commands that include `--allow-shell-resume-downgrade`, and `resume` / `phase` require the same persisted Codex `thread_id` instead of accepting any foreground-looking shell context.
 - Completed operator surfaces now clear stale handoff notes and replace resume-style `next_action` text with closeout guidance, so terminal runs do not keep obsolete reattach instructions.
@@ -147,6 +151,9 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 ## Operating policy
 
 - Use `IDEA.md` as the top-level input.
+- For Codex foreground product-build work, prefer a question-gated same-thread session that writes `runtime/build-brief.json` and `runtime/run-contract.json` before heavy implementation starts.
+- Treat `runtime/build-brief.json` and `runtime/run-contract.json` as session-level surfaces. They do not replace attempt-level `round-###/round-contract.json`.
+- The same session-preparation pass should also write `runtime/open-questions.json`, `runtime/session-status.json`, and `docs/EXECUTION_PLAN.md` for the active run, and refresh them when round feedback, human steering, or external blockers change the active session context.
 - Keep the repo adapter-free.
 - Treat every build attempt as resumable from files alone.
 - Treat `patch-request.json` as the main continuation request.
@@ -259,10 +266,14 @@ evals/runs/<run-id>/
   resume-decision.json
   resume-migration.json
   runtime/
+    build-brief.json
+    run-contract.json
     live-state.json
     round-phase.json
     controller-lease.json
     transport-state.json
+    open-questions.json
+    session-status.json
     operator-surface.json
     operator-surface.md
     supervisor-state.json
@@ -271,6 +282,8 @@ evals/runs/<run-id>/
     attached-generator-task.json
     attached-generator-prompt.md
     attached-generator-response.json
+  docs/
+    EXECUTION_PLAN.md
     codex-sessions.json
   round-001/
     round-contract.json
@@ -363,6 +376,8 @@ npm run loop:run -- --controller-mode attached --max-rounds 1
 npm run loop:run -- --controller-mode attached --transport current-thread --max-rounds 1
 npm run loop:watch -- --adapter ./.tmp/semantic-validation/patch-only-success/adapter.json --target-family api-service --max-rounds 3
 npm run loop:ui -- ./evals/runs/run-###
+npm run loop:ui -- ./evals/runs/run-### --once
+npm run loop:ui -- ./evals/runs/run-### --once --json
 ```
 
 Run with a live App Server transport:
@@ -462,7 +477,7 @@ npm run validate:reference-adapter
 
 `loop:single` and `loop:run` write harness artifacts by default. When `--adapter <path>` is provided, they also execute the external capability boundary.
 
-`loop:ui` now prefers `runtime/operator-surface.json` and renders the operator-facing projection on top of derived runtime health. Expect explicit `RUNNING`, `PAUSED`, `STALLED`, `COMPLETED`, or `FAILED` banners plus presentation mode, next action, and heartbeat/progress ages.
+`loop:ui` now consumes `runtime/session-status.json` as a first-class session feed, falls back to the normalized `operator-surface.json.session` projection only when that file is absent, and still renders the operator-facing projection on top of derived runtime health. `transport-state.json.ui_surface` now mirrors the same session feed for attached App Server consumers. Expect explicit `RUNNING`, `PAUSED`, `STALLED`, `COMPLETED`, or `FAILED` banners plus session readiness, presentation mode, next action, and heartbeat/progress ages. Use `--once` for a single snapshot and `--once --json` for machine-readable output.
 
 Use `validate:lifecycle-api`, `validate:family-browser-semantic`, and `validate:family-fullstack-semantic` for deterministic controller coverage. Use `validate:family-browser`, `validate:family-fullstack`, `validate:family-editor`, and `validate:family-dashboard` for environment-integration smoke that may legitimately classify failures as `environment_blocked` instead of product defects.
 

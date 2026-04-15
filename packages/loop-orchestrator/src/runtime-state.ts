@@ -24,6 +24,10 @@ export interface RuntimeStatePaths {
   roundPhasePath: string;
   transportStatePath: string;
   supervisorStatePath: string;
+  buildBriefPath: string;
+  runContractPath: string;
+  openQuestionsPath: string;
+  sessionStatusPath: string;
   operatorSurfacePath: string;
   operatorSurfaceMarkdownPath: string;
   plannerEnhancementTaskPath: string;
@@ -68,6 +72,10 @@ export const runtimeStatePathsForRun = (
     roundPhasePath: join(runtimeDirectory, "round-phase.json"),
     transportStatePath: join(runtimeDirectory, "transport-state.json"),
     supervisorStatePath: join(runtimeDirectory, "supervisor-state.json"),
+    buildBriefPath: join(runtimeDirectory, "build-brief.json"),
+    runContractPath: join(runtimeDirectory, "run-contract.json"),
+    openQuestionsPath: join(runtimeDirectory, "open-questions.json"),
+    sessionStatusPath: join(runtimeDirectory, "session-status.json"),
     operatorSurfacePath: join(runtimeDirectory, "operator-surface.json"),
     operatorSurfaceMarkdownPath: join(runtimeDirectory, "operator-surface.md"),
     plannerEnhancementTaskPath: join(runtimeDirectory, "planner-enhancement-task.json"),
