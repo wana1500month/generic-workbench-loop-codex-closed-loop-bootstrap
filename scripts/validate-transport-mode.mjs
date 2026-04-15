@@ -16,6 +16,13 @@ const assert = (condition, message) => {
   }
 };
 
+const readJsonLinesFile = async (path) =>
+  (await readFile(path, "utf8"))
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+
 const assertTransportSurface = async (
   runDirectory,
   {
@@ -76,12 +83,29 @@ const assertTransportSurface = async (
     typeof summary.session_status_path === "string",
     "Expected summary.session_status_path to be present."
   );
+  assert(
+    typeof summary.session_status_events_path === "string",
+    "Expected summary.session_status_events_path to be present."
+  );
+  assert(
+    typeof summary.session_stream_path === "string",
+    "Expected summary.session_stream_path to be present."
+  );
 
-  const [transportState, resumeIdentity, operatorSurface, sessionStatus] = await Promise.all([
+  const [
+    transportState,
+    resumeIdentity,
+    operatorSurface,
+    sessionStatus,
+    sessionEvents,
+    sessionStream
+  ] = await Promise.all([
     readJsonFile(summary.transport_state_path),
     readJsonFile(summary.resume_identity_path),
     readJsonFile(summary.operator_surface_path),
-    readJsonFile(summary.session_status_path)
+    readJsonFile(summary.session_status_path),
+    readJsonLinesFile(summary.session_status_events_path),
+    readJsonFile(summary.session_stream_path)
   ]);
   assert(
     transportState.controller_mode === expectedControllerMode,
@@ -125,6 +149,15 @@ const assertTransportSurface = async (
   assert(
     transportState.ui_surface?.session_status_path === summary.session_status_path,
     "Expected transport-state ui_surface.session_status_path to point at summary.session_status_path."
+  );
+  assert(
+    transportState.ui_surface?.session_status_events_path ===
+      summary.session_status_events_path,
+    "Expected transport-state ui_surface.session_status_events_path to point at summary.session_status_events_path."
+  );
+  assert(
+    transportState.ui_surface?.session_stream_path === summary.session_stream_path,
+    "Expected transport-state ui_surface.session_stream_path to point at summary.session_stream_path."
   );
   assert(
     transportState.ui_surface?.session?.objective === sessionStatus.objective,
@@ -187,8 +220,32 @@ const assertTransportSurface = async (
     "Expected operator surface session_status_path to point at summary.session_status_path."
   );
   assert(
+    operatorSurface.session_status_events_path === summary.session_status_events_path,
+    "Expected operator surface session_status_events_path to point at summary.session_status_events_path."
+  );
+  assert(
+    operatorSurface.session_stream_path === summary.session_stream_path,
+    "Expected operator surface session_stream_path to point at summary.session_stream_path."
+  );
+  assert(
     operatorSurface.session?.session_status === sessionStatus.session_status,
     "Expected operator surface session.session_status to mirror session-status."
+  );
+  assert(
+    Array.isArray(sessionEvents) && sessionEvents.length >= 1,
+    "Expected session status event stream to contain at least one event."
+  );
+  assert(
+    sessionEvents.at(-1)?.session?.session_status === sessionStatus.session_status,
+    "Expected last session status event to mirror session-status."
+  );
+  assert(
+    sessionStream.snapshot_path === "runtime/session-status.json",
+    "Expected session stream contract snapshot_path to point at runtime/session-status.json."
+  );
+  assert(
+    sessionStream.source_events_path === "runtime/session-status-events.jsonl",
+    "Expected session stream contract source_events_path to point at runtime/session-status-events.jsonl."
   );
   if (expectedWorkspaceSurface !== undefined) {
     assert(

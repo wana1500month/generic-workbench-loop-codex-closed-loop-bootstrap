@@ -37,6 +37,20 @@ const readTailLines = async (path, count) => {
   }
 };
 
+const readJsonTailLines = async (path, count) => {
+  try {
+    const text = await readFile(path, "utf8");
+    return text
+      .trim()
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .slice(-count)
+      .map((line) => JSON.parse(line));
+  } catch {
+    return [];
+  }
+};
+
 const runBuild = async () =>
   new Promise((resolvePromise, rejectPromise) => {
     const child = spawn("npm", ["run", "build", "--silent"], {
@@ -189,20 +203,24 @@ export const buildLoopUiSnapshot = async (runDirectory) => {
   const [
     operatorSurface,
     sessionStatus,
+    sessionStream,
     transportState,
     liveState,
     roundPhase,
     controllerLease,
     recentEvents,
+    recentSessionEvents,
     runtimeHealth
   ] = await Promise.all([
     readJsonIfExists(join(runtimeDirectory, "operator-surface.json")),
     readJsonIfExists(join(runtimeDirectory, "session-status.json")),
+    readJsonIfExists(join(runtimeDirectory, "session-stream.json")),
     readJsonIfExists(join(runtimeDirectory, "transport-state.json")),
     readJsonIfExists(join(runtimeDirectory, "live-state.json")),
     readJsonIfExists(join(runtimeDirectory, "round-phase.json")),
     readJsonIfExists(join(runtimeDirectory, "controller-lease.json")),
     readTailLines(join(runtimeDirectory, "app-server-events.jsonl"), 20),
+    readJsonTailLines(join(runtimeDirectory, "session-status-events.jsonl"), 10),
     ensureRuntimeHealthModule()
   ]);
 
@@ -298,9 +316,19 @@ export const buildLoopUiSnapshot = async (runDirectory) => {
       transport_event_age_ms: health.transport_event_age_ms
     },
     session,
+    session_stream: sessionStream
+      ? {
+          preferred_delivery: sessionStream.preferred_delivery,
+          event_type: sessionStream.event_type,
+          source_events_path: sessionStream.source_events_path,
+          app_server_events_path: sessionStream.app_server_events_path ?? "none"
+        }
+      : undefined,
     paths: {
       operator_surface_path: join(runtimeDirectory, "operator-surface.json"),
-      session_status_path: join(runtimeDirectory, "session-status.json")
+      session_status_path: join(runtimeDirectory, "session-status.json"),
+      session_status_events_path: join(runtimeDirectory, "session-status-events.jsonl"),
+      session_stream_path: join(runtimeDirectory, "session-stream.json")
     },
     next_action: operatorSurface?.next_action ?? "none",
     resume_command: operatorSurface?.resume_command ?? "none",
@@ -310,7 +338,8 @@ export const buildLoopUiSnapshot = async (runDirectory) => {
       Array.isArray(operatorSurface?.notes) && operatorSurface.notes.length > 0
         ? operatorSurface.notes
         : [],
-    recent_events: recentEvents
+    recent_events: recentEvents,
+    recent_session_events: recentSessionEvents
   };
 };
 
@@ -345,6 +374,11 @@ export const renderLoopUiSnapshot = (snapshot) =>
     `Transport event age: ${formatAge(snapshot.health.transport_event_age_ms)}`,
     `Health: ${snapshot.health.summary}`,
     `Session status path: ${snapshot.paths.session_status_path}`,
+    `Session status events: ${snapshot.paths.session_status_events_path}`,
+    `Session stream contract: ${snapshot.paths.session_stream_path}`,
+    snapshot.session_stream
+      ? `Session stream: ${snapshot.session_stream.preferred_delivery} / ${snapshot.session_stream.event_type} / app-server ${snapshot.session_stream.app_server_events_path}`
+      : "Session stream: none",
     `Operator surface path: ${snapshot.paths.operator_surface_path}`,
     `Next action: ${snapshot.next_action}`,
     `Resume command: ${snapshot.resume_command}`,
@@ -357,7 +391,15 @@ export const renderLoopUiSnapshot = (snapshot) =>
       : ["- none"]),
     "",
     "Recent events:",
-    ...(snapshot.recent_events.length > 0 ? snapshot.recent_events : ["- none"])
+    ...(snapshot.recent_events.length > 0 ? snapshot.recent_events : ["- none"]),
+    "",
+    "Recent session events:",
+    ...(snapshot.recent_session_events.length > 0
+      ? snapshot.recent_session_events.map(
+          (event) =>
+            `- #${event.sequence} ${event.event_type} [${(event.changed_fields ?? []).join(", ") || "none"}] -> ${event.session?.session_status ?? "unknown"} / ${event.session?.readiness ?? "unknown"}`
+        )
+      : ["- none"])
   ].join("\n");
 
 const main = async () => {

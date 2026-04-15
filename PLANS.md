@@ -373,12 +373,23 @@ Acceptance:
 - `runtime/session-status.json` is the normalized session-layer
   readiness/status artifact, and `runtime/operator-surface.json` should project
   that session layer directly instead of forcing UI consumers to infer it.
+- `runtime/session-status-events.jsonl` should persist append-only structured
+  session-change events derived from the same source as `runtime/session-status.json`,
+  and attached clients should be able to consume that stream directly.
+- `runtime/session-stream.json` should persist the attached-session contract for
+  snapshot path, source event path, preferred delivery mode, and widget-facing
+  summary fields.
+- App Server transport should mirror that source stream into
+  `runtime/app-server-session-events.jsonl` as `harness/session.changed`
+  notifications, so attached clients can subscribe without tailing files
+  themselves.
 - `loop:ui` should consume `runtime/session-status.json` as its first-class
   session feed, with `operator-surface.json.session` only as a compatibility
   fallback.
-- `transport-state.json.ui_surface` should carry the same session feed for
-  attached App Server consumers, so embedded UI clients do not need to infer
-  session state from mixed control-plane files.
+- `transport-state.json.ui_surface` should carry the same session snapshot path,
+  session event-stream path, session-stream contract path, and normalized
+  projection for attached App Server consumers, so embedded UI clients do not
+  need to infer session state from mixed control-plane files.
 - The operator-facing session vocabulary is fixed to `asking`, `preparing`,
   `running`, `needs_steering`, `blocked_externally`, `ready_for_review`, and
   `done`.
@@ -404,4 +415,10 @@ Validation:
 - `npm run validate:loop-ui-session-status` proves the runtime dashboard
   prefers `runtime/session-status.json` over stale operator-surface session
   projections.
+- `npm run validate:session-status-event-stream` proves session-change events
+  append only on real session changes and stay aligned with the latest
+  `runtime/session-status.json` snapshot.
+- `npm run validate:app-server-session-stream` proves the app-server-native
+  mirrored notification log stays aligned with the source session stream and
+  that attached transport state points at the same session contract.
 - `npm run build`

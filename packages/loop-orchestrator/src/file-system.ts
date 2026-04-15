@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,6 +29,27 @@ export const loadJsonIfExists = async <T>(path: string): Promise<T | undefined> 
   }
 };
 
+export const loadJsonLinesIfExists = async <T>(path: string): Promise<T[]> => {
+  try {
+    const raw = await readFile(path, "utf8");
+    return raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as T);
+  } catch (error: unknown) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error.code === "ENOENT" || error.code === "ENOTDIR")
+    ) {
+      return [];
+    }
+    throw error;
+  }
+};
+
 export const writeJson = async (path: string, value: unknown): Promise<void> => {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
@@ -37,6 +58,11 @@ export const writeJson = async (path: string, value: unknown): Promise<void> => 
 export const writeText = async (path: string, value: string): Promise<void> => {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, value, "utf8");
+};
+
+export const appendJsonLine = async (path: string, value: unknown): Promise<void> => {
+  await mkdir(dirname(path), { recursive: true });
+  await appendFile(path, `${JSON.stringify(value)}\n`, "utf8");
 };
 
 export const pathExists = async (path: string): Promise<boolean> => {

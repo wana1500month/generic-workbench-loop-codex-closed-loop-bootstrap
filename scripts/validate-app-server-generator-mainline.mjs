@@ -35,6 +35,17 @@ const main = async () => {
     const targetRoot = join(tempRoot, "target-root");
     const transportStatePath = join(runtimeDirectory, "transport-state.json");
     const summaryPath = join(runDirectory, "summary.json");
+    const dashboardPath = join(runtimeDirectory, "operator-surface.md");
+    const sessionStatusPath = join(runtimeDirectory, "session-status.json");
+    const sessionStatusEventsPath = join(
+      runtimeDirectory,
+      "session-status-events.jsonl"
+    );
+    const sessionStreamPath = join(runtimeDirectory, "session-stream.json");
+    const mirroredSessionEventsPath = join(
+      runtimeDirectory,
+      "app-server-session-events.jsonl"
+    );
     const responsePath = join(runtimeDirectory, "attached-generator-response.json");
     const targetFilePath = join(targetRoot, "attached-generator.txt");
     const recordPath = join(runtimeDirectory, "fake-app-server-record.json");
@@ -68,6 +79,11 @@ const main = async () => {
       transportStatePath,
       summaryPath,
       protocolPath,
+      dashboardPath,
+      sessionStatusPath,
+      sessionStatusEventsPath,
+      sessionStreamPath,
+      mirroredSessionEventsPath,
       initialRound: 1,
       initialPhase: "pre_verification",
       initialStatus: "in_progress",
@@ -129,8 +145,8 @@ const main = async () => {
     );
     assert(generatorTurn, "Expected a workspaceWrite turn/start request for the attached generator task.");
     assert(
-      generatorTurn.params?.approvalPolicy === "unlessTrusted",
-      `Expected attached generator task approvalPolicy 'unlessTrusted', received '${generatorTurn.params?.approvalPolicy ?? "missing"}'.`
+      generatorTurn.params?.approvalPolicy === "never",
+      `Expected attached generator task approvalPolicy 'never', received '${generatorTurn.params?.approvalPolicy ?? "missing"}'.`
     );
     const statusTurn = incomingRequests.find(
       (message) =>

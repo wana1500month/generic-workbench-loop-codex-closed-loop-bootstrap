@@ -4,7 +4,13 @@ import { join } from "node:path";
 import readline from "node:readline";
 
 import { resolveCodexCliLaunch } from "./codex-cli.js";
-import { loadJsonIfExists, repoRoot, writeText } from "./file-system.js";
+import {
+  appendJsonLine,
+  loadJsonIfExists,
+  loadJsonLinesIfExists,
+  repoRoot,
+  writeText
+} from "./file-system.js";
 import { buildOperatorSurfaceSessionProjection } from "./session-artifacts.js";
 import {
   buildTransportStateArtifact,
@@ -16,6 +22,7 @@ import type {
   ControllerPhaseStatus,
   ControllerRoundPhase,
   ExecutorMode,
+  SessionStatusEventArtifact,
   SessionStatusArtifact
 } from "./types.js";
 
@@ -114,6 +121,22 @@ export interface AppServerTransportController {
 
 const unique = <T>(values: readonly T[]): T[] => [...new Set(values)];
 
+const approvalPolicyCandidates = (policy: string): string[] => {
+  switch (policy) {
+    case "unlessTrusted":
+    case "untrusted":
+      return ["untrusted", "unlessTrusted"];
+    case "onRequest":
+    case "on-request":
+      return ["on-request", "onRequest"];
+    case "onFailure":
+    case "on-failure":
+      return ["on-failure", "onFailure"];
+    default:
+      return [policy];
+  }
+};
+
 const appServerCommand = (): { command: string; args: string[] } => {
   return resolveCodexCliLaunch({
     commandEnvKeys: ["HARNESS_APP_SERVER_BIN", "HARNESS_CODEX_BIN"],
@@ -147,6 +170,8 @@ class LiveAppServerTransport implements AppServerTransportController {
   private readonly protocolPath: string;
   private readonly dashboardPath: string;
   private readonly sessionStatusPath: string;
+  private readonly sessionStatusEventsPath: string;
+  private readonly sessionStreamPath: string;
   private readonly command: string;
   private readonly args: string[];
   private readonly cwd: string;
@@ -156,6 +181,7 @@ class LiveAppServerTransport implements AppServerTransportController {
   private readonly requestTimeoutMs: number;
   private readonly requestsPath: string;
   private readonly eventsPath: string;
+  private readonly mirroredSessionEventsPath: string;
   private readonly errorsPath: string;
   private readonly child;
   private readonly rl;
@@ -170,6 +196,7 @@ class LiveAppServerTransport implements AppServerTransportController {
   private allowedApprovalPolicies?: string[];
   private nextRequestId = 1;
   private persistQueue: Promise<void> = Promise.resolve();
+  private mirroredSessionEventCursor = 0;
   private terminalTransportStatus?: PersistedTransportStatus;
   private closed = false;
 
@@ -182,6 +209,9 @@ class LiveAppServerTransport implements AppServerTransportController {
     protocolPath: string;
     dashboardPath: string;
     sessionStatusPath: string;
+    sessionStatusEventsPath: string;
+    sessionStreamPath: string;
+    mirroredSessionEventsPath: string;
     restoredThreadId?: string;
     threadName: string;
     defaultTaskTimeoutMs: number;
@@ -196,6 +226,8 @@ class LiveAppServerTransport implements AppServerTransportController {
     this.protocolPath = input.protocolPath;
     this.dashboardPath = input.dashboardPath;
     this.sessionStatusPath = input.sessionStatusPath;
+    this.sessionStatusEventsPath = input.sessionStatusEventsPath;
+    this.sessionStreamPath = input.sessionStreamPath;
     this.command = command;
     this.args = args;
     this.cwd = repoRoot;
@@ -206,6 +238,7 @@ class LiveAppServerTransport implements AppServerTransportController {
     const runtimeDirectory = join(this.cwd, "evals", "runs", this.runId, "runtime");
     this.requestsPath = join(runtimeDirectory, "app-server-requests.jsonl");
     this.eventsPath = join(runtimeDirectory, "app-server-events.jsonl");
+    this.mirroredSessionEventsPath = input.mirroredSessionEventsPath;
     this.errorsPath = join(runtimeDirectory, "app-server-stderr.log");
     this.snapshotState = {
       implemented: true,
@@ -238,7 +271,8 @@ class LiveAppServerTransport implements AppServerTransportController {
         "item/completed",
         "item/agentMessage/delta",
         "turn/diff/updated",
-        "turn/completed"
+        "turn/completed",
+        "harness/session.changed"
       ]
     };
     this.child = spawn(command, args, {
@@ -315,6 +349,11 @@ class LiveAppServerTransport implements AppServerTransportController {
       writeText(this.eventsPath, ""),
       writeText(this.errorsPath, "")
     ]);
+    this.mirroredSessionEventCursor = (
+      await loadJsonLinesIfExists<{
+        params?: { sequence?: number };
+      }>(this.mirroredSessionEventsPath)
+    ).at(-1)?.params?.sequence ?? 0;
 
     await this.request("initialize", {
       clientInfo: {
@@ -435,14 +474,22 @@ class LiveAppServerTransport implements AppServerTransportController {
     const writableRoots = unique(input.writableRoots?.length ? input.writableRoots : [cwd]);
     const sandboxMode = input.sandboxMode ?? "workspaceWrite";
     const requestedApprovalPolicy =
-      input.approvalPolicy ??
-      (sandboxMode === "readOnly"
-        ? this.resolveApprovalPolicy(["never", "unlessTrusted", "onRequest"])
-        : this.resolveApprovalPolicy(
-            this.controllerMode === "attached"
-              ? ["unlessTrusted", "onRequest", "never"]
-              : ["never"]
-          ));
+      input.approvalPolicy !== undefined
+        ? this.resolveApprovalPolicy([input.approvalPolicy])
+        : sandboxMode === "readOnly"
+          ? this.resolveApprovalPolicy([
+              "never",
+              "on-failure",
+              "untrusted",
+              "unlessTrusted",
+              "on-request",
+              "onRequest"
+            ])
+          : this.resolveApprovalPolicy(
+              this.controllerMode === "attached"
+                ? ["never", "on-failure", "untrusted", "unlessTrusted", "on-request", "onRequest"]
+                : ["never"]
+            );
     const turnStartParams: Record<string, unknown> = {
       threadId: this.snapshotState.thread_id,
       input:
@@ -628,7 +675,10 @@ class LiveAppServerTransport implements AppServerTransportController {
 
     const statusApprovalPolicy = this.resolveApprovalPolicy([
       "never",
+      "on-failure",
+      "untrusted",
       "unlessTrusted",
+      "on-request",
       "onRequest"
     ]);
     const turnParams: Record<string, unknown> = {
@@ -693,10 +743,20 @@ class LiveAppServerTransport implements AppServerTransportController {
     if (preferredPolicies.length === 0) {
       return undefined;
     }
-    if (!this.allowedApprovalPolicies?.length) {
-      return preferredPolicies[0];
+
+    const allowedPolicies = this.allowedApprovalPolicies?.length
+      ? new Set(this.allowedApprovalPolicies)
+      : undefined;
+
+    for (const preferredPolicy of preferredPolicies) {
+      for (const candidate of approvalPolicyCandidates(preferredPolicy)) {
+        if (!allowedPolicies || allowedPolicies.has(candidate)) {
+          return candidate;
+        }
+      }
     }
-    return preferredPolicies.find((policy) => this.allowedApprovalPolicies?.includes(policy));
+
+    return undefined;
   }
 
   private async tryReadConfigRequirements(): Promise<void> {
@@ -1139,6 +1199,33 @@ class LiveAppServerTransport implements AppServerTransportController {
     return "configured";
   }
 
+  private async mirrorSessionEvents(): Promise<void> {
+    const pendingEvents = (
+      await loadJsonLinesIfExists<SessionStatusEventArtifact>(
+        this.sessionStatusEventsPath
+      )
+    ).filter((event) => event.sequence > this.mirroredSessionEventCursor);
+
+    for (const event of pendingEvents) {
+      await appendJsonLine(this.mirroredSessionEventsPath, {
+        method: "harness/session.changed",
+        params: {
+          runId: this.runId,
+          streamId: `session-stream-${this.runId}`,
+          sequence: event.sequence,
+          cursor: event.sequence,
+          createdAt: event.created_at,
+          changedFields: event.changed_fields,
+          snapshotPath: this.sessionStatusPath,
+          contractPath: this.sessionStreamPath,
+          sourceEventsPath: this.sessionStatusEventsPath,
+          session: buildOperatorSurfaceSessionProjection(event.session)
+        }
+      });
+      this.mirroredSessionEventCursor = event.sequence;
+    }
+  }
+
   private async persistState(
     lastError?: string,
     explicitStatus?: PersistedTransportStatus
@@ -1150,10 +1237,14 @@ class LiveAppServerTransport implements AppServerTransportController {
       "App Server transport is an embedded background-automation surface that keeps a live thread/turn container through codex app-server.",
       `Request log: ${this.requestsPath}`,
       `Event log: ${this.eventsPath}`,
-      `Protocol surface: ${this.protocolPath}`
+      `Protocol surface: ${this.protocolPath}`,
+      `Session status stream: ${this.sessionStatusEventsPath}`,
+      `Session widget contract: ${this.sessionStreamPath}`,
+      `Mirrored App Server session events: ${this.mirroredSessionEventsPath}`
     ]);
-    this.persistQueue = this.persistQueue.then(() =>
-      writeTransportStateArtifact(
+    this.persistQueue = this.persistQueue.then(async () => {
+      await this.mirrorSessionEvents();
+      await writeTransportStateArtifact(
         this.transportStatePath,
         buildTransportStateArtifact({
           runId: this.runId,
@@ -1164,6 +1255,8 @@ class LiveAppServerTransport implements AppServerTransportController {
           protocolPath: this.protocolPath,
           dashboardPath: this.dashboardPath,
           sessionStatusPath: this.sessionStatusPath,
+          sessionStatusEventsPath: this.sessionStatusEventsPath,
+          sessionStreamPath: this.sessionStreamPath,
           ...(sessionStatus
             ? {
                 session:
@@ -1175,8 +1268,8 @@ class LiveAppServerTransport implements AppServerTransportController {
           ...(lastError ? { lastError } : {}),
           appServer: this.snapshot()
         })
-      )
-    );
+      );
+    });
     await this.persistQueue;
   }
 }
@@ -1190,6 +1283,9 @@ export const startAppServerTransport = async (input: {
   protocolPath: string;
   dashboardPath: string;
   sessionStatusPath: string;
+  sessionStatusEventsPath: string;
+  sessionStreamPath: string;
+  mirroredSessionEventsPath: string;
   restoredThreadId?: string;
   initialRound: number;
   initialPhase: ControllerRoundPhase;
@@ -1208,6 +1304,9 @@ export const startAppServerTransport = async (input: {
     protocolPath: input.protocolPath,
     dashboardPath: input.dashboardPath,
     sessionStatusPath: input.sessionStatusPath,
+    sessionStatusEventsPath: input.sessionStatusEventsPath,
+    sessionStreamPath: input.sessionStreamPath,
+    mirroredSessionEventsPath: input.mirroredSessionEventsPath,
     restoredThreadId: input.restoredThreadId,
     threadName: input.threadName,
     defaultTaskTimeoutMs: input.defaultTaskTimeoutMs,

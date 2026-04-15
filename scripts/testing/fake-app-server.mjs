@@ -295,7 +295,7 @@ for await (const line of rl) {
       requirements: {
         approvals: {
           policy: {
-            allowed: ["never", "onRequest", "unlessTrusted"]
+            allowed: ["never", "on-failure", "on-request", "untrusted"]
           }
         }
       }

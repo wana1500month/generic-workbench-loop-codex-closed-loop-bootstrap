@@ -1,6 +1,12 @@
 import { join, relative } from "node:path";
 
-import { loadJsonIfExists, writeJson, writeText } from "./file-system.js";
+import {
+  appendJsonLine,
+  loadJsonIfExists,
+  loadJsonLinesIfExists,
+  writeJson,
+  writeText
+} from "./file-system.js";
 import type { DurableMemoryContext } from "./durable-memory.js";
 import type {
   BuildBriefArtifact,
@@ -19,11 +25,14 @@ import type {
   SessionLoopStatus,
   SessionReadiness,
   SessionReviewBoundary,
+  SessionStreamContractArtifact,
+  SessionStatusEventArtifact,
   SessionStatusArtifact,
   SessionRunContractArtifact,
   SessionSteeringTrigger,
   TargetFamily,
-  TargetManifestKey
+  TargetManifestKey,
+  TransportMode
 } from "./types.js";
 
 type SessionIntakeSnapshot = {
@@ -78,6 +87,7 @@ export interface SessionPreparationArtifactsResult {
   runContract: SessionRunContractArtifact;
   openQuestions: SessionOpenQuestionsArtifact;
   sessionStatus: SessionStatusArtifact;
+  sessionStream: SessionStreamContractArtifact;
   executionPlanPath: string;
 }
 
@@ -89,8 +99,12 @@ export interface SessionPreparationArtifactsInput {
   runContractPath: string;
   openQuestionsPath: string;
   sessionStatusPath: string;
+  sessionStatusEventsPath: string;
+  sessionStreamPath: string;
   operatorSurfacePath: string;
   executionPlanPath: string;
+  transportMode: TransportMode;
+  appServerSessionEventsPath?: string;
   idea: IdeaBrief;
   durableMemory: DurableMemoryContext;
   scenario: LoopScenario;
@@ -146,6 +160,8 @@ const requiredPrepareArtifacts = [
   "runtime/operator-surface.json",
   "runtime/open-questions.json",
   "runtime/session-status.json",
+  "runtime/session-status-events.jsonl",
+  "runtime/session-stream.json",
   "docs/EXECUTION_PLAN.md"
 ];
 
@@ -449,6 +465,8 @@ export const buildSessionStatusArtifact = (input: {
   buildBriefPath: string;
   runContractPath: string;
   openQuestionsPath: string;
+  sessionStatusEventsPath: string;
+  sessionStreamPath: string;
   operatorSurfacePath: string;
   executionPlanPath: string;
 }): SessionStatusArtifact => ({
@@ -475,9 +493,80 @@ export const buildSessionStatusArtifact = (input: {
     run_contract_path: relativeToRun(input.runDirectory, input.runContractPath),
     open_questions_path: relativeToRun(input.runDirectory, input.openQuestionsPath),
     operator_surface_path: relativeToRun(input.runDirectory, input.operatorSurfacePath),
+    session_status_events_path: relativeToRun(
+      input.runDirectory,
+      input.sessionStatusEventsPath
+    ),
+    session_stream_path: relativeToRun(input.runDirectory, input.sessionStreamPath),
     execution_plan_path: relativeToRun(input.runDirectory, input.executionPlanPath)
   }
 });
+
+const stableSessionFields = (
+  artifact: SessionStatusArtifact
+): Record<string, string | number | boolean | null> => ({
+  session_status: artifact.session_status,
+  readiness: artifact.readiness,
+  next_attention: artifact.next_attention,
+  objective: artifact.objective,
+  workspace_mode: artifact.workspace_mode,
+  current_thread_required: artifact.current_thread_required,
+  deferred_question_count: artifact.deferred_question_count,
+  steering_note_count: artifact.steering_note_count,
+  review_feedback_count: artifact.review_feedback_count,
+  external_blocker_count: artifact.external_blocker_count,
+  latest_round: artifact.latest_round ?? null,
+  latest_stop_reason: artifact.latest_stop_reason ?? null
+});
+
+const diffSessionStatusFields = (
+  previous: SessionStatusArtifact | undefined,
+  next: SessionStatusArtifact
+): string[] => {
+  const nextStable = stableSessionFields(next);
+  if (!previous) {
+    return Object.keys(nextStable);
+  }
+
+  const previousStable = stableSessionFields(previous);
+  return Object.keys(nextStable).filter(
+    (field) => previousStable[field] !== nextStable[field]
+  );
+};
+
+const buildSessionStatusEventArtifact = async (input: {
+  now: string;
+  runId: string;
+  sessionStatusPath: string;
+  sessionStatusEventsPath: string;
+  previousSessionStatus?: SessionStatusArtifact;
+  nextSessionStatus: SessionStatusArtifact;
+}): Promise<SessionStatusEventArtifact | undefined> => {
+  const changedFields = diffSessionStatusFields(
+    input.previousSessionStatus,
+    input.nextSessionStatus
+  );
+  if (changedFields.length === 0) {
+    return undefined;
+  }
+
+  const existingEvents = await loadJsonLinesIfExists<SessionStatusEventArtifact>(
+    input.sessionStatusEventsPath
+  );
+  const sequence = existingEvents.length + 1;
+  return {
+    event_id: `session-status-event-${String(sequence).padStart(4, "0")}`,
+    run_id: input.runId,
+    sequence,
+    created_at: input.now,
+    event_type: input.previousSessionStatus
+      ? "session_changed"
+      : "session_initialized",
+    session_status_path: input.sessionStatusPath,
+    changed_fields: changedFields,
+    session: input.nextSessionStatus
+  };
+};
 
 export const buildOperatorSurfaceSessionProjection = (
   artifact: SessionStatusArtifact
@@ -498,6 +587,61 @@ export const buildOperatorSurfaceSessionProjection = (
     : {})
 });
 
+export const buildSessionStreamContractArtifact = (input: {
+  updatedAt: string;
+  runId: string;
+  runDirectory: string;
+  transportMode: TransportMode;
+  sessionStatusPath: string;
+  sessionStatusEventsPath: string;
+  sessionStatus: SessionStatusArtifact;
+  latestSourceSequence?: number;
+  appServerSessionEventsPath?: string;
+}): SessionStreamContractArtifact => ({
+  contract_id: `session-stream-${slugify(input.runId)}`,
+  run_id: input.runId,
+  updated_at: input.updatedAt,
+  transport_mode: input.transportMode,
+  preferred_delivery:
+    input.transportMode === "app-server" && input.appServerSessionEventsPath
+      ? "app_server_notification_jsonl"
+      : "file_tail_jsonl",
+  snapshot_path: relativeToRun(input.runDirectory, input.sessionStatusPath),
+  source_events_path: relativeToRun(
+    input.runDirectory,
+    input.sessionStatusEventsPath
+  ),
+  ...(input.appServerSessionEventsPath
+    ? {
+        app_server_events_path: relativeToRun(
+          input.runDirectory,
+          input.appServerSessionEventsPath
+        )
+      }
+    : {}),
+  event_type: "harness/session.changed",
+  ...(input.latestSourceSequence !== undefined
+    ? { latest_source_sequence: input.latestSourceSequence }
+    : {}),
+  latest_session: buildOperatorSurfaceSessionProjection(input.sessionStatus),
+  widget: {
+    kind: "session_status",
+    title: "Harness Session Status",
+    primary_fields: [
+      "session_status",
+      "readiness",
+      "next_attention",
+      "objective"
+    ],
+    count_fields: [
+      "deferred_question_count",
+      "steering_note_count",
+      "review_feedback_count",
+      "external_blocker_count"
+    ]
+  }
+});
+
 const executionPlanMarkdown = (input: {
   runId: string;
   title: string;
@@ -511,6 +655,8 @@ const executionPlanMarkdown = (input: {
   runContractPath: string;
   openQuestionsPath: string;
   sessionStatusPath: string;
+  sessionStreamPath: string;
+  sessionStatusEventsPath: string;
   operatorSurfacePath: string;
   scenario: LoopScenario;
   plan: LoopPlan;
@@ -531,6 +677,8 @@ const executionPlanMarkdown = (input: {
     `- Build brief: ${input.buildBriefPath}`,
     `- Session run contract: ${input.runContractPath}`,
     `- Session status: ${input.sessionStatusPath}`,
+    `- Session stream contract: ${input.sessionStreamPath}`,
+    `- Session status events: ${input.sessionStatusEventsPath}`,
     `- Operator surface: ${input.operatorSurfacePath}`,
     `- Deferred questions: ${input.openQuestionsPath}`,
     "",
@@ -613,6 +761,8 @@ export const writeSessionPreparationArtifacts = async (
   );
   const existingRunContract =
     await loadJsonIfExists<SessionRunContractArtifact>(input.runContractPath);
+  const existingSessionStatus =
+    await loadJsonIfExists<SessionStatusArtifact>(input.sessionStatusPath);
   const targetManifestHints = buildTargetManifestHints(intake);
   const projectMode = intake?.project_mode ?? "existing";
   const primarySurface = inferPrimarySurface(intake?.target_family ?? input.targetFamily);
@@ -741,8 +891,18 @@ export const writeSessionPreparationArtifacts = async (
     buildBriefPath: input.buildBriefPath,
     runContractPath: input.runContractPath,
     openQuestionsPath: input.openQuestionsPath,
+    sessionStatusEventsPath: input.sessionStatusEventsPath,
+    sessionStreamPath: input.sessionStreamPath,
     operatorSurfacePath: input.operatorSurfacePath,
     executionPlanPath: input.executionPlanPath
+  });
+  const sessionStatusEvent = await buildSessionStatusEventArtifact({
+    now,
+    runId: input.runId,
+    sessionStatusPath: input.sessionStatusPath,
+    sessionStatusEventsPath: input.sessionStatusEventsPath,
+    previousSessionStatus: existingSessionStatus,
+    nextSessionStatus: sessionStatusArtifact
   });
 
   const runContract: SessionRunContractArtifact = {
@@ -819,6 +979,11 @@ export const writeSessionPreparationArtifacts = async (
         runContractPath: relativeToRun(input.runDirectory, input.runContractPath),
         openQuestionsPath: relativeToRun(input.runDirectory, input.openQuestionsPath),
         sessionStatusPath: relativeToRun(input.runDirectory, input.sessionStatusPath),
+        sessionStreamPath: relativeToRun(input.runDirectory, input.sessionStreamPath),
+        sessionStatusEventsPath: relativeToRun(
+          input.runDirectory,
+          input.sessionStatusEventsPath
+        ),
         operatorSurfacePath: relativeToRun(input.runDirectory, input.operatorSurfacePath),
         scenario: input.scenario,
         plan: input.plan,
@@ -827,11 +992,34 @@ export const writeSessionPreparationArtifacts = async (
     )
   ]);
 
+  if (sessionStatusEvent) {
+    await appendJsonLine(input.sessionStatusEventsPath, sessionStatusEvent);
+  }
+
+  const latestSourceSequence =
+    sessionStatusEvent?.sequence ??
+    (await loadJsonLinesIfExists<SessionStatusEventArtifact>(
+      input.sessionStatusEventsPath
+    )).at(-1)?.sequence;
+  const sessionStream = buildSessionStreamContractArtifact({
+    updatedAt: now,
+    runId: input.runId,
+    runDirectory: input.runDirectory,
+    transportMode: input.transportMode,
+    sessionStatusPath: input.sessionStatusPath,
+    sessionStatusEventsPath: input.sessionStatusEventsPath,
+    sessionStatus: sessionStatusArtifact,
+    latestSourceSequence,
+    appServerSessionEventsPath: input.appServerSessionEventsPath
+  });
+  await writeJson(input.sessionStreamPath, sessionStream);
+
   return {
     buildBrief,
     runContract,
     openQuestions,
     sessionStatus: sessionStatusArtifact,
+    sessionStream,
     executionPlanPath: input.executionPlanPath
   };
 };

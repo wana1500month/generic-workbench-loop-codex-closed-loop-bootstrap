@@ -102,6 +102,17 @@ const main = async () => {
     const runtimeDirectory = join(runDirectory, "runtime");
     const summaryPath = join(runDirectory, "summary.json");
     const transportStatePath = join(runtimeDirectory, "transport-state.json");
+    const dashboardPath = join(runtimeDirectory, "operator-surface.md");
+    const sessionStatusPath = join(runtimeDirectory, "session-status.json");
+    const sessionStatusEventsPath = join(
+      runtimeDirectory,
+      "session-status-events.jsonl"
+    );
+    const sessionStreamPath = join(runtimeDirectory, "session-stream.json");
+    const mirroredSessionEventsPath = join(
+      runtimeDirectory,
+      "app-server-session-events.jsonl"
+    );
     const targetRoot = join(tempRoot, "target-root");
     const responsePath = join(runtimeDirectory, "real-app-server-response.json");
     const targetFilePath = join(targetRoot, "app-server-real-smoke.txt");
@@ -139,6 +150,11 @@ const main = async () => {
       transportStatePath,
       summaryPath,
       protocolPath,
+      dashboardPath,
+      sessionStatusPath,
+      sessionStatusEventsPath,
+      sessionStreamPath,
+      mirroredSessionEventsPath,
       initialRound: 1,
       initialPhase: "pre_verification",
       initialStatus: "in_progress",

@@ -1512,7 +1512,47 @@ export interface SessionStatusArtifact {
     run_contract_path: string;
     open_questions_path: string;
     operator_surface_path: string;
+    session_status_events_path: string;
+    session_stream_path: string;
     execution_plan_path: string;
+  };
+}
+
+export interface SessionStatusEventArtifact {
+  event_id: string;
+  run_id: string;
+  sequence: number;
+  created_at: string;
+  event_type: "session_initialized" | "session_changed";
+  session_status_path: string;
+  changed_fields: string[];
+  session: SessionStatusArtifact;
+}
+
+export interface SessionStreamContractArtifact {
+  contract_id: string;
+  run_id: string;
+  updated_at: string;
+  transport_mode: TransportMode;
+  preferred_delivery: "file_tail_jsonl" | "app_server_notification_jsonl";
+  snapshot_path: string;
+  source_events_path: string;
+  app_server_events_path?: string;
+  event_type: "harness/session.changed";
+  latest_source_sequence?: number;
+  latest_session?: OperatorSurfaceSessionProjection;
+  widget: {
+    kind: "session_status";
+    title: string;
+    primary_fields: Array<
+      "session_status" | "readiness" | "next_attention" | "objective"
+    >;
+    count_fields: Array<
+      | "deferred_question_count"
+      | "steering_note_count"
+      | "review_feedback_count"
+      | "external_blocker_count"
+    >;
   };
 }
 
@@ -1570,6 +1610,8 @@ export interface LoopRunSummary {
   transport_protocol_path?: string;
   operator_surface_path?: string;
   session_status_path?: string;
+  session_status_events_path?: string;
+  session_stream_path?: string;
   adapter_migration_applied_path?: string;
   stop_reason?: RunStopReason;
   selection_basis?: "terminal_round";
@@ -1700,6 +1742,8 @@ export interface OperatorSurfaceArtifact {
   transport_state_path?: string;
   transport_protocol_path?: string;
   session_status_path?: string;
+  session_status_events_path?: string;
+  session_stream_path?: string;
   next_action?: string;
   active_prompt_path?: string;
   active_response_path?: string;
@@ -1742,6 +1786,8 @@ export interface TransportStateArtifact {
     thread_name?: string;
     dashboard_path?: string;
     session_status_path?: string;
+    session_status_events_path?: string;
+    session_stream_path?: string;
     session?: OperatorSurfaceSessionProjection;
   };
   notes?: string[];

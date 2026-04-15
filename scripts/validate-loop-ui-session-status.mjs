@@ -72,8 +72,11 @@ const main = async () => {
       runContractPath: runtimePaths.runContractPath,
       openQuestionsPath: runtimePaths.openQuestionsPath,
       sessionStatusPath: runtimePaths.sessionStatusPath,
+      sessionStatusEventsPath: runtimePaths.sessionStatusEventsPath,
+      sessionStreamPath: runtimePaths.sessionStreamPath,
       operatorSurfacePath: runtimePaths.operatorSurfacePath,
       executionPlanPath,
+      transportMode: "current-thread",
       idea,
       durableMemory: durableMemory.context,
       scenario,
@@ -106,6 +109,8 @@ const main = async () => {
       autoResumeEligible: false,
       activePromptPath: runtimePaths.openQuestionsPath,
       sessionStatusPath: runtimePaths.sessionStatusPath,
+      sessionStatusEventsPath: runtimePaths.sessionStatusEventsPath,
+      sessionStreamPath: runtimePaths.sessionStreamPath,
       session: {
         objective: "stale operator surface objective",
         session_status: "running",
@@ -223,6 +228,13 @@ const main = async () => {
     assert.notEqual(snapshot.session.objective, "stale operator surface objective");
     assert.notEqual(snapshot.session.session_status, "running");
     assert.equal(snapshot.paths.session_status_path, runtimePaths.sessionStatusPath);
+    assert.equal(
+      snapshot.paths.session_status_events_path,
+      runtimePaths.sessionStatusEventsPath
+    );
+    assert.ok(Array.isArray(snapshot.recent_session_events));
+    assert.ok(snapshot.recent_session_events.length >= 1);
+    assert.equal(snapshot.recent_session_events.at(-1).session.session_status, "needs_steering");
 
     console.log("validate:loop-ui-session-status passed");
   } finally {

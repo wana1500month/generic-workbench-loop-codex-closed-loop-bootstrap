@@ -90,6 +90,8 @@ export const buildTransportStateArtifact = (input: {
   protocolPath?: string;
   dashboardPath?: string;
   sessionStatusPath?: string;
+  sessionStatusEventsPath?: string;
+  sessionStreamPath?: string;
   session?: OperatorSurfaceSessionProjection;
   status?: TransportStateArtifact["status"];
   notes?: string[];
@@ -140,7 +142,14 @@ export const buildTransportStateArtifact = (input: {
             context.threadBindingState !== "unbound"
           ? "stock-current-thread"
           : "none",
-    ...((input.dashboardPath || context.threadName || input.sessionStatusPath || input.session)
+    ...((
+      input.dashboardPath ||
+      context.threadName ||
+      input.sessionStatusPath ||
+      input.sessionStatusEventsPath ||
+      input.sessionStreamPath ||
+      input.session
+    )
       ? {
           ui_surface: {
             ...(context.threadName
@@ -149,6 +158,12 @@ export const buildTransportStateArtifact = (input: {
             ...(input.dashboardPath ? { dashboard_path: input.dashboardPath } : {}),
             ...(input.sessionStatusPath
               ? { session_status_path: input.sessionStatusPath }
+              : {}),
+            ...(input.sessionStatusEventsPath
+              ? { session_status_events_path: input.sessionStatusEventsPath }
+              : {}),
+            ...(input.sessionStreamPath
+              ? { session_stream_path: input.sessionStreamPath }
               : {}),
             ...(input.session ? { session: input.session } : {})
           }

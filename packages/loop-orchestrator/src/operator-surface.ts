@@ -583,6 +583,8 @@ export const buildOperatorSurfaceArtifact = (input: {
   transportStatePath?: string;
   transportProtocolPath?: string;
   sessionStatusPath?: string;
+  sessionStatusEventsPath?: string;
+  sessionStreamPath?: string;
   activePromptPath?: string;
   activeResponsePath?: string;
   checkpointId?: string;
@@ -769,6 +771,10 @@ export const buildOperatorSurfaceArtifact = (input: {
     ...(input.transportStatePath ? { transport_state_path: input.transportStatePath } : {}),
     ...(input.transportProtocolPath ? { transport_protocol_path: input.transportProtocolPath } : {}),
     ...(input.sessionStatusPath ? { session_status_path: input.sessionStatusPath } : {}),
+    ...(input.sessionStatusEventsPath
+      ? { session_status_events_path: input.sessionStatusEventsPath }
+      : {}),
+    ...(input.sessionStreamPath ? { session_stream_path: input.sessionStreamPath } : {}),
     ...(input.activePromptPath ? { active_prompt_path: input.activePromptPath } : {}),
     ...(input.activeResponsePath ? { active_response_path: input.activeResponsePath } : {}),
     ...(input.dashboardPath ? { dashboard_path: input.dashboardPath } : {}),
@@ -822,6 +828,8 @@ export const renderOperatorSurfaceMarkdown = (
 - Transport state: ${rel(artifact.transport_state_path)}
 - Transport protocol: ${rel(artifact.transport_protocol_path)}
 - Session status: ${rel(artifact.session_status_path)}
+- Session status events: ${rel(artifact.session_status_events_path)}
+- Session stream contract: ${rel(artifact.session_stream_path)}
 - Active prompt: ${rel(artifact.active_prompt_path)}
 - Active response: ${rel(artifact.active_response_path)}
 - Thread id: ${artifact.thread_id ?? "none"}

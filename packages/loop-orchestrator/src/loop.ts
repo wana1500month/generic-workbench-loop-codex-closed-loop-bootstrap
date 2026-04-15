@@ -654,6 +654,8 @@ const buildCheckpointSummary = (input: {
   transportProtocolPath?: string;
   operatorSurfacePath?: string;
   sessionStatusPath?: string;
+  sessionStatusEventsPath?: string;
+  sessionStreamPath?: string;
   adapterMigrationAppliedPath?: string;
   stopReason?: LoopRunSummary["stop_reason"];
   bestRound?: number;
@@ -749,6 +751,12 @@ const buildCheckpointSummary = (input: {
     ...(input.sessionStatusPath
       ? { session_status_path: input.sessionStatusPath }
       : {}),
+    ...(input.sessionStatusEventsPath
+      ? { session_status_events_path: input.sessionStatusEventsPath }
+      : {}),
+    ...(input.sessionStreamPath
+      ? { session_stream_path: input.sessionStreamPath }
+      : {}),
     ...(input.adapterMigrationAppliedPath
       ? { adapter_migration_applied_path: input.adapterMigrationAppliedPath }
       : {}),
@@ -824,7 +832,10 @@ const writeRunCheckpoint = async (input: {
   };
 }): Promise<void> => {
   const normalizedSummary: LoopRunSummary =
-    input.summary.operator_surface_path && input.summary.session_status_path
+    input.summary.operator_surface_path &&
+    input.summary.session_status_path &&
+    input.summary.session_status_events_path &&
+    input.summary.session_stream_path
       ? input.summary
       : {
           ...input.summary,
@@ -833,7 +844,13 @@ const writeRunCheckpoint = async (input: {
             join(input.runDirectory, "runtime", "operator-surface.json"),
           session_status_path:
             input.summary.session_status_path ??
-            join(input.runDirectory, "runtime", "session-status.json")
+            join(input.runDirectory, "runtime", "session-status.json"),
+          session_status_events_path:
+            input.summary.session_status_events_path ??
+            join(input.runDirectory, "runtime", "session-status-events.jsonl"),
+          session_stream_path:
+            input.summary.session_stream_path ??
+            join(input.runDirectory, "runtime", "session-stream.json")
         };
   const writes: Promise<unknown>[] = [
     writeJson(join(input.runDirectory, "summary.json"), normalizedSummary),
@@ -1248,6 +1265,8 @@ export const runClosedLoop = async (input: {
       protocolPath: transportProtocolPath,
       dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
       sessionStatusPath: runtimeStatePaths.sessionStatusPath,
+      sessionStatusEventsPath: runtimeStatePaths.sessionStatusEventsPath,
+      sessionStreamPath: runtimeStatePaths.sessionStreamPath,
       status: "configured",
       notes: transportRuntimeWarningsForMode({
         controllerMode,
@@ -1264,6 +1283,9 @@ export const runClosedLoop = async (input: {
     transportStatePath: runtimeStatePaths.transportStatePath,
     transportProtocolPath: transportProtocolPath,
     dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
+    sessionStatusPath: runtimeStatePaths.sessionStatusPath,
+    sessionStatusEventsPath: runtimeStatePaths.sessionStatusEventsPath,
+    sessionStreamPath: runtimeStatePaths.sessionStreamPath,
     notes: transportRuntimeWarningsForMode({
       controllerMode,
       transportMode
@@ -1382,6 +1404,8 @@ export const runClosedLoop = async (input: {
       transport_state_path: runtimeStatePaths.transportStatePath,
       transport_protocol_path: noopTransportProtocolPath,
       session_status_path: runtimeStatePaths.sessionStatusPath,
+      session_status_events_path: runtimeStatePaths.sessionStatusEventsPath,
+      session_stream_path: runtimeStatePaths.sessionStreamPath,
       runtime_events: noopRuntimeEvents,
       ...(resumeDecisionPath ? { resume_decision_path: resumeDecisionPath } : {}),
       ...(runtimeWarnings.length > 0 ? { runtime_warnings: runtimeWarnings } : {}),
@@ -1453,6 +1477,9 @@ export const runClosedLoop = async (input: {
       protocolPath: transportProtocolPath,
       dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
       sessionStatusPath: runtimeStatePaths.sessionStatusPath,
+      sessionStatusEventsPath: runtimeStatePaths.sessionStatusEventsPath,
+      sessionStreamPath: runtimeStatePaths.sessionStreamPath,
+      mirroredSessionEventsPath: runtimeStatePaths.appServerSessionEventsPath,
       restoredThreadId: restoredRun?.transportState?.app_server?.thread_id,
       initialRound: restoredRun?.interruptedRound?.round ?? restoredRun?.roundStart ?? 1,
       initialPhase:
@@ -1962,8 +1989,12 @@ export const runClosedLoop = async (input: {
       runContractPath: runtimeStatePaths.runContractPath,
       openQuestionsPath: runtimeStatePaths.openQuestionsPath,
       sessionStatusPath: runtimeStatePaths.sessionStatusPath,
+      sessionStatusEventsPath: runtimeStatePaths.sessionStatusEventsPath,
+      sessionStreamPath: runtimeStatePaths.sessionStreamPath,
       operatorSurfacePath: runtimeStatePaths.operatorSurfacePath,
       executionPlanPath,
+      transportMode,
+      appServerSessionEventsPath: runtimeStatePaths.appServerSessionEventsPath,
       idea,
       durableMemory: durableMemory.context,
       scenario,
@@ -2098,6 +2129,8 @@ export const runClosedLoop = async (input: {
           protocolPath: transportProtocolCurrentPath,
           dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
           sessionStatusPath: runtimeStatePaths.sessionStatusPath,
+          sessionStatusEventsPath: runtimeStatePaths.sessionStatusEventsPath,
+          sessionStreamPath: runtimeStatePaths.sessionStreamPath,
           ...(latestSessionStatusArtifact
             ? {
                 session:
@@ -2135,6 +2168,8 @@ export const runClosedLoop = async (input: {
         transportStatePath: runtimeStatePaths.transportStatePath,
         transportProtocolPath: transportProtocolCurrentPath,
         sessionStatusPath: runtimeStatePaths.sessionStatusPath,
+        sessionStatusEventsPath: runtimeStatePaths.sessionStatusEventsPath,
+        sessionStreamPath: runtimeStatePaths.sessionStreamPath,
         activePromptPath: input?.activePromptPath ?? activePromptArtifactPath,
         activeResponsePath:
           input?.activeResponsePath ?? activeResponseArtifactPath,
@@ -2184,6 +2219,9 @@ export const runClosedLoop = async (input: {
       protocolPath: transportProtocolCurrentPath,
       dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
       sessionStatusPath: runtimeStatePaths.sessionStatusPath,
+      sessionStatusEventsPath: runtimeStatePaths.sessionStatusEventsPath,
+      sessionStreamPath: runtimeStatePaths.sessionStreamPath,
+      mirroredSessionEventsPath: runtimeStatePaths.appServerSessionEventsPath,
       restoredThreadId: restoredRun?.transportState?.app_server?.thread_id,
       initialRound: activeHeartbeatRound ?? restoredRun?.roundStart ?? history.length + 1,
       initialPhase: activeHeartbeatPhase ?? "negotiation",
@@ -2205,6 +2243,8 @@ export const runClosedLoop = async (input: {
         protocolPath: transportProtocolCurrentPath,
         dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
         sessionStatusPath: runtimeStatePaths.sessionStatusPath,
+        sessionStatusEventsPath: runtimeStatePaths.sessionStatusEventsPath,
+        sessionStreamPath: runtimeStatePaths.sessionStreamPath,
         ...(latestSessionStatusArtifact
           ? {
               session:
@@ -2418,6 +2458,8 @@ export const runClosedLoop = async (input: {
       transportProtocolPath: transportProtocolCurrentPath,
       operatorSurfacePath: runtimeStatePaths.operatorSurfacePath,
       sessionStatusPath: runtimeStatePaths.sessionStatusPath,
+      sessionStatusEventsPath: runtimeStatePaths.sessionStatusEventsPath,
+      sessionStreamPath: runtimeStatePaths.sessionStreamPath,
       stopReason,
       bestRound,
       bestScore,
@@ -5091,6 +5133,8 @@ export const runClosedLoop = async (input: {
     transportStatePath: runtimeStatePaths.transportStatePath,
     transportProtocolPath: transportProtocolCurrentPath,
     sessionStatusPath: runtimeStatePaths.sessionStatusPath,
+    sessionStatusEventsPath: runtimeStatePaths.sessionStatusEventsPath,
+    sessionStreamPath: runtimeStatePaths.sessionStreamPath,
     stopReason: finalStopReason ?? resolvedStopReason,
     bestRound,
     bestScore: bestScore ?? terminalTotalScore,

@@ -11,6 +11,13 @@ import {
   readJsonFile
 } from "./testing/bootstrap-validator-helpers.mjs";
 
+const readJsonLinesFile = async (path) =>
+  (await readFile(path, "utf8"))
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+
 const expectedBuildBriefKeys = [
   "brief_id",
   "constraints",
@@ -113,8 +120,11 @@ const main = async () => {
       runContractPath: runtimePaths.runContractPath,
       openQuestionsPath: runtimePaths.openQuestionsPath,
       sessionStatusPath: runtimePaths.sessionStatusPath,
+      sessionStatusEventsPath: runtimePaths.sessionStatusEventsPath,
+      sessionStreamPath: runtimePaths.sessionStreamPath,
       operatorSurfacePath: runtimePaths.operatorSurfacePath,
       executionPlanPath,
+      transportMode: "current-thread",
       idea,
       durableMemory: durableMemory.context,
       scenario,
@@ -123,11 +133,20 @@ const main = async () => {
       targetFamily: "dashboard"
     });
 
-    const [buildBrief, runContract, openQuestions, sessionStatus] = await Promise.all([
+    const [
+      buildBrief,
+      runContract,
+      openQuestions,
+      sessionStatus,
+      sessionEvents,
+      sessionStream
+    ] = await Promise.all([
       readJsonFile(runtimePaths.buildBriefPath),
       readJsonFile(runtimePaths.runContractPath),
       readJsonFile(runtimePaths.openQuestionsPath),
-      readJsonFile(runtimePaths.sessionStatusPath)
+      readJsonFile(runtimePaths.sessionStatusPath),
+      readJsonLinesFile(runtimePaths.sessionStatusEventsPath),
+      readJsonFile(runtimePaths.sessionStreamPath)
     ]);
     const executionPlan = await readFile(executionPlanPath, "utf8");
 
@@ -169,6 +188,9 @@ const main = async () => {
     assert.ok(
       runContract.required_prepare_artifacts.includes("runtime/session-status.json")
     );
+    assert.ok(
+      runContract.required_prepare_artifacts.includes("runtime/session-status-events.jsonl")
+    );
 
     assert.ok(Array.isArray(openQuestions.questions));
     assert.ok(openQuestions.questions.length >= 1);
@@ -178,9 +200,22 @@ const main = async () => {
     assert.equal(sessionStatus.next_attention, "codex");
     assert.equal(sessionStatus.deferred_question_count, openQuestions.questions.length);
     assert.equal(sessionStatus.artifacts.open_questions_path, "runtime/open-questions.json");
+    assert.equal(
+      sessionStatus.artifacts.session_status_events_path,
+      "runtime/session-status-events.jsonl"
+    );
+    assert.equal(sessionEvents.length, 1);
+    assert.equal(sessionEvents[0].event_type, "session_initialized");
+    assert.equal(sessionEvents[0].session.session_status, "preparing");
+    assert.equal(sessionStream.preferred_delivery, "file_tail_jsonl");
+    assert.equal(sessionStream.snapshot_path, "runtime/session-status.json");
+    assert.equal(sessionStream.source_events_path, "runtime/session-status-events.jsonl");
+    assert.equal(sessionStream.event_type, "harness/session.changed");
+    assert.equal(sessionStream.latest_source_sequence, 1);
     assert.match(executionPlan, /# Execution Plan/);
     assert.match(executionPlan, /runtime\/build-brief\.json/);
     assert.match(executionPlan, /runtime\/session-status\.json/);
+    assert.match(executionPlan, /runtime\/session-status-events\.jsonl/);
     assert.match(executionPlan, /Controller Strategy/);
     assert.match(executionPlan, /Foreground Support Desk/);
 
@@ -192,8 +227,11 @@ const main = async () => {
       runContractPath: runtimePaths.runContractPath,
       openQuestionsPath: runtimePaths.openQuestionsPath,
       sessionStatusPath: runtimePaths.sessionStatusPath,
+      sessionStatusEventsPath: runtimePaths.sessionStatusEventsPath,
+      sessionStreamPath: runtimePaths.sessionStreamPath,
       operatorSurfacePath: runtimePaths.operatorSurfacePath,
       executionPlanPath,
+      transportMode: "current-thread",
       idea,
       durableMemory: durableMemory.context,
       scenario,
@@ -210,10 +248,18 @@ const main = async () => {
       latestStopReason: "awaiting_human_input"
     });
 
-    const [refreshedRunContract, refreshedOpenQuestions, refreshedSessionStatus] = await Promise.all([
+    const [
+      refreshedRunContract,
+      refreshedOpenQuestions,
+      refreshedSessionStatus,
+      refreshedSessionEvents,
+      refreshedSessionStream
+    ] = await Promise.all([
       readJsonFile(runtimePaths.runContractPath),
       readJsonFile(runtimePaths.openQuestionsPath),
-      readJsonFile(runtimePaths.sessionStatusPath)
+      readJsonFile(runtimePaths.sessionStatusPath),
+      readJsonLinesFile(runtimePaths.sessionStatusEventsPath),
+      readJsonFile(runtimePaths.sessionStreamPath)
     ]);
     const refreshedExecutionPlan = await readFile(executionPlanPath, "utf8");
 
@@ -246,6 +292,17 @@ const main = async () => {
     assert.equal(refreshedSessionStatus.steering_note_count, 1);
     assert.equal(refreshedSessionStatus.review_feedback_count, 1);
     assert.equal(refreshedSessionStatus.external_blocker_count, 1);
+    assert.equal(refreshedSessionEvents.length, 2);
+    assert.equal(refreshedSessionEvents[1].event_type, "session_changed");
+    assert.ok(refreshedSessionEvents[1].changed_fields.includes("session_status"));
+    assert.ok(refreshedSessionEvents[1].changed_fields.includes("readiness"));
+    assert.ok(refreshedSessionEvents[1].changed_fields.includes("next_attention"));
+    assert.ok(refreshedSessionEvents[1].changed_fields.includes("latest_round"));
+    assert.equal(refreshedSessionStream.latest_source_sequence, 2);
+    assert.equal(
+      refreshedSessionStream.latest_session.session_status,
+      refreshedSessionStatus.session_status
+    );
     assert.ok(
       refreshedOpenQuestions.review_feedback.includes(
         "Tighten the queue filters and make the triage flow explicit."

@@ -28,6 +28,9 @@ export interface RuntimeStatePaths {
   runContractPath: string;
   openQuestionsPath: string;
   sessionStatusPath: string;
+  sessionStatusEventsPath: string;
+  sessionStreamPath: string;
+  appServerSessionEventsPath: string;
   operatorSurfacePath: string;
   operatorSurfaceMarkdownPath: string;
   plannerEnhancementTaskPath: string;
@@ -76,6 +79,9 @@ export const runtimeStatePathsForRun = (
     runContractPath: join(runtimeDirectory, "run-contract.json"),
     openQuestionsPath: join(runtimeDirectory, "open-questions.json"),
     sessionStatusPath: join(runtimeDirectory, "session-status.json"),
+    sessionStatusEventsPath: join(runtimeDirectory, "session-status-events.jsonl"),
+    sessionStreamPath: join(runtimeDirectory, "session-stream.json"),
+    appServerSessionEventsPath: join(runtimeDirectory, "app-server-session-events.jsonl"),
     operatorSurfacePath: join(runtimeDirectory, "operator-surface.json"),
     operatorSurfaceMarkdownPath: join(runtimeDirectory, "operator-surface.md"),
     plannerEnhancementTaskPath: join(runtimeDirectory, "planner-enhancement-task.json"),

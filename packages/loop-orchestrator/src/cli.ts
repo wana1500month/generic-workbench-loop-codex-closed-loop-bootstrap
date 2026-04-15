@@ -131,6 +131,8 @@ interface StatusReport {
     operator_surface_path: string;
     operator_surface_markdown_path: string;
     session_status_path: string;
+    session_status_events_path: string;
+    session_stream_path: string;
     live_state_path: string;
     round_phase_path: string;
     controller_lease_path: string;
@@ -865,6 +867,8 @@ const buildStatusReport = async (runDirectory: string): Promise<StatusReport> =>
       operator_surface_path: runtimePaths.operatorSurfacePath,
       operator_surface_markdown_path: runtimePaths.operatorSurfaceMarkdownPath,
       session_status_path: runtimePaths.sessionStatusPath,
+      session_status_events_path: runtimePaths.sessionStatusEventsPath,
+      session_stream_path: runtimePaths.sessionStreamPath,
       live_state_path: runtimePaths.liveStatePath,
       round_phase_path: runtimePaths.roundPhasePath,
       controller_lease_path: runtimePaths.controllerLeasePath,
@@ -1211,6 +1215,12 @@ const printStatusReport = (report: StatusReport): void => {
   );
   console.log(
     `Session status: ${displayPath(report.paths.session_status_path) ?? report.paths.session_status_path}`
+  );
+  console.log(
+    `Session status events: ${displayPath(report.paths.session_status_events_path) ?? report.paths.session_status_events_path}`
+  );
+  console.log(
+    `Session stream: ${displayPath(report.paths.session_stream_path) ?? report.paths.session_stream_path}`
   );
   console.log(
     `Supervisor state: ${displayPath(report.paths.supervisor_state_path) ?? report.paths.supervisor_state_path}`
