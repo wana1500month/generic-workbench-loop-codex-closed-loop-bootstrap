@@ -1939,7 +1939,7 @@ export const runClosedLoop = async (input: {
         return "blocked_externally";
       }
     }
-    return history.length > 0 ? "running" : "preparing";
+    return history.length > 0 ? "running" : "ready_to_start";
   };
   const updateSessionRefreshState = (input?: {
     currentObjective?: string;

@@ -13,8 +13,10 @@ The intended flow is:
 2. Codex asks only the missing high-value questions.
 3. Once the request is concrete enough, Codex freezes the request into session
    artifacts.
-4. The same thread becomes the foreground execution loop.
-5. Mid-run human input is handled as steering or review, not as a full reset.
+4. The same thread stops at `ready_to_start` and waits for an explicit
+   `루프 시작` or `start loop`.
+5. After start, the same thread becomes the foreground execution loop.
+6. Mid-run human input is handled as steering or review, not as a full reset.
 
 This document defines the session-level artifacts that should exist before the
 runtime derives per-attempt `round-###/round-contract.json` files.
@@ -25,6 +27,7 @@ These are the operator-visible labels for the session-level loop:
 
 - `asking`
 - `preparing`
+- `ready_to_start`
 - `running`
 - `needs_steering`
 - `blocked_externally`
@@ -37,13 +40,16 @@ names such as `planning`, `negotiation`, or `evaluation`.
 ## Artifact Roles
 
 The session-supervised foreground flow should prepare these artifacts before
-heavy implementation starts:
+heavy implementation starts, then hold at `ready_to_start` until the operator
+opens the explicit start gate:
 
 - `runtime/build-brief.json`
 - `runtime/run-contract.json`
 - `runtime/operator-surface.json`
 - `runtime/open-questions.json`
 - `runtime/session-status.json`
+- `runtime/session-status-events.jsonl`
+- `runtime/session-stream.json`
 - `docs/EXECUTION_PLAN.md`
 
 The split is intentional:
@@ -163,6 +169,7 @@ Example:
   "operator_status_vocabulary": [
     "asking",
     "preparing",
+    "ready_to_start",
     "running",
     "needs_steering",
     "blocked_externally",
@@ -187,6 +194,7 @@ Exact field set:
 - `updated_at`
 - `run_mode`
 - `current_thread_required`
+- `start_gate`
 - `workspace_mode`
 - `objective`
 - `non_goals`
@@ -208,6 +216,14 @@ Field details:
 - `run_mode`: currently `foreground_same_thread`.
 - `current_thread_required`: whether the loop must stay on the same Codex
   thread.
+- `start_gate.required`: whether an explicit operator start is required before
+  the session can enter `running`.
+- `start_gate.authorized`: whether the operator has already opened that start
+  gate for the current session.
+- `start_gate.authorized_at`: timestamp of the recorded start authorization, or
+  `null` before start.
+- `start_gate.authorized_by`: actor that opened the start gate, or `null`
+  before start.
 - `workspace_mode`: `local` or `worktree` for the current session.
 - `objective`: one sentence describing the current build objective.
 - `non_goals`: session-wide exclusions.
@@ -252,6 +268,12 @@ Example:
   "updated_at": "2026-04-15T09:03:00.000Z",
   "run_mode": "foreground_same_thread",
   "current_thread_required": true,
+  "start_gate": {
+    "required": true,
+    "authorized": false,
+    "authorized_at": null,
+    "authorized_by": null
+  },
   "workspace_mode": "worktree",
   "objective": "Ship a reviewable MVP support dashboard without leaving the current Codex thread.",
   "non_goals": ["full billing", "multi-org permissions"],
@@ -294,6 +316,8 @@ Example:
     "runtime/operator-surface.json",
     "runtime/open-questions.json",
     "runtime/session-status.json",
+    "runtime/session-status-events.jsonl",
+    "runtime/session-stream.json",
     "docs/EXECUTION_PLAN.md"
   ],
   "derived_attempt_artifacts": [

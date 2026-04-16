@@ -38,7 +38,7 @@ const main = async () => {
 
     const [
       { runtimeStatePathsForRun },
-      { writeSessionPreparationArtifacts },
+      { writeSessionPreparationArtifacts, buildOperatorSurfaceSessionProjection },
       { readIdeaBrief },
       { loadDurableMemoryContext },
       { buildScenarioFromIdea, buildLoopPlan },
@@ -85,18 +85,7 @@ const main = async () => {
       plan,
       workspaceMode: "worktree",
       targetFamily: "dashboard",
-      sessionStatus: "needs_steering",
-      currentObjective: "Resolve operator review feedback before resuming implementation.",
-      steeringNotes: ["Confirm the queue ownership split."],
-      reviewFeedback: ["Make the review queue state explicit in the UI."],
-      externalBlockers: ["The real support feed is still unavailable."],
-      latestRound: 3,
-      latestStopReason: "awaiting_human_input",
-      checkpointKind: "generator-plan",
-      checkpointId: "generator-plan-ui-001",
-      checkpointPromptPath: runtimePaths.openQuestionsPath,
-      checkpointResponsePath: runtimePaths.runContractPath,
-      checkpointSkill: "loop-control"
+      currentObjective: "Hold at the explicit start gate before running implementation."
     });
 
     const staleOperatorSurface = buildOperatorSurfaceArtifact({
@@ -191,6 +180,27 @@ const main = async () => {
       })
     ]);
     const sessionStatusArtifact = await readJsonFile(runtimePaths.sessionStatusPath);
+    const startGateSurface = buildOperatorSurfaceArtifact({
+      runId: "run-001",
+      controllerMode: "attached",
+      transportMode: "current-thread",
+      executionState: "configured",
+      threadId: "thread-ui-123",
+      threadName: "Loop UI Session Fixture",
+      workspaceSurface: "worktree",
+      sessionStatusPath: runtimePaths.sessionStatusPath,
+      sessionStatusEventsPath: runtimePaths.sessionStatusEventsPath,
+      sessionStreamPath: runtimePaths.sessionStreamPath,
+      session: buildOperatorSurfaceSessionProjection(sessionStatusArtifact)
+    });
+    assert.equal(startGateSurface.attention_required, "human");
+    assert.equal(startGateSurface.recommended_skill, "loop-control");
+    assert.equal(startGateSurface.user_visible_pause, true);
+    assert.match(startGateSurface.next_action, /The loop has not started yet/);
+    assert.equal(
+      startGateSurface.recommended_command,
+      "npm run loop:start:codex -- --json"
+    );
 
     const uiRun = await runCommand("node", [
       "./scripts/loop-ui.mjs",
@@ -203,7 +213,7 @@ const main = async () => {
     }
 
     const snapshot = JSON.parse(uiRun.stdout);
-    assert.equal(snapshot.banner, "PAUSED");
+    assert.equal(snapshot.banner, "READY_TO_START");
     assert.equal(snapshot.run_id, "run-001");
     assert.equal(snapshot.session.source, "session-status");
     assert.equal(
@@ -254,11 +264,14 @@ const main = async () => {
       sessionStatusArtifact.session_binding.thread_id
     );
     assert.equal(
-      snapshot.session.active_checkpoint.kind,
-      sessionStatusArtifact.active_checkpoint.kind
+      snapshot.session.active_checkpoint,
+      sessionStatusArtifact.active_checkpoint
     );
     assert.notEqual(snapshot.session.objective, "stale operator surface objective");
     assert.notEqual(snapshot.session.session_status, "running");
+    assert.equal(snapshot.session.session_status, "ready_to_start");
+    assert.equal(snapshot.session.next_attention, "human");
+    assert.equal(snapshot.session.attention_kind, "decision");
     assert.equal(snapshot.paths.session_status_path, runtimePaths.sessionStatusPath);
     assert.equal(
       snapshot.paths.session_status_events_path,
@@ -266,7 +279,7 @@ const main = async () => {
     );
     assert.ok(Array.isArray(snapshot.recent_session_events));
     assert.ok(snapshot.recent_session_events.length >= 1);
-    assert.equal(snapshot.recent_session_events.at(-1).session.session_status, "needs_steering");
+    assert.equal(snapshot.recent_session_events.at(-1).session.session_status, "ready_to_start");
 
     console.log("validate:loop-ui-session-status passed");
   } finally {

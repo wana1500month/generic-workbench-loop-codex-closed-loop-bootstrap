@@ -1376,6 +1376,7 @@ export type SessionRunMode = "foreground_same_thread";
 export type SessionLoopStatus =
   | "asking"
   | "preparing"
+  | "ready_to_start"
   | "running"
   | "needs_steering"
   | "blocked_externally"
@@ -1467,6 +1468,12 @@ export interface SessionRunContractArtifact {
   updated_at: string;
   run_mode: SessionRunMode;
   current_thread_required: boolean;
+  start_gate: {
+    required: boolean;
+    authorized: boolean;
+    authorized_at: string | null;
+    authorized_by: string | null;
+  };
   workspace_mode: OperatorWorkspaceSurface;
   objective: string;
   non_goals: string[];

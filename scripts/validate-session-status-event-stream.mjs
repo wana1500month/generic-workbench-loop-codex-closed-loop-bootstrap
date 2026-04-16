@@ -93,7 +93,7 @@ const main = async () => {
     assert.equal(events.length, 1);
     assert.equal(events[0].event_type, "session_initialized");
     assert.ok(events[0].changed_fields.includes("session_status"));
-    assert.equal(events[0].session.session_status, "preparing");
+    assert.equal(events[0].session.session_status, "ready_to_start");
 
     await writeSessionPreparationArtifacts(baseInput);
     events = await readJsonLinesFile(runtimePaths.sessionStatusEventsPath);
@@ -121,7 +121,7 @@ const main = async () => {
     assert.equal(changedEvents[1].sequence, 2);
     assert.ok(changedEvents[1].changed_fields.includes("session_status"));
     assert.ok(changedEvents[1].changed_fields.includes("readiness"));
-    assert.ok(changedEvents[1].changed_fields.includes("next_attention"));
+    assert.ok(changedEvents[1].changed_fields.includes("attention_kind"));
     assert.ok(changedEvents[1].changed_fields.includes("objective"));
     assert.ok(changedEvents[1].changed_fields.includes("review_feedback_count"));
     assert.ok(changedEvents[1].changed_fields.includes("latest_round"));

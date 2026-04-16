@@ -8,7 +8,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 
 - `IDEA.md`: the current harness goal or refactor request
 - `npm run loop:intent -- "<user request>"`: generic front door that separates product build, harness design, run control, run resume, and evaluator tuning before work starts
-- `npm run loop:intake -- "<user request>"`: staged intake gate that returns product questions, execution questions, or a prepare-ready handoff into session artifact generation
+- `npm run loop:intake -- "<user request>"`: staged intake gate that returns product questions, execution questions, or a prepare-ready handoff into session artifact generation plus the explicit `ready_to_start` gate
 - `npm run loop:bootstrap`: writes `IDEA.md`, `intake.json`, `feature_list.generated.json`, `progress.md`, `progress.jsonl`, `done_when.md`, `init.sh`, `adapter.generated.json`, `rubric.generated.json`, and `verification-profile.generated.json`, then uses the generated rubric/bundle on the first run unless the CLI explicitly overrides them. Bootstrap now also captures deeper quality intent such as must-not-break flows, failure expectations, continuity boundaries, reference signals, non-goals, probe hints, and optional user-authored subjective metrics with minimum `x/10` thresholds.
 - `npm run reference-adapter:scaffold-quality-lane -- --profile <bundle.json> --out <strict-bundle.json>`: derives a stricter companion evaluator lane from an existing bundle without demanding release assertions that the source bundle does not actually configure
 - `SPEC.md`: stable harness scope
@@ -23,7 +23,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `done_when.md`: human-readable stop condition that should stay aligned with the real closeout bar
 - `init.sh`: fast session bootstrap for workbench setup, `evals/runs` storage creation, and canonical front-door commands
 - `.agents/skills/*/SKILL.md`: repo-local Codex app operator surfaces, with lane-centric entry skills such as `intent-router`, `app-builder-loop`, `harness-design`, `run-resume`, `evaluator-tuning`, `run-attempt`, and `closeout`; `product-intake` remains the staged intake gate inside `app-builder-loop`; compatibility aliases such as `harness-intake`, `harness-run-attempt`, and `harness-closeout` remain only for older automation
-- `.agents/skills/app-builder-loop/SKILL.md`: session-supervised product-build skill for discovery -> prepare -> running on one Codex foreground thread
+- `.agents/skills/app-builder-loop/SKILL.md`: session-supervised product-build skill for discovery -> prepare -> `ready_to_start` -> running on one Codex foreground thread
 - `.agents/skills/*/agents/openai.yaml`: UI-facing Codex app metadata for the key lane-centric skills
 - `.codex-plugin/plugin.json` and `.agents/plugins/marketplace.json`: repo-root local plugin metadata for Codex app discovery
 - `evals/rubrics/generic-harness-rubric.json`: stop policy and required artifact list

@@ -139,6 +139,7 @@ export interface SessionPreparationArtifactsInput {
 const sessionLoopStatuses: SessionLoopStatus[] = [
   "asking",
   "preparing",
+  "ready_to_start",
   "running",
   "needs_steering",
   "blocked_externally",
@@ -333,6 +334,7 @@ const sessionReadinessForStatus = (
     case "needs_steering":
       return "needs_input";
     case "preparing":
+    case "ready_to_start":
       return "ready_to_run";
     case "running":
       return "running";
@@ -351,6 +353,8 @@ const sessionAttentionForStatus = (
   switch (status) {
     case "asking":
     case "needs_steering":
+      return "human";
+    case "ready_to_start":
       return "human";
     case "preparing":
     case "running":
@@ -376,6 +380,8 @@ const sessionAttentionKindForStatus = (input: {
     case "asking":
     case "needs_steering":
       return "steering";
+    case "ready_to_start":
+      return "decision";
     case "blocked_externally":
       return "external_block";
     case "ready_for_review":
@@ -430,6 +436,7 @@ const buildSessionActiveCheckpointArtifact = (input: {
 }) => {
   if (
     !input.checkpointKind ||
+    input.sessionStatus === "ready_to_start" ||
     input.sessionStatus === "ready_for_review" ||
     input.sessionStatus === "done"
   ) {
@@ -719,6 +726,15 @@ const buildSessionStatusEventArtifact = async (input: {
   };
 };
 
+const sessionStartGateAuthorizedForStatus = (
+  status: SessionLoopStatus
+): boolean =>
+  !(
+    status === "asking" ||
+    status === "preparing" ||
+    status === "ready_to_start"
+  );
+
 export const buildOperatorSurfaceSessionProjection = (
   artifact: SessionStatusArtifact
 ): OperatorSurfaceSessionProjection => ({
@@ -826,6 +842,11 @@ const executionPlanMarkdown = (input: {
     "",
     `- Run id: ${input.runId}`,
     `- Session status: ${input.openQuestions.session_status}`,
+    ...(input.openQuestions.session_status === "ready_to_start"
+      ? [
+          "- Start gate: preparation is complete; say \"루프 시작\" or \"start loop\" to begin running on the same Codex thread."
+        ]
+      : []),
     `- Objective: ${input.objective}`,
     `- Workspace mode: ${input.workspaceMode}`,
     `- Primary surface: ${input.primarySurface}`,
@@ -1018,7 +1039,7 @@ export const writeSessionPreparationArtifacts = async (
     operator_status_vocabulary: sessionLoopStatuses
   };
 
-  const sessionStatus = input.sessionStatus ?? "preparing";
+  const sessionStatus = input.sessionStatus ?? "ready_to_start";
   const openQuestions: SessionOpenQuestionsArtifact = {
     updated_at: now,
     session_status: sessionStatus,
@@ -1063,6 +1084,7 @@ export const writeSessionPreparationArtifacts = async (
     checkpointSkill: input.checkpointSkill,
     decisionOptions: input.decisionOptions
   });
+  const startGateAuthorized = sessionStartGateAuthorizedForStatus(sessionStatus);
   const sessionStatusEvent = await buildSessionStatusEventArtifact({
     now,
     runId: input.runId,
@@ -1081,6 +1103,16 @@ export const writeSessionPreparationArtifacts = async (
     updated_at: now,
     run_mode: "foreground_same_thread",
     current_thread_required: true,
+    start_gate: {
+      required: true,
+      authorized: startGateAuthorized,
+      authorized_at: startGateAuthorized
+        ? existingRunContract?.start_gate?.authorized_at ?? now
+        : null,
+      authorized_by: startGateAuthorized
+        ? existingRunContract?.start_gate?.authorized_by ?? "loop-control"
+        : null
+    },
     workspace_mode: input.workspaceMode,
     objective,
     non_goals: buildBrief.constraints.non_goals,

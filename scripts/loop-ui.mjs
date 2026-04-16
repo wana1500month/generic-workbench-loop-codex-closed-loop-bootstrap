@@ -111,7 +111,10 @@ const formatAge = (ageMs) => {
   return `${(ageMs / 60_000).toFixed(1)}m`;
 };
 
-const bannerFor = (executionState) => {
+const bannerFor = (executionState, sessionStatus) => {
+  if (sessionStatus === "ready_to_start") {
+    return "READY_TO_START";
+  }
   if (executionState === "stalled") {
     return "STALLED";
   }
@@ -251,7 +254,7 @@ export const buildLoopUiSnapshot = async (runDirectory) => {
   const session = selectSessionSnapshot(sessionStatus, operatorSurface);
 
   return {
-    banner: bannerFor(health.execution_state),
+    banner: bannerFor(health.execution_state, session?.session_status),
     run_directory: runDirectory,
     run_id:
       sessionStatus?.run_id ??

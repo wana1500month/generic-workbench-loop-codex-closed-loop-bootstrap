@@ -36,8 +36,9 @@ the model jump directly into design or implementation advice.
 7. Only after the intake is sufficiently filled may the agent:
    - write a short preparation summary if useful
    - enter prepare mode on the same thread
-   - bootstrap internally
-   - move to implementation planning
+   - write the session preparation artifacts
+   - stop at `ready_to_start`
+   - wait for an explicit `루프 시작` or `start loop` before running
 
 ## Minimum intake fields
 

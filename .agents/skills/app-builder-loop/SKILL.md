@@ -22,9 +22,13 @@ intake and execution sessions.
    - `runtime/operator-surface.json`
    - `runtime/open-questions.json`
    - `runtime/session-status.json`
+   - `runtime/session-status-events.jsonl`
+   - `runtime/session-stream.json`
    - `docs/EXECUTION_PLAN.md`
-7. After prepare mode, continue in running mode on the same thread.
-8. Use review boundaries and steering turns instead of resetting the session.
+7. After prepare mode, stop at `ready_to_start` on the same thread.
+8. Start running only when the operator explicitly says `루프 시작` or `start loop`.
+9. After start, continue in running mode on the same thread.
+10. Use review boundaries and steering turns instead of resetting the session.
 
 ## Hard rules
 
@@ -64,6 +68,7 @@ Keep the operator-visible session state translated into exactly one of:
 
 - `asking`
 - `preparing`
+- `ready_to_start`
 - `running`
 - `needs_steering`
 - `blocked_externally`

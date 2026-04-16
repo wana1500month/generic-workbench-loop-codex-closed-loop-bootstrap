@@ -395,18 +395,21 @@ Acceptance:
   projection for attached App Server consumers, so embedded UI clients do not
   need to infer session state from mixed control-plane files.
 - The operator-facing session vocabulary is fixed to `asking`, `preparing`,
-  `running`, `needs_steering`, `blocked_externally`, `ready_for_review`, and
-  `done`.
+  `ready_to_start`, `running`, `needs_steering`, `blocked_externally`,
+  `ready_for_review`, and `done`.
 - Intake completion should enter prepare directly: legacy
   `ready_for_confirmation` compatibility may remain, but the surfaced phase is
-  `prepare` rather than a human confirmation hold.
+  `prepare`, followed by a `ready_to_start` start gate rather than a human
+  confirmation hold or an automatic jump into running.
 - The skill instructs Codex to ask only the missing high-impact questions, ask
   at most 1 to 3 short questions per turn, and prefer defaults over low-value
   intake turns.
 - The skill instructs Codex to prepare `runtime/build-brief.json`,
   `runtime/run-contract.json`, `runtime/operator-surface.json`,
-  `runtime/open-questions.json`, `runtime/session-status.json`, and
-  `docs/EXECUTION_PLAN.md` before heavy implementation.
+  `runtime/open-questions.json`, `runtime/session-status.json`,
+  `runtime/session-status-events.jsonl`, `runtime/session-stream.json`, and
+  `docs/EXECUTION_PLAN.md` before heavy implementation, then stop at
+  `ready_to_start` until the operator explicitly starts the loop.
 - The skill treats automation as a later schedule layer, not as the front door
   for product-build work.
 

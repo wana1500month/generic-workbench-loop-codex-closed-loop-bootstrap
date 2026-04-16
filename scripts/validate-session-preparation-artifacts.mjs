@@ -50,6 +50,7 @@ const expectedRunContractKeys = [
   "required_prepare_artifacts",
   "review_boundaries",
   "run_mode",
+  "start_gate",
   "steering_triggers",
   "stop_rule",
   "updated_at",
@@ -162,6 +163,7 @@ const main = async () => {
       [
         "asking",
         "preparing",
+        "ready_to_start",
         "running",
         "needs_steering",
         "blocked_externally",
@@ -182,6 +184,10 @@ const main = async () => {
     assert.equal(runContract.execution_plan_path, "docs/EXECUTION_PLAN.md");
     assert.equal(runContract.operator_surface_path, "runtime/operator-surface.json");
     assert.equal(runContract.open_questions_path, "runtime/open-questions.json");
+    assert.equal(runContract.start_gate.required, true);
+    assert.equal(runContract.start_gate.authorized, false);
+    assert.equal(runContract.start_gate.authorized_at, null);
+    assert.equal(runContract.start_gate.authorized_by, null);
     assert.equal(runContract.execution_controls.target_score, 0.8);
     assert.equal(runContract.execution_controls.max_rounds, 4);
     assert.ok(
@@ -196,11 +202,11 @@ const main = async () => {
 
     assert.ok(Array.isArray(openQuestions.questions));
     assert.ok(openQuestions.questions.length >= 1);
-    assert.equal(openQuestions.session_status, "preparing");
-    assert.equal(sessionStatus.session_status, "preparing");
+    assert.equal(openQuestions.session_status, "ready_to_start");
+    assert.equal(sessionStatus.session_status, "ready_to_start");
     assert.equal(sessionStatus.readiness, "ready_to_run");
-    assert.equal(sessionStatus.next_attention, "codex");
-    assert.equal(sessionStatus.attention_kind, "none");
+    assert.equal(sessionStatus.next_attention, "human");
+    assert.equal(sessionStatus.attention_kind, "decision");
     assert.equal(sessionStatus.session_binding.surface, "current-thread");
     assert.equal(sessionStatus.session_binding.binding_state, "bound");
     assert.equal(sessionStatus.session_binding.thread_id, "thread-prepare-001");
@@ -212,7 +218,7 @@ const main = async () => {
     );
     assert.equal(sessionEvents.length, 1);
     assert.equal(sessionEvents[0].event_type, "session_initialized");
-    assert.equal(sessionEvents[0].session.session_status, "preparing");
+    assert.equal(sessionEvents[0].session.session_status, "ready_to_start");
     assert.equal(sessionStream.preferred_delivery, "file_tail_jsonl");
     assert.equal(sessionStream.snapshot_path, "runtime/session-status.json");
     assert.equal(sessionStream.source_events_path, "runtime/session-status-events.jsonl");
@@ -222,6 +228,7 @@ const main = async () => {
     assert.match(executionPlan, /runtime\/build-brief\.json/);
     assert.match(executionPlan, /runtime\/session-status\.json/);
     assert.match(executionPlan, /runtime\/session-status-events\.jsonl/);
+    assert.match(executionPlan, /Start gate: preparation is complete/);
     assert.match(executionPlan, /Controller Strategy/);
     assert.match(executionPlan, /Foreground Support Desk/);
 
@@ -280,6 +287,10 @@ const main = async () => {
       refreshedRunContract.objective,
       "Revise the support queue workflow to satisfy operator review feedback."
     );
+    assert.equal(refreshedRunContract.start_gate.required, true);
+    assert.equal(refreshedRunContract.start_gate.authorized, true);
+    assert.match(refreshedRunContract.start_gate.authorized_at, /\d{4}-\d{2}-\d{2}T/);
+    assert.equal(refreshedRunContract.start_gate.authorized_by, "loop-control");
     assert.ok(
       refreshedRunContract.non_goals.includes(
         "do not expand into billing or admin settings"
@@ -319,7 +330,7 @@ const main = async () => {
     assert.equal(refreshedSessionEvents[1].event_type, "session_changed");
     assert.ok(refreshedSessionEvents[1].changed_fields.includes("session_status"));
     assert.ok(refreshedSessionEvents[1].changed_fields.includes("readiness"));
-    assert.ok(refreshedSessionEvents[1].changed_fields.includes("next_attention"));
+    assert.ok(refreshedSessionEvents[1].changed_fields.includes("attention_kind"));
     assert.ok(refreshedSessionEvents[1].changed_fields.includes("latest_round"));
     assert.equal(refreshedSessionStream.latest_source_sequence, 2);
     assert.equal(

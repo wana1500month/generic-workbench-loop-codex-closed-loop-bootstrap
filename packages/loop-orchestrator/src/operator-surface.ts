@@ -418,6 +418,7 @@ const defaultNextActionForTransport = (input: {
   handoffState: OperatorHandoffState;
   resumeSkill: OperatorResumeSkill;
   attentionRequired: OperatorAttentionRequired;
+  session?: OperatorSurfaceSessionProjection;
   checkpointKind?: CurrentThreadCheckpointKind;
   autoResumeEligible: boolean;
   workerSkill?: OperatorWorkerSkill;
@@ -441,6 +442,12 @@ const defaultNextActionForTransport = (input: {
   }
   if (input.executionState === "stalled") {
     return "Inspect the stalled phase artifacts before resuming or repairing this run.";
+  }
+  if (
+    input.session?.session_status === "ready_to_start" &&
+    input.attentionRequired === "human"
+  ) {
+    return "Preparation is complete. The loop has not started yet. Say '루프 시작' or 'start loop' to begin running on the same Codex thread.";
   }
   if (input.handoffState === "worktree" && input.worktreePath) {
     return `Continue this run from the linked worktree at ${input.worktreePath}, then resume from the persisted phase surface.`;
@@ -663,19 +670,26 @@ export const buildOperatorSurfaceArtifact = (input: {
       appVisibility: context.appVisibility,
       handoffState
     });
+  const startGateReady = input.session?.session_status === "ready_to_start";
   const attentionRequired =
     input.attentionRequired ??
-    defaultAttentionRequiredFor({
-      executionState: input.executionState,
-      transportMode: input.transportMode,
-      phaseStatus: input.phaseStatus
-    });
+    (startGateReady
+      ? "human"
+      : defaultAttentionRequiredFor({
+          executionState: input.executionState,
+          transportMode: input.transportMode,
+          phaseStatus: input.phaseStatus
+        }));
+  const startGateDecisionSurface =
+    startGateReady && attentionRequired === "human";
   const autoResumeEligible =
     input.autoResumeEligible ??
-    defaultAutoResumeEligibleFor({
-      transportMode: input.transportMode,
-      attentionRequired
-    });
+    (startGateDecisionSurface
+      ? false
+      : defaultAutoResumeEligibleFor({
+          transportMode: input.transportMode,
+          attentionRequired
+        }));
   const runDirectory =
     trimString(input.runDirectory) ??
     (input.summaryPath ? dirname(input.summaryPath) : undefined);
@@ -691,18 +705,26 @@ export const buildOperatorSurfaceArtifact = (input: {
     });
   const recommendedSkill =
     input.recommendedSkill ??
-    defaultRecommendedSkillFor({
-      transportMode: input.transportMode,
-      attentionRequired,
-      resumeSkill
-    });
+    (startGateDecisionSurface
+      ? "loop-control"
+      : defaultRecommendedSkillFor({
+          transportMode: input.transportMode,
+          attentionRequired,
+          resumeSkill
+        }));
   const userVisiblePause =
     input.userVisiblePause ??
-    defaultUserVisiblePauseFor({
-      transportMode: input.transportMode,
-      attentionRequired
-    });
-  const recommendedCommand = input.recommendedCommand ?? resumeCommand;
+    (startGateDecisionSurface
+      ? true
+      : defaultUserVisiblePauseFor({
+          transportMode: input.transportMode,
+          attentionRequired
+        }));
+  const recommendedCommand =
+    input.recommendedCommand ??
+    (startGateDecisionSurface
+      ? "npm run loop:start:codex -- --json"
+      : resumeCommand);
   const normalizedNotes =
     input.executionState === "completed"
       ? []
@@ -721,6 +743,7 @@ export const buildOperatorSurfaceArtifact = (input: {
       handoffState,
       resumeSkill,
       attentionRequired,
+      session: input.session,
       checkpointKind: input.checkpointKind,
       autoResumeEligible,
       workerSkill,

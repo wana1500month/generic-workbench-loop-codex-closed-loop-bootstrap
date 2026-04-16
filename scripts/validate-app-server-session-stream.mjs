@@ -164,7 +164,7 @@ const main = async () => {
       assert.equal(mirroredEvents.length, 1);
       assert.equal(mirroredEvents[0].method, "harness/session.changed");
       assert.equal(mirroredEvents[0].params.sequence, 1);
-      assert.equal(mirroredEvents[0].params.session.session_status, "preparing");
+      assert.equal(mirroredEvents[0].params.session.session_status, "ready_to_start");
 
       await writeSessionPreparationArtifacts({
         runId: "run-001",
