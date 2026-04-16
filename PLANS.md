@@ -373,6 +373,10 @@ Acceptance:
 - `runtime/session-status.json` is the normalized session-layer
   readiness/status artifact, and `runtime/operator-surface.json` should project
   that session layer directly instead of forcing UI consumers to infer it.
+- `runtime/session-status.json` should also persist `attention_kind`,
+  `active_checkpoint`, and `session_binding`, so supervisory clients can tell
+  why the session stopped and whether it is still bound to the intended Codex
+  thread or App Server turn.
 - `runtime/session-status-events.jsonl` should persist append-only structured
   session-change events derived from the same source as `runtime/session-status.json`,
   and attached clients should be able to consume that stream directly.
@@ -393,6 +397,9 @@ Acceptance:
 - The operator-facing session vocabulary is fixed to `asking`, `preparing`,
   `running`, `needs_steering`, `blocked_externally`, `ready_for_review`, and
   `done`.
+- Intake completion should enter prepare directly: legacy
+  `ready_for_confirmation` compatibility may remain, but the surfaced phase is
+  `prepare` rather than a human confirmation hold.
 - The skill instructs Codex to ask only the missing high-impact questions, ask
   at most 1 to 3 short questions per turn, and prefer defaults over low-value
   intake turns.

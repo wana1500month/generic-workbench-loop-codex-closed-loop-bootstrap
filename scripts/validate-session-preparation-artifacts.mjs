@@ -125,6 +125,8 @@ const main = async () => {
       operatorSurfacePath: runtimePaths.operatorSurfacePath,
       executionPlanPath,
       transportMode: "current-thread",
+      threadBindingState: "bound",
+      threadId: "thread-prepare-001",
       idea,
       durableMemory: durableMemory.context,
       scenario,
@@ -198,6 +200,10 @@ const main = async () => {
     assert.equal(sessionStatus.session_status, "preparing");
     assert.equal(sessionStatus.readiness, "ready_to_run");
     assert.equal(sessionStatus.next_attention, "codex");
+    assert.equal(sessionStatus.attention_kind, "none");
+    assert.equal(sessionStatus.session_binding.surface, "current-thread");
+    assert.equal(sessionStatus.session_binding.binding_state, "bound");
+    assert.equal(sessionStatus.session_binding.thread_id, "thread-prepare-001");
     assert.equal(sessionStatus.deferred_question_count, openQuestions.questions.length);
     assert.equal(sessionStatus.artifacts.open_questions_path, "runtime/open-questions.json");
     assert.equal(
@@ -232,6 +238,8 @@ const main = async () => {
       operatorSurfacePath: runtimePaths.operatorSurfacePath,
       executionPlanPath,
       transportMode: "current-thread",
+      threadBindingState: "bound",
+      threadId: "thread-prepare-001",
       idea,
       durableMemory: durableMemory.context,
       scenario,
@@ -245,7 +253,12 @@ const main = async () => {
       externalBlockers: ["Access to the real ticket feed is still unavailable."],
       scopeGuardrails: ["do not expand into billing or admin settings"],
       latestRound: 2,
-      latestStopReason: "awaiting_human_input"
+      latestStopReason: "awaiting_human_input",
+      checkpointKind: "generator-plan",
+      checkpointId: "checkpoint-generator-plan-001",
+      checkpointPromptPath: runtimePaths.openQuestionsPath,
+      checkpointResponsePath: runtimePaths.runContractPath,
+      checkpointSkill: "loop-control"
     });
 
     const [
@@ -276,6 +289,16 @@ const main = async () => {
     assert.equal(refreshedSessionStatus.session_status, "needs_steering");
     assert.equal(refreshedSessionStatus.readiness, "needs_input");
     assert.equal(refreshedSessionStatus.next_attention, "human");
+    assert.equal(refreshedSessionStatus.attention_kind, "steering");
+    assert.equal(refreshedSessionStatus.session_binding.surface, "current-thread");
+    assert.equal(refreshedSessionStatus.session_binding.binding_state, "bound");
+    assert.equal(refreshedSessionStatus.session_binding.thread_id, "thread-prepare-001");
+    assert.equal(refreshedSessionStatus.active_checkpoint.kind, "generator-plan");
+    assert.equal(
+      refreshedSessionStatus.active_checkpoint.checkpoint_id,
+      "checkpoint-generator-plan-001"
+    );
+    assert.equal(refreshedSessionStatus.active_checkpoint.skill, "loop-control");
     assert.equal(
       refreshedSessionStatus.objective,
       "Revise the support queue workflow to satisfy operator review feedback."
@@ -302,6 +325,10 @@ const main = async () => {
     assert.equal(
       refreshedSessionStream.latest_session.session_status,
       refreshedSessionStatus.session_status
+    );
+    assert.equal(
+      refreshedSessionStream.latest_session.attention_kind,
+      refreshedSessionStatus.attention_kind
     );
     assert.ok(
       refreshedOpenQuestions.review_feedback.includes(

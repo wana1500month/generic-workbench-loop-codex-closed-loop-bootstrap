@@ -23,7 +23,7 @@ type IntakeGateStatus =
   | "ask_execution_questions"
   | "ready_for_confirmation";
 
-type IntakePhase = "none" | "product" | "execution" | "confirmation";
+type IntakePhase = "none" | "product" | "execution" | "prepare";
 
 interface IntakeFieldState<TFieldId extends IntakeFieldId = IntakeFieldId> {
   id: TFieldId;
@@ -47,6 +47,8 @@ export interface IntakeGateResult {
   extracted_target_score?: number;
   extracted_max_rounds?: number;
   confirmation_summary?: string[];
+  auto_prepare?: boolean;
+  next_step?: "prepare";
 }
 
 const PRODUCT_BUILD_NOUNS = [
@@ -589,7 +591,7 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
 
   return {
     status: "ready_for_confirmation",
-    phase: "confirmation",
+    phase: "prepare",
     is_product_build_request: true,
     missing_fields: [],
     missing_product_fields: [],
@@ -602,6 +604,8 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
     extracted_target_root: extractedTargetRoot,
     extracted_target_score: extractedTargetScore,
     extracted_max_rounds: extractedMaxRounds,
+    auto_prepare: true,
+    next_step: "prepare",
     confirmation_summary: buildConfirmationSummary({
       request,
       extractedSummary,
@@ -622,6 +626,12 @@ export const renderIntakeGateResponse = (result: IntakeGateResult): string => {
   }
 
   if (result.status === "ready_for_confirmation") {
+    return [
+      "Preparation summary",
+      ...(result.confirmation_summary ?? []),
+      "",
+      "Discovery is sufficient. Move directly into prepare mode and write the session artifacts before the same-thread run continues."
+    ].join("\n");
     return [
       "확인용 요약",
       ...(result.confirmation_summary ?? []),

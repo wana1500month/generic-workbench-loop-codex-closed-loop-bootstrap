@@ -9,19 +9,24 @@ import {
 } from "./file-system.js";
 import type { DurableMemoryContext } from "./durable-memory.js";
 import type {
+  AdapterMigrationDecision,
   BuildBriefArtifact,
   BuildBriefAuthMode,
   BuildBriefDataMode,
   BuildBriefDeliveryLevel,
   BuildBriefExecutionPreference,
   BuildBriefSurface,
+  CurrentThreadCheckpointKind,
   IdeaBrief,
   LoopPlan,
+  OperatorRecommendedSkill,
   OperatorSurfaceSessionProjection,
   LoopScenario,
   OperatorWorkspaceSurface,
   SessionApprovalBoundary,
   SessionAttention,
+  SessionAttentionKind,
+  SessionBindingArtifact,
   SessionLoopStatus,
   SessionReadiness,
   SessionReviewBoundary,
@@ -32,6 +37,7 @@ import type {
   SessionSteeringTrigger,
   TargetFamily,
   TargetManifestKey,
+  ThreadBindingState,
   TransportMode
 } from "./types.js";
 
@@ -105,6 +111,9 @@ export interface SessionPreparationArtifactsInput {
   executionPlanPath: string;
   transportMode: TransportMode;
   appServerSessionEventsPath?: string;
+  threadBindingState?: ThreadBindingState;
+  threadId?: string;
+  turnId?: string;
   idea: IdeaBrief;
   durableMemory: DurableMemoryContext;
   scenario: LoopScenario;
@@ -119,6 +128,12 @@ export interface SessionPreparationArtifactsInput {
   scopeGuardrails?: string[];
   latestRound?: number;
   latestStopReason?: string;
+  checkpointKind?: CurrentThreadCheckpointKind;
+  checkpointId?: string;
+  checkpointPromptPath?: string;
+  checkpointResponsePath?: string;
+  checkpointSkill?: OperatorRecommendedSkill;
+  decisionOptions?: AdapterMigrationDecision[];
 }
 
 const sessionLoopStatuses: SessionLoopStatus[] = [
@@ -349,6 +364,94 @@ const sessionAttentionForStatus = (
   }
 };
 
+const sessionAttentionKindForStatus = (input: {
+  status: SessionLoopStatus;
+  decisionOptions?: AdapterMigrationDecision[];
+}): SessionAttentionKind => {
+  if ((input.decisionOptions?.length ?? 0) > 0) {
+    return "decision";
+  }
+
+  switch (input.status) {
+    case "asking":
+    case "needs_steering":
+      return "steering";
+    case "blocked_externally":
+      return "external_block";
+    case "ready_for_review":
+      return "review";
+    case "preparing":
+    case "running":
+    case "done":
+      return "none";
+  }
+};
+
+const buildSessionBindingArtifact = (input: {
+  transportMode: TransportMode;
+  threadBindingState?: ThreadBindingState;
+  threadId?: string;
+  turnId?: string;
+}): SessionBindingArtifact => {
+  const surface =
+    input.transportMode === "app-server"
+      ? "app-server"
+      : input.transportMode === "current-thread" &&
+          input.threadBindingState !== "unbound"
+        ? "current-thread"
+        : "manual-protocol";
+  const bindingState =
+    surface === "app-server"
+      ? input.threadId
+        ? "bound"
+        : "unbound"
+      : surface === "current-thread"
+        ? input.threadBindingState === "bound" && input.threadId
+          ? "bound"
+          : "degraded"
+        : "degraded";
+
+  return {
+    surface,
+    binding_state: bindingState,
+    ...(input.threadId ? { thread_id: input.threadId } : {}),
+    ...(surface === "app-server" && input.turnId ? { turn_id: input.turnId } : {})
+  };
+};
+
+const buildSessionActiveCheckpointArtifact = (input: {
+  sessionStatus: SessionLoopStatus;
+  transportMode: TransportMode;
+  checkpointKind?: CurrentThreadCheckpointKind;
+  checkpointId?: string;
+  checkpointPromptPath?: string;
+  checkpointResponsePath?: string;
+  checkpointSkill?: OperatorRecommendedSkill;
+}) => {
+  if (
+    !input.checkpointKind ||
+    input.sessionStatus === "ready_for_review" ||
+    input.sessionStatus === "done"
+  ) {
+    return undefined;
+  }
+
+  const defaultSkill: OperatorRecommendedSkill =
+    input.transportMode === "current-thread" ? "loop-control" : "run-resume";
+
+  return {
+    ...(input.checkpointId ? { checkpoint_id: input.checkpointId } : {}),
+    kind: input.checkpointKind,
+    skill: input.checkpointSkill ?? defaultSkill,
+    ...(input.checkpointPromptPath
+      ? { prompt_path: input.checkpointPromptPath }
+      : {}),
+    ...(input.checkpointResponsePath
+      ? { response_path: input.checkpointResponsePath }
+      : {})
+  };
+};
+
 const buildTargetManifestHints = (
   intake: SessionIntakeSnapshot | undefined
 ): Partial<Record<TargetManifestKey, string>> => ({
@@ -469,38 +572,75 @@ export const buildSessionStatusArtifact = (input: {
   sessionStreamPath: string;
   operatorSurfacePath: string;
   executionPlanPath: string;
-}): SessionStatusArtifact => ({
-  run_id: input.runId,
-  updated_at: input.updatedAt,
-  session_status: input.sessionStatus,
-  readiness: sessionReadinessForStatus(input.sessionStatus),
-  next_attention: sessionAttentionForStatus(input.sessionStatus),
-  objective: input.objective,
-  workspace_mode: input.workspaceMode,
-  current_thread_required: input.currentThreadRequired ?? true,
-  deferred_question_count: input.openQuestions.questions.length,
-  steering_note_count: input.openQuestions.steering_notes.length,
-  review_feedback_count: input.openQuestions.review_feedback.length,
-  external_blocker_count: input.openQuestions.external_blockers.length,
-  ...(input.openQuestions.latest_round !== undefined
-    ? { latest_round: input.openQuestions.latest_round }
-    : {}),
-  ...(input.openQuestions.latest_stop_reason
-    ? { latest_stop_reason: input.openQuestions.latest_stop_reason }
-    : {}),
-  artifacts: {
-    build_brief_path: relativeToRun(input.runDirectory, input.buildBriefPath),
-    run_contract_path: relativeToRun(input.runDirectory, input.runContractPath),
-    open_questions_path: relativeToRun(input.runDirectory, input.openQuestionsPath),
-    operator_surface_path: relativeToRun(input.runDirectory, input.operatorSurfacePath),
-    session_status_events_path: relativeToRun(
-      input.runDirectory,
-      input.sessionStatusEventsPath
-    ),
-    session_stream_path: relativeToRun(input.runDirectory, input.sessionStreamPath),
-    execution_plan_path: relativeToRun(input.runDirectory, input.executionPlanPath)
-  }
-});
+  transportMode: TransportMode;
+  threadBindingState?: ThreadBindingState;
+  threadId?: string;
+  turnId?: string;
+  checkpointKind?: CurrentThreadCheckpointKind;
+  checkpointId?: string;
+  checkpointPromptPath?: string;
+  checkpointResponsePath?: string;
+  checkpointSkill?: OperatorRecommendedSkill;
+  decisionOptions?: AdapterMigrationDecision[];
+}): SessionStatusArtifact => {
+  const sessionBinding = buildSessionBindingArtifact({
+    transportMode: input.transportMode,
+    threadBindingState: input.threadBindingState,
+    threadId: input.threadId,
+    turnId: input.turnId
+  });
+  const activeCheckpoint = buildSessionActiveCheckpointArtifact({
+    sessionStatus: input.sessionStatus,
+    transportMode: input.transportMode,
+    checkpointKind: input.checkpointKind,
+    checkpointId: input.checkpointId,
+    checkpointPromptPath: input.checkpointPromptPath,
+    checkpointResponsePath: input.checkpointResponsePath,
+    checkpointSkill: input.checkpointSkill
+  });
+
+  return {
+    run_id: input.runId,
+    updated_at: input.updatedAt,
+    session_status: input.sessionStatus,
+    readiness: sessionReadinessForStatus(input.sessionStatus),
+    next_attention: sessionAttentionForStatus(input.sessionStatus),
+    attention_kind: sessionAttentionKindForStatus({
+      status: input.sessionStatus,
+      decisionOptions: input.decisionOptions
+    }),
+    objective: input.objective,
+    workspace_mode: input.workspaceMode,
+    current_thread_required: input.currentThreadRequired ?? true,
+    deferred_question_count: input.openQuestions.questions.length,
+    steering_note_count: input.openQuestions.steering_notes.length,
+    review_feedback_count: input.openQuestions.review_feedback.length,
+    external_blocker_count: input.openQuestions.external_blockers.length,
+    session_binding: sessionBinding,
+    ...(activeCheckpoint ? { active_checkpoint: activeCheckpoint } : {}),
+    ...(input.openQuestions.latest_round !== undefined
+      ? { latest_round: input.openQuestions.latest_round }
+      : {}),
+    ...(input.openQuestions.latest_stop_reason
+      ? { latest_stop_reason: input.openQuestions.latest_stop_reason }
+      : {}),
+    artifacts: {
+      build_brief_path: relativeToRun(input.runDirectory, input.buildBriefPath),
+      run_contract_path: relativeToRun(input.runDirectory, input.runContractPath),
+      open_questions_path: relativeToRun(input.runDirectory, input.openQuestionsPath),
+      operator_surface_path: relativeToRun(
+        input.runDirectory,
+        input.operatorSurfacePath
+      ),
+      session_status_events_path: relativeToRun(
+        input.runDirectory,
+        input.sessionStatusEventsPath
+      ),
+      session_stream_path: relativeToRun(input.runDirectory, input.sessionStreamPath),
+      execution_plan_path: relativeToRun(input.runDirectory, input.executionPlanPath)
+    }
+  };
+};
 
 const stableSessionFields = (
   artifact: SessionStatusArtifact
@@ -508,6 +648,7 @@ const stableSessionFields = (
   session_status: artifact.session_status,
   readiness: artifact.readiness,
   next_attention: artifact.next_attention,
+  attention_kind: artifact.attention_kind,
   objective: artifact.objective,
   workspace_mode: artifact.workspace_mode,
   current_thread_required: artifact.current_thread_required,
@@ -515,6 +656,16 @@ const stableSessionFields = (
   steering_note_count: artifact.steering_note_count,
   review_feedback_count: artifact.review_feedback_count,
   external_blocker_count: artifact.external_blocker_count,
+  session_binding_surface: artifact.session_binding.surface,
+  session_binding_state: artifact.session_binding.binding_state,
+  session_binding_thread_id: artifact.session_binding.thread_id ?? null,
+  session_binding_turn_id: artifact.session_binding.turn_id ?? null,
+  active_checkpoint_kind: artifact.active_checkpoint?.kind ?? null,
+  active_checkpoint_id: artifact.active_checkpoint?.checkpoint_id ?? null,
+  active_checkpoint_skill: artifact.active_checkpoint?.skill ?? null,
+  active_checkpoint_prompt_path: artifact.active_checkpoint?.prompt_path ?? null,
+  active_checkpoint_response_path:
+    artifact.active_checkpoint?.response_path ?? null,
   latest_round: artifact.latest_round ?? null,
   latest_stop_reason: artifact.latest_stop_reason ?? null
 });
@@ -575,10 +726,15 @@ export const buildOperatorSurfaceSessionProjection = (
   session_status: artifact.session_status,
   readiness: artifact.readiness,
   next_attention: artifact.next_attention,
+  attention_kind: artifact.attention_kind,
   deferred_question_count: artifact.deferred_question_count,
   steering_note_count: artifact.steering_note_count,
   review_feedback_count: artifact.review_feedback_count,
   external_blocker_count: artifact.external_blocker_count,
+  session_binding: artifact.session_binding,
+  ...(artifact.active_checkpoint
+    ? { active_checkpoint: artifact.active_checkpoint }
+    : {}),
   ...(artifact.latest_round !== undefined
     ? { latest_round: artifact.latest_round }
     : {}),
@@ -631,6 +787,7 @@ export const buildSessionStreamContractArtifact = (input: {
       "session_status",
       "readiness",
       "next_attention",
+      "attention_kind",
       "objective"
     ],
     count_fields: [
@@ -894,7 +1051,17 @@ export const writeSessionPreparationArtifacts = async (
     sessionStatusEventsPath: input.sessionStatusEventsPath,
     sessionStreamPath: input.sessionStreamPath,
     operatorSurfacePath: input.operatorSurfacePath,
-    executionPlanPath: input.executionPlanPath
+    executionPlanPath: input.executionPlanPath,
+    transportMode: input.transportMode,
+    threadBindingState: input.threadBindingState,
+    threadId: input.threadId,
+    turnId: input.turnId,
+    checkpointKind: input.checkpointKind,
+    checkpointId: input.checkpointId,
+    checkpointPromptPath: input.checkpointPromptPath,
+    checkpointResponsePath: input.checkpointResponsePath,
+    checkpointSkill: input.checkpointSkill,
+    decisionOptions: input.decisionOptions
   });
   const sessionStatusEvent = await buildSessionStatusEventArtifact({
     now,

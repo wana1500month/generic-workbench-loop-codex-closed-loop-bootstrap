@@ -70,8 +70,10 @@ const readyResult = evaluateIntakeRequest(
   "Build a storyboard editor for indie animators. The target users are solo creators. The core workflows are arranging boards, dragging panels, and writing notes. References can be Linear and Figma. Good enough means those workflows run end to end. This is a new project and the target root is C:\\Users\\SUNGMOK\\Desktop\\harness\\storyboard-app. target score 0.9 and max rounds 4."
 );
 assert.equal(readyResult.status, "ready_for_confirmation");
-assert.equal(readyResult.phase, "confirmation");
+assert.equal(readyResult.phase, "prepare");
 assert.equal(readyResult.is_product_build_request, true);
+assert.equal(readyResult.auto_prepare, true);
+assert.equal(readyResult.next_step, "prepare");
 assert.ok(Array.isArray(readyResult.confirmation_summary));
 assert.ok(
   readyResult.confirmation_summary.some((line) => /Target score:\s*0\.9/i.test(line)),
@@ -89,5 +91,8 @@ assert.equal(
   readyResult.extracted_target_root,
   "C:\\Users\\SUNGMOK\\Desktop\\harness\\storyboard-app"
 );
+const readyHumanOutput = renderIntakeGateResponse(readyResult);
+assert.match(readyHumanOutput, /Preparation summary/);
+assert.match(readyHumanOutput, /prepare mode/i);
 
 console.log("validate:intake-gate passed");

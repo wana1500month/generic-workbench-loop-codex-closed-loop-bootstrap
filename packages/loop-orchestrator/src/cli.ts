@@ -1109,6 +1109,19 @@ const printRunResult = (
   if (statusReport?.active.attention_required === "codex") {
     console.log("This is a Codex-owned checkpoint, not a user-facing pause.");
   }
+  if (statusReport?.operator_surface?.session) {
+    console.log(
+      `Session kind: ${statusReport.operator_surface.session.attention_kind}`
+    );
+    console.log(
+      `Session binding: ${statusReport.operator_surface.session.session_binding.surface} / ${statusReport.operator_surface.session.session_binding.binding_state} / ${statusReport.operator_surface.session.session_binding.thread_id ?? "none"} / ${statusReport.operator_surface.session.session_binding.turn_id ?? "none"}`
+    );
+    if (statusReport.operator_surface.session.active_checkpoint) {
+      console.log(
+        `Session checkpoint: ${statusReport.operator_surface.session.active_checkpoint.kind} / ${statusReport.operator_surface.session.active_checkpoint.checkpoint_id ?? "none"} / ${statusReport.operator_surface.session.active_checkpoint.skill}`
+      );
+    }
+  }
 };
 
 const printStatusReport = (report: StatusReport): void => {
@@ -1139,9 +1152,17 @@ const printStatusReport = (report: StatusReport): void => {
     }
     if (report.operator_surface.session) {
       console.log(
-        `Session: ${report.operator_surface.session.session_status} / ${report.operator_surface.session.readiness} / attention ${report.operator_surface.session.next_attention} / questions ${report.operator_surface.session.deferred_question_count}`
+        `Session: ${report.operator_surface.session.session_status} / ${report.operator_surface.session.readiness} / attention ${report.operator_surface.session.next_attention} / kind ${report.operator_surface.session.attention_kind} / questions ${report.operator_surface.session.deferred_question_count}`
       );
       console.log(`Session objective: ${report.operator_surface.session.objective}`);
+      console.log(
+        `Session binding: ${report.operator_surface.session.session_binding.surface} / ${report.operator_surface.session.session_binding.binding_state} / ${report.operator_surface.session.session_binding.thread_id ?? "none"} / ${report.operator_surface.session.session_binding.turn_id ?? "none"}`
+      );
+      if (report.operator_surface.session.active_checkpoint) {
+        console.log(
+          `Session checkpoint: ${report.operator_surface.session.active_checkpoint.kind} / ${report.operator_surface.session.active_checkpoint.checkpoint_id ?? "none"} / ${report.operator_surface.session.active_checkpoint.skill}`
+        );
+      }
     }
   }
   if (report.supervisor_state) {

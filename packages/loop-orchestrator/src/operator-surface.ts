@@ -847,10 +847,20 @@ export const renderOperatorSurfaceMarkdown = (
 - Status: ${artifact.session?.session_status ?? "none"}
 - Readiness: ${artifact.session?.readiness ?? "none"}
 - Next attention: ${artifact.session?.next_attention ?? "none"}
+- Attention kind: ${artifact.session?.attention_kind ?? "none"}
 - Deferred questions: ${artifact.session?.deferred_question_count ?? 0}
 - Steering notes: ${artifact.session?.steering_note_count ?? 0}
 - Review feedback: ${artifact.session?.review_feedback_count ?? 0}
 - External blockers: ${artifact.session?.external_blocker_count ?? 0}
+- Binding surface: ${artifact.session?.session_binding.surface ?? "none"}
+- Binding state: ${artifact.session?.session_binding.binding_state ?? "none"}
+- Session thread id: ${artifact.session?.session_binding.thread_id ?? "none"}
+- Session turn id: ${artifact.session?.session_binding.turn_id ?? "none"}
+- Active checkpoint: ${artifact.session?.active_checkpoint?.kind ?? "none"}
+- Active checkpoint id: ${artifact.session?.active_checkpoint?.checkpoint_id ?? "none"}
+- Active checkpoint skill: ${artifact.session?.active_checkpoint?.skill ?? "none"}
+- Active checkpoint prompt: ${artifact.session?.active_checkpoint?.prompt_path ?? "none"}
+- Active checkpoint response: ${artifact.session?.active_checkpoint?.response_path ?? "none"}
 - Latest round: ${artifact.session?.latest_round ?? "none"}
 - Latest stop reason: ${artifact.session?.latest_stop_reason ?? "none"}
 

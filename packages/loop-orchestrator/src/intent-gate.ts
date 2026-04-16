@@ -48,7 +48,7 @@ export type LoopIntentStatus =
   | "ready_for_handoff"
   | "unclassified";
 
-export type LoopIntentPhase = "none" | "intent" | "handoff";
+export type LoopIntentPhase = "none" | "intent" | "handoff" | "prepare";
 export type LoopIntentRoute =
   | "product_intake"
   | "harness_design"
@@ -840,7 +840,7 @@ const buildProductResult = (
 ): LoopIntentResult => ({
   intent: "product_build",
   status: "route_to_product_intake",
-  phase: intake.status === "ready_for_confirmation" ? "handoff" : "intent",
+  phase: intake.status === "ready_for_confirmation" ? "prepare" : "intent",
   locale,
   confidence: intake.status === "ready_for_confirmation" ? 0.96 : 0.91,
   route_target: "product_intake",

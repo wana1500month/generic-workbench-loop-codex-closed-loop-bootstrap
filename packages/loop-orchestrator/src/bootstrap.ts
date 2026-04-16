@@ -2104,6 +2104,30 @@ const main = async () => {
     JSON.stringify(remediationBrief, null, 2)
   ].join("\\n");
 
+  const storedGeneratorSession = await readCodexSession(
+    runtimePaths.codexSessionRegistryPath,
+    "generator"
+  );
+  const storedGeneratorSessionId =
+    typeof storedGeneratorSession?.thread_id === "string" &&
+    storedGeneratorSession.thread_id.trim().length > 0
+      ? storedGeneratorSession.thread_id.trim()
+      : undefined;
+  const storedGeneratorSessionTargetRoot =
+    typeof storedGeneratorSession?.metadata?.target_root === "string" &&
+    storedGeneratorSession.metadata.target_root.trim().length > 0
+      ? storedGeneratorSession.metadata.target_root.trim()
+      : undefined;
+  const generatorSessionMatchesTarget =
+    typeof storedGeneratorSessionId === "string" &&
+    (!storedGeneratorSession?.cwd ||
+      storedGeneratorSession.cwd === runtimePaths.targetRoot) &&
+    (!storedGeneratorSessionTargetRoot ||
+      storedGeneratorSessionTargetRoot === runtimePaths.targetRoot);
+  const generatorSessionId = generatorSessionMatchesTarget
+    ? storedGeneratorSessionId
+    : undefined;
+
   const execution = await runCodexCommand({
     name: "generator",
     prompt,
@@ -2118,12 +2142,18 @@ const main = async () => {
       dirname(config.idea_path),
       ...(previousRoundDirectory ? [previousRoundDirectory] : [])
     ],
-    sessionId: undefined,
+    sessionId: generatorSessionId,
     artifactDirectory: runtimePaths.artifactsDirectory,
     metadata: {
       role: "generator",
       capability: "apply_change",
-      session_registry_path: runtimePaths.codexSessionRegistryPath
+      session_registry_path: runtimePaths.codexSessionRegistryPath,
+      stored_session_id: storedGeneratorSessionId ?? null,
+      resume_source: generatorSessionId ? "session_registry" : "fresh_exec",
+      resume_skipped_reason:
+        storedGeneratorSessionId && !generatorSessionMatchesTarget
+          ? "stored_generator_session_target_mismatch"
+          : null
     }
   });
 

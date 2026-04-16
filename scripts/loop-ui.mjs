@@ -162,10 +162,19 @@ const sessionSnapshotFromOperatorSurface = (operatorSurface) => {
     session_status: operatorSurface.session.session_status,
     readiness: operatorSurface.session.readiness,
     next_attention: operatorSurface.session.next_attention,
+    attention_kind: operatorSurface.session.attention_kind ?? "none",
     deferred_question_count: operatorSurface.session.deferred_question_count ?? 0,
     steering_note_count: operatorSurface.session.steering_note_count ?? 0,
     review_feedback_count: operatorSurface.session.review_feedback_count ?? 0,
     external_blocker_count: operatorSurface.session.external_blocker_count ?? 0,
+    session_binding:
+      operatorSurface.session.session_binding ?? {
+        surface: "manual-protocol",
+        binding_state: "degraded"
+      },
+    ...(operatorSurface.session.active_checkpoint
+      ? { active_checkpoint: operatorSurface.session.active_checkpoint }
+      : {}),
     ...(operatorSurface.session.latest_round !== undefined
       ? { latest_round: operatorSurface.session.latest_round }
       : {}),
@@ -183,10 +192,19 @@ const selectSessionSnapshot = (sessionStatus, operatorSurface) => {
       session_status: sessionStatus.session_status,
       readiness: sessionStatus.readiness,
       next_attention: sessionStatus.next_attention,
+      attention_kind: sessionStatus.attention_kind ?? "none",
       deferred_question_count: sessionStatus.deferred_question_count ?? 0,
       steering_note_count: sessionStatus.steering_note_count ?? 0,
       review_feedback_count: sessionStatus.review_feedback_count ?? 0,
       external_blocker_count: sessionStatus.external_blocker_count ?? 0,
+      session_binding:
+        sessionStatus.session_binding ?? {
+          surface: "manual-protocol",
+          binding_state: "degraded"
+        },
+      ...(sessionStatus.active_checkpoint
+        ? { active_checkpoint: sessionStatus.active_checkpoint }
+        : {}),
       ...(sessionStatus.latest_round !== undefined
         ? { latest_round: sessionStatus.latest_round }
         : {}),
@@ -358,11 +376,17 @@ export const renderLoopUiSnapshot = (snapshot) =>
     `Round: ${snapshot.active.round ?? "none"} / Phase: ${snapshot.active.phase} (${snapshot.active.phase_status})`,
     `Execution: ${snapshot.execution_state}`,
     snapshot.session
-      ? `Session: ${snapshot.session.session_status} / ${snapshot.session.readiness} / attention ${snapshot.session.next_attention} / source ${snapshot.session.source}`
+      ? `Session: ${snapshot.session.session_status} / ${snapshot.session.readiness} / attention ${snapshot.session.next_attention} / kind ${snapshot.session.attention_kind} / source ${snapshot.session.source}`
       : "Session: none",
     snapshot.session
       ? `Session objective: ${snapshot.session.objective}`
       : "Session objective: none",
+    snapshot.session
+      ? `Session binding: ${snapshot.session.session_binding.surface} / ${snapshot.session.session_binding.binding_state} / thread ${snapshot.session.session_binding.thread_id ?? "none"} / turn ${snapshot.session.session_binding.turn_id ?? "none"}`
+      : "Session binding: none",
+    snapshot.session?.active_checkpoint
+      ? `Session checkpoint: ${snapshot.session.active_checkpoint.kind} / ${snapshot.session.active_checkpoint.checkpoint_id ?? "none"} / skill ${snapshot.session.active_checkpoint.skill}`
+      : "Session checkpoint: none",
     snapshot.session
       ? `Session counts: questions ${snapshot.session.deferred_question_count} / steering ${snapshot.session.steering_note_count} / review ${snapshot.session.review_feedback_count} / blockers ${snapshot.session.external_blocker_count}`
       : "Session counts: none",

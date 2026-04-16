@@ -1980,7 +1980,20 @@ export const runClosedLoop = async (input: {
     stopReason?: LoopRunSummary["stop_reason"];
     attentionRequired?: OperatorAttentionRequired;
     executionState?: ExecutionState;
+    checkpointKind?: CurrentThreadCheckpointKind;
+    checkpointId?: string;
+    activePromptPath?: string;
+    activeResponsePath?: string;
+    recommendedSkill?: OperatorRecommendedSkill;
+    decisionOptions?: AdapterMigrationDecision[];
   }): Promise<void> => {
+    const snapshot = appServerTransport?.snapshot();
+    const sessionContext = resolveOperatorSurfaceContext({
+      controllerMode,
+      transportMode,
+      threadId: snapshot?.thread_id,
+      threadName: snapshot?.thread_name
+    });
     const result = await writeSessionPreparationArtifacts({
       runId,
       runDirectory,
@@ -1995,6 +2008,9 @@ export const runClosedLoop = async (input: {
       executionPlanPath,
       transportMode,
       appServerSessionEventsPath: runtimeStatePaths.appServerSessionEventsPath,
+      threadBindingState: sessionContext.threadBindingState,
+      threadId: sessionContext.threadId,
+      turnId: snapshot?.turn_id,
       idea,
       durableMemory: durableMemory.context,
       scenario,
@@ -2013,7 +2029,14 @@ export const runClosedLoop = async (input: {
       externalBlockers: sessionExternalBlockers,
       scopeGuardrails: sessionScopeGuardrails,
       latestRound: sessionLatestRound,
-      latestStopReason: input?.stopReason ?? sessionLatestStopReason
+      latestStopReason: input?.stopReason ?? sessionLatestStopReason,
+      checkpointKind: input?.checkpointKind ?? activeCheckpointKind,
+      checkpointId: input?.checkpointId ?? activeCheckpointId,
+      checkpointPromptPath: input?.activePromptPath ?? activePromptArtifactPath,
+      checkpointResponsePath:
+        input?.activeResponsePath ?? activeResponseArtifactPath,
+      checkpointSkill: input?.recommendedSkill ?? activeRecommendedSkill,
+      decisionOptions: input?.decisionOptions ?? activeDecisionOptions
     });
     latestSessionStatusArtifact = result.sessionStatus;
   };
@@ -2593,7 +2616,13 @@ export const runClosedLoop = async (input: {
     await refreshSessionPreparationArtifacts({
       stopReason: input.stopReason,
       attentionRequired: input.attentionRequired,
-      executionState: "paused"
+      executionState: "paused",
+      checkpointKind: input.checkpointKind,
+      checkpointId: input.checkpointId,
+      activePromptPath: input.activePromptPath,
+      activeResponsePath: input.activeResponsePath,
+      recommendedSkill: input.recommendedSkill,
+      decisionOptions: input.decisionOptions
     });
     await writeLiveTransportProtocol();
     await writeOperatorSurface({

@@ -1389,6 +1389,17 @@ export type SessionReadiness =
   | "ready_for_review"
   | "complete";
 export type SessionAttention = "codex" | "human" | "external" | "review" | "none";
+export type SessionAttentionKind =
+  | "none"
+  | "steering"
+  | "review"
+  | "external_block"
+  | "decision";
+export type SessionBindingSurface =
+  | "current-thread"
+  | "app-server"
+  | "manual-protocol";
+export type SessionBindingState = "bound" | "unbound" | "degraded";
 export type SessionReviewBoundary =
   | "diff_ready"
   | "milestone_scope_complete"
@@ -1492,12 +1503,28 @@ export interface SessionRunContractArtifact {
   };
 }
 
+export interface SessionActiveCheckpointArtifact {
+  checkpoint_id?: string;
+  kind: CurrentThreadCheckpointKind;
+  skill: OperatorRecommendedSkill;
+  prompt_path?: string;
+  response_path?: string;
+}
+
+export interface SessionBindingArtifact {
+  surface: SessionBindingSurface;
+  binding_state: SessionBindingState;
+  thread_id?: string;
+  turn_id?: string;
+}
+
 export interface SessionStatusArtifact {
   run_id: string;
   updated_at: string;
   session_status: SessionLoopStatus;
   readiness: SessionReadiness;
   next_attention: SessionAttention;
+  attention_kind: SessionAttentionKind;
   objective: string;
   workspace_mode: OperatorWorkspaceSurface;
   current_thread_required: boolean;
@@ -1505,6 +1532,8 @@ export interface SessionStatusArtifact {
   steering_note_count: number;
   review_feedback_count: number;
   external_blocker_count: number;
+  session_binding: SessionBindingArtifact;
+  active_checkpoint?: SessionActiveCheckpointArtifact;
   latest_round?: number;
   latest_stop_reason?: string;
   artifacts: {
@@ -1545,7 +1574,11 @@ export interface SessionStreamContractArtifact {
     kind: "session_status";
     title: string;
     primary_fields: Array<
-      "session_status" | "readiness" | "next_attention" | "objective"
+      | "session_status"
+      | "readiness"
+      | "next_attention"
+      | "attention_kind"
+      | "objective"
     >;
     count_fields: Array<
       | "deferred_question_count"
@@ -1561,10 +1594,13 @@ export interface OperatorSurfaceSessionProjection {
   session_status: SessionLoopStatus;
   readiness: SessionReadiness;
   next_attention: SessionAttention;
+  attention_kind: SessionAttentionKind;
   deferred_question_count: number;
   steering_note_count: number;
   review_feedback_count: number;
   external_blocker_count: number;
+  session_binding: SessionBindingArtifact;
+  active_checkpoint?: SessionActiveCheckpointArtifact;
   latest_round?: number;
   latest_stop_reason?: string;
 }

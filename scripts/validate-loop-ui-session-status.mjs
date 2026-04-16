@@ -77,6 +77,8 @@ const main = async () => {
       operatorSurfacePath: runtimePaths.operatorSurfacePath,
       executionPlanPath,
       transportMode: "current-thread",
+      threadBindingState: "bound",
+      threadId: "thread-ui-123",
       idea,
       durableMemory: durableMemory.context,
       scenario,
@@ -89,7 +91,12 @@ const main = async () => {
       reviewFeedback: ["Make the review queue state explicit in the UI."],
       externalBlockers: ["The real support feed is still unavailable."],
       latestRound: 3,
-      latestStopReason: "awaiting_human_input"
+      latestStopReason: "awaiting_human_input",
+      checkpointKind: "generator-plan",
+      checkpointId: "generator-plan-ui-001",
+      checkpointPromptPath: runtimePaths.openQuestionsPath,
+      checkpointResponsePath: runtimePaths.runContractPath,
+      checkpointSkill: "loop-control"
     });
 
     const staleOperatorSurface = buildOperatorSurfaceArtifact({
@@ -116,10 +123,15 @@ const main = async () => {
         session_status: "running",
         readiness: "running",
         next_attention: "codex",
+        attention_kind: "none",
         deferred_question_count: 99,
         steering_note_count: 0,
         review_feedback_count: 0,
         external_blocker_count: 0,
+        session_binding: {
+          surface: "manual-protocol",
+          binding_state: "degraded"
+        },
         latest_round: 1,
         latest_stop_reason: "awaiting_codex_checkpoint"
       },
@@ -203,6 +215,10 @@ const main = async () => {
       snapshot.session.next_attention,
       sessionStatusArtifact.next_attention
     );
+    assert.equal(
+      snapshot.session.attention_kind,
+      sessionStatusArtifact.attention_kind
+    );
     assert.equal(snapshot.session.objective, sessionStatusArtifact.objective);
     assert.equal(
       snapshot.session.deferred_question_count,
@@ -224,6 +240,22 @@ const main = async () => {
     assert.equal(
       snapshot.session.latest_stop_reason,
       sessionStatusArtifact.latest_stop_reason
+    );
+    assert.equal(
+      snapshot.session.session_binding.surface,
+      sessionStatusArtifact.session_binding.surface
+    );
+    assert.equal(
+      snapshot.session.session_binding.binding_state,
+      sessionStatusArtifact.session_binding.binding_state
+    );
+    assert.equal(
+      snapshot.session.session_binding.thread_id,
+      sessionStatusArtifact.session_binding.thread_id
+    );
+    assert.equal(
+      snapshot.session.active_checkpoint.kind,
+      sessionStatusArtifact.active_checkpoint.kind
     );
     assert.notEqual(snapshot.session.objective, "stale operator surface objective");
     assert.notEqual(snapshot.session.session_status, "running");

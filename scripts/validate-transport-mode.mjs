@@ -176,6 +176,21 @@ const assertTransportSurface = async (
     "Expected transport-state ui_surface.session.next_attention to mirror session-status."
   );
   assert(
+    transportState.ui_surface?.session?.attention_kind ===
+      sessionStatus.attention_kind,
+    "Expected transport-state ui_surface.session.attention_kind to mirror session-status."
+  );
+  assert(
+    transportState.ui_surface?.session?.session_binding?.surface ===
+      sessionStatus.session_binding.surface,
+    "Expected transport-state ui_surface.session.session_binding.surface to mirror session-status."
+  );
+  assert(
+    transportState.ui_surface?.session?.session_binding?.binding_state ===
+      sessionStatus.session_binding.binding_state,
+    "Expected transport-state ui_surface.session.session_binding.binding_state to mirror session-status."
+  );
+  assert(
     transportState.ui_surface?.session?.deferred_question_count ===
       sessionStatus.deferred_question_count,
     "Expected transport-state ui_surface.session.deferred_question_count to mirror session-status."
@@ -230,6 +245,20 @@ const assertTransportSurface = async (
   assert(
     operatorSurface.session?.session_status === sessionStatus.session_status,
     "Expected operator surface session.session_status to mirror session-status."
+  );
+  assert(
+    operatorSurface.session?.attention_kind === sessionStatus.attention_kind,
+    "Expected operator surface session.attention_kind to mirror session-status."
+  );
+  assert(
+    operatorSurface.session?.session_binding?.surface ===
+      sessionStatus.session_binding.surface,
+    "Expected operator surface session.session_binding.surface to mirror session-status."
+  );
+  assert(
+    operatorSurface.session?.session_binding?.binding_state ===
+      sessionStatus.session_binding.binding_state,
+    "Expected operator surface session.session_binding.binding_state to mirror session-status."
   );
   assert(
     Array.isArray(sessionEvents) && sessionEvents.length >= 1,
