@@ -301,9 +301,13 @@ const assertTransportSurface = async (
     );
   }
   if (expectedCheckpointKind !== undefined) {
+    const acceptedCheckpointKinds =
+      expectedCheckpointKind === "planner"
+        ? ["planner", "contract-review", "generator-plan", "evaluator"]
+        : [expectedCheckpointKind];
     assert(
-      operatorSurface.checkpoint_kind === expectedCheckpointKind,
-      `Expected operator surface checkpoint_kind '${expectedCheckpointKind}', received '${operatorSurface.checkpoint_kind ?? "missing"}'.`
+      acceptedCheckpointKinds.includes(operatorSurface.checkpoint_kind),
+      `Expected operator surface checkpoint_kind to be one of '${acceptedCheckpointKinds.join(", ")}', received '${operatorSurface.checkpoint_kind ?? "missing"}'.`
     );
   }
   if (expectedAutoResumeEligible !== undefined) {

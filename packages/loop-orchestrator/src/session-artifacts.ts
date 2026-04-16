@@ -97,6 +97,13 @@ export interface SessionPreparationArtifactsResult {
   executionPlanPath: string;
 }
 
+export interface PreparedSessionSeed {
+  buildBrief: BuildBriefArtifact;
+  runContract: SessionRunContractArtifact;
+  idea: IdeaBrief;
+  durableMemory: DurableMemoryContext;
+}
+
 export interface SessionPreparationArtifactsInput {
   runId: string;
   runDirectory: string;
@@ -814,6 +821,102 @@ export const buildSessionStreamContractArtifact = (input: {
     ]
   }
 });
+
+const preparedIdeaRawMarkdown = (input: {
+  buildBrief: BuildBriefArtifact;
+  runContract: SessionRunContractArtifact;
+}): string =>
+  [
+    `# ${input.buildBrief.product.title}`,
+    "",
+    input.buildBrief.product.summary,
+    "",
+    "## Goals",
+    "",
+    ...input.buildBrief.product.core_workflows.map((workflow) => `- ${workflow}`),
+    "",
+    "## Quality Bar",
+    "",
+    ...input.buildBrief.product.success_definition.map(
+      (criterion) => `- ${criterion}`
+    ),
+    "",
+    "## Constraints",
+    "",
+    ...unique([
+      ...input.buildBrief.constraints.stack_preferences,
+      ...input.buildBrief.constraints.integrations,
+      ...input.buildBrief.constraints.non_goals,
+      ...input.buildBrief.constraints.repo_constraints,
+      `Target root: ${input.runContract.execution_controls.target_root}`,
+      `Project mode: ${input.runContract.execution_controls.project_mode}`
+    ]).map((constraint) => `- ${constraint}`)
+  ].join("\n");
+
+export const loadPreparedSessionSeed = async (input: {
+  buildBriefPath: string;
+  runContractPath: string;
+}): Promise<PreparedSessionSeed | undefined> => {
+  const [buildBrief, runContract] = await Promise.all([
+    loadJsonIfExists<BuildBriefArtifact>(input.buildBriefPath),
+    loadJsonIfExists<SessionRunContractArtifact>(input.runContractPath)
+  ]);
+
+  if (!buildBrief || !runContract) {
+    return undefined;
+  }
+
+  const idea: IdeaBrief = {
+    title: buildBrief.product.title,
+    summary: buildBrief.product.summary,
+    user_goals:
+      buildBrief.product.core_workflows.length > 0
+        ? [...buildBrief.product.core_workflows]
+        : [...buildBrief.product.success_definition],
+    constraints: unique([
+      ...buildBrief.constraints.stack_preferences,
+      ...buildBrief.constraints.integrations,
+      ...buildBrief.constraints.non_goals,
+      ...buildBrief.constraints.repo_constraints,
+      `Target root: ${runContract.execution_controls.target_root}`,
+      `Workspace mode: ${runContract.workspace_mode}`
+    ]),
+    quality_bar:
+      buildBrief.product.success_definition.length > 0
+        ? [...buildBrief.product.success_definition]
+        : [...runContract.stop_rule.done_when],
+    source_path: input.buildBriefPath,
+    raw_markdown: preparedIdeaRawMarkdown({
+      buildBrief,
+      runContract
+    })
+  };
+
+  return {
+    buildBrief,
+    runContract,
+    idea,
+    durableMemory: {
+      title: buildBrief.product.title,
+      summary: buildBrief.product.summary,
+      finishLine: buildBrief.product.success_definition[0],
+      targetUsers: [...buildBrief.product.target_users],
+      coreFeatures: [...buildBrief.product.core_workflows],
+      qualityBar:
+        buildBrief.product.success_definition.length > 0
+          ? [...buildBrief.product.success_definition]
+          : [...runContract.stop_rule.done_when],
+      constraints: unique([
+        ...buildBrief.constraints.stack_preferences,
+        ...buildBrief.constraints.integrations,
+        ...buildBrief.constraints.repo_constraints
+      ]),
+      mustNotBreak: [...buildBrief.constraints.non_goals],
+      targetScore: runContract.execution_controls.target_score,
+      maxRounds: runContract.execution_controls.max_rounds
+    }
+  };
+};
 
 const executionPlanMarkdown = (input: {
   runId: string;

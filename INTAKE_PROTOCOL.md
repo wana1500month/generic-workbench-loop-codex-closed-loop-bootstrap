@@ -36,7 +36,7 @@ the model jump directly into design or implementation advice.
 7. Only after the intake is sufficiently filled may the agent:
    - write a short preparation summary if useful
    - enter prepare mode on the same thread
-   - write the session preparation artifacts
+   - write the session preparation artifacts, preferably through `npm run loop:prepare -- --json` on shell/operator surfaces
    - stop at `ready_to_start`
    - wait for an explicit `루프 시작` or `start loop` before running
 

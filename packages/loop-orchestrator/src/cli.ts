@@ -178,6 +178,8 @@ const phaseAliasMap = new Map<string, ControllerRoundPhase>([
 
 const usageLines = [
   "Usage:",
+  "  npm run loop:prepare",
+  "  npm run loop:prepare -- --json",
   "  npm run loop:start:codex",
   "  npm run loop:start:codex -- --json",
   "  npm run loop:start:bg",
@@ -198,6 +200,7 @@ const usageLines = [
   `  ${["open", "negotiate", "pre-verify", "core-probes", "post-verify", "evaluate", "commit", "finalize"].join(", ")}`,
   "",
   "Notes:",
+  "  loop:prepare writes the session-level build brief, run contract, operator surface, session status, session stream, and execution plan without starting the loop.",
   "  loop:start:codex is the Codex-owned current-thread start. loop:start:bg is the detached supervisor surface. loop:start:manual is the intentional shell-owned manual-protocol start.",
   "  Deprecated aliases remain available: loop:run -> loop:start:bg, loop:single:codex -> loop:start:codex, loop:single:manual -> loop:start:manual, loop:single -> detached single-attempt seed.",
   `  shell-launched attached/current-thread seeds require a bound Codex thread id unless you intentionally pass ${manualProtocolSeedFlag}.`,

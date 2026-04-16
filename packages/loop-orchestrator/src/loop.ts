@@ -53,6 +53,7 @@ import {
   nextRunId,
   pathExists,
   repoRoot,
+  removeIfExists,
   writeJson,
   writeText
 } from "./file-system.js";
@@ -137,6 +138,11 @@ import {
   buildOperatorSurfaceSessionProjection,
   writeSessionPreparationArtifacts
 } from "./session-artifacts.js";
+import {
+  findLatestPreparedRunAwaitingStart,
+  loadPreparedSessionSeedForRun,
+  readyToStartMarkerPathForRuns
+} from "./prepare-session.js";
 import { buildAdapterDriftReport } from "./adapter-drift.js";
 import {
   applyGeneratedLocalAdapterMigration,
@@ -933,13 +939,6 @@ export const runClosedLoop = async (input: {
   if (input.repairOnly && !restoredRun) {
     throw new Error("Repair mode requires --resume-run so the controller can restore persisted state.");
   }
-  const attemptBudget =
-    input.maxRounds ?? restoredRun?.plan?.max_rounds ?? 3;
-  const runId =
-    restoredRun?.runId ??
-    (await nextRunId(join(repoRoot, "evals", "runs")));
-  const runDirectory =
-    restoredRun?.runDirectory ?? join(repoRoot, "evals", "runs", runId);
   const controllerMode =
     input.controllerMode ??
     (isControllerMode(process.env.HARNESS_CONTROLLER_MODE)
@@ -982,6 +981,37 @@ export const runClosedLoop = async (input: {
       : undefined) ??
     restoredRun?.summary.executor_mode ??
     defaultExecutorMode;
+  const singleForegroundSeedDefaults =
+    controllerMode === "attached" &&
+    transportMode === "current-thread" &&
+    input.maxRounds === 1 &&
+    input.includeRemediationBudget === false;
+  const runsDirectory = join(repoRoot, "evals", "runs");
+  const preparedRunCandidate =
+    !restoredRun &&
+    controllerMode === "attached" &&
+    transportMode === "current-thread" &&
+    input.adapterPath === undefined &&
+    input.rubricPath === undefined &&
+    input.evaluatorProfilePath === undefined &&
+    input.targetFamily === undefined &&
+    input.targetScore === undefined &&
+    (input.maxRounds === undefined || singleForegroundSeedDefaults)
+      ? await findLatestPreparedRunAwaitingStart(
+          runsDirectory,
+          process.env.CODEX_THREAD_ID?.trim() || undefined
+        )
+      : undefined;
+  const runId = restoredRun?.runId ?? preparedRunCandidate?.runId ?? (
+    await nextRunId(runsDirectory)
+  );
+  const runDirectory =
+    restoredRun?.runDirectory ??
+    preparedRunCandidate?.runDirectory ??
+    join(runsDirectory, runId);
+  if (preparedRunCandidate) {
+    await removeIfExists(readyToStartMarkerPathForRuns(runsDirectory));
+  }
   await mkdir(runDirectory, { recursive: true });
   const runDiscoveryMarkerPath = process.env.HARNESS_RUN_DISCOVERY_MARKER;
   if (runDiscoveryMarkerPath) {
@@ -996,6 +1026,18 @@ export const runClosedLoop = async (input: {
   }
   const runtimeStatePaths = runtimeStatePathsForRun(runDirectory);
   const runRuntimeDirectory = runtimeStatePaths.runtimeDirectory;
+  const preparedSessionSeed = restoredRun
+    ? undefined
+    : await loadPreparedSessionSeedForRun(runDirectory);
+  const preservePreparedAttemptBudget =
+    preparedSessionSeed !== undefined && singleForegroundSeedDefaults;
+  const attemptBudget =
+    (preservePreparedAttemptBudget
+      ? undefined
+      : input.maxRounds) ??
+    restoredRun?.plan?.max_rounds ??
+    preparedSessionSeed?.runContract.execution_controls.max_rounds ??
+    3;
   const summaryPath = join(runDirectory, "summary.json");
   const transportProtocolPath = transportProtocolPathForRun(
     runDirectory,
@@ -1052,6 +1094,11 @@ export const runClosedLoop = async (input: {
   hydratedRubric.max_remediation_rounds ??= loadedAdapter ? 2 : 0;
   if (input.targetScore !== undefined) {
     hydratedRubric.target_total_score = input.targetScore;
+  } else if (
+    preparedSessionSeed?.runContract.execution_controls.target_score !== undefined
+  ) {
+    hydratedRubric.target_total_score =
+      preparedSessionSeed.runContract.execution_controls.target_score;
   }
 
   const executionMaxRounds =
@@ -1440,8 +1487,14 @@ export const runClosedLoop = async (input: {
     };
   }
 
-  const idea = await readIdeaBrief(defaultIdeaPath);
-  const durableMemory = await loadDurableMemoryContext(idea);
+  const idea = preparedSessionSeed?.idea ?? await readIdeaBrief(defaultIdeaPath);
+  const durableMemory =
+    preparedSessionSeed !== undefined
+      ? {
+          rootDirectory: dirname(defaultIdeaPath),
+          context: preparedSessionSeed.durableMemory
+        }
+      : await loadDurableMemoryContext(idea);
   const durableMemoryPaths = await ensureDurableMemoryArtifacts(
     durableMemory.rootDirectory,
     durableMemory.context

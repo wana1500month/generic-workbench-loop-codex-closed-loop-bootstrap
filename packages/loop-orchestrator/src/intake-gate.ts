@@ -180,6 +180,12 @@ const PROJECT_MODE_HINTS = [
 const WINDOWS_PATH_PATTERN =
   /[a-zA-Z]:\\[^\r\n]*?(?=(?:[),.;!?]|\s+(?:target score|max rounds|run command|ready url|app url|api url|health url|이다|입니다|이고|이며)(?:\s|$)|$))/i;
 const PATH_PATTERN = /((?:\/|\.\/|\.\.\/)[^\r\n\s),.;!?]+)/;
+const RELATIVE_PATH_PATTERN =
+  /((?:\.{1,2}[\\/]|[A-Za-z0-9._-]+[\\/])[^\r\n\s),.;!?]+)/;
+const TARGET_ROOT_CONTEXT_PATTERNS = [
+  /(?:target root|root(?: directory)?|working directory|project root|target folder|working folder|\uC791\uC5C5\s*\uD3F4\uB354|\uC791\uC5C5\uD3F4\uB354|\uB300\uC0C1\s*\uD3F4\uB354|\uD504\uB85C\uC81D\uD2B8\s*\uD3F4\uB354)\s*(?:is|\uB294|\uC740|:|=)?\s*([^\r\n]+)/i,
+  /(?:\uD3F4\uB354|\uACBD\uB85C)\s*(?:\uB294|\uC740|:|=)?\s*([A-Za-z0-9._-]+(?:[\\/][^\r\n\s),.;!?]+)+)/i
+];
 const URL_PATTERN = /https?:\/\/[^\s)]+/i;
 const RUN_COMMAND_PATTERN =
   /\b(?:npm|pnpm|yarn|bun|node|python|python3|uvicorn|docker(?: compose)?|make)\s+[^\r\n]+/i;
@@ -267,10 +273,10 @@ const detectProductBuildRequest = (
     workflowsExplicitlyProvided(normalizedLower),
     includesAny(normalizedLower, REFERENCE_HINTS) || referencesExplicitlyAbsent(normalizedLower),
     finishLineExplicitlyProvided(normalizedLower),
-    extractProjectMode(normalizedLower) !== undefined,
+    extractProjectModeEnhanced(normalizedLower) !== undefined,
     extractTargetRoot(request) !== undefined,
-    extractTargetScore(normalizedLower) !== undefined,
-    extractMaxRounds(normalizedLower) !== undefined
+    extractTargetScoreEnhanced(normalizedLower) !== undefined,
+    extractMaxRoundsEnhanced(normalizedLower) !== undefined
   ].filter(Boolean).length;
 
   return continuationSignalCount >= 2 && normalizeText(request).length >= 16;
@@ -320,7 +326,24 @@ const sanitizeExtractedPath = (value: string): string | undefined => {
 };
 
 const extractTargetRoot = (request: string): string | undefined => {
-  const match = request.match(WINDOWS_PATH_PATTERN)?.[0] ?? request.match(PATH_PATTERN)?.[0];
+  for (const pattern of TARGET_ROOT_CONTEXT_PATTERNS) {
+    const contextual = pattern.exec(request)?.[1];
+    if (!contextual) {
+      continue;
+    }
+    const match =
+      contextual.match(WINDOWS_PATH_PATTERN)?.[0] ??
+      contextual.match(RELATIVE_PATH_PATTERN)?.[0] ??
+      contextual.match(PATH_PATTERN)?.[0] ??
+      contextual;
+    const sanitized = sanitizeExtractedPath(match);
+    if (sanitized) {
+      return sanitized;
+    }
+  }
+
+  const match =
+    request.match(WINDOWS_PATH_PATTERN)?.[0] ?? request.match(PATH_PATTERN)?.[0];
   return match ? sanitizeExtractedPath(match) : undefined;
 };
 
@@ -348,6 +371,88 @@ const extractMaxRounds = (normalizedLower: string): number | undefined => {
   const patterns = [
     /(?:max(?:imum)? rounds?|max iterations?|최대\s*(?:rounds?|라운드|반복|횟수|회수))\s*(?:는|은|:|=)?\s*(\d+)/i,
     /(\d+)\s*(?:rounds?|라운드)\b/i
+  ];
+
+  for (const pattern of patterns) {
+    const raw = pattern.exec(normalizedLower)?.[1];
+    if (!raw) {
+      continue;
+    }
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && Number.isInteger(parsed) && parsed >= 1) {
+      return parsed;
+    }
+  }
+
+  return undefined;
+};
+
+const extractTargetScoreEnhanced = (
+  normalizedLower: string
+): number | undefined => {
+  const legacy = extractTargetScore(normalizedLower);
+  if (legacy !== undefined) {
+    return legacy;
+  }
+
+  const patterns = [
+    /(?:target score|goal score|\uBAA9\uD45C\s*\uC810\uC218|\uBAA9\uD45C\uC810\uC218|\uD0C0\uAC9F\s*\uC810\uC218|targetscore)\s*(?:\uB294|\uC740|is|:|=)?\s*([01](?:\.\d+)?)/i,
+    /(?:score|\uC810\uC218)\s*(?:\uB294|\uC740|is|:|=)?\s*([01](?:\.\d+)?)/i
+  ];
+
+  for (const pattern of patterns) {
+    const raw = pattern.exec(normalizedLower)?.[1];
+    if (!raw) {
+      continue;
+    }
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1) {
+      return roundScore(parsed);
+    }
+  }
+
+  return undefined;
+};
+
+const extractProjectModeEnhanced = (
+  normalizedLower: string
+): "new" | "existing" | undefined => {
+  const legacy = extractProjectMode(normalizedLower);
+  if (legacy !== undefined) {
+    return legacy;
+  }
+
+  if (
+    /(?:\uAE30\uC874\s*(?:\uD504\uB85C\uC81D\uD2B8|\uB808\uD3EC|\uD3F4\uB354)?|existing(?: project| repo| folder)?|current repo)/i.test(
+      normalizedLower
+    )
+  ) {
+    return "existing";
+  }
+
+  if (
+    /(?:\uC0C8\s*(?:\uD504\uB85C\uC81D\uD2B8|\uB808\uD3EC|\uD3F4\uB354)?|new(?: project| repo| folder)?|from scratch)/i.test(
+      normalizedLower
+    )
+  ) {
+    return "new";
+  }
+
+  return undefined;
+};
+
+const extractMaxRoundsEnhanced = (
+  normalizedLower: string
+): number | undefined => {
+  const legacy = extractMaxRounds(normalizedLower);
+  if (legacy !== undefined) {
+    return legacy;
+  }
+
+  const patterns = [
+    /(?:max(?:imum)? rounds?|max iterations?|\uCD5C\uB300\s*(?:rounds?|\uB77C\uC6B4\uB4DC|\uBC18\uBCF5|\uD69F\uC218|\uD68C\uCC28))\s*(?:\uB294|\uC740|is|:|=)?\s*(\d+)/i,
+    /\uCD5C\uB300\s*(\d+)\s*(?:rounds?|\uB77C\uC6B4\uB4DC|\uBC18\uBCF5|\uD69F\uC218|\uD68C\uCC28)/i,
+    /(\d+)\s*(?:rounds?|\uB77C\uC6B4\uB4DC|\uBC18\uBCF5|\uD69F\uC218|\uD68C\uCC28)\b/i
   ];
 
   for (const pattern of patterns) {
@@ -431,8 +536,8 @@ const buildExecutionFieldStates = (
   projectMode: "new" | "existing" | undefined
 ): IntakeFieldState<ExecutionFieldId>[] => {
   const normalizedLower = lowerText(request);
-  const targetScore = extractTargetScore(normalizedLower);
-  const maxRounds = extractMaxRounds(normalizedLower);
+  const targetScore = extractTargetScoreEnhanced(normalizedLower);
+  const maxRounds = extractMaxRoundsEnhanced(normalizedLower);
   const targetRoot = extractTargetRoot(request);
   const runCommand = extractRunCommand(request);
   const readyUrl = extractReadyUrl(request);
@@ -534,10 +639,10 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
     .map((field) => field.id);
   const internalWorkingHypothesis = inferProductTargetFamily(normalizedLower);
   const extractedSummary = extractSummary(normalized);
-  const extractedProjectMode = extractProjectMode(normalizedLower);
+  const extractedProjectMode = extractProjectModeEnhanced(normalizedLower);
   const extractedTargetRoot = extractTargetRoot(request);
-  const extractedTargetScore = extractTargetScore(normalizedLower);
-  const extractedMaxRounds = extractMaxRounds(normalizedLower);
+  const extractedTargetScore = extractTargetScoreEnhanced(normalizedLower);
+  const extractedMaxRounds = extractMaxRoundsEnhanced(normalizedLower);
 
   if (missingProductFields.length > 0) {
     return {

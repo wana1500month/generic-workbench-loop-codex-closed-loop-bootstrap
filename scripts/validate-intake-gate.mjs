@@ -66,6 +66,19 @@ const punctuationPathResult = evaluateIntakeRequest(
 assert.equal(punctuationPathResult.status, "ask_execution_questions");
 assert.equal(punctuationPathResult.extracted_target_root, "./apps/loop");
 
+const koreanExecutionControlClause =
+  "\uAE30\uC874 \uD504\uB85C\uC81D\uD2B8\uACE0 \uC791\uC5C5\uD3F4\uB354 apps/support-desk \uBAA9\uD45C\uC810\uC218 0.8 \uCD5C\uB300 4\uB77C\uC6B4\uB4DC.";
+const koreanExecutionHintsResult = evaluateIntakeRequest(
+  `${productFilledRequest} ${koreanExecutionControlClause}`
+);
+assert.equal(koreanExecutionHintsResult.status, "ask_execution_questions");
+assert.equal(koreanExecutionHintsResult.phase, "execution");
+assert.ok(koreanExecutionHintsResult.missing_execution_fields.includes("run_command"));
+assert.ok(koreanExecutionHintsResult.missing_execution_fields.includes("ready_url"));
+assert.equal(koreanExecutionHintsResult.extracted_target_root, "apps/support-desk");
+assert.equal(koreanExecutionHintsResult.extracted_target_score, 0.8);
+assert.equal(koreanExecutionHintsResult.extracted_max_rounds, 4);
+
 const readyResult = evaluateIntakeRequest(
   "Build a storyboard editor for indie animators. The target users are solo creators. The core workflows are arranging boards, dragging panels, and writing notes. References can be Linear and Figma. Good enough means those workflows run end to end. This is a new project and the target root is C:\\Users\\SUNGMOK\\Desktop\\harness\\storyboard-app. target score 0.9 and max rounds 4."
 );

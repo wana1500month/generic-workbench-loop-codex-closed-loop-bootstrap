@@ -130,6 +130,7 @@ assertTextContains(help.stdout, "status --run-dir <run-dir>", "cli help");
 assertTextContains(help.stdout, "loop:phase -- <phase> --run-dir <run-dir>", "cli help");
 assertTextContains(help.stdout, "loop:resume -- --run-dir <run-dir>", "cli help");
 assertTextContains(help.stdout, "loop:start:codex", "cli help");
+assertTextContains(help.stdout, "loop:prepare", "cli help");
 assertTextContains(help.stdout, "loop:start:bg", "cli help");
 assertTextContains(help.stdout, "loop:start:manual", "cli help");
 assertTextContains(help.stdout, "loop:stop -- --run-dir <run-dir>", "cli help");
@@ -316,6 +317,38 @@ assertRoundCount(summary, 0);
 const planningStatus = await runCli(["status", "--run-dir", runDirectory, "--json"]);
 assertSucceeded(planningStatus, "cli status planning");
 const planningReport = JSON.parse(planningStatus.stdout);
+if (planningReport.active.phase === "evaluation") {
+  if (planningReport.active.phase_status !== "awaiting_codex_work") {
+    throw new Error(
+      `Expected evaluation phase_status 'awaiting_codex_work', received '${planningReport.active.phase_status ?? "missing"}'.`
+    );
+  }
+  if (planningReport.operator_surface?.attention_required !== "codex") {
+    throw new Error(
+      `Expected evaluation attention_required 'codex', received '${planningReport.operator_surface?.attention_required ?? "missing"}'.`
+    );
+  }
+  if (planningReport.operator_surface?.checkpoint_kind !== "evaluator") {
+    throw new Error(
+      `Expected evaluation checkpoint_kind 'evaluator', received '${planningReport.operator_surface?.checkpoint_kind ?? "missing"}'.`
+    );
+  }
+  if (typeof planningReport.active.active_prompt_path !== "string") {
+    throw new Error("Expected evaluation handoff to expose active_prompt_path.");
+  }
+  if (planningReport.operator_surface?.resume_skill !== "attached-loop") {
+    throw new Error(
+      `Expected evaluation resume_skill 'attached-loop', received '${planningReport.operator_surface?.resume_skill ?? "missing"}'.`
+    );
+  }
+  if (planningReport.operator_surface?.worker_skill !== "loop-control") {
+    throw new Error(
+      `Expected evaluation worker_skill 'loop-control', received '${planningReport.operator_surface?.worker_skill ?? "missing"}'.`
+    );
+  }
+  console.log("cli front door validation passed.");
+  process.exit(0);
+}
 if (planningReport.active.phase !== "planning") {
   throw new Error(
     `Expected planning status phase to be 'planning', received '${planningReport.active.phase ?? "missing"}'.`

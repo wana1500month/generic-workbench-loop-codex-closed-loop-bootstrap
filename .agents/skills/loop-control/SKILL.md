@@ -40,6 +40,7 @@ npm run loop:stop -- --run-dir evals/runs/run-###
 - In the Codex app, `start` is not complete when `loop:start:codex -- --json` returns.
 - In the Codex app, `start` and `resume` own the same-thread autocontinue chain.
 - `loop-control` is the operator-facing gate that moves a session from `ready_to_start` into `running`.
+- When a thread-bound `ready_to_start` session already exists, `loop:start:codex` should consume that prepared session instead of allocating a fresh run.
 - Do not let `app-builder-loop` auto-start heavy implementation after prepare; once the session says `ready_to_start`, wait for an explicit `루프 시작` or `start loop`.
 - After `npm run loop:start:codex -- --json` or `npm run loop:resume -- --run-dir <run> --json` succeeds, inspect the returned operator surface immediately.
 - If `attention_required = codex`, do not answer the user yet. Keep control inside `$loop-control` by calling `npm run loop:continue -- --run-dir <run> --json` until the run reaches a user-visible boundary.
