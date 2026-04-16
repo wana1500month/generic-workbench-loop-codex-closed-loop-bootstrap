@@ -5,6 +5,8 @@ description: Run product intake only after the generic front door has classified
 
 # Product Intake
 
+This skill is the staged intake gate used inside `$app-builder-loop`, and should only be used directly when the operator explicitly wants the intake questions in isolation.
+
 Use this skill only when the router has already returned `product_build`.
 
 ## Workflow

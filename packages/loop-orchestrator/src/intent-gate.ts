@@ -39,7 +39,7 @@ export type LoopIntent =
   | "unknown";
 
 export type LoopIntentStatus =
-  | "route_to_product_intake"
+  | "route_to_app_builder_loop"
   | "ask_harness_questions"
   | "ask_run_control_questions"
   | "ask_resume_questions"
@@ -50,7 +50,7 @@ export type LoopIntentStatus =
 
 export type LoopIntentPhase = "none" | "intent" | "handoff" | "prepare";
 export type LoopIntentRoute =
-  | "product_intake"
+  | "app_builder_loop"
   | "harness_design"
   | "run_control"
   | "run_resume"
@@ -84,6 +84,13 @@ export interface RunControlDispatchPlan {
   autocontinue?: RunControlAutocontinuePlan;
 }
 
+export interface ProductBuildDispatchPlan {
+  recommended_skill: "app-builder-loop";
+  staged_intake_gate: "loop:intake";
+  session_mode: "same-thread";
+  next_step: "prepare" | "ask_questions";
+}
+
 export interface LoopIntentResult {
   intent: LoopIntent;
   status: LoopIntentStatus;
@@ -104,6 +111,8 @@ export interface LoopIntentResult {
   run_control_primary_command?: string;
   run_control_follow_up_commands?: string[];
   run_control_follow_up_skills?: string[];
+  recommended_skill?: "app-builder-loop";
+  product_build_dispatch_plan?: ProductBuildDispatchPlan;
   intake?: IntakeGateResult;
   intake_status?: IntakeGateResult["status"];
   intake_phase?: IntakeGateResult["phase"];
@@ -839,15 +848,22 @@ const buildProductResult = (
   locale: "en" | "ko"
 ): LoopIntentResult => ({
   intent: "product_build",
-  status: "route_to_product_intake",
+  status: "route_to_app_builder_loop",
   phase: intake.status === "ready_for_confirmation" ? "prepare" : "intent",
   locale,
   confidence: intake.status === "ready_for_confirmation" ? 0.96 : 0.91,
-  route_target: "product_intake",
+  route_target: "app_builder_loop",
   questions: intake.questions,
   missing_fields: [],
   satisfied_fields: [],
   rationale,
+  recommended_skill: "app-builder-loop",
+  product_build_dispatch_plan: {
+    recommended_skill: "app-builder-loop",
+    staged_intake_gate: "loop:intake",
+    session_mode: "same-thread",
+    next_step: intake.status === "ready_for_confirmation" ? "prepare" : "ask_questions"
+  },
   intake,
   intake_status: intake.status,
   intake_phase: intake.phase,
@@ -1259,8 +1275,8 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
 
 const renderReadyRoute = (result: LoopIntentResult): string => {
   const koreanRouteLine =
-    result.route_target === "product_intake"
-      ? "\uACBD\uB85C: product intake\uB85C \uC9C4\uD589."
+    result.route_target === "app_builder_loop"
+      ? "\uACBD\uB85C: app-builder-loop \uC138\uC158\uC73C\uB85C \uC9C4\uD589."
       : result.route_target === "harness_design"
         ? "\uACBD\uB85C: harness-design \uB808\uC778\uC73C\uB85C \uC9C4\uD589."
         : result.route_target === "run_control"
@@ -1271,8 +1287,8 @@ const renderReadyRoute = (result: LoopIntentResult): string => {
           ? "\uACBD\uB85C: evaluator calibration \uB808\uC778\uC73C\uB85C \uC9C4\uD589."
           : "\uACBD\uB85C: \uC694\uCCAD\uC744 \uBA3C\uC800 \uBD84\uB958\uD574\uC57C \uD568.";
   const englishRouteLine =
-    result.route_target === "product_intake"
-      ? "Route: proceed through product intake."
+    result.route_target === "app_builder_loop"
+      ? "Route: proceed in the app-builder-loop session."
       : result.route_target === "harness_design"
         ? "Route: proceed in the harness-design lane."
         : result.route_target === "run_control"
@@ -1287,7 +1303,7 @@ const renderReadyRoute = (result: LoopIntentResult): string => {
   const routeLine =
     result.locale === "ko"
       ? koreanRouteLine
-      : result.route_target === "product_intake"
+      : result.route_target === "app_builder_loop"
         ? "경로: product intake로 진행."
         : result.route_target === "harness_design"
           ? "경로: harness-design 레인으로 진행."
@@ -1296,8 +1312,8 @@ const renderReadyRoute = (result: LoopIntentResult): string => {
             : result.route_target === "evaluator_tuning"
               ? "경로: evaluator calibration 레인으로 진행."
               : "경로: 요청을 먼저 분류해야 함."
-      : result.route_target === "product_intake"
-        ? "Route: proceed through product intake."
+      : result.route_target === "app_builder_loop"
+        ? "Route: proceed in the app-builder-loop session."
         : result.route_target === "harness_design"
           ? "Route: proceed in the harness-design lane."
           : result.route_target === "run_control"
@@ -1328,8 +1344,8 @@ const renderReadyRoute = (result: LoopIntentResult): string => {
 
 const renderReadyRouteWithDispatch = (result: LoopIntentResult): string => {
   const koreanRouteLine =
-    result.route_target === "product_intake"
-      ? "\uACBD\uB85C: product intake\uB85C \uC9C4\uD589."
+    result.route_target === "app_builder_loop"
+      ? "\uACBD\uB85C: app-builder-loop \uC138\uC158\uC73C\uB85C \uC9C4\uD589."
       : result.route_target === "harness_design"
         ? "\uACBD\uB85C: harness-design \uB808\uC778\uC73C\uB85C \uC9C4\uD589."
         : result.route_target === "run_control"
@@ -1340,8 +1356,8 @@ const renderReadyRouteWithDispatch = (result: LoopIntentResult): string => {
               ? "\uACBD\uB85C: evaluator calibration \uB808\uC778\uC73C\uB85C \uC9C4\uD589."
               : "\uACBD\uB85C: \uC694\uCCAD\uC744 \uBA3C\uC800 \uBD84\uB958\uD574\uC57C \uD568.";
   const englishRouteLine =
-    result.route_target === "product_intake"
-      ? "Route: proceed through product intake."
+    result.route_target === "app_builder_loop"
+      ? "Route: proceed in the app-builder-loop session."
       : result.route_target === "harness_design"
         ? "Route: proceed in the harness-design lane."
         : result.route_target === "run_control"

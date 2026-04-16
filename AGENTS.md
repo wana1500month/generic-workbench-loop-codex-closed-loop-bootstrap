@@ -21,8 +21,8 @@ The closed-loop harness is the core runtime engine, and `product_build` is only 
 
 - Use `npm run loop:intent -- "<user request>"` as the generic front door. `product_build` is only one routed lane, not the repository identity.
 - `loop:intent` may route requests into `product_build`, `harness_design`, `run_control`, `run_resume`, or `evaluator_tuning`.
-- If `loop:intent` routes to `product_build`, continue to use `npm run loop:intake -- "<user request>"` as the authoritative staged intake gate.
-- Prefer lane-centric skills such as `intent-router`, `product-intake`, `harness-design`, `loop-control`, `run-resume`, `evaluator-tuning`, `run-attempt`, and `closeout`.
+- If `loop:intent` routes to `product_build`, continue on the same Codex thread with `app-builder-loop`. Inside that flow, keep `npm run loop:intake -- "<user request>"` as the authoritative staged intake gate.
+- Prefer lane-centric skills such as `intent-router`, `app-builder-loop`, `harness-design`, `loop-control`, `run-resume`, `evaluator-tuning`, `run-attempt`, and `closeout`. Use `product-intake` as the staged gate inside `app-builder-loop` rather than as the operator-facing front door.
 - Compatibility aliases may remain for older automation, but the operator-facing surface should stay centered on that lane-centric set.
 - Treat runtime-control requests such as "start the loop", "show loop status", "resume the active loop", and "stop the loop" as `run_control`, not as product intake or generic harness design.
 - In the Codex app, default new loop starts to `npm run loop:start:codex` or `$loop-control`. Use `npm run loop:start:bg` only when the operator explicitly asks for detached background supervision.
@@ -46,8 +46,8 @@ The closed-loop harness is the core runtime engine, and `product_build` is only 
   - if needed for an existing target: run/check commands and ready/app/health/api URLs
 - Keep target family as an internal working hypothesis until confirmation. Do not ask the user to pick a family unless they explicitly want to override it.
 - When the request obviously maps to a supported family such as `browser-editor`, `crud-api`, or `chat-agent`, keep that as an internal working hypothesis until the intake is complete. Do not lead with "this is a browser-editor family" as the primary response.
-- The desired UX is: product questions only -> execution questions only -> short confirmation -> internal bootstrap -> planner/generator/evaluator loop.
-- The executable front-controller for generic request routing is `npm run loop:intent -- "<user request>"`. For product-build behavior, the authoritative staged gate remains `npm run loop:intake -- "<user request>"`. If it returns `ask_product_questions` or `ask_execution_questions`, ask those questions only.
+- The desired UX is: product questions only -> execution questions only -> prepare mode -> internal bootstrap -> same-thread planner/generator/evaluator loop.
+- The executable front-controller for generic request routing is `npm run loop:intent -- "<user request>"`. For product-build behavior, the operator-facing lane is `app-builder-loop`, and the authoritative staged gate inside it remains `npm run loop:intake -- "<user request>"`. If it returns `ask_product_questions` or `ask_execution_questions`, ask those questions only; if it returns `ready_for_confirmation`, move directly into prepare mode on the same thread.
 - Bad first-turn behavior for this repo:
   - classifying the family immediately
   - proposing a panel layout immediately

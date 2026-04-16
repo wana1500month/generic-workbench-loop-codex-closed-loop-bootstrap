@@ -3,8 +3,8 @@
     "id": "product-build-storyboard",
     "request": "Build a storyboard editor for indie animators. The first version needs drag-and-drop panels and note taking.",
     "expect_intent": "product_build",
-    "expect_status": "route_to_product_intake",
-    "expect_route": "product_intake",
+    "expect_status": "route_to_app_builder_loop",
+    "expect_route": "app_builder_loop",
     "expect_intake_status": "ask_product_questions"
   },
   {
@@ -49,7 +49,7 @@
   },
   {
     "id": "run-control-korean-loop-start",
-    "request": "\uB8E8\uD504 \uC2DC\uC791",
+    "request": "루프 시작",
     "expect_intent": "run_control",
     "expect_status": "ready_for_run_control",
     "expect_route": "run_control",
@@ -61,7 +61,7 @@
   },
   {
     "id": "run-control-korean-loop-start-possible",
-    "request": "\uB8E8\uD504 \uC2DC\uC791 \uAC00\uB2A5\uD558\uB0D0?",
+    "request": "루프 시작 가능하냐?",
     "expect_intent": "run_control",
     "expect_status": "ready_for_run_control",
     "expect_route": "run_control",
@@ -73,7 +73,7 @@
   },
   {
     "id": "run-control-korean-current-status",
-    "request": "\uD604\uC7AC \uB8E8\uD504 \uC0C1\uD0DC",
+    "request": "현재 루프 상태",
     "expect_intent": "run_control",
     "expect_status": "ready_for_run_control",
     "expect_route": "run_control",
@@ -82,7 +82,7 @@
   },
   {
     "id": "run-control-korean-run-status",
-    "request": "run-179 \uC0C1\uD0DC \uBCF4\uC5EC\uC918",
+    "request": "run-179 상태 보여줘",
     "expect_intent": "run_control",
     "expect_status": "ready_for_run_control",
     "expect_route": "run_control",
@@ -126,7 +126,7 @@
   },
   {
     "id": "run-control-korean-stop-all-timeout-diagnosis",
-    "request": "\uBAA8\uB4E0 \uB8E8\uD504 \uC815\uC9C0\uD558\uACE0 \uC65C \uD0C0\uC784\uC544\uC6C3 \uB098\uB294\uC9C0 \uC6D0\uC778 \uC0C1\uC138\uD558\uAC8C \uADDC\uBA85",
+    "request": "모든 루프 정지하고 왜 타임아웃 나는지 원인 상세하게 규명",
     "expect_intent": "run_control",
     "expect_status": "ready_for_run_control",
     "expect_route": "run_control",
@@ -144,8 +144,8 @@
     "id": "product-build-with-evaluator-context",
     "request": "Build a dashboard app for evaluator calibration. The first version should help operators review false positives and compare heavy-lane thresholds.",
     "expect_intent": "product_build",
-    "expect_status": "route_to_product_intake",
-    "expect_route": "product_intake",
+    "expect_status": "route_to_app_builder_loop",
+    "expect_route": "app_builder_loop",
     "expect_intake_status": "ask_product_questions"
   },
   {

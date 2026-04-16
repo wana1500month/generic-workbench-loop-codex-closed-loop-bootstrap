@@ -225,6 +225,20 @@ const koreanHarnessQuestions = renderLoopIntentResponse(
 );
 assert.match(koreanHarnessQuestions, /^1\.\s+/m);
 
+const preparedProductBuildHumanOutput = renderLoopIntentResponse(
+  evaluateLoopIntent(
+    "Build a storyboard editor for indie animators. The target users are solo creators. The core workflows are arranging boards, dragging panels, and writing notes. References can be Linear and Figma. Good enough means those workflows run end to end. This is a new project and the target root is ./apps/storyboard. target score 0.9 and max rounds 4."
+  )
+);
+assert.match(preparedProductBuildHumanOutput, /Preparation summary/);
+assert.match(preparedProductBuildHumanOutput, /prepare mode/i);
+
+const productBuildJson = evaluateLoopIntent("고객지원 SaaS 앱 만들어줘");
+assert.equal(productBuildJson.route_target, "app_builder_loop");
+assert.equal(productBuildJson.recommended_skill, "app-builder-loop");
+assert.equal(productBuildJson.product_build_dispatch_plan?.staged_intake_gate, "loop:intake");
+assert.equal(productBuildJson.product_build_dispatch_plan?.session_mode, "same-thread");
+
 const koreanResumeRoute = renderLoopIntentResponse(
   evaluateLoopIntent(
     "evals/runs/run-042瑜??댁뼱??吏꾪뻾?댁쨾. 吏湲?run? environment_blocked濡?硫덉톬怨??ㅼ쓬 ?④퀎??reopen?몄? hold?몄? 寃곗젙?댁빞 ?쒕떎."

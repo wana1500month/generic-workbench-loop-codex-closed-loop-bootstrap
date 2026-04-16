@@ -1,4 +1,4 @@
 interface:
   display_name: "Intent Router"
   short_description: "Route workbench requests into the right harness lane"
-  default_prompt: "Use $intent-router to classify this request into product-intake, harness-design, loop-control, run-resume, or evaluator-tuning before implementation starts."
+  default_prompt: "Use $intent-router to classify this request into app-builder-loop, harness-design, loop-control, run-resume, or evaluator-tuning before implementation starts."

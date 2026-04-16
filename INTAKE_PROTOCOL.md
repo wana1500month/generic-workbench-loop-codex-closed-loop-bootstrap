@@ -3,13 +3,13 @@
 Use this protocol whenever the user is asking this repository to build or design
 an app, service, editor, dashboard, API, agent, or product feature.
 
-The executable gate for this protocol is:
-
-- `npm run loop:intake -- "<user request>"`
-
 Generic request routing now lives in:
 
 - `npm run loop:intent -- "<user request>"`
+
+The operator-facing lane for product-build requests is the same-thread `app-builder-loop` skill. The executable staged gate inside that lane is:
+
+- `npm run loop:intake -- "<user request>"`
 
 Only enter this protocol after the request has been classified as
 `product_build`, or when the request is obviously a product-build prompt.
@@ -34,7 +34,8 @@ the model jump directly into design or implementation advice.
 6. Keep target family inference internal until confirmation unless the user
    explicitly asks to choose or override it.
 7. Only after the intake is sufficiently filled may the agent:
-   - summarize the intake for confirmation
+   - write a short preparation summary if useful
+   - enter prepare mode on the same thread
    - bootstrap internally
    - move to implementation planning
 
@@ -57,7 +58,7 @@ Once the product is clear, gather the execution-control fields:
 - max rounds
 - if needed for an existing target: run command, check command, ready URL, and app/health/api URLs
 
-Target family should stay internal and be inferred after confirmation unless the
+Target family should stay internal and be inferred during prepare mode unless the
 user explicitly wants to override it.
 
 ## Supported working hypotheses
