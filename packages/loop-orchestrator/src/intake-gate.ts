@@ -21,7 +21,7 @@ type IntakeGateStatus =
   | "not_product_build_request"
   | "ask_product_questions"
   | "ask_execution_questions"
-  | "ready_for_confirmation";
+  | "ready_for_prepare";
 
 type IntakePhase = "none" | "product" | "execution" | "prepare";
 
@@ -34,6 +34,7 @@ interface IntakeFieldState<TFieldId extends IntakeFieldId = IntakeFieldId> {
 export interface IntakeGateResult {
   status: IntakeGateStatus;
   phase: IntakePhase;
+  locale: "en" | "ko";
   is_product_build_request: boolean;
   missing_fields: IntakeFieldId[];
   missing_product_fields: ProductFieldId[];
@@ -46,7 +47,7 @@ export interface IntakeGateResult {
   extracted_target_root?: string;
   extracted_target_score?: number;
   extracted_max_rounds?: number;
-  confirmation_summary?: string[];
+  preparation_summary?: string[];
   auto_prepare?: boolean;
   next_step?: "prepare";
 }
@@ -193,6 +194,9 @@ const RUN_COMMAND_PATTERN =
 const normalizeText = (value: string): string => value.replace(/\s+/g, " ").trim();
 
 const lowerText = (value: string): string => normalizeText(value).toLowerCase();
+
+const detectLocale = (value: string): "en" | "ko" =>
+  /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/u.test(value) ? "ko" : "en";
 
 const includesAny = (value: string, keywords: readonly string[]): boolean =>
   keywords.some((keyword) => value.includes(keyword));
@@ -612,15 +616,64 @@ const buildConfirmationSummary = (input: {
   return ["- 제품과 실행 설정이 모두 채워졌다."];
 };
 
+const formatPreparationProjectMode = (
+  projectMode: "new" | "existing" | undefined,
+  locale: "en" | "ko"
+): string | undefined => {
+  if (projectMode === "new") {
+    return locale === "ko" ? "새 프로젝트" : "new project";
+  }
+  if (projectMode === "existing") {
+    return locale === "ko" ? "기존 프로젝트" : "existing project";
+  }
+  return undefined;
+};
+
+const buildPreparationSummary = (input: {
+  extractedSummary?: string;
+  projectMode?: "new" | "existing";
+  targetRoot?: string;
+  targetScore?: number;
+  maxRounds?: number;
+  locale: "en" | "ko";
+}): string[] => {
+  const projectModeLabel = formatPreparationProjectMode(input.projectMode, input.locale);
+  const summaryLines = [
+    input.extractedSummary
+      ? `${input.locale === "ko" ? "목표" : "Goal"}: ${input.extractedSummary}`
+      : undefined,
+    projectModeLabel
+      ? `${input.locale === "ko" ? "프로젝트 모드" : "Project mode"}: ${projectModeLabel}`
+      : undefined,
+    input.targetRoot
+      ? `${input.locale === "ko" ? "작업 폴더" : "Working folder"}: ${input.targetRoot}`
+      : undefined,
+    input.targetScore !== undefined ? `- Target score: ${input.targetScore}` : undefined,
+    input.maxRounds !== undefined ? `- Max rounds: ${input.maxRounds}` : undefined
+  ].filter((line): line is string => Boolean(line));
+
+  if (summaryLines.length > 0) {
+    return summaryLines;
+  }
+
+  return [
+    input.locale === "ko"
+      ? "제품과 실행 제어가 준비됐습니다."
+      : "Product and execution controls are ready."
+  ];
+};
+
 export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
   const normalized = normalizeText(request);
   const normalizedLower = lowerText(request);
+  const locale = detectLocale(request);
   const isProductBuildRequest = detectProductBuildRequest(request, normalizedLower);
 
   if (!isProductBuildRequest) {
     return {
       status: "not_product_build_request",
       phase: "none",
+      locale,
       is_product_build_request: false,
       missing_fields: [],
       missing_product_fields: [],
@@ -648,6 +701,7 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
     return {
       status: "ask_product_questions",
       phase: "product",
+      locale,
       is_product_build_request: true,
       missing_fields: missingProductFields,
       missing_product_fields: missingProductFields,
@@ -677,6 +731,7 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
     return {
       status: "ask_execution_questions",
       phase: "execution",
+      locale,
       is_product_build_request: true,
       missing_fields: [...missingProductFields, ...missingExecutionFields],
       missing_product_fields: [],
@@ -695,8 +750,9 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
   }
 
   return {
-    status: "ready_for_confirmation",
+    status: "ready_for_prepare",
     phase: "prepare",
+    locale,
     is_product_build_request: true,
     missing_fields: [],
     missing_product_fields: [],
@@ -711,13 +767,13 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
     extracted_max_rounds: extractedMaxRounds,
     auto_prepare: true,
     next_step: "prepare",
-    confirmation_summary: buildConfirmationSummary({
-      request,
+    preparation_summary: buildPreparationSummary({
       extractedSummary,
       projectMode: extractedProjectMode,
       targetRoot: extractedTargetRoot,
       targetScore: extractedTargetScore,
-      maxRounds: extractedMaxRounds
+      maxRounds: extractedMaxRounds,
+      locale
     })
   };
 };
@@ -730,16 +786,52 @@ export const renderIntakeGateResponse = (result: IntakeGateResult): string => {
     return result.questions.map((question, index) => `${index + 1}. ${question}`).join("\n");
   }
 
-  if (result.status === "ready_for_confirmation") {
-    return [
-      "Preparation summary",
-      ...(result.confirmation_summary ?? []),
-      "",
-      "Discovery is sufficient. Move directly into prepare mode and write the session artifacts before the same-thread run continues."
-    ].join("\n");
+  if (result.status === "ready_for_prepare") {
+    return result.locale === "ko"
+      ? [
+          "준비 완료.",
+          ...(result.preparation_summary ?? []),
+          "세션 상태는 ready_to_start입니다.",
+          "루프를 시작하려면 '루프 시작'이라고 말하세요."
+        ].join("\n")
+      : [
+          "Preparation is complete.",
+          ...(result.preparation_summary ?? []),
+          "Session status: ready_to_start.",
+          "Say '루프 시작' or 'start loop' to begin the same-thread loop."
+        ].join("\n");
+  }
+
+  return result.locale === "ko"
+    ? "이 요청은 제품 빌드 요청으로 보이지 않습니다."
+    : "This request does not look like a product-build request.";
+};
+
+const renderIntakeGateResponseLegacy = (result: IntakeGateResult): string => {
+  if (
+    result.status === "ask_product_questions" ||
+    result.status === "ask_execution_questions"
+  ) {
+    return result.questions.map((question, index) => `${index + 1}. ${question}`).join("\n");
+  }
+
+  if (result.status === "ready_for_prepare") {
+    return result.locale === "ko"
+      ? [
+          "준비 완료.",
+          ...(result.preparation_summary ?? []),
+          "세션 상태는 ready_to_start입니다.",
+          "루프를 시작하려면 '루프 시작'이라고 말하세요."
+        ].join("\n")
+      : [
+          "Preparation is complete.",
+          ...(result.preparation_summary ?? []),
+          "Session status: ready_to_start.",
+          "Say '루프 시작' or 'start loop' to begin the same-thread loop."
+        ].join("\n");
     return [
       "확인용 요약",
-      ...(result.confirmation_summary ?? []),
+      ...(result.preparation_summary ?? []),
       "",
       "위 내용이 맞으면 확인하고, 그다음은 내부적으로 target family 추론과 bootstrap으로 넘기면 된다."
     ].join("\n");

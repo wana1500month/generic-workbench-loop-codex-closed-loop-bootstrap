@@ -31,7 +31,7 @@ the model jump directly into design or implementation advice.
 4. Product ambiguity is a hard block. Keep asking product questions until the
    product is concrete enough.
 5. Once the product is clear, ask execution-control questions only.
-6. Keep target family inference internal until confirmation unless the user
+6. Keep target family inference internal through prepare unless the user
    explicitly asks to choose or override it.
 7. Only after the intake is sufficiently filled may the agent:
    - write a short preparation summary if useful

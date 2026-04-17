@@ -44,10 +44,10 @@ The closed-loop harness is the core runtime engine, and `product_build` is only 
   - target score
   - max rounds
   - if needed for an existing target: run/check commands and ready/app/health/api URLs
-- Keep target family as an internal working hypothesis until confirmation. Do not ask the user to pick a family unless they explicitly want to override it.
+- Keep target family as an internal working hypothesis through prepare. Do not ask the user to pick a family unless they explicitly want to override it.
 - When the request obviously maps to a supported family such as `browser-editor`, `crud-api`, or `chat-agent`, keep that as an internal working hypothesis until the intake is complete. Do not lead with "this is a browser-editor family" as the primary response.
 - The desired UX is: product questions only -> execution questions only -> prepare mode -> `ready_to_start` -> explicit `루프 시작` / `start loop` -> same-thread planner/generator/evaluator loop.
-- The executable front-controller for generic request routing is `npm run loop:intent -- "<user request>"`. For product-build behavior, the operator-facing lane is `app-builder-loop`, and the authoritative staged gate inside it remains `npm run loop:intake -- "<user request>"`. If it returns `ask_product_questions` or `ask_execution_questions`, ask those questions only; if it returns `ready_for_confirmation`, move directly into prepare mode on the same thread, write the session artifacts, and stop at `ready_to_start` until the operator explicitly starts the loop.
+- The executable front-controller for generic request routing is `npm run loop:intent -- "<user request>"`. For product-build behavior, the operator-facing lane is `app-builder-loop`, and the authoritative staged gate inside it remains `npm run loop:intake -- "<user request>"`. If it returns `ask_product_questions` or `ask_execution_questions`, ask those questions only; if it returns `ready_for_prepare`, move directly into prepare mode on the same thread, write the session artifacts, and stop at `ready_to_start` until the operator explicitly starts the loop.
 - Bad first-turn behavior for this repo:
   - classifying the family immediately
   - proposing a panel layout immediately
@@ -56,7 +56,7 @@ The closed-loop harness is the core runtime engine, and `product_build` is only 
 - Good first-turn behavior for this repo:
   - ask the minimum product questions needed to remove ambiguity
   - summarize only after the user answers
-  - move to bootstrap only after the intake is sufficiently filled
+- move to prepare only after the intake is sufficiently filled
 
 ## Priorities
 

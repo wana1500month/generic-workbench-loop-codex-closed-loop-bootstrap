@@ -397,10 +397,10 @@ Acceptance:
 - The operator-facing session vocabulary is fixed to `asking`, `preparing`,
   `ready_to_start`, `running`, `needs_steering`, `blocked_externally`,
   `ready_for_review`, and `done`.
-- Intake completion should enter prepare directly: legacy
-  `ready_for_confirmation` compatibility may remain, but the surfaced phase is
-  `prepare`, followed by a `ready_to_start` start gate rather than a human
-  confirmation hold or an automatic jump into running.
+- Intake completion should enter prepare directly: the staged intake gate should
+  return `ready_for_prepare`, the surfaced phase should be `prepare`, and the
+  same thread should stop at `ready_to_start` rather than showing a human
+  confirmation hold or auto-starting into running.
 - The skill instructs Codex to ask only the missing high-impact questions, ask
   at most 1 to 3 short questions per turn, and prefer defaults over low-value
   intake turns.

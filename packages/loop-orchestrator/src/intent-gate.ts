@@ -119,6 +119,10 @@ export interface LoopIntentResult {
   intake_missing_fields?: string[];
 }
 
+const isPrepareReadyIntakeStatus = (
+  status: IntakeGateResult["status"]
+): boolean => status === "ready_for_prepare";
+
 const hasKoreanText = (value: string): boolean =>
   /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/u.test(value);
 
@@ -849,9 +853,9 @@ const buildProductResult = (
 ): LoopIntentResult => ({
   intent: "product_build",
   status: "route_to_app_builder_loop",
-  phase: intake.status === "ready_for_confirmation" ? "prepare" : "intent",
+  phase: isPrepareReadyIntakeStatus(intake.status) ? "prepare" : "intent",
   locale,
-  confidence: intake.status === "ready_for_confirmation" ? 0.96 : 0.91,
+  confidence: isPrepareReadyIntakeStatus(intake.status) ? 0.96 : 0.91,
   route_target: "app_builder_loop",
   questions: intake.questions,
   missing_fields: [],
@@ -862,7 +866,7 @@ const buildProductResult = (
     recommended_skill: "app-builder-loop",
     staged_intake_gate: "loop:intake",
     session_mode: "same-thread",
-    next_step: intake.status === "ready_for_confirmation" ? "prepare" : "ask_questions"
+    next_step: isPrepareReadyIntakeStatus(intake.status) ? "prepare" : "ask_questions"
   },
   intake,
   intake_status: intake.status,
@@ -1015,7 +1019,7 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
   const productScore =
     (intake.is_product_build_request ? 4 : 0) +
     (hasProductContext ? 2 : 0) +
-    (intake.status === "ready_for_confirmation" ? 1 : 0);
+    (isPrepareReadyIntakeStatus(intake.status) ? 1 : 0);
 
   const resumeScore =
     matchedResumeSignals.length +

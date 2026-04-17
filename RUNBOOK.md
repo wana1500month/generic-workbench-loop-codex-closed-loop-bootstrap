@@ -8,7 +8,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 
 - `IDEA.md`: the current harness goal or refactor request
 - `npm run loop:intent -- "<user request>"`: generic front door that separates product build, harness design, run control, run resume, and evaluator tuning before work starts
-- `npm run loop:intake -- "<user request>"`: staged intake gate that returns product questions, execution questions, or a prepare-ready handoff into session artifact generation plus the explicit `ready_to_start` gate
+- `npm run loop:intake -- "<user request>"`: staged intake gate that returns product questions, execution questions, or a `ready_for_prepare` handoff into session artifact generation plus the explicit `ready_to_start` gate
 - `npm run loop:prepare -- --json`: writes the session-owned `build-brief`, `run-contract`, `operator-surface`, `session-status`, `session-stream`, and execution-plan artifacts without starting the loop
 - `npm run loop:bootstrap`: writes `IDEA.md`, `intake.json`, `feature_list.generated.json`, `progress.md`, `progress.jsonl`, `done_when.md`, `init.sh`, `adapter.generated.json`, `rubric.generated.json`, and `verification-profile.generated.json`, then uses the generated rubric/bundle on the first run unless the CLI explicitly overrides them. Bootstrap now also captures deeper quality intent such as must-not-break flows, failure expectations, continuity boundaries, reference signals, non-goals, probe hints, and optional user-authored subjective metrics with minimum `x/10` thresholds.
 - `npm run reference-adapter:scaffold-quality-lane -- --profile <bundle.json> --out <strict-bundle.json>`: derives a stricter companion evaluator lane from an existing bundle without demanding release assertions that the source bundle does not actually configure
@@ -35,7 +35,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 
 - `planner`: turns `IDEA.md` into a run-local scenario, build strategy, and remediation policy
 - `intent gate`: classifies whether the next request should go through product intake, harness design, run resume, or evaluator calibration
-- `intake`: keeps product questions separate from execution-control questions and confirms the intake before bootstrap
+- `intake`: keeps product questions separate from execution-control questions and ends at a prepare-ready gate before session preparation artifacts are written
 - `generator`: takes a long build attempt against the negotiated attempt contract
 - `evaluator`: reviews the contract before build, then writes the verdict, eval report, and patch request after each build attempt
 - `quality critique`: turns threshold gaps, failed dimensions, and failed release-gate probes into structured quality findings while keeping patch authority carry-forward-safe

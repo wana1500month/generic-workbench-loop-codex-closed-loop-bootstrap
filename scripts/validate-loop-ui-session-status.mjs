@@ -196,7 +196,7 @@ const main = async () => {
     assert.equal(startGateSurface.attention_required, "human");
     assert.equal(startGateSurface.recommended_skill, "loop-control");
     assert.equal(startGateSurface.user_visible_pause, true);
-    assert.match(startGateSurface.next_action, /The loop has not started yet/);
+    assert.match(startGateSurface.next_action, /waiting at ready_to_start/);
     assert.equal(
       startGateSurface.recommended_command,
       "npm run loop:start:codex -- --json"

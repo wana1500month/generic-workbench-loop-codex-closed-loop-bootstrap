@@ -447,7 +447,7 @@ const defaultNextActionForTransport = (input: {
     input.session?.session_status === "ready_to_start" &&
     input.attentionRequired === "human"
   ) {
-    return "Preparation is complete. The loop has not started yet. Say '루프 시작' or 'start loop' to begin running on the same Codex thread.";
+    return "Preparation is complete. The session is waiting at ready_to_start. Say '루프 시작' or 'start loop' to begin running on the same Codex thread.";
   }
   if (input.handoffState === "worktree" && input.worktreePath) {
     return `Continue this run from the linked worktree at ${input.worktreePath}, then resume from the persisted phase surface.`;

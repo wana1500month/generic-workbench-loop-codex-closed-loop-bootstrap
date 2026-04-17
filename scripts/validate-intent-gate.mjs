@@ -230,8 +230,9 @@ const preparedProductBuildHumanOutput = renderLoopIntentResponse(
     "Build a storyboard editor for indie animators. The target users are solo creators. The core workflows are arranging boards, dragging panels, and writing notes. References can be Linear and Figma. Good enough means those workflows run end to end. This is a new project and the target root is ./apps/storyboard. target score 0.9 and max rounds 4."
   )
 );
-assert.match(preparedProductBuildHumanOutput, /Preparation summary/);
-assert.match(preparedProductBuildHumanOutput, /prepare mode/i);
+assert.match(preparedProductBuildHumanOutput, /Preparation is complete\./);
+assert.match(preparedProductBuildHumanOutput, /ready_to_start/);
+assert.match(preparedProductBuildHumanOutput, /start loop/i);
 
 const productBuildJson = evaluateLoopIntent("고객지원 SaaS 앱 만들어줘");
 assert.equal(productBuildJson.route_target, "app_builder_loop");

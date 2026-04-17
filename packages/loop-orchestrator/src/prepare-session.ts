@@ -293,7 +293,7 @@ export const prepareSessionRun = async (input: {
     recommendedCommand: "npm run loop:start:codex -- --json",
     session: buildOperatorSurfaceSessionProjection(result.sessionStatus),
     nextAction:
-      "Preparation is complete. Say \"루프 시작\" or \"start loop\" to begin running on the same Codex session."
+      "Preparation is complete. The session is waiting at ready_to_start. Say \"루프 시작\" or \"start loop\" to begin running on the same Codex session."
   });
   await writeOperatorSurfaceArtifacts({
     jsonPath: runtimePaths.operatorSurfacePath,

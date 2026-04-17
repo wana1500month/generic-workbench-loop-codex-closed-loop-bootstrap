@@ -68,7 +68,7 @@
 
 - Generic idea intake through `IDEA.md`
 - A staged intake gate that now separates product questions, execution-control questions, and prepare-entry before bootstrap
-- Intake completion now treats legacy `ready_for_confirmation` as a compatibility status only: the surfaced phase is `prepare`, the renderer instructs Codex to write session artifacts, and the same thread can continue directly into prepare mode without a redundant human confirmation stop.
+- Intake completion now uses `ready_for_prepare` as the explicit prepare-ready handoff: the surfaced phase is `prepare`, the renderer points the user at `ready_to_start`, and the same thread stops cleanly at the explicit start gate instead of pretending there is a confirmation step.
 - The repo now also ships a session-supervised foreground-loop design doc plus an `app-builder-loop` skill, so product-build work can be modeled as discovery -> prepare -> `ready_to_start` -> running on one Codex thread instead of as a background automation-first flow
 - Interactive bootstrap now asks for direct `target score` and `max rounds`, keeps target-family inference internal, and only asks run/check/URL hints when they are needed for an existing target
 - Interactive bootstrap now also collects deeper quality intent such as must-not-break experiences, failure expectations, continuity boundaries, reference signals, non-goals, probe hints, and optional subjective metrics with requested minimum scores
