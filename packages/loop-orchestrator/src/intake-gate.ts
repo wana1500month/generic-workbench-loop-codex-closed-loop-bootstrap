@@ -182,7 +182,7 @@ const WINDOWS_PATH_PATTERN =
   /[a-zA-Z]:\\[^\r\n]*?(?=(?:[),.;!?]|\s+(?:target score|max rounds|run command|ready url|app url|api url|health url|이다|입니다|이고|이며)(?:\s|$)|$))/i;
 const PATH_PATTERN = /((?:\/|\.\/|\.\.\/)[^\r\n\s),.;!?]+)/;
 const RELATIVE_PATH_PATTERN =
-  /((?:\.{1,2}[\\/]|[A-Za-z0-9._-]+[\\/])[^\r\n\s),.;!?]+)/;
+  /(?<![A-Za-z0-9._/-])((?:\.{1,2}[\\/]|[A-Za-z0-9._-]+[\\/])[^\r\n\s),.;!?]+)/;
 const TARGET_ROOT_CONTEXT_PATTERNS = [
   /(?:target root|root(?: directory)?|working directory|project root|target folder|working folder|\uC791\uC5C5\s*\uD3F4\uB354|\uC791\uC5C5\uD3F4\uB354|\uB300\uC0C1\s*\uD3F4\uB354|\uD504\uB85C\uC81D\uD2B8\s*\uD3F4\uB354)\s*(?:is|\uB294|\uC740|:|=)?\s*([^\r\n]+)/i,
   /(?:\uD3F4\uB354|\uACBD\uB85C)\s*(?:\uB294|\uC740|:|=)?\s*([A-Za-z0-9._-]+(?:[\\/][^\r\n\s),.;!?]+)+)/i
@@ -190,6 +190,9 @@ const TARGET_ROOT_CONTEXT_PATTERNS = [
 const URL_PATTERN = /https?:\/\/[^\s)]+/i;
 const RUN_COMMAND_PATTERN =
   /\b(?:npm|pnpm|yarn|bun|node|python|python3|uvicorn|docker(?: compose)?|make)\s+[^\r\n]+/i;
+const MAX_QUESTIONS_PER_TURN = 3;
+const DEFAULT_TARGET_SCORE = 0.9;
+const DEFAULT_MAX_ROUNDS = 3;
 
 const normalizeText = (value: string): string => value.replace(/\s+/g, " ").trim();
 
@@ -197,6 +200,14 @@ const lowerText = (value: string): string => normalizeText(value).toLowerCase();
 
 const detectLocale = (value: string): "en" | "ko" =>
   /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/u.test(value) ? "ko" : "en";
+
+const limitQuestions = <TFieldId extends IntakeFieldId>(
+  fields: IntakeFieldState<TFieldId>[]
+): string[] =>
+  fields
+    .filter((field) => !field.satisfied)
+    .slice(0, MAX_QUESTIONS_PER_TURN)
+    .map((field) => field.question);
 
 const includesAny = (value: string, keywords: readonly string[]): boolean =>
   keywords.some((keyword) => value.includes(keyword));
@@ -335,9 +346,10 @@ const extractTargetRoot = (request: string): string | undefined => {
     if (!contextual) {
       continue;
     }
+
     const match =
       contextual.match(WINDOWS_PATH_PATTERN)?.[0] ??
-      contextual.match(RELATIVE_PATH_PATTERN)?.[0] ??
+      contextual.match(RELATIVE_PATH_PATTERN)?.[1] ??
       contextual.match(PATH_PATTERN)?.[0] ??
       contextual;
     const sanitized = sanitizeExtractedPath(match);
@@ -347,11 +359,39 @@ const extractTargetRoot = (request: string): string | undefined => {
   }
 
   const match =
-    request.match(WINDOWS_PATH_PATTERN)?.[0] ?? request.match(PATH_PATTERN)?.[0];
+    request.match(WINDOWS_PATH_PATTERN)?.[0] ??
+    request.match(RELATIVE_PATH_PATTERN)?.[1] ??
+    request.match(PATH_PATTERN)?.[0];
   return match ? sanitizeExtractedPath(match) : undefined;
 };
 
+const normalizeTargetScoreValue = (raw: string): number | undefined => {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+    return undefined;
+  }
+
+  return roundScore(parsed <= 1 ? parsed : parsed / 100);
+};
+
 const extractTargetScore = (normalizedLower: string): number | undefined => {
+  const flexiblePatterns = [
+    /(?:target score|goal score|\uBAA9\uD45C\s*\uC810\uC218|\uBAA9\uD45C\uC810\uC218|\uD0C0\uAC9F\s*\uC810\uC218|targetscore)\s*(?:\uB294|\uC740|is|:|=)?\s*([0-9]{1,3}(?:\.\d+)?)/i,
+    /(?:score|\uC810\uC218)\s*(?:\uB294|\uC740|is|:|=)?\s*([0-9]{1,3}(?:\.\d+)?)/i
+  ];
+
+  for (const pattern of flexiblePatterns) {
+    const raw = pattern.exec(normalizedLower)?.[1];
+    if (!raw) {
+      continue;
+    }
+
+    const normalizedScore = normalizeTargetScoreValue(raw);
+    if (normalizedScore !== undefined) {
+      return normalizedScore;
+    }
+  }
+
   const patterns = [
     /(?:target score|목표 점수|타겟 스코어)\s*(?:는|은|:|=)?\s*([01](?:\.\d+)?)/i,
     /(?:score)\s*(?:는|은|:|=)?\s*([01](?:\.\d+)?)/i
@@ -393,30 +433,7 @@ const extractMaxRounds = (normalizedLower: string): number | undefined => {
 
 const extractTargetScoreEnhanced = (
   normalizedLower: string
-): number | undefined => {
-  const legacy = extractTargetScore(normalizedLower);
-  if (legacy !== undefined) {
-    return legacy;
-  }
-
-  const patterns = [
-    /(?:target score|goal score|\uBAA9\uD45C\s*\uC810\uC218|\uBAA9\uD45C\uC810\uC218|\uD0C0\uAC9F\s*\uC810\uC218|targetscore)\s*(?:\uB294|\uC740|is|:|=)?\s*([01](?:\.\d+)?)/i,
-    /(?:score|\uC810\uC218)\s*(?:\uB294|\uC740|is|:|=)?\s*([01](?:\.\d+)?)/i
-  ];
-
-  for (const pattern of patterns) {
-    const raw = pattern.exec(normalizedLower)?.[1];
-    if (!raw) {
-      continue;
-    }
-    const parsed = Number(raw);
-    if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1) {
-      return roundScore(parsed);
-    }
-  }
-
-  return undefined;
-};
+): number | undefined => extractTargetScore(normalizedLower);
 
 const extractProjectModeEnhanced = (
   normalizedLower: string
@@ -540,8 +557,8 @@ const buildExecutionFieldStates = (
   projectMode: "new" | "existing" | undefined
 ): IntakeFieldState<ExecutionFieldId>[] => {
   const normalizedLower = lowerText(request);
-  const targetScore = extractTargetScoreEnhanced(normalizedLower);
-  const maxRounds = extractMaxRoundsEnhanced(normalizedLower);
+  const targetScore = extractTargetScoreEnhanced(normalizedLower) ?? DEFAULT_TARGET_SCORE;
+  const maxRounds = extractMaxRoundsEnhanced(normalizedLower) ?? DEFAULT_MAX_ROUNDS;
   const targetRoot = extractTargetRoot(request);
   const runCommand = extractRunCommand(request);
   const readyUrl = extractReadyUrl(request);
@@ -581,41 +598,6 @@ const buildExecutionFieldStates = (
   ];
 };
 
-const formatProjectMode = (projectMode: "new" | "existing" | undefined): string | undefined => {
-  if (projectMode === "new") {
-    return "새 프로젝트";
-  }
-  if (projectMode === "existing") {
-    return "기존 프로젝트";
-  }
-  return undefined;
-};
-
-const buildConfirmationSummary = (input: {
-  request: string;
-  extractedSummary?: string;
-  projectMode?: "new" | "existing";
-  targetRoot?: string;
-  targetScore?: number;
-  maxRounds?: number;
-}): string[] => {
-  const summaryLines = [
-    input.extractedSummary ? `- 제품 요약: ${input.extractedSummary}` : undefined,
-    formatProjectMode(input.projectMode)
-      ? `- 프로젝트 모드: ${formatProjectMode(input.projectMode)}`
-      : undefined,
-    input.targetRoot ? `- 작업 폴더: ${input.targetRoot}` : undefined,
-    input.targetScore !== undefined ? `- Target score: ${input.targetScore}` : undefined,
-    input.maxRounds !== undefined ? `- Max rounds: ${input.maxRounds}` : undefined
-  ].filter((line): line is string => Boolean(line));
-
-  if (summaryLines.length > 0) {
-    return summaryLines;
-  }
-
-  return ["- 제품과 실행 설정이 모두 채워졌다."];
-};
-
 const formatPreparationProjectMode = (
   projectMode: "new" | "existing" | undefined,
   locale: "en" | "ko"
@@ -648,8 +630,12 @@ const buildPreparationSummary = (input: {
     input.targetRoot
       ? `${input.locale === "ko" ? "작업 폴더" : "Working folder"}: ${input.targetRoot}`
       : undefined,
-    input.targetScore !== undefined ? `- Target score: ${input.targetScore}` : undefined,
-    input.maxRounds !== undefined ? `- Max rounds: ${input.maxRounds}` : undefined
+    input.targetScore !== undefined
+      ? `${input.locale === "ko" ? "\uBAA9\uD45C \uC810\uC218" : "Target score"}: ${input.targetScore}`
+      : undefined,
+    input.maxRounds !== undefined
+      ? `${input.locale === "ko" ? "\uCD5C\uB300 \uB77C\uC6B4\uB4DC" : "Max rounds"}: ${input.maxRounds}`
+      : undefined
   ].filter((line): line is string => Boolean(line));
 
   if (summaryLines.length > 0) {
@@ -696,6 +682,8 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
   const extractedTargetRoot = extractTargetRoot(request);
   const extractedTargetScore = extractTargetScoreEnhanced(normalizedLower);
   const extractedMaxRounds = extractMaxRoundsEnhanced(normalizedLower);
+  const resolvedTargetScore = extractedTargetScore ?? DEFAULT_TARGET_SCORE;
+  const resolvedMaxRounds = extractedMaxRounds ?? DEFAULT_MAX_ROUNDS;
 
   if (missingProductFields.length > 0) {
     return {
@@ -707,15 +695,13 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
       missing_product_fields: missingProductFields,
       missing_execution_fields: [],
       satisfied_fields: satisfiedProductFields,
-      questions: productFields
-        .filter((field) => !field.satisfied)
-        .map((field) => field.question),
+      questions: limitQuestions(productFields),
       internal_working_hypothesis: internalWorkingHypothesis,
       extracted_summary: extractedSummary,
       extracted_project_mode: extractedProjectMode,
       extracted_target_root: extractedTargetRoot,
-      extracted_target_score: extractedTargetScore,
-      extracted_max_rounds: extractedMaxRounds
+      extracted_target_score: resolvedTargetScore,
+      extracted_max_rounds: resolvedMaxRounds
     };
   }
 
@@ -737,15 +723,13 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
       missing_product_fields: [],
       missing_execution_fields: missingExecutionFields,
       satisfied_fields: [...satisfiedProductFields, ...satisfiedExecutionFields],
-      questions: executionFields
-        .filter((field) => !field.satisfied)
-        .map((field) => field.question),
+      questions: limitQuestions(executionFields),
       internal_working_hypothesis: internalWorkingHypothesis,
       extracted_summary: extractedSummary,
       extracted_project_mode: extractedProjectMode,
       extracted_target_root: extractedTargetRoot,
-      extracted_target_score: extractedTargetScore,
-      extracted_max_rounds: extractedMaxRounds
+      extracted_target_score: resolvedTargetScore,
+      extracted_max_rounds: resolvedMaxRounds
     };
   }
 
@@ -763,16 +747,16 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
     extracted_summary: extractedSummary,
     extracted_project_mode: extractedProjectMode,
     extracted_target_root: extractedTargetRoot,
-    extracted_target_score: extractedTargetScore,
-    extracted_max_rounds: extractedMaxRounds,
+    extracted_target_score: resolvedTargetScore,
+    extracted_max_rounds: resolvedMaxRounds,
     auto_prepare: true,
     next_step: "prepare",
     preparation_summary: buildPreparationSummary({
       extractedSummary,
       projectMode: extractedProjectMode,
       targetRoot: extractedTargetRoot,
-      targetScore: extractedTargetScore,
-      maxRounds: extractedMaxRounds,
+      targetScore: resolvedTargetScore,
+      maxRounds: resolvedMaxRounds,
       locale
     })
   };
@@ -805,37 +789,4 @@ export const renderIntakeGateResponse = (result: IntakeGateResult): string => {
   return result.locale === "ko"
     ? "이 요청은 제품 빌드 요청으로 보이지 않습니다."
     : "This request does not look like a product-build request.";
-};
-
-const renderIntakeGateResponseLegacy = (result: IntakeGateResult): string => {
-  if (
-    result.status === "ask_product_questions" ||
-    result.status === "ask_execution_questions"
-  ) {
-    return result.questions.map((question, index) => `${index + 1}. ${question}`).join("\n");
-  }
-
-  if (result.status === "ready_for_prepare") {
-    return result.locale === "ko"
-      ? [
-          "준비 완료.",
-          ...(result.preparation_summary ?? []),
-          "세션 상태는 ready_to_start입니다.",
-          "루프를 시작하려면 '루프 시작'이라고 말하세요."
-        ].join("\n")
-      : [
-          "Preparation is complete.",
-          ...(result.preparation_summary ?? []),
-          "Session status: ready_to_start.",
-          "Say '루프 시작' or 'start loop' to begin the same-thread loop."
-        ].join("\n");
-    return [
-      "확인용 요약",
-      ...(result.preparation_summary ?? []),
-      "",
-      "위 내용이 맞으면 확인하고, 그다음은 내부적으로 target family 추론과 bootstrap으로 넘기면 된다."
-    ].join("\n");
-  }
-
-  return "이 요청은 제품 빌드 요청으로 보이지 않는다.";
 };
