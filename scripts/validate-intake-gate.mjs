@@ -112,6 +112,56 @@ const invalidTargetScoreResult = evaluateIntakeRequest(
 assert.equal(invalidTargetScoreResult.status, "ready_for_prepare");
 assert.equal(invalidTargetScoreResult.extracted_target_score, 0.9);
 
+const newProjectOnboardingTitleResult = evaluateIntakeRequest(
+  "Build a new project onboarding dashboard for PMs. Primary users are PMs. Core workflows: create a project, assign owners, and track milestones. References: Linear. Finish line: users can create and track projects."
+);
+assert.equal(newProjectOnboardingTitleResult.status, "ask_execution_questions");
+assert.equal(
+  newProjectOnboardingTitleResult.extracted_summary,
+  "Build a new project onboarding dashboard for PMs."
+);
+assert.equal(newProjectOnboardingTitleResult.extracted_project_mode, undefined);
+assert.ok(
+  newProjectOnboardingTitleResult.missing_execution_fields.includes("project_mode"),
+  JSON.stringify(newProjectOnboardingTitleResult, null, 2)
+);
+assert.equal(newProjectOnboardingTitleResult.extracted_target_root, undefined);
+
+const projectRootExplorerTitleResult = evaluateIntakeRequest(
+  "Build a project root explorer for monorepos. Primary users are platform engineers. Core workflows: browse packages, inspect boundaries, and copy paths. References: VS Code explorer. Finish line: users can inspect and copy package roots."
+);
+assert.equal(projectRootExplorerTitleResult.status, "ask_execution_questions");
+assert.equal(
+  projectRootExplorerTitleResult.extracted_summary,
+  "Build a project root explorer for monorepos."
+);
+assert.equal(projectRootExplorerTitleResult.extracted_target_root, undefined);
+assert.ok(
+  projectRootExplorerTitleResult.missing_execution_fields.includes("target_root"),
+  JSON.stringify(projectRootExplorerTitleResult, null, 2)
+);
+
+const workingFolderPickerTitleResult = evaluateIntakeRequest(
+  "Build a working folder picker for desktop apps. Primary users are designers. Core workflows: choose a folder, preview recent paths, and save the selection. References: Finder. Finish line: users can choose and save a folder."
+);
+assert.equal(workingFolderPickerTitleResult.status, "ask_execution_questions");
+assert.equal(
+  workingFolderPickerTitleResult.extracted_summary,
+  "Build a working folder picker for desktop apps."
+);
+assert.equal(workingFolderPickerTitleResult.extracted_target_root, undefined);
+
+const koreanFolderPickerTitleResult = evaluateIntakeRequest(
+  "\uB370\uC2A4\uD06C\uD1B1 \uC571\uC6A9 \uC791\uC5C5 \uD3F4\uB354 \uC120\uD0DD\uAE30 \uB9CC\uB4E4\uC5B4\uC918. Primary users are designers. Core workflows: choose a folder, preview recent paths, and save the selection. References: Finder. Finish line: users can choose and save a folder."
+);
+assert.equal(koreanFolderPickerTitleResult.status, "ask_execution_questions");
+assert.equal(koreanFolderPickerTitleResult.locale, "ko");
+assert.equal(koreanFolderPickerTitleResult.extracted_target_root, undefined);
+assert.match(
+  koreanFolderPickerTitleResult.extracted_summary ?? "",
+  /\uC791\uC5C5 \uD3F4\uB354 \uC120\uD0DD\uAE30/
+);
+
 const koreanExecutionControlClause =
   "\uAE30\uC874 \uD504\uB85C\uC81D\uD2B8\uACE0 \uC791\uC5C5\uD3F4\uB354 apps/support-desk \uBAA9\uD45C\uC810\uC218 0.8 \uCD5C\uB300 4\uB77C\uC6B4\uB4DC.";
 const koreanExecutionHintsResult = evaluateIntakeRequest(

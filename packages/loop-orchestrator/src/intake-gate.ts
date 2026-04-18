@@ -183,9 +183,16 @@ const WINDOWS_PATH_PATTERN =
 const PATH_PATTERN = /((?:\/|\.\/|\.\.\/)[^\r\n\s),.;!?]+)/;
 const RELATIVE_PATH_PATTERN =
   /(?<![A-Za-z0-9._/-])((?:\.{1,2}[\\/]|[A-Za-z0-9._-]+[\\/])[^\r\n\s),.;!?]+)/;
+const TARGET_ROOT_VALUE_PATTERN_SOURCE = String.raw`(?:[A-Za-z]:\\[^\r\n\s),.;!?]+|(?:\/|\.\/|\.\.\/)[^\r\n\s),.;!?]+|[A-Za-z0-9._-]+(?:[\\/][^\r\n\s),.;!?]+)+)`;
 const TARGET_ROOT_CONTEXT_PATTERNS = [
-  /(?:target root|root(?: directory)?|working directory|project root|target folder|working folder|\uC791\uC5C5\s*\uD3F4\uB354|\uC791\uC5C5\uD3F4\uB354|\uB300\uC0C1\s*\uD3F4\uB354|\uD504\uB85C\uC81D\uD2B8\s*\uD3F4\uB354)\s*(?:is|\uB294|\uC740|:|=)?\s*([^\r\n]+)/i,
-  /(?:\uD3F4\uB354|\uACBD\uB85C)\s*(?:\uB294|\uC740|:|=)?\s*([A-Za-z0-9._-]+(?:[\\/][^\r\n\s),.;!?]+)+)/i
+  new RegExp(
+    String.raw`(?:target root|root(?: directory)?|working directory|project root|target folder|working folder|\uC791\uC5C5\s*\uD3F4\uB354|\uC791\uC5C5\uD3F4\uB354|\uB300\uC0C1\s*\uD3F4\uB354|\uD504\uB85C\uC81D\uD2B8\s*\uD3F4\uB354)\s*(?:is|\uB294|\uC740|:|=)\s*(${TARGET_ROOT_VALUE_PATTERN_SOURCE})`,
+    "iu"
+  ),
+  new RegExp(
+    String.raw`(?:target root|root(?: directory)?|working directory|project root|target folder|working folder|\uC791\uC5C5\s*\uD3F4\uB354|\uC791\uC5C5\uD3F4\uB354|\uB300\uC0C1\s*\uD3F4\uB354|\uD504\uB85C\uC81D\uD2B8\s*\uD3F4\uB354|\uD3F4\uB354|\uACBD\uB85C)\s+(${TARGET_ROOT_VALUE_PATTERN_SOURCE})`,
+    "iu"
+  )
 ];
 const URL_PATTERN = /https?:\/\/[^\s)]+/i;
 const RUN_COMMAND_PATTERN =
@@ -206,7 +213,7 @@ const KOREAN_PATH_SENTENCE_ENDINGS = [
   "\uC784"
 ] as const;
 const SUMMARY_STOP_PATTERN =
-  /(?:\b(?:this is|it is)\s+(?:an?\s+)?(?:existing|new)\s+project\b|\b(?:existing|new)\s+project\b|\btarget root\b|\bproject root\b|\bworking (?:directory|folder)\b|\btarget score\b|\bmax(?:imum)? rounds?\b|\brun command\b|\bready url\b|\bapp url\b|\bapi url\b|\bhealth url\b|(?:\uAE30\uC874|\uC0C8)\s*\uD504\uB85C\uC81D\uD2B8|(?:\uC791\uC5C5|\uB300\uC0C1)\s*\uD3F4\uB354|\uBAA9\uD45C\s*\uC810\uC218|\uCD5C\uB300\s*(?:\uB77C\uC6B4\uB4DC|\uD69F\uC218|\uD68C\uCC28|\uBC18\uBCF5))/iu;
+  /(?:^|[.!?]\s+)(?:(?:this|it)\s+is\s+(?:an?\s+)?(?:existing|new)\s+(?:project|repo|folder)\b|(?:the\s+)?(?:target root|root directory|working directory|project root|target folder|working folder|target score|goal score|max(?:imum)? rounds?|max iterations?|run command|ready url|app url|api url|health url)\s*(?:is|:|=)|(?:\uC774\uAC74|\uC774\uAC83\uC740)?\s*(?:\uAE30\uC874|\uC0C8)\s*(?:\uD504\uB85C\uC81D\uD2B8|\uB808\uD3EC|\uD3F4\uB354)(?:\uACE0|\uC774\uACE0|\uC785\uB2C8\uB2E4|\uC774\uB2E4|\uC608\uC694)?|(?:\uC791\uC5C5\s*\uD3F4\uB354|\uC791\uC5C5\uD3F4\uB354|\uB300\uC0C1\s*\uD3F4\uB354|\uD504\uB85C\uC81D\uD2B8\s*\uD3F4\uB354|\uACBD\uB85C|\uBAA9\uD45C\s*\uC810\uC218|\uBAA9\uD45C\uC810\uC218|\uCD5C\uB300\s*(?:\uB77C\uC6B4\uB4DC|\uD69F\uC218|\uD68C\uCC28|\uBC18\uBCF5)|\uC2E4\uD589\s*\uBA85\uB839)\s*(?:\uB294|\uC740|:|=))/iu;
 
 const normalizeText = (value: string): string => value.replace(/\s+/g, " ").trim();
 
@@ -363,11 +370,8 @@ const extractSummary = (request: string): string | undefined => {
 
   const stopIndex = normalized.search(SUMMARY_STOP_PATTERN);
   const productOnly = (stopIndex >= 0 ? normalized.slice(0, stopIndex) : normalized).trim();
-  const sentenceCandidates = productOnly
-    .split(/(?<=[.!?])\s+|[。！？]\s*/u)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean);
-  const firstSentence = sentenceCandidates.find((sentence) => sentence.length >= 12) ?? productOnly;
+  const firstSentence =
+    productOnly.match(/^.+?(?:[.!?]|[。！？]|$)/u)?.[0]?.trim() ?? productOnly;
   const cleaned = firstSentence.replace(/[\s,;:]+$/u, "").trim();
 
   if (cleaned.length === 0) {
@@ -402,33 +406,41 @@ const detectProductBuildRequest = (
 };
 
 const extractProjectMode = (normalizedLower: string): "new" | "existing" | undefined => {
-  if (
-    includesAny(normalizedLower, [
-      "기존 프로젝트",
-      "기존 폴더",
-      "existing project",
-      "existing repo",
-      "existing folder",
-      "이어서 수정",
-      "이어서",
-      "현재 repo",
-      "current repo"
-    ])
-  ) {
-    return "existing";
-  }
+  const patterns: Array<{ mode: "new" | "existing"; pattern: RegExp }> = [
+    {
+      mode: "existing",
+      pattern:
+        /(?:^|[.!?]\s+)(?:this|it)\s+is\s+(?:an?\s+)?existing\s+(?:project|repo|folder)\b/i
+    },
+    {
+      mode: "existing",
+      pattern:
+        /(?:^|[.!?]\s*)(?:\uC774\uAC74|\uC774\uAC83\uC740)?\s*\uAE30\uC874\s*(?:\uD504\uB85C\uC81D\uD2B8|\uB808\uD3EC|\uD3F4\uB354)(?:\uACE0|\uC774\uACE0|\uC785\uB2C8\uB2E4|\uC774\uB2E4|\uC608\uC694)?/u
+    },
+    {
+      mode: "new",
+      pattern:
+        /(?:^|[.!?]\s+)(?:this|it)\s+is\s+(?:an?\s+)?new\s+(?:project|repo|folder)\b/i
+    },
+    {
+      mode: "new",
+      pattern: /(?:^|[.!?]\s+)(?:this|it)\s+(?:starts?|begins?)\s+from scratch\b/i
+    },
+    {
+      mode: "new",
+      pattern:
+        /(?:^|[.!?]\s*)(?:\uC774\uAC74|\uC774\uAC83\uC740)?\s*\uC0C8\s*(?:\uD504\uB85C\uC81D\uD2B8|\uB808\uD3EC|\uD3F4\uB354)(?:\uACE0|\uC774\uACE0|\uC785\uB2C8\uB2E4|\uC774\uB2E4|\uC608\uC694)?/u
+    },
+    {
+      mode: "new",
+      pattern: /(?:^|[.!?]\s*)(?:\uCC98\uC74C\uBD80\uD130|\uC0C8\uB85C)\b/u
+    }
+  ];
 
-  if (
-    includesAny(normalizedLower, [
-      "새 프로젝트",
-      "new project",
-      "from scratch",
-      "new repo",
-      "처음부터",
-      "새로 만든"
-    ])
-  ) {
-    return "new";
+  for (const { mode, pattern } of patterns) {
+    if (pattern.test(normalizedLower)) {
+      return mode;
+    }
   }
 
   return undefined;
@@ -556,30 +568,7 @@ const extractTargetScoreEnhanced = (
 
 const extractProjectModeEnhanced = (
   normalizedLower: string
-): "new" | "existing" | undefined => {
-  const legacy = extractProjectMode(normalizedLower);
-  if (legacy !== undefined) {
-    return legacy;
-  }
-
-  if (
-    /(?:\uAE30\uC874\s*(?:\uD504\uB85C\uC81D\uD2B8|\uB808\uD3EC|\uD3F4\uB354)?|existing(?: project| repo| folder)?|current repo)/i.test(
-      normalizedLower
-    )
-  ) {
-    return "existing";
-  }
-
-  if (
-    /(?:\uC0C8\s*(?:\uD504\uB85C\uC81D\uD2B8|\uB808\uD3EC|\uD3F4\uB354)?|new(?: project| repo| folder)?|from scratch)/i.test(
-      normalizedLower
-    )
-  ) {
-    return "new";
-  }
-
-  return undefined;
-};
+): "new" | "existing" | undefined => extractProjectMode(normalizedLower);
 
 const extractMaxRoundsEnhanced = (
   normalizedLower: string
