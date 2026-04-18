@@ -193,6 +193,20 @@ const RUN_COMMAND_PATTERN =
 const MAX_QUESTIONS_PER_TURN = 3;
 const DEFAULT_TARGET_SCORE = 0.9;
 const DEFAULT_MAX_ROUNDS = 3;
+const KOREAN_PATH_SENTENCE_ENDINGS = [
+  "\uC785\uB2C8\uB2E4",
+  "\uC774\uC5D0\uC694",
+  "\uC608\uC694",
+  "\uC774\uC57C",
+  "\uC774\uB2E4",
+  "\uC774\uACE0",
+  "\uC774\uBA70",
+  "\uC57C",
+  "\uB2E4",
+  "\uC784"
+] as const;
+const SUMMARY_STOP_PATTERN =
+  /(?:\b(?:this is|it is)\s+(?:an?\s+)?(?:existing|new)\s+project\b|\b(?:existing|new)\s+project\b|\btarget root\b|\bproject root\b|\bworking (?:directory|folder)\b|\btarget score\b|\bmax(?:imum)? rounds?\b|\brun command\b|\bready url\b|\bapp url\b|\bapi url\b|\bhealth url\b|(?:\uAE30\uC874|\uC0C8)\s*\uD504\uB85C\uC81D\uD2B8|(?:\uC791\uC5C5|\uB300\uC0C1)\s*\uD3F4\uB354|\uBAA9\uD45C\s*\uC810\uC218|\uCD5C\uB300\s*(?:\uB77C\uC6B4\uB4DC|\uD69F\uC218|\uD68C\uCC28|\uBC18\uBCF5))/iu;
 
 const normalizeText = (value: string): string => value.replace(/\s+/g, " ").trim();
 
@@ -201,13 +215,91 @@ const lowerText = (value: string): string => normalizeText(value).toLowerCase();
 const detectLocale = (value: string): "en" | "ko" =>
   /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/u.test(value) ? "ko" : "en";
 
+const localizedQuestion = (
+  locale: "en" | "ko",
+  ko: string,
+  en: string
+): string => (locale === "ko" ? ko : en);
+
 const limitQuestions = <TFieldId extends IntakeFieldId>(
-  fields: IntakeFieldState<TFieldId>[]
+  fields: IntakeFieldState<TFieldId>[],
+  locale: "en" | "ko"
 ): string[] =>
   fields
     .filter((field) => !field.satisfied)
     .slice(0, MAX_QUESTIONS_PER_TURN)
-    .map((field) => field.question);
+    .map((field) => {
+      switch (field.id) {
+        case "product_summary":
+          return localizedQuestion(
+            locale,
+            "\uC815\uD655\uD788 \uBB50\uB97C \uB9CC\uB4DC\uB294\uC9C0 \uD55C \uBB38\uC7A5\uC73C\uB85C \uACE0\uC815\uD574\uC918.",
+            "Summarize exactly what needs to be built in one sentence."
+          );
+        case "target_users":
+          return localizedQuestion(
+            locale,
+            "\uB204\uAC00 \uC774\uAC78 \uC8FC\uB85C \uC4F0\uB294\uC9C0 \uB9D0\uD574\uC918. \uAC00\uC7A5 \uC911\uC694\uD55C \uC0AC\uC6A9\uC790 \uD55C \uC885\uB958\uBD80\uD130 \uC801\uC5B4\uC918.",
+            "Who is the primary user for the first version?"
+          );
+        case "core_workflows":
+          return localizedQuestion(
+            locale,
+            "\uCCAB \uBC84\uC804\uC5D0\uC11C \uC0AC\uC6A9\uC790\uAC00 \uBC18\uB4DC\uC2DC \uD574\uC57C \uD558\uB294 \uD575\uC2EC \uC791\uC5C5 2~3\uAC1C\uB97C \uC801\uC5B4\uC918.",
+            "Which 2-3 core workflows must work in the first version?"
+          );
+        case "references":
+          return localizedQuestion(
+            locale,
+            "\uCC38\uACE0 \uC81C\uD488\uC774\uB098 \uCC38\uACE0 \uD654\uBA74\uC774 \uC788\uB098? \uC5C6\uC73C\uBA74 \uC5C6\uB2E4\uACE0 \uC801\uC5B4\uC918.",
+            "Are there reference products or visuals to follow? If not, say none."
+          );
+        case "finish_line":
+          return localizedQuestion(
+            locale,
+            "\uCCAB \uBC84\uC804\uC5D0\uC11C \uC5B4\uB514\uAE4C\uC9C0 \uB418\uBA74 \uC131\uACF5\uC778\uC9C0 \uC9E7\uAC8C \uC801\uC5B4\uC918.",
+            "What does good enough for the first version mean?"
+          );
+        case "project_mode":
+          return localizedQuestion(
+            locale,
+            "\uC0C8 \uD504\uB85C\uC81D\uD2B8\uC778\uC9C0 \uAE30\uC874 \uD504\uB85C\uC81D\uD2B8\uC778\uC9C0 \uC54C\uB824\uC918.",
+            "Is this a new project or an existing project?"
+          );
+        case "target_root":
+          return localizedQuestion(
+            locale,
+            "\uC791\uC5C5 \uD3F4\uB354\uAC00 \uC5B4\uB514\uC778\uC9C0 \uACBD\uB85C\uB97C \uADF8\uB300\uB85C \uC801\uC5B4\uC918.",
+            "What is the working folder path?"
+          );
+        case "target_score":
+          return localizedQuestion(
+            locale,
+            "target score\uB97C 0~1 \uC0AC\uC774 \uC22B\uC790\uB85C \uC801\uC5B4\uC918. \uC608: 0.9",
+            "What target score should the loop use between 0 and 1? Example: 0.9"
+          );
+        case "max_rounds":
+          return localizedQuestion(
+            locale,
+            "max rounds\uB97C \uBA87 \uBC88\uC73C\uB85C \uB458\uC9C0 \uC801\uC5B4\uC918. \uC608: 4",
+            "How many max rounds should the loop use? Example: 4"
+          );
+        case "run_command":
+          return localizedQuestion(
+            locale,
+            "\uAE30\uC874 \uD504\uB85C\uC81D\uD2B8\uBA74 \uC2E4\uD589 \uBA85\uB839\uC744 \uC801\uC5B4\uC918. \uC608: npm run dev",
+            "If this is an existing project, what run command should the loop use? Example: npm run dev"
+          );
+        case "ready_url":
+          return localizedQuestion(
+            locale,
+            "\uAE30\uC874 \uD504\uB85C\uC81D\uD2B8\uBA74 \uC900\uBE44 \uC644\uB8CC\uB97C \uD655\uC778\uD560 URL\uC744 \uC801\uC5B4\uC918. \uC608: http://127.0.0.1:3000/",
+            "If this is an existing project, what ready URL should the loop check? Example: http://127.0.0.1:3000/"
+          );
+        default:
+          return field.question;
+      }
+    });
 
 const includesAny = (value: string, keywords: readonly string[]): boolean =>
   keywords.some((keyword) => value.includes(keyword));
@@ -264,13 +356,25 @@ export const inferProductTargetFamily = (
 };
 
 const extractSummary = (request: string): string | undefined => {
-  const normalized = request
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .join(" ");
+  const normalized = normalizeText(request);
+  if (normalized.length < 12) {
+    return undefined;
+  }
 
-  return normalized.length >= 24 ? normalized.slice(0, 280) : undefined;
+  const stopIndex = normalized.search(SUMMARY_STOP_PATTERN);
+  const productOnly = (stopIndex >= 0 ? normalized.slice(0, stopIndex) : normalized).trim();
+  const sentenceCandidates = productOnly
+    .split(/(?<=[.!?])\s+|[。！？]\s*/u)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+  const firstSentence = sentenceCandidates.find((sentence) => sentence.length >= 12) ?? productOnly;
+  const cleaned = firstSentence.replace(/[\s,;:]+$/u, "").trim();
+
+  if (cleaned.length === 0) {
+    return undefined;
+  }
+
+  return cleaned.length <= 160 ? cleaned : `${cleaned.slice(0, 157).trimEnd()}...`;
 };
 
 const detectProductBuildRequest = (
@@ -331,11 +435,24 @@ const extractProjectMode = (normalizedLower: string): "new" | "existing" | undef
 };
 
 const sanitizeExtractedPath = (value: string): string | undefined => {
-  const sanitized = value
+  let sanitized = value
     .trim()
     .replace(/^[("'`]+/, "")
     .replace(/[)"'`]+$/, "")
     .replace(/[),.;!?]+$/g, "");
+
+  for (const ending of KOREAN_PATH_SENTENCE_ENDINGS) {
+    if (!sanitized.endsWith(ending)) {
+      continue;
+    }
+
+    const boundaryIndex = sanitized.length - ending.length - 1;
+    const boundaryCharacter = boundaryIndex >= 0 ? sanitized[boundaryIndex] : "";
+    if (/[A-Za-z0-9._/\-\\]/.test(boundaryCharacter)) {
+      sanitized = sanitized.slice(0, -ending.length);
+      break;
+    }
+  }
 
   return sanitized.length > 0 ? sanitized : undefined;
 };
@@ -390,6 +507,8 @@ const extractTargetScore = (normalizedLower: string): number | undefined => {
     if (normalizedScore !== undefined) {
       return normalizedScore;
     }
+
+    return undefined;
   }
 
   const patterns = [
@@ -518,7 +637,10 @@ const workflowsExplicitlyProvided = (normalizedLower: string): boolean =>
   countKeywordMatches(normalizedLower, WORKFLOW_HINTS) >= 2 ||
   /(?:핵심 작업|핵심 플로우|workflow|jobs?-to-be-done)/i.test(normalizedLower);
 
-const buildProductFieldStates = (request: string): IntakeFieldState<ProductFieldId>[] => {
+const buildProductFieldStates = (
+  request: string,
+  locale: "en" | "ko"
+): IntakeFieldState<ProductFieldId>[] => {
   const normalized = normalizeText(request);
   const normalizedLower = normalized.toLowerCase();
 
@@ -669,7 +791,7 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
     };
   }
 
-  const productFields = buildProductFieldStates(request);
+  const productFields = buildProductFieldStates(request, locale);
   const missingProductFields = productFields
     .filter((field) => !field.satisfied)
     .map((field) => field.id);
@@ -695,7 +817,7 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
       missing_product_fields: missingProductFields,
       missing_execution_fields: [],
       satisfied_fields: satisfiedProductFields,
-      questions: limitQuestions(productFields),
+      questions: limitQuestions(productFields, locale),
       internal_working_hypothesis: internalWorkingHypothesis,
       extracted_summary: extractedSummary,
       extracted_project_mode: extractedProjectMode,
@@ -723,7 +845,7 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
       missing_product_fields: [],
       missing_execution_fields: missingExecutionFields,
       satisfied_fields: [...satisfiedProductFields, ...satisfiedExecutionFields],
-      questions: limitQuestions(executionFields),
+      questions: limitQuestions(executionFields, locale),
       internal_working_hypothesis: internalWorkingHypothesis,
       extracted_summary: extractedSummary,
       extracted_project_mode: extractedProjectMode,

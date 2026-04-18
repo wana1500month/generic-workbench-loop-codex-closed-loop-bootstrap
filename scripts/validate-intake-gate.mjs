@@ -33,6 +33,10 @@ assert.equal(askProductResult.is_product_build_request, true);
 assert.equal(askProductResult.internal_working_hypothesis, "browser-editor");
 assert.ok(askProductResult.questions.length >= 2, JSON.stringify(askProductResult, null, 2));
 assert.ok(askProductResult.questions.length <= 3, JSON.stringify(askProductResult, null, 2));
+assert.ok(
+  askProductResult.questions.every((question) => !/[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/u.test(question)),
+  JSON.stringify(askProductResult, null, 2)
+);
 assert.equal(askProductResult.missing_execution_fields.length, 0);
 assert.equal(askProductResult.extracted_target_score, 0.9);
 assert.equal(askProductResult.extracted_max_rounds, 3);
@@ -84,12 +88,29 @@ const absolutePosixPathResult = evaluateIntakeRequest(
 assert.equal(absolutePosixPathResult.status, "ready_for_prepare");
 assert.equal(absolutePosixPathResult.extracted_target_root, "/tmp/loop-dashboard");
 
+const koreanSentenceEndingPathResult = evaluateIntakeRequest(
+  `${productFilledRequest} \uC0C8 \uD504\uB85C\uC81D\uD2B8\uACE0 \uC791\uC5C5 \uD3F4\uB354\uB294 /tmp/crm-dashboard\uB2E4.`
+);
+assert.equal(koreanSentenceEndingPathResult.status, "ready_for_prepare");
+assert.equal(koreanSentenceEndingPathResult.extracted_target_root, "/tmp/crm-dashboard");
+
+const koreanCasualPathResult = evaluateIntakeRequest(
+  `${productFilledRequest} \uACBD\uB85C\uB294 /tmp/crm-dashboard\uC57C.`
+);
+assert.equal(koreanCasualPathResult.extracted_target_root, "/tmp/crm-dashboard");
+
 const normalizedTargetScoreResult = evaluateIntakeRequest(
   `${productFilledRequest} This is a new project and the target root is ./apps/storyboard. target score 82.`
 );
 assert.equal(normalizedTargetScoreResult.status, "ready_for_prepare");
 assert.equal(normalizedTargetScoreResult.extracted_target_score, 0.82);
 assert.equal(normalizedTargetScoreResult.extracted_max_rounds, 3);
+
+const invalidTargetScoreResult = evaluateIntakeRequest(
+  `${productFilledRequest} This is a new project and the target root is ./apps/storyboard. target score 120.`
+);
+assert.equal(invalidTargetScoreResult.status, "ready_for_prepare");
+assert.equal(invalidTargetScoreResult.extracted_target_score, 0.9);
 
 const koreanExecutionControlClause =
   "\uAE30\uC874 \uD504\uB85C\uC81D\uD2B8\uACE0 \uC791\uC5C5\uD3F4\uB354 apps/support-desk \uBAA9\uD45C\uC810\uC218 0.8 \uCD5C\uB300 4\uB77C\uC6B4\uB4DC.";
@@ -129,6 +150,10 @@ assert.equal(
   readyResult.extracted_target_root,
   "C:\\Users\\SUNGMOK\\Desktop\\harness\\storyboard-app"
 );
+const readyGoalLine = readyResult.preparation_summary.find((line) => /^Goal:/i.test(line));
+assert.ok(readyGoalLine, JSON.stringify(readyResult, null, 2));
+assert.match(readyGoalLine, /Goal:\s*Build a storyboard editor for indie animators\./i);
+assert.ok(!/This is a new project|max rounds|target root/i.test(readyGoalLine), readyGoalLine);
 
 const koreanReadyResult = evaluateIntakeRequest(
   productFilledRequest + " \uC0C8 \uD504\uB85C\uC81D\uD2B8\uACE0 \uC791\uC5C5\uD3F4\uB354 /tmp/loop-dashboard \uBAA9\uD45C\uC810\uC218 82 \uCD5C\uB300 4\uB77C\uC6B4\uB4DC."
@@ -139,6 +164,11 @@ assert.equal(koreanReadyResult.extracted_target_root, "/tmp/loop-dashboard");
 assert.equal(koreanReadyResult.extracted_target_score, 0.82);
 assert.equal(koreanReadyResult.extracted_max_rounds, 4);
 assert.ok(
+  koreanReadyResult.questions.every((question) => /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/u.test(question)) ||
+    koreanReadyResult.questions.length === 0,
+  JSON.stringify(koreanReadyResult, null, 2)
+);
+assert.ok(
   koreanReadyResult.preparation_summary.some((line) => /\uBAA9\uD45C \uC810\uC218:\s*0\.82/.test(line)),
   JSON.stringify(koreanReadyResult, null, 2)
 );
@@ -146,6 +176,11 @@ assert.ok(
   koreanReadyResult.preparation_summary.some((line) => /\uCD5C\uB300 \uB77C\uC6B4\uB4DC:\s*4/.test(line)),
   JSON.stringify(koreanReadyResult, null, 2)
 );
+const koreanGoalLine = koreanReadyResult.preparation_summary.find((line) =>
+  /^\uBAA9\uD45C:/.test(line)
+);
+assert.ok(koreanGoalLine, JSON.stringify(koreanReadyResult, null, 2));
+assert.ok(!/\uC791\uC5C5\uD3F4\uB354|\uBAA9\uD45C\uC810\uC218|\uCD5C\uB300/.test(koreanGoalLine), koreanGoalLine);
 
 const readyHumanOutput = renderIntakeGateResponse(readyResult);
 assert.match(readyHumanOutput, /Preparation is complete\./);
