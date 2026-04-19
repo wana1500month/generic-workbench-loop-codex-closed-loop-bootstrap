@@ -57,6 +57,12 @@ import {
   writeJson,
   writeText
 } from "./file-system.js";
+import {
+  captureBootstrapGeneratedBaselineIfNeeded,
+  hasValidPrototypeBaseline,
+  loadPrototypeBaselineState,
+  prototypeBaselinePaths
+} from "./prototype-baseline.js";
 import { defaultIdeaPath, readIdeaBrief } from "./idea-intake.js";
 import {
   defaultControllerMode,
@@ -4099,6 +4105,60 @@ export const runClosedLoop = async (input: {
       : [];
     const attachedGeneratorTaskTimeoutMs =
       phaseTimeouts.pre_verification ?? appServerTaskTimeoutMs;
+    const persistedTargetManifest =
+      await loadJsonIfExists<TargetManifest>(artifacts.target_manifest_path);
+    const prototypeBaselineState =
+      round === 1 ? await loadPrototypeBaselineState(runRuntimeDirectory) : undefined;
+    const prototypeBaselinePathInfo = prototypeBaselinePaths(runRuntimeDirectory);
+    const preRoundBaselineStatusPath = join(roundDirectory, "pre-round-baseline.md");
+    const attachedGeneratorProfile = loadedAdapter?.verification_profile?.profile;
+    const browserBaselineEligible =
+      round === 1 &&
+      attachedGeneratorEligible &&
+      Boolean(
+        attachedGeneratorProfile &&
+          ((attachedGeneratorProfile.expected_target_surfaces ?? []).includes("browser") ||
+            (attachedGeneratorProfile.core_probes ?? []).some(
+              (probe) => probe.mode === "browser" || probe.mode === "browser_journey"
+            ))
+      );
+    const attachedGeneratorBaselineCapture =
+      browserBaselineEligible && loadedAdapter
+        ? await captureBootstrapGeneratedBaselineIfNeeded({
+            loadedAdapter,
+            runtimeDirectory: runRuntimeDirectory,
+            targetManifest: persistedTargetManifest
+          })
+        : undefined;
+    if (attachedGeneratorBaselineCapture) {
+      await writeText(
+        preRoundBaselineStatusPath,
+        [
+          "# Pre-round baseline",
+          "",
+          `Status: ${attachedGeneratorBaselineCapture.status}`,
+          `Baseline present: ${attachedGeneratorBaselineCapture.prototype_baseline_present}`,
+          `Baseline valid: ${attachedGeneratorBaselineCapture.prototype_baseline_valid}`,
+          `Source phase: ${attachedGeneratorBaselineCapture.source_phase ?? "n/a"}`,
+          `Source round: ${String(attachedGeneratorBaselineCapture.source_round ?? "n/a")}`,
+          `Baseline path: ${attachedGeneratorBaselineCapture.baseline_path ?? "n/a"}`,
+          `Target: ${
+            attachedGeneratorBaselineCapture.source_target ??
+            attachedGeneratorBaselineCapture.readiness_url ??
+            "n/a"
+          }`,
+          `Reason: ${attachedGeneratorBaselineCapture.reason ?? "none"}`
+        ].join("\n")
+      );
+      if (attachedGeneratorBaselineCapture.status === "blocked") {
+        runtimeWarnings = unique([
+          ...runtimeWarnings,
+          `Pre-round baseline capture was blocked before attached generator round ${round}: ${
+            attachedGeneratorBaselineCapture.reason ?? "unknown reason"
+          }`
+        ]);
+      }
+    }
     const existingAttachedGeneratorTask =
       attachedGeneratorEligible && attachedGeneratorTargetRoot
         ? await loadJsonIfExists<AttachedGeneratorTaskArtifact>(
@@ -4127,10 +4187,29 @@ export const runClosedLoop = async (input: {
         agreement: contractAgreementArtifact,
         generatorPlan: generatorPlanArtifact,
         previousPatchRequest,
+        prototypeBaselineManifestPath: prototypeBaselinePathInfo.manifestPath,
+        prototypeBaselineScreenshotPath: prototypeBaselinePathInfo.screenshotPath,
+        prototypeBaselineSourcePhase:
+          attachedGeneratorBaselineCapture?.source_phase ??
+          (hasValidPrototypeBaseline(prototypeBaselineState)
+            ? prototypeBaselineState.source_phase
+            : prototypeBaselineState?.source_phase),
+        prototypeBaselineValid:
+          attachedGeneratorBaselineCapture?.prototype_baseline_valid ??
+          hasValidPrototypeBaseline(prototypeBaselineState),
         notes: [
           transportMode === "current-thread"
             ? "Complete the generator work on the current Codex thread, then write the response JSON before resuming the controller."
-            : "The App Server generator turn will write the response JSON before the controller resumes adapter verification."
+            : "The App Server generator turn will write the response JSON before the controller resumes adapter verification.",
+          ...(attachedGeneratorBaselineCapture
+            ? attachedGeneratorBaselineCapture.prototype_baseline_valid
+              ? [
+                  `A valid initial prototype baseline is already available at ${prototypeBaselinePathInfo.manifestPath} (${attachedGeneratorBaselineCapture.source_phase ?? "unknown source phase"}). Do not overwrite it with a post-mutation screenshot.`
+                ]
+              : [
+                  `No valid initial prototype baseline was captured before the generator started. If the browser surface is reachable before edits, capture it to ${prototypeBaselinePathInfo.manifestPath} before mutating. Otherwise leave the baseline absent and do not mark any post-mutation screenshot as valid.`
+                ]
+            : [])
         ]
       });
     }
@@ -4157,8 +4236,6 @@ export const runClosedLoop = async (input: {
       );
     const restoredPreVerificationExecutions =
       !persistedPreVerificationExecutions && preVerificationExecutions.length > 0;
-    const persistedTargetManifest =
-      await loadJsonIfExists<TargetManifest>(artifacts.target_manifest_path);
     let targetManifest =
       persistedTargetManifest ??
       preVerificationExecutions.find(
@@ -4193,7 +4270,12 @@ export const runClosedLoop = async (input: {
                 attached_generator_task_path:
                   artifacts.attached_generator_task_path,
                 attached_generator_response_path:
-                  artifacts.attached_generator_response_path
+                  artifacts.attached_generator_response_path,
+                ...(attachedGeneratorBaselineCapture
+                  ? {
+                      pre_round_baseline_path: preRoundBaselineStatusPath
+                    }
+                  : {})
               }
             }
           : {})
@@ -4259,7 +4341,10 @@ export const runClosedLoop = async (input: {
               attached_generator_prompt_path:
                 artifacts.attached_generator_prompt_path,
               attached_generator_response_path:
-                artifacts.attached_generator_response_path
+                artifacts.attached_generator_response_path,
+              ...(attachedGeneratorBaselineCapture
+                ? { pre_round_baseline_path: preRoundBaselineStatusPath }
+                : {})
             },
             checkpointKind: "attached-generator",
             notes: attachedGeneratorNotes

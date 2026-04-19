@@ -1038,6 +1038,10 @@ export interface AttachedGeneratorTaskArtifact {
   must_deliver: string[];
   must_fix: string[];
   must_preserve: string[];
+  prototype_baseline_manifest_path?: string;
+  prototype_baseline_screenshot_path?: string;
+  prototype_baseline_source_phase?: string;
+  prototype_baseline_valid?: boolean;
   notes?: string[];
   created_at: string;
 }

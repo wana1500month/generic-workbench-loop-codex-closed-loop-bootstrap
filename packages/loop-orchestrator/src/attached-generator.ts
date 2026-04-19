@@ -64,6 +64,20 @@ const promptText = (input: {
     `ATTACHED_GENERATOR_TARGET_ROOT: ${input.targetRoot}`,
     "ATTACHED_GENERATOR_RESPONSE_SCHEMA: {\"checkpoint_id\":\"string\",\"status\":\"applied|noop|blocked\",\"summary\":\"string\",\"changed_files\":[\"relative/path\"],\"notes\":[\"string\"],\"generated_at\":\"ISO-8601\"}",
     "",
+    "## Prototype baseline protocol",
+    ...(input.task.prototype_baseline_manifest_path || input.task.prototype_baseline_screenshot_path
+      ? [
+          `- Baseline manifest path: ${input.task.prototype_baseline_manifest_path ?? "n/a"}`,
+          `- Baseline screenshot path: ${input.task.prototype_baseline_screenshot_path ?? "n/a"}`,
+          `- Existing baseline source phase: ${input.task.prototype_baseline_source_phase ?? "none"}`,
+          `- Existing baseline valid: ${input.task.prototype_baseline_valid === true ? "yes" : "no"}`,
+          input.task.prototype_baseline_valid === true
+            ? "- A valid initial prototype baseline already exists. Do not overwrite it with a post-mutation screenshot."
+            : "- If the browser surface is already reachable before you edit files, capture the initial prototype baseline before mutating and persist it to the paths above with source_phase 'operator_provided_baseline'.",
+          "- If the surface is not reachable before edits, leave the baseline absent. Do not mark any post-mutation screenshot as a valid initial baseline."
+        ]
+      : ["- none"]),
+    "",
     "## Contract objective",
     input.contract.objective,
     "",
@@ -113,6 +127,10 @@ export const writeAttachedGeneratorTask = async (input: {
   agreement: ContractAgreementArtifact;
   generatorPlan: GeneratorPlanArtifact;
   previousPatchRequest?: PatchRequestArtifact;
+  prototypeBaselineManifestPath?: string;
+  prototypeBaselineScreenshotPath?: string;
+  prototypeBaselineSourcePhase?: string;
+  prototypeBaselineValid?: boolean;
   notes?: string[];
 }): Promise<AttachedGeneratorTaskArtifact> => {
   const createdAt = new Date().toISOString();
@@ -153,6 +171,18 @@ export const writeAttachedGeneratorTask = async (input: {
     must_fix:
       input.previousPatchRequest?.must_fix.map((item) => item.expected_change) ?? [],
     must_preserve: input.generatorPlan.must_preserve ?? [],
+    ...(input.prototypeBaselineManifestPath
+      ? { prototype_baseline_manifest_path: input.prototypeBaselineManifestPath }
+      : {}),
+    ...(input.prototypeBaselineScreenshotPath
+      ? { prototype_baseline_screenshot_path: input.prototypeBaselineScreenshotPath }
+      : {}),
+    ...(input.prototypeBaselineSourcePhase
+      ? { prototype_baseline_source_phase: input.prototypeBaselineSourcePhase }
+      : {}),
+    ...(typeof input.prototypeBaselineValid === "boolean"
+      ? { prototype_baseline_valid: input.prototypeBaselineValid }
+      : {}),
     ...(input.notes?.length ? { notes: input.notes } : {}),
     created_at: createdAt
   };

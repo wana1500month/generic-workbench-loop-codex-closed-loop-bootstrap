@@ -705,6 +705,12 @@ export const buildQualityCritiqueArtifact = (input: {
   const gradeRoundExecution = input.evalReport.adapter_results.find(
     (execution) => execution.capability === "grade_round"
   );
+  const prototypeBaselineValid =
+    gradeRoundExecution?.result.metadata?.prototype_baseline_valid === true;
+  const prototypeBaselineSourcePhase =
+    typeof gradeRoundExecution?.result.metadata?.prototype_baseline_source_phase === "string"
+      ? gradeRoundExecution.result.metadata.prototype_baseline_source_phase
+      : undefined;
   const subjectiveFindings =
     gradeRoundExecution?.result.subjective_metric_results
       ?.filter((metric) => metric.status === "fail")
@@ -720,13 +726,19 @@ export const buildQualityCritiqueArtifact = (input: {
               : "high";
         const expectedChange =
           metric.metric_id === "prototype_delta"
-            ? "The current result is not yet materially beyond the initial prototype. Raise information architecture, layout, state expression, and finish-line workflow visibility so the shipped surface is visibly more complete than the baseline."
+            ? !prototypeBaselineValid
+              ? `Capture or provide a valid initial prototype baseline before scoring prototype_delta again${
+                  prototypeBaselineSourcePhase
+                    ? `. The current baseline source phase '${prototypeBaselineSourcePhase}' does not count as an initial prototype baseline.`
+                    : "."
+                }`
+              : "The current result is not yet materially beyond the initial prototype. Raise information architecture, layout, state expression, and finish-line workflow visibility so the shipped surface is visibly more complete than the baseline."
             : metric.recommended_changes[0] ??
               axis?.desired_outcome ??
               `Raise ${metric.label} until it clears the requested threshold.`;
         const targetCheckIds = carryForwardSafeTargetCheckIds(
           metric.metric_id === "prototype_delta"
-            ? ["prototype_delta_present", "target_signal_thresholds_met"]
+            ? ["prototype_baseline_valid", "prototype_delta_present", "target_signal_thresholds_met"]
             : ["subjective_thresholds_met", "target_signal_thresholds_met"]
         );
         return {
@@ -747,17 +759,20 @@ export const buildQualityCritiqueArtifact = (input: {
       }) ?? [];
   findings.push(...subjectiveFindings);
 
-  const subjectiveJudgeDisabled =
+  const subjectiveJudgeUnavailable =
+    gradeRoundExecution?.result.metadata?.subjective_judge_unavailable === true ||
     gradeRoundExecution?.result.metadata?.subjective_judge_disabled === true;
   const subjectiveJudgeFailureReason =
-    typeof gradeRoundExecution?.result.metadata?.subjective_judge_failure_reason === "string"
-      ? gradeRoundExecution.result.metadata.subjective_judge_failure_reason
+    typeof gradeRoundExecution?.result.metadata?.subjective_judge_unavailable_reason === "string"
+      ? gradeRoundExecution.result.metadata.subjective_judge_unavailable_reason
+      : typeof gradeRoundExecution?.result.metadata?.subjective_judge_failure_reason === "string"
+        ? gradeRoundExecution.result.metadata.subjective_judge_failure_reason
       : undefined;
   const subjectiveJudgeTransportMode =
     typeof gradeRoundExecution?.result.metadata?.subjective_judge_transport_mode === "string"
       ? gradeRoundExecution.result.metadata.subjective_judge_transport_mode
       : undefined;
-  if (subjectiveJudgeDisabled) {
+  if (subjectiveJudgeUnavailable) {
     findings.push({
       finding_id: "subjective-judge-disabled",
       category: "proof_signal",
@@ -779,6 +794,31 @@ export const buildQualityCritiqueArtifact = (input: {
         "target_signal_thresholds_met"
       ]),
       dimension_id: "subjective_release_quality"
+    });
+  }
+  if (
+    input.round >= 2 &&
+    gradeRoundExecution?.result.metadata?.prototype_baseline_present === true &&
+    !prototypeBaselineValid
+  ) {
+    findings.push({
+      finding_id: "prototype-baseline-invalid",
+      category: "proof_signal",
+      severity: "critical",
+      summary: `The stored prototype baseline is not valid for prototype_delta judging${
+        prototypeBaselineSourcePhase ? ` because it came from '${prototypeBaselineSourcePhase}'` : ""
+      }.`,
+      expected_change:
+        "Capture or provide a valid initial prototype baseline before relying on prototype_delta. Do not reuse post-mutation screenshots from later rounds as the initial prototype.",
+      evidence: gradeRoundExecution?.result.evidence_paths ?? [],
+      preserve: preserveSignals,
+      pivot_or_refine: remediationStrategy,
+      target_check_ids: carryForwardSafeTargetCheckIds([
+        "prototype_baseline_valid",
+        "prototype_delta_present",
+        "target_signal_thresholds_met"
+      ]),
+      dimension_id: "prototype_delta"
     });
   }
 

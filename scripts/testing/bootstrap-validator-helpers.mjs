@@ -150,6 +150,8 @@ export const createBootstrapFixture = async (tempRoot, answerOverrides = {}) => 
     inputPath,
     outputPath,
     applyChangeScriptPath: join(paths.generatedScriptsRoot, "apply-change.mjs"),
+    runChecksScriptPath: join(paths.generatedScriptsRoot, "run-checks.mjs"),
+    gradeRoundScriptPath: join(paths.generatedScriptsRoot, "grade-round.mjs"),
     sessionRegistryPath: join(runtimeDirectory, "codex-sessions.json")
   };
 };

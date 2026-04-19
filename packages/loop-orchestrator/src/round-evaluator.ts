@@ -79,6 +79,7 @@ const knownCheckIds = new Set<string>([
   "subjective_thresholds_met",
   "visual_evidence_present",
   "prototype_baseline_present",
+  "prototype_baseline_valid",
   "prototype_delta_present",
   "target_signal_thresholds_met"
 ]);
@@ -101,6 +102,7 @@ const proofEvaluatorChecks = new Set<string>([
   "subjective_thresholds_met",
   "visual_evidence_present",
   "prototype_baseline_present",
+  "prototype_baseline_valid",
   "prototype_delta_present"
 ]);
 const nonScoringDerivedChecks = new Set<string>([
@@ -2261,6 +2263,7 @@ export const buildEvalReport = (input: {
     ...input.coreProbeResults.flatMap((probe) => probe.evidence_paths)
   ]).some(isVisualEvidencePath);
   const prototypeBaselinePresent = gradeRoundExecution?.result.metadata?.prototype_baseline_present === true;
+  const prototypeBaselineValid = gradeRoundExecution?.result.metadata?.prototype_baseline_valid === true;
   const prototypeBaselineSourcePhase =
     typeof gradeRoundExecution?.result.metadata?.prototype_baseline_source_phase === "string"
       ? gradeRoundExecution.result.metadata.prototype_baseline_source_phase
@@ -2271,15 +2274,20 @@ export const buildEvalReport = (input: {
       : undefined;
   const subjectiveJudgeDisabled =
     gradeRoundExecution?.result.metadata?.subjective_judge_disabled === true;
+  const subjectiveJudgeUnavailable =
+    gradeRoundExecution?.result.metadata?.subjective_judge_unavailable === true ||
+    subjectiveJudgeDisabled;
   const subjectiveJudgeFailureReason =
-    typeof gradeRoundExecution?.result.metadata?.subjective_judge_failure_reason === "string"
-      ? gradeRoundExecution.result.metadata.subjective_judge_failure_reason
+    typeof gradeRoundExecution?.result.metadata?.subjective_judge_unavailable_reason === "string"
+      ? gradeRoundExecution.result.metadata.subjective_judge_unavailable_reason
+      : typeof gradeRoundExecution?.result.metadata?.subjective_judge_failure_reason === "string"
+        ? gradeRoundExecution.result.metadata.subjective_judge_failure_reason
       : undefined;
   const subjectiveJudgeTransportMode =
     typeof gradeRoundExecution?.result.metadata?.subjective_judge_transport_mode === "string"
       ? gradeRoundExecution.result.metadata.subjective_judge_transport_mode
       : undefined;
-  const subjectiveJudgeNeedsEvaluatorDetail = subjectiveJudgeDisabled
+  const subjectiveJudgeNeedsEvaluatorDetail = subjectiveJudgeUnavailable
     ? `Status: needs_evaluator. Subjective-quality judge could not complete browser scoring${
         subjectiveJudgeTransportMode
           ? ` on transport '${subjectiveJudgeTransportMode}'`
@@ -2307,7 +2315,7 @@ export const buildEvalReport = (input: {
     !browserSurfaceExpected
       ? "Subjective quality evidence is not required for non-browser targets."
       : subjectiveMetricResults.length > 0
-        ? subjectiveJudgeDisabled
+        ? subjectiveJudgeUnavailable
           ? `grade_round reported fail-closed subjective metric results after the judge was unavailable. ${subjectiveJudgeNeedsEvaluatorDetail}`
           : `grade_round reported ${subjectiveMetricResults.length} subjective product-quality metric result(s).`
         : subjectiveJudgeNeedsEvaluatorDetail ??
@@ -2324,7 +2332,7 @@ export const buildEvalReport = (input: {
           : "fail",
     !browserSurfaceExpected
       ? "Subjective threshold gating is not required for non-browser targets."
-      : subjectiveJudgeDisabled
+      : subjectiveJudgeUnavailable
         ? subjectiveJudgeNeedsEvaluatorDetail ??
           "Required browser subjective thresholds could not be evaluated."
       : subjectiveMetricResults.length === 0
@@ -2371,19 +2379,48 @@ export const buildEvalReport = (input: {
             }`
           : "Browser rounds after the baseline capture must keep a persisted prototype screenshot for delta judging."
   );
+  lookup.prototype_baseline_valid = checkResult(
+    "prototype_baseline_valid",
+    !browserSurfaceExpected
+      ? "not_applicable"
+      : input.round < 2
+        ? "pass"
+        : prototypeBaselineValid
+          ? "pass"
+          : "fail",
+    !browserSurfaceExpected
+      ? "Prototype baseline validity is not required for non-browser targets."
+      : input.round < 2
+        ? "Prototype baseline validity is optional on the first browser round."
+        : prototypeBaselineValid
+          ? `A valid initial prototype baseline is available${
+              prototypeBaselineSourcePhase ? ` from '${prototypeBaselineSourcePhase}'` : ""
+            }${
+              typeof prototypeBaselineSourceRound === "number"
+                ? ` (source round ${prototypeBaselineSourceRound}).`
+                : "."
+            }`
+          : prototypeBaselinePresent
+            ? `A baseline file exists${
+                prototypeBaselineSourcePhase ? ` from '${prototypeBaselineSourcePhase}'` : ""
+              }, but that source phase does not count as a valid initial prototype baseline.`
+            : "Browser rounds after the initial prototype must keep a valid initial baseline before prototype_delta can pass."
+  );
   lookup.prototype_delta_present = checkResult(
     "prototype_delta_present",
     !browserSurfaceExpected
       ? "not_applicable"
       : !prototypeDeltaRequired
         ? "pass"
-        : prototypeDeltaPassed
+        : prototypeBaselineValid && prototypeDeltaPassed
           ? "pass"
           : "fail",
     !browserSurfaceExpected
       ? "Prototype delta scoring is not required for non-browser targets."
       : !prototypeDeltaRequired
         ? "Prototype delta scoring is deferred until a follow-up browser round exists."
+        : !prototypeBaselineValid
+          ? "Prototype delta cannot pass until a valid initial prototype baseline is available."
         : prototypeDeltaMetric
           ? prototypeDeltaMetric.status === "pass"
             ? "The current browser surface materially improves beyond the stored baseline."
@@ -2407,6 +2444,7 @@ export const buildEvalReport = (input: {
           "subjective_thresholds_met",
           "visual_evidence_present",
           "prototype_baseline_present",
+          "prototype_baseline_valid",
           "prototype_delta_present"
         ]
       : [])
@@ -2631,7 +2669,12 @@ export const buildEvalReport = (input: {
       `Release score is capped at 0.790 because required subjective metrics still fail: ${failedRequiredSubjectiveMetrics.map((metric) => metric.metric_id).join(", ")}.`
     );
   }
-  if (browserSurfaceExpected && prototypeDeltaRequired && !prototypeDeltaPassed) {
+  if (browserSurfaceExpected && prototypeDeltaRequired && !prototypeBaselineValid) {
+    release_score = Math.min(release_score, 0.84);
+    releaseScoreCapDetails.push(
+      "Release score is capped at 0.840 because no valid initial prototype baseline was available for prototype_delta judging."
+    );
+  } else if (browserSurfaceExpected && prototypeDeltaRequired && !prototypeDeltaPassed) {
     release_score = Math.min(release_score, 0.84);
     releaseScoreCapDetails.push(
       "Release score is capped at 0.840 because the current browser surface does not yet materially improve beyond the stored baseline."

@@ -1866,96 +1866,56 @@ const resolvedJourneyTarget = (target, stepValue) =>
     ? new URL(stepValue.trim(), target).toString()
     : target;
 
-const executeBaselineJourney = async ({ page, target, steps, timeoutMs }) => {
+const executeBestEffortBaselineJourney = async ({ page, target, steps, timeoutMs }) => {
+  await page.goto(target, {
+    waitUntil: "networkidle",
+    timeout: timeoutMs
+  });
   for (const step of steps) {
     const stepTimeout = step.timeout_ms ?? timeoutMs;
-    switch (step.action) {
-      case "goto":
-        await page.goto(resolvedJourneyTarget(target, step.value), {
-          waitUntil: "networkidle",
-          timeout: stepTimeout
-        });
-        break;
-      case "click":
-        await page.locator(step.selector ?? "").click({ timeout: stepTimeout });
-        break;
-      case "fill":
-        await page.locator(step.selector ?? "").fill(step.value ?? "", {
-          timeout: stepTimeout
-        });
-        break;
-      case "press":
-        await page.locator(step.selector ?? "").press(step.value ?? "", {
-          timeout: stepTimeout
-        });
-        break;
-      case "reload":
-        await page.reload({ waitUntil: "networkidle", timeout: stepTimeout });
-        break;
-      case "wait_for":
-        if (step.selector) {
-          await page.locator(step.selector).waitFor({
-            state: "visible",
+    try {
+      switch (step.action) {
+        case "goto":
+          await page.goto(resolvedJourneyTarget(target, step.value), {
+            waitUntil: "networkidle",
             timeout: stepTimeout
           });
-        } else {
-          await page.waitForTimeout(stepTimeout);
-        }
-        break;
-      case "assert_visible":
-        await page.locator(step.selector ?? "").waitFor({
-          state: "visible",
-          timeout: stepTimeout
-        });
-        break;
-      case "assert_not_visible":
-        await page.locator(step.selector ?? "").waitFor({
-          state: "hidden",
-          timeout: stepTimeout
-        });
-        break;
-      case "assert_text": {
-        const text =
-          step.selector
-            ? (await page.locator(step.selector).textContent({ timeout: stepTimeout })) ?? ""
-            : (await page.textContent("body")) ?? "";
-        if (!text.includes(step.value ?? "")) {
-          throw new Error(
-            "Baseline capture expected text '" +
-              (step.value ?? "") +
-              "' but it was not visible."
-          );
-        }
-        break;
+          break;
+        case "click":
+          await page.locator(step.selector ?? "").click({ timeout: stepTimeout });
+          break;
+        case "fill":
+          await page.locator(step.selector ?? "").fill(step.value ?? "", {
+            timeout: stepTimeout
+          });
+          break;
+        case "press":
+          await page.locator(step.selector ?? "").press(step.value ?? "", {
+            timeout: stepTimeout
+          });
+          break;
+        case "reload":
+          await page.reload({ waitUntil: "networkidle", timeout: stepTimeout });
+          break;
+        case "wait_for":
+          if (step.selector) {
+            await page.locator(step.selector).waitFor({
+              state: "visible",
+              timeout: stepTimeout
+            });
+          } else {
+            await page.waitForTimeout(stepTimeout);
+          }
+          break;
+        case "assert_visible":
+        case "assert_not_visible":
+        case "assert_text":
+        case "assert_value":
+        case "assert_url":
+          break;
       }
-      case "assert_value": {
-        const observedValue = await page
-          .locator(step.selector ?? "")
-          .inputValue({ timeout: stepTimeout });
-        if (observedValue !== (step.value ?? "")) {
-          throw new Error(
-            "Baseline capture expected input value '" +
-              (step.value ?? "") +
-              "' but observed '" +
-              observedValue +
-              "'."
-          );
-        }
-        break;
-      }
-      case "assert_url": {
-        const currentUrl = page.url();
-        if (!currentUrl.includes(step.value ?? "")) {
-          throw new Error(
-            "Baseline capture expected URL '" +
-              currentUrl +
-              "' to include '" +
-              (step.value ?? "") +
-              "'."
-          );
-        }
-        break;
-      }
+    } catch {
+      break;
     }
   }
 };
@@ -2002,15 +1962,7 @@ export const captureBrowserBaselineIfNeeded = async (options = {}) => {
     };
   }
 
-  const chromium = await loadChromium();
-  const executablePath = resolveBrowserExecutable(profile);
-  const browser = await chromium.launch({
-    headless: true,
-    ...(typeof executablePath === "string" && executablePath.length > 0
-      ? { executablePath }
-      : {})
-  });
-
+  let browser;
   let context;
   let traceStarted = false;
   const screenshotPath = join(runtimeDirectory, "baseline-home.png");
@@ -2018,6 +1970,14 @@ export const captureBrowserBaselineIfNeeded = async (options = {}) => {
   const timeoutMs = options.timeoutMs ?? baselineProbe?.timeout_ms ?? 30000;
 
   try {
+    const chromium = await loadChromium();
+    const executablePath = resolveBrowserExecutable(profile);
+    browser = await chromium.launch({
+      headless: true,
+      ...(typeof executablePath === "string" && executablePath.length > 0
+        ? { executablePath }
+        : {})
+    });
     context = await browser.newContext();
     await context.tracing.start({ screenshots: true, snapshots: true });
     traceStarted = true;
@@ -2027,7 +1987,7 @@ export const captureBrowserBaselineIfNeeded = async (options = {}) => {
       Array.isArray(baselineProbe.steps) &&
       baselineProbe.steps.length > 0
     ) {
-      await executeBaselineJourney({
+      await executeBestEffortBaselineJourney({
         page,
         target: baselineTarget,
         steps: baselineProbe.steps,
@@ -2082,7 +2042,9 @@ export const captureBrowserBaselineIfNeeded = async (options = {}) => {
         await context.close();
       } catch {}
     }
-    await browser.close();
+    if (browser) {
+      await browser.close();
+    }
   }
 };
 
@@ -2308,8 +2270,38 @@ const main = async () => {
   const previousEvalReport = previousRoundDirectory
     ? await readJsonIfExists(join(previousRoundDirectory, "eval_report.json"))
     : undefined;
+  const controllerMode =
+    process.env.HARNESS_CONTROLLER_MODE === "attached" ? "attached" : "detached";
+  const transportMode =
+    process.env.HARNESS_TRANSPORT === "codex-exec" ||
+    process.env.HARNESS_TRANSPORT === "current-thread" ||
+    process.env.HARNESS_TRANSPORT === "app-server"
+      ? process.env.HARNESS_TRANSPORT
+      : controllerMode === "attached"
+        ? "current-thread"
+        : "codex-exec";
   const baselineCapture =
-    packet.round === 1 ? await captureBrowserBaselineIfNeeded({ config }) : undefined;
+    packet.round === 1
+      ? transportMode === "codex-exec"
+        ? await captureBrowserBaselineIfNeeded({ config })
+        : (() => {
+            const baselineManifestPath = join(runtimePaths.runtimeDirectory, "product-baseline.json");
+            return readJsonIfExists(baselineManifestPath).then((baselineState) => ({
+              status: "skipped",
+              reason: "attached_transport_requires_pre_generator_capture",
+              source_phase:
+                typeof baselineState?.source_phase === "string" ? baselineState.source_phase : undefined,
+              baseline_path:
+                typeof baselineState?.baseline_path === "string"
+                  ? baselineState.baseline_path
+                  : undefined,
+              source_target:
+                typeof baselineState?.source_target === "string"
+                  ? baselineState.source_target
+                  : undefined
+            }));
+          })()
+      : undefined;
   const baselineCaptureNotePath = baselineCapture
     ? await writeArtifact(
         "pre-round-baseline.md",
@@ -2414,16 +2406,6 @@ const main = async () => {
     "generator-remediation-brief.json",
     JSON.stringify(remediationBrief, null, 2)
   );
-  const controllerMode =
-    process.env.HARNESS_CONTROLLER_MODE === "attached" ? "attached" : "detached";
-  const transportMode =
-    process.env.HARNESS_TRANSPORT === "codex-exec" ||
-    process.env.HARNESS_TRANSPORT === "current-thread" ||
-    process.env.HARNESS_TRANSPORT === "app-server"
-      ? process.env.HARNESS_TRANSPORT
-      : controllerMode === "attached"
-        ? "current-thread"
-        : "codex-exec";
   const attachedGeneratorTaskPath =
     typeof process.env.HARNESS_ATTACHED_GENERATOR_TASK_PATH === "string"
       ? process.env.HARNESS_ATTACHED_GENERATOR_TASK_PATH
@@ -3254,17 +3236,28 @@ const main = async () => {
   const currentScreenshotPath = visualEvidencePaths.find((path) => isScreenshotPath(path));
   const baselineManifestPath = join(runtimePaths.runtimeDirectory, "product-baseline.json");
   const baselineScreenshotPath = join(runtimePaths.runtimeDirectory, "baseline-home.png");
+  const validBaselineSourcePhases = new Set([
+    "pre_round_1",
+    "round_1_initial_prototype_fallback",
+    "operator_provided_baseline"
+  ]);
   let baselineState = await readJsonIfExists(baselineManifestPath);
-  if (browserSurfaceExpected && !baselineState && currentScreenshotPath) {
+  const baselinePresent =
+    typeof baselineState?.baseline_path === "string" && baselineState.baseline_path.length > 0;
+  const baselineValid =
+    baselinePresent &&
+    typeof baselineState?.source_phase === "string" &&
+    validBaselineSourcePhases.has(baselineState.source_phase);
+  if (
+    browserSurfaceExpected &&
+    packet.round === 1 &&
+    currentScreenshotPath &&
+    !baselineValid
+  ) {
     await copyFile(currentScreenshotPath, baselineScreenshotPath);
     baselineState = {
-      source_round: typeof packet.round === "number" ? packet.round : 1,
-      source_phase:
-        typeof packet.round === "number"
-          ? packet.round === 1
-            ? "round_1_post_mutation_fallback"
-            : "post_round_" + packet.round + "_grade_round"
-          : "post_round_1_grade_round",
+      source_round: 1,
+      source_phase: "round_1_initial_prototype_fallback",
       source_path: currentScreenshotPath,
       baseline_path: baselineScreenshotPath,
       created_at: new Date().toISOString()
@@ -3277,11 +3270,17 @@ const main = async () => {
     typeof baselineState?.source_phase === "string" ? baselineState.source_phase : undefined;
   const baselineSourceRound =
     typeof baselineState?.source_round === "number" ? baselineState.source_round : undefined;
+  const prototypeBaselinePresent = Boolean(baselineScreenshotReference);
+  const prototypeBaselineValid =
+    prototypeBaselinePresent &&
+    typeof baselineSourcePhase === "string" &&
+    validBaselineSourcePhases.has(baselineSourcePhase);
 
   const reviewOverridePath = process.env.HARNESS_SUBJECTIVE_REVIEW_PATH;
   let subjectiveReview;
   let judgeArtifacts = [];
   let subjectiveJudgeDisabled = false;
+  let subjectiveJudgeUnavailable = false;
   let subjectiveJudgeFailureReason;
   if (subjectiveMetrics.length > 0) {
     if (reviewOverridePath) {
@@ -3376,6 +3375,7 @@ const main = async () => {
         !judgeExecution.responseWritten ||
         !subjectiveReview
       ) {
+        subjectiveJudgeUnavailable = true;
         subjectiveJudgeDisabled = judgeExecution.disabled === true;
         subjectiveJudgeFailureReason = judgeExecution.disabled
           ? judgeExecution.error ??
@@ -3433,6 +3433,22 @@ const main = async () => {
       required: metric.required ?? true
     };
   });
+  const prototypeDeltaMetricIndex = subjectiveMetricResults.findIndex(
+    (metric) => metric.metric_id === "prototype_delta"
+  );
+  const prototypeDeltaBaselineRequired = browserSurfaceExpected && packet.round >= 2;
+  if (prototypeDeltaMetricIndex >= 0 && prototypeDeltaBaselineRequired && !prototypeBaselineValid) {
+    subjectiveMetricResults[prototypeDeltaMetricIndex] = {
+      ...subjectiveMetricResults[prototypeDeltaMetricIndex],
+      score_out_of_ten: 0,
+      status: "fail",
+      rationale:
+        "No valid initial prototype baseline was available, so prototype_delta failed closed.",
+      recommended_changes: [
+        "Capture or provide a valid initial prototype baseline before judging prototype_delta again."
+      ]
+    };
+  }
 
   const weightedSubjectiveScore =
     subjectiveMetricResults.length > 0
@@ -3469,6 +3485,7 @@ const main = async () => {
           baseline_screenshot_path: baselineScreenshotReference,
           baseline_source_phase: baselineSourcePhase,
           baseline_source_round: baselineSourceRound,
+          prototype_baseline_valid: prototypeBaselineValid,
           visual_evidence_paths: visualEvidencePaths.map((path) =>
             path.startsWith(runtimePaths.roundDirectory) ? relativeToRound(path) : path
           )
@@ -3525,7 +3542,8 @@ const main = async () => {
   );
   const prototypeDeltaRequired = browserSurfaceExpected && packet.round >= 2;
   const prototypeDeltaPassed =
-    !prototypeDeltaRequired || prototypeDeltaMetric?.status === "pass";
+    !prototypeDeltaRequired ||
+    (prototypeBaselineValid && prototypeDeltaMetric?.status === "pass");
   const uncappedReleaseScore =
     subjectiveAverageNormalized === undefined
       ? browserSurfaceExpected
@@ -3556,13 +3574,18 @@ const main = async () => {
         "."
     );
   }
-  if (browserSurfaceExpected && prototypeDeltaRequired && !prototypeDeltaPassed) {
+  if (browserSurfaceExpected && prototypeDeltaRequired && !prototypeBaselineValid) {
+    releaseScore = Math.min(releaseScore, 0.84);
+    releaseScoreCapReasons.push(
+      "Browser release score is capped at 0.840 because no valid initial prototype baseline was available for prototype_delta judging."
+    );
+  } else if (browserSurfaceExpected && prototypeDeltaRequired && !prototypeDeltaPassed) {
     releaseScore = Math.min(releaseScore, 0.84);
     releaseScoreCapReasons.push(
       "Browser release score is capped at 0.840 because prototype_delta did not show a material improvement beyond the stored baseline."
     );
   }
-  if (subjectiveJudgeDisabled && subjectiveJudgeFailureReason) {
+  if (subjectiveJudgeUnavailable && subjectiveJudgeFailureReason) {
     releaseScoreCapReasons.push(
       "Subjective judge fallback was used: " + subjectiveJudgeFailureReason
     );
@@ -3596,6 +3619,7 @@ const main = async () => {
       "Baseline screenshot: " + String(baselineScreenshotReference ?? "none"),
       "Baseline source phase: " + String(baselineSourcePhase ?? "none"),
       "Baseline source round: " + String(baselineSourceRound ?? "none"),
+      "Baseline valid: " + String(prototypeBaselineValid),
       "Uncapped release score: " + String(uncappedReleaseScore),
       "Release score cap: " + String(releaseScoreCap ?? "none"),
       "Release score cap reasons: " + (releaseScoreCapReasons.join(" | ") || "none"),
@@ -3606,7 +3630,7 @@ const main = async () => {
   );
 
   const findings = [
-    ...(subjectiveJudgeDisabled
+    ...(subjectiveJudgeUnavailable
       ? [
           "Status: needs_evaluator. Subjective quality judge could not complete scoring: " +
             (subjectiveJudgeFailureReason ?? "no judge failure reason was recorded")
@@ -3681,14 +3705,19 @@ const main = async () => {
       subjective_metric_count: subjectiveMetrics.length,
       subjective_quality_present: subjectiveMetricResults.length > 0,
       subjective_judge_disabled: subjectiveJudgeDisabled,
+      subjective_judge_unavailable: subjectiveJudgeUnavailable,
       ...(subjectiveJudgeFailureReason
-        ? { subjective_judge_failure_reason: subjectiveJudgeFailureReason }
+        ? {
+            subjective_judge_failure_reason: subjectiveJudgeFailureReason,
+            subjective_judge_unavailable_reason: subjectiveJudgeFailureReason
+          }
         : {}),
       ...(process.env.HARNESS_TRANSPORT
         ? { subjective_judge_transport_mode: process.env.HARNESS_TRANSPORT }
         : {}),
       visual_evidence_present: visualEvidencePaths.length > 0,
-      prototype_baseline_present: Boolean(baselineScreenshotReference),
+      prototype_baseline_present: prototypeBaselinePresent,
+      prototype_baseline_valid: prototypeBaselineValid,
       ...(baselineSourcePhase ? { prototype_baseline_source_phase: baselineSourcePhase } : {}),
       ...(typeof baselineSourceRound === "number"
         ? { prototype_baseline_source_round: baselineSourceRound }

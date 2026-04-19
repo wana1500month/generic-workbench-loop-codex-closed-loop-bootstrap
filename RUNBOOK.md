@@ -583,10 +583,13 @@ Proof-side partial credit is intentionally conservative now: verification criter
 
 The read-only `subjective-quality-judge` is now explicitly allowed under `current-thread` and `app-server` transports when it runs as a non-mutating judge, so strict browser scoring can still complete on the Codex app foreground surface.
 
-Bootstrap `apply_change` now attempts a best-effort `pre_round_1` browser baseline capture before any round-1 mutation when a browser target is already reachable, and later fallback baseline manifests record whether they were captured pre-round or only after a mutation.
+Attached `current-thread` / `app-server` rounds now try that best-effort browser baseline capture from the controller before the attached generator mutates round 1, while detached `codex-exec` bootstrap adapters still do it inside generated `apply_change`.
+
+Bootstrap baseline manifests now distinguish `prototype_baseline_present` from `prototype_baseline_valid`. Only `pre_round_1`, `round_1_initial_prototype_fallback`, and `operator_provided_baseline` count as valid initial baselines; round 2 or later no longer invent a new fallback baseline, and `prototype_delta` fails closed when no valid initial baseline exists.
 
 Generated `grade_round` artifacts now align their own score with browser release-score caps and persist `uncapped_release_score`, `release_score_cap`, and `release_score_cap_reasons` metadata for debugging.
 
 ## Additional validation
 
 - `npm run validate:end-pass-qa`: proves that round contracts are written, release-gate probes are surfaced, and dimension floors both pass and fail in deterministic fixtures.
+- `npm run validate:baseline-validity`: proves that baseline state distinguishes presence from validity, that round 1 can mint the only allowed fallback baseline, that round 2+ cannot silently replace an invalid late baseline, and that `prototype_delta` fails closed when no valid initial baseline exists.

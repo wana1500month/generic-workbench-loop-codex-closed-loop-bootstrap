@@ -110,7 +110,7 @@
         "browser"
       ],
       "check_ids": [
-        "prototype_baseline_present",
+        "prototype_baseline_valid",
         "prototype_delta_present"
       ]
     },
