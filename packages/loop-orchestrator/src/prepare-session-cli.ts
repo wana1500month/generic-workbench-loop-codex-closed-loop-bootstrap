@@ -177,7 +177,12 @@ const main = async (): Promise<void> => {
           session_status_events_path: result.sessionStatusEventsPath,
           session_stream_path: result.sessionStreamPath,
           operator_surface_path: result.operatorSurfacePath,
-          execution_plan_path: result.executionPlanPath
+          execution_plan_path: result.executionPlanPath,
+          ...(result.adapterPath ? { adapter_path: result.adapterPath } : {}),
+          ...(result.rubricPath ? { rubric_path: result.rubricPath } : {}),
+          ...(result.evaluatorProfilePath
+            ? { evaluator_profile_path: result.evaluatorProfilePath }
+            : {})
         },
         null,
         2
@@ -192,6 +197,15 @@ const main = async (): Promise<void> => {
   console.log(`Session status: ${result.sessionStatusPath}`);
   console.log(`Operator surface: ${result.operatorSurfacePath}`);
   console.log(`Execution plan: ${result.executionPlanPath}`);
+  if (result.adapterPath) {
+    console.log(`Prepared adapter: ${result.adapterPath}`);
+  }
+  if (result.rubricPath) {
+    console.log(`Prepared rubric: ${result.rubricPath}`);
+  }
+  if (result.evaluatorProfilePath) {
+    console.log(`Prepared evaluator bundle: ${result.evaluatorProfilePath}`);
+  }
 };
 
 main().catch((error: unknown) => {

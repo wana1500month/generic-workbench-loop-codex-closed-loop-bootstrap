@@ -9,7 +9,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `IDEA.md`: the current harness goal or refactor request
 - `npm run loop:intent -- "<user request>"`: generic front door that separates product build, harness design, run control, run resume, and evaluator tuning before work starts
 - `npm run loop:intake -- "<user request>"`: staged intake gate that returns product questions, execution questions, or a `ready_for_prepare` handoff into session artifact generation plus the explicit `ready_to_start` gate
-- `npm run loop:prepare -- --json`: writes the session-owned `build-brief`, `run-contract`, `operator-surface`, `session-status`, `session-stream`, and execution-plan artifacts without starting the loop
+- `npm run loop:prepare -- --json`: writes the session-owned `build-brief`, `run-contract`, `operator-surface`, `session-status`, `session-stream`, and execution-plan artifacts without starting the loop. For product-family sessions it now also persists the prepared adapter/rubric/evaluator bundle identity into `runtime/run-contract.json`, and when no explicit rubric is supplied it refreshes the generated bundle before the run reaches `ready_to_start`.
 - `npm run loop:bootstrap`: writes `IDEA.md`, `intake.json`, `feature_list.generated.json`, `progress.md`, `progress.jsonl`, `done_when.md`, `init.sh`, `adapter.generated.json`, `rubric.generated.json`, and `verification-profile.generated.json`, then uses the generated rubric/bundle on the first run unless the CLI explicitly overrides them. Bootstrap now also captures deeper quality intent such as must-not-break flows, failure expectations, continuity boundaries, reference signals, non-goals, probe hints, and optional user-authored subjective metrics with minimum `x/10` thresholds.
 - `npm run reference-adapter:scaffold-quality-lane -- --profile <bundle.json> --out <strict-bundle.json>`: derives a stricter companion evaluator lane from an existing bundle without demanding release assertions that the source bundle does not actually configure
 - `SPEC.md`: stable harness scope
@@ -549,6 +549,7 @@ For concurrency validation, launch `loop:single` multiple times in parallel and 
 - `target_family` and `evaluator_profile_path`: the resolved bundle selection that governed the run
 - `validation_lane`: whether the selected bundle ran in a deterministic semantic lane or an environment-integration lane
 - adapter-free default runs now resolve to `target_family = "generic-core"` and `validation_lane = "deterministic_semantic"`
+- prepared product sessions now fail closed if `loop:start:codex` cannot restore the persisted product adapter/evaluator identity, instead of silently falling back to `generic-core`
 - explicit `--evaluator-profile` runs now inherit `target_family` and `validation_lane` from bundle metadata when the profile publishes those fields
 - `round_history[].target_family` and `round_history[].validation_lane`: per-attempt machine-readable bundle semantics for audit, resume migration review, and validator assertions
 - `round_history[].round_stop_reason`: per-attempt machine-readable terminal outcome (`continue`, `target_reached`, `contract_completed`, `environment_blocked`, `adapter_contract_invalid`, or other honest controller stops)

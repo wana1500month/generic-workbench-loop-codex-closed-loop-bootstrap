@@ -1,6 +1,14 @@
 import { mkdir, readdir } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
+import {
+  buildBootstrapAnswersFromSeed,
+  createBootstrapArtifactPaths,
+  normalizeBootstrapTargetFamily,
+  scaffoldBootstrapArtifacts,
+  type BootstrapCustomQualityMetric,
+  type BootstrapProbeHints
+} from "./bootstrap.js";
 import {
   ensureDurableMemoryArtifacts,
   loadDurableMemoryContext
@@ -9,6 +17,7 @@ import {
   loadJson,
   loadJsonIfExists,
   nextRunId,
+  pathExists,
   repoRoot,
   writeJson
 } from "./file-system.js";
@@ -26,10 +35,12 @@ import {
   type PreparedSessionSeed,
   writeSessionPreparationArtifacts
 } from "./session-artifacts.js";
+import { resolveTargetFamilySelection } from "./profile-selection.js";
 import type {
   ControllerMode,
   LoopRubric,
   OperatorWorkspaceSurface,
+  SessionRunContractArtifact,
   SessionStatusArtifact,
   TargetFamily,
   ThreadBindingState,
@@ -41,6 +52,39 @@ type SessionIntakeSnapshot = {
   target_family?: TargetFamily;
   target_score?: number;
   max_rounds?: number;
+  product_title?: string;
+  product_summary?: string;
+  target_users?: string[];
+  core_features?: string[];
+  reference_apps?: string[];
+  finish_line?: string;
+  goal_level?: "prototype" | "mvp" | "usable" | "production-like" | "custom";
+  target_root?: string;
+  framework_hint?: string;
+  package_manager?: string;
+  run_command?: string;
+  check_command?: string;
+  ready_url?: string;
+  app_url?: string;
+  health_url?: string;
+  api_base_url?: string;
+  constraints?: string[];
+  quality_bar?: string[];
+  must_not_break?: string[];
+  failure_expectations?: string[];
+  continuity_boundaries?: string[];
+  reference_signals?: string[];
+  non_goals?: string[];
+  probe_hints?: BootstrapProbeHints;
+  custom_quality_metrics?: Array<{
+    metric_id: string;
+    label: string;
+    description: string;
+    minimum_score_out_of_ten: number;
+    required?: boolean;
+    weight?: number;
+  }>;
+  notes?: string;
 };
 
 export interface PrepareSessionResult {
@@ -54,6 +98,9 @@ export interface PrepareSessionResult {
   sessionStreamPath: string;
   operatorSurfacePath: string;
   executionPlanPath: string;
+  adapterPath?: string;
+  rubricPath?: string;
+  evaluatorProfilePath?: string;
 }
 
 export interface ReadyToStartSessionMarker {
@@ -209,20 +256,129 @@ export const prepareSessionRun = async (input: {
   const intake = await loadJsonIfExists<SessionIntakeSnapshot>(
     join(durableMemory.rootDirectory, "intake.json")
   );
-  const rubric = await loadJson<LoopRubric>(
-    resolve(input.rubricPath ?? defaultRubricPath)
-  );
+  const resolvedTargetFamily = input.targetFamily ?? intake?.target_family;
+  const targetScore =
+    input.targetScore ?? intake?.target_score ?? durableMemory.context.targetScore;
+  const maxRounds =
+    input.maxRounds ??
+    intake?.max_rounds ??
+    durableMemory.context.maxRounds ??
+    3;
+  const bootstrapTargetFamily = normalizeBootstrapTargetFamily(resolvedTargetFamily);
+  const bootstrapPaths = createBootstrapArtifactPaths(durableMemory.rootDirectory);
+  let preparedValidationBundle:
+    | SessionRunContractArtifact["validation_strategy"]["validation_bundle"]
+    | undefined;
+  let resolvedRubricPath = resolve(input.rubricPath ?? defaultRubricPath);
+
+  if (bootstrapTargetFamily && input.rubricPath === undefined) {
+    if (!intake?.target_root?.trim()) {
+      throw new Error(
+        "Prepared product session is missing intake.target_root. Refusing to scaffold a product adapter bundle without execution target identity."
+      );
+    }
+
+    const bootstrapResult = await scaffoldBootstrapArtifacts(
+      buildBootstrapAnswersFromSeed({
+        title: intake?.product_title ?? durableMemory.context.title,
+        summary: intake?.product_summary ?? durableMemory.context.summary,
+        targetUsers: intake?.target_users ?? durableMemory.context.targetUsers,
+        coreFeatures: intake?.core_features ?? durableMemory.context.coreFeatures,
+        referenceApps: intake?.reference_apps ?? [],
+        finishLine:
+          intake?.finish_line ??
+          durableMemory.context.finishLine ??
+          durableMemory.context.qualityBar[0],
+        targetFamily: bootstrapTargetFamily,
+        goalLevel: intake?.goal_level,
+        targetScore,
+        maxRounds,
+        targetRoot: intake.target_root,
+        projectMode: intake.project_mode,
+        frameworkHint: intake.framework_hint,
+        packageManager: intake.package_manager,
+        runCommand: intake.run_command,
+        checkCommand: intake.check_command,
+        readyUrl: intake.ready_url,
+        appUrl: intake.app_url,
+        healthUrl: intake.health_url,
+        apiBaseUrl: intake.api_base_url,
+        constraints: intake?.constraints ?? durableMemory.context.constraints,
+        qualityBar: intake?.quality_bar ?? durableMemory.context.qualityBar,
+        notes: intake?.notes,
+        mustNotBreak: intake?.must_not_break ?? durableMemory.context.mustNotBreak,
+        failureExpectations: intake?.failure_expectations,
+        continuityBoundaries: intake?.continuity_boundaries,
+        referenceSignals: intake?.reference_signals,
+        nonGoals: intake?.non_goals,
+        probeHints: intake?.probe_hints,
+        customQualityMetrics: intake?.custom_quality_metrics?.map(
+          (metric): BootstrapCustomQualityMetric => ({
+            metricId: metric.metric_id,
+            label: metric.label,
+            description: metric.description,
+            minimumScoreOutOfTen: metric.minimum_score_out_of_ten,
+            ...(metric.required !== undefined ? { required: metric.required } : {}),
+            ...(metric.weight !== undefined ? { weight: metric.weight } : {})
+          })
+        )
+      }),
+      bootstrapPaths
+    );
+    const targetFamilySelection = resolveTargetFamilySelection(bootstrapResult.targetFamily);
+    resolvedRubricPath = resolve(bootstrapResult.rubricPath);
+    preparedValidationBundle = {
+      target_family: bootstrapResult.targetFamily,
+      ...(targetFamilySelection?.validation_lane
+        ? { validation_lane: targetFamilySelection.validation_lane }
+        : {}),
+      adapter_contract_path: resolve(bootstrapResult.adapterPath),
+      rubric_path: resolve(bootstrapResult.rubricPath),
+      evaluator_profile_path: resolve(bootstrapResult.evaluatorProfilePath)
+    };
+  }
+
+  const rubric = await loadJson<LoopRubric>(resolvedRubricPath);
   if (input.targetScore !== undefined) {
     rubric.target_total_score = input.targetScore;
   } else if (intake?.target_score !== undefined) {
     rubric.target_total_score = intake.target_score;
   }
 
-  const maxRounds =
-    input.maxRounds ??
-    intake?.max_rounds ??
-    durableMemory.context.maxRounds ??
-    3;
+  if (bootstrapTargetFamily && !preparedValidationBundle) {
+    const targetFamilySelection = resolveTargetFamilySelection(bootstrapTargetFamily);
+    const [hasGeneratedAdapter, hasGeneratedProfile] = await Promise.all([
+      pathExists(bootstrapPaths.adapterPath),
+      pathExists(bootstrapPaths.generatedVerificationProfilePath)
+    ]);
+    preparedValidationBundle = {
+      target_family: targetFamilySelection?.target_family ?? bootstrapTargetFamily,
+      ...(targetFamilySelection?.validation_lane
+        ? { validation_lane: targetFamilySelection.validation_lane }
+        : {}),
+      ...(hasGeneratedAdapter
+        ? { adapter_contract_path: resolve(bootstrapPaths.adapterPath) }
+        : {}),
+      rubric_path: resolvedRubricPath,
+      ...(rubric.evaluator_profile_path
+        ? {
+            evaluator_profile_path: resolve(
+              dirname(resolvedRubricPath),
+              rubric.evaluator_profile_path
+            )
+          }
+        : hasGeneratedProfile
+          ? {
+              evaluator_profile_path: resolve(
+                bootstrapPaths.generatedVerificationProfilePath
+              )
+            }
+          : targetFamilySelection?.profile_path
+            ? { evaluator_profile_path: resolve(targetFamilySelection.profile_path) }
+            : {})
+    };
+  }
+
   const scenario = buildScenarioFromIdea(idea);
   const plan = buildLoopPlan({
     scenario,
@@ -266,7 +422,10 @@ export const prepareSessionRun = async (input: {
     scenario,
     plan,
     workspaceMode,
-    targetFamily: input.targetFamily ?? intake?.target_family
+    targetFamily: resolvedTargetFamily,
+    ...(preparedValidationBundle
+      ? { validationBundle: preparedValidationBundle }
+      : {})
   });
 
   const operatorSurface = buildOperatorSurfaceArtifact({
@@ -317,6 +476,15 @@ export const prepareSessionRun = async (input: {
     sessionStatusEventsPath: runtimePaths.sessionStatusEventsPath,
     sessionStreamPath: runtimePaths.sessionStreamPath,
     operatorSurfacePath: runtimePaths.operatorSurfacePath,
-    executionPlanPath
+    executionPlanPath,
+    ...(preparedValidationBundle?.adapter_contract_path
+      ? { adapterPath: preparedValidationBundle.adapter_contract_path }
+      : {}),
+    ...(preparedValidationBundle?.rubric_path
+      ? { rubricPath: preparedValidationBundle.rubric_path }
+      : {}),
+    ...(preparedValidationBundle?.evaluator_profile_path
+      ? { evaluatorProfilePath: preparedValidationBundle.evaluator_profile_path }
+      : {})
   };
 };

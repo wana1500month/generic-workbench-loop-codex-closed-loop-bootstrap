@@ -422,6 +422,9 @@ Validation:
   discovery.
 - `npm run validate:session-preparation-artifacts` proves the emitted field
   set, path contract, execution-plan scaffold, and refresh behavior.
+- `npm run validate:prepared-product-start-bundle` proves a `ready_to_start`
+  product session carries its adapter/rubric/evaluator identity into
+  `loop:start:codex` and refuses `generic-core` fallback.
 - `npm run validate:loop-ui-session-status` proves the runtime dashboard
   prefers `runtime/session-status.json` over stale operator-surface session
   projections.

@@ -1502,6 +1502,13 @@ export interface SessionRunContractArtifact {
     iteration_mode: "patch_oriented";
     evaluator_mode: "risk_triggered";
     review_surface: "codex_review_pane";
+    validation_bundle?: {
+      target_family: TargetFamily;
+      validation_lane?: ValidationLane;
+      adapter_contract_path?: string;
+      rubric_path?: string;
+      evaluator_profile_path?: string;
+    };
   };
   review_boundaries: SessionReviewBoundary[];
   approval_boundaries: SessionApprovalBoundary[];

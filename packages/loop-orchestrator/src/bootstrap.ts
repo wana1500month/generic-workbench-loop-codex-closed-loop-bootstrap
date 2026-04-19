@@ -84,6 +84,39 @@ export type BootstrapAnswers = {
   customQualityMetrics?: BootstrapCustomQualityMetric[];
 };
 
+export type BootstrapSeed = {
+  title: string;
+  summary: string;
+  targetUsers?: string[];
+  coreFeatures?: string[];
+  referenceApps?: string[];
+  finishLine?: string;
+  targetFamily: BootstrapTargetFamily;
+  goalLevel?: GoalLevel;
+  targetScore?: number;
+  maxRounds?: number;
+  targetRoot?: string;
+  projectMode?: "new" | "existing";
+  frameworkHint?: string;
+  packageManager?: string;
+  runCommand?: string;
+  checkCommand?: string;
+  readyUrl?: string;
+  appUrl?: string;
+  healthUrl?: string;
+  apiBaseUrl?: string;
+  constraints?: string[];
+  qualityBar?: string[];
+  notes?: string;
+  mustNotBreak?: string[];
+  failureExpectations?: string[];
+  continuityBoundaries?: string[];
+  referenceSignals?: string[];
+  nonGoals?: string[];
+  probeHints?: BootstrapProbeHints;
+  customQualityMetrics?: BootstrapCustomQualityMetric[];
+};
+
 export type BootstrapResult = {
   adapterPath: string;
   rubricPath: string;
@@ -297,6 +330,18 @@ const inferGoalLevelFromTargetScore = (targetScore: number): GoalLevel => {
   return "custom";
 };
 
+export const normalizeBootstrapTargetFamily = (
+  targetFamily: SupportedTargetFamily | undefined
+): BootstrapTargetFamily | undefined => {
+  if (!targetFamily || targetFamily === "generic-core") {
+    return undefined;
+  }
+  if (targetFamily === "editor-app") {
+    return "browser-editor";
+  }
+  return targetFamily;
+};
+
 const inferPackageManagerFromCommand = (command: string): string => {
   const normalized = command.trim().toLowerCase();
   if (normalized.startsWith("pnpm ")) {
@@ -421,6 +466,98 @@ const defaultApiBaseUrlForFamily = (
   targetFamily === "dashboard"
     ? "http://127.0.0.1:3000/api"
     : undefined;
+
+export const buildBootstrapAnswersFromSeed = (
+  seed: BootstrapSeed
+): BootstrapAnswers => {
+  const normalizedTitle = seed.title.trim() || "Untitled Product";
+  const targetScore = seed.targetScore ?? goalPresets.usable;
+  const goalLevel = seed.goalLevel ?? inferGoalLevelFromTargetScore(targetScore);
+  const maxRounds = seed.maxRounds ?? 3;
+  const projectMode = seed.projectMode ?? "existing";
+  const targetRoot = resolveUserPath(
+    seed.targetRoot ?? "",
+    defaultRootForTitle(normalizedTitle)
+  );
+  const runCommand =
+    seed.runCommand?.trim() ||
+    defaultRunCommandForBootstrap(seed.targetFamily, projectMode);
+  const packageManager =
+    seed.packageManager?.trim() || inferPackageManagerFromCommand(runCommand);
+  const checkCommand =
+    seed.checkCommand?.trim() ||
+    (packageManager === "pnpm" ? "pnpm test" : "npm test");
+  const frameworkHint =
+    seed.frameworkHint?.trim() || defaultFrameworkHintForFamily(seed.targetFamily);
+  const appUrl = seed.appUrl?.trim() || defaultAppUrlForFamily(seed.targetFamily);
+  const healthUrl =
+    seed.healthUrl?.trim() || defaultHealthUrlForFamily(seed.targetFamily);
+  const apiBaseUrl =
+    seed.apiBaseUrl?.trim() || defaultApiBaseUrlForFamily(seed.targetFamily);
+  const readyUrl =
+    seed.readyUrl?.trim() ||
+    appUrl ||
+    healthUrl ||
+    defaultReadyUrlForFamily(seed.targetFamily);
+  const qualityBar = uniqueList(
+    (seed.qualityBar ?? []).filter((entry) => entry.trim().length > 0)
+  );
+  const finishLine =
+    seed.finishLine?.trim() ||
+    qualityBar[0] ||
+    `${normalizedTitle} meets the requested finish line.`;
+  const probeHints = nonEmptyProbeHints(seed.probeHints);
+
+  return {
+    title: normalizedTitle,
+    summary: seed.summary.trim() || finishLine,
+    targetUsers: uniqueList(seed.targetUsers ?? []),
+    coreFeatures: uniqueList(seed.coreFeatures ?? []),
+    referenceApps: uniqueList(seed.referenceApps ?? []),
+    finishLine,
+    targetFamily: seed.targetFamily,
+    goalLevel,
+    targetScore,
+    maxRounds,
+    targetRoot,
+    projectMode,
+    frameworkHint,
+    packageManager,
+    runCommand,
+    checkCommand,
+    readyUrl,
+    ...(appUrl ? { appUrl } : {}),
+    ...(healthUrl ? { healthUrl } : {}),
+    ...(apiBaseUrl ? { apiBaseUrl } : {}),
+    constraints: uniqueList(seed.constraints ?? []),
+    qualityBar,
+    ...(seed.notes?.trim() ? { notes: seed.notes.trim() } : {}),
+    ...(seed.mustNotBreak?.length ? { mustNotBreak: uniqueList(seed.mustNotBreak) } : {}),
+    ...(seed.failureExpectations?.length
+      ? { failureExpectations: uniqueList(seed.failureExpectations) }
+      : {}),
+    ...(seed.continuityBoundaries?.length
+      ? { continuityBoundaries: uniqueList(seed.continuityBoundaries) }
+      : {}),
+    ...(seed.referenceSignals?.length
+      ? { referenceSignals: uniqueList(seed.referenceSignals) }
+      : {}),
+    ...(seed.nonGoals?.length ? { nonGoals: uniqueList(seed.nonGoals) } : {}),
+    ...(probeHints ? { probeHints } : {}),
+    ...(seed.customQualityMetrics?.length
+      ? {
+          customQualityMetrics: seed.customQualityMetrics.map((metric) => ({
+            metricId: metric.metricId,
+            label: metric.label,
+            description: metric.description,
+            minimumScoreOutOfTen: metric.minimumScoreOutOfTen,
+            ...(metric.required !== undefined ? { required: metric.required } : {}),
+            ...(metric.weight !== undefined ? { weight: metric.weight } : {})
+          }))
+        }
+      : {})
+  };
+};
 
 const defaultStrictPortBrowserRunCommand =
   "npm run dev -- --host 127.0.0.1 --port 3000 --strictPort";

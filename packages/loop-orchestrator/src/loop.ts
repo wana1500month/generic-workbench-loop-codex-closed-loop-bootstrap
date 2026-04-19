@@ -372,6 +372,9 @@ const resolveEvaluatorBundleSelection = (input: {
   explicitTargetFamily?: string;
   rubric?: LoopRubric;
   rubricPath?: string;
+  preparedEvaluatorProfilePath?: string;
+  preparedTargetFamily?: LoopRunSummary["target_family"];
+  preparedValidationLane?: LoopRunSummary["validation_lane"];
   summaryEvaluatorProfilePath?: string;
   summaryTargetFamily?: LoopRunSummary["target_family"];
   summaryValidationLane?: LoopRunSummary["validation_lane"];
@@ -404,6 +407,9 @@ const resolveEvaluatorBundleSelection = (input: {
     input.preferGenericCoreDefault &&
     !input.explicitEvaluatorProfilePath &&
     !input.explicitTargetFamily &&
+    !input.preparedEvaluatorProfilePath &&
+    !input.preparedTargetFamily &&
+    !input.preparedValidationLane &&
     !input.summaryEvaluatorProfilePath &&
     !input.summaryTargetFamily &&
     !input.summaryValidationLane;
@@ -412,6 +418,8 @@ const resolveEvaluatorBundleSelection = (input: {
     ? resolve(input.explicitEvaluatorProfilePath)
     : targetFamilySelection?.profile_path
       ? resolve(targetFamilySelection.profile_path)
+      : input.preparedEvaluatorProfilePath
+        ? resolve(input.preparedEvaluatorProfilePath)
       : useGenericCoreDefault
         ? genericCoreProfilePath
       : input.summaryEvaluatorProfilePath
@@ -424,10 +432,12 @@ const resolveEvaluatorBundleSelection = (input: {
     evaluatorProfilePath,
     targetFamily:
       targetFamilySelection?.target_family ??
+      input.preparedTargetFamily ??
       (useGenericCoreDefault ? "generic-core" : undefined) ??
       input.summaryTargetFamily,
     validationLane:
       targetFamilySelection?.validation_lane ??
+      input.preparedValidationLane ??
       (useGenericCoreDefault ? "deterministic_semantic" : undefined) ??
       input.summaryValidationLane,
     runtimeWarnings
@@ -1038,6 +1048,8 @@ export const runClosedLoop = async (input: {
   const preparedSessionSeed = restoredRun
     ? undefined
     : await loadPreparedSessionSeedForRun(runDirectory);
+  const preparedValidationBundle =
+    preparedSessionSeed?.runContract.validation_strategy.validation_bundle;
   const preservePreparedAttemptBudget =
     preparedSessionSeed !== undefined && singleForegroundSeedDefaults;
   const attemptBudget =
@@ -1058,7 +1070,11 @@ export const runClosedLoop = async (input: {
 
   const absoluteRubricPath = restoredRun
     ? join(runDirectory, "effective-rubric.json")
-    : resolve(input.rubricPath ?? defaultRubricPath);
+    : resolve(
+        input.rubricPath ??
+          preparedValidationBundle?.rubric_path ??
+          defaultRubricPath
+      );
   const hydratedRubric = restoredRun
     ? restoredRun.rubric
     : await loadJson<LoopRubric>(absoluteRubricPath);
@@ -1067,7 +1083,9 @@ export const runClosedLoop = async (input: {
   hydratedRubric.target_signal_requires_adapter ??= true;
   hydratedRubric.target_signal_requires_grade_score ??= true;
   let loadedAdapter = await loadAdapterContract(
-    input.adapterPath ?? restoredRun?.summary.adapter_contract_path
+    input.adapterPath ??
+      restoredRun?.summary.adapter_contract_path ??
+      preparedValidationBundle?.adapter_contract_path
   );
 
   const bundleSelection = resolveEvaluatorBundleSelection({
@@ -1075,6 +1093,10 @@ export const runClosedLoop = async (input: {
     explicitTargetFamily: input.targetFamily,
     rubric: hydratedRubric,
     rubricPath: absoluteRubricPath,
+    preparedEvaluatorProfilePath:
+      preparedValidationBundle?.evaluator_profile_path,
+    preparedTargetFamily: preparedValidationBundle?.target_family,
+    preparedValidationLane: preparedValidationBundle?.validation_lane,
     summaryEvaluatorProfilePath: restoredRun?.summary.evaluator_profile_path,
     summaryTargetFamily: restoredRun?.summary.target_family,
     summaryValidationLane: restoredRun?.summary.validation_lane,
@@ -1092,6 +1114,43 @@ export const runClosedLoop = async (input: {
     selectedVerificationProfile?.profile.validation_lane ??
     bundleSelection.validationLane ??
     restoredRun?.summary.validation_lane;
+  if (
+    preparedValidationBundle &&
+    preparedValidationBundle.target_family !== "generic-core"
+  ) {
+    const mismatches: string[] = [];
+    if (!loadedAdapter) {
+      mismatches.push(
+        "prepared session did not resolve an adapter contract path"
+      );
+    }
+    if (!selectedVerificationProfile) {
+      mismatches.push(
+        "prepared session did not resolve an evaluator profile path"
+      );
+    }
+    if (resolvedTargetFamily !== preparedValidationBundle.target_family) {
+      mismatches.push(
+        `resolved target family '${resolvedTargetFamily ?? "none"}' does not match prepared target family '${preparedValidationBundle.target_family}'`
+      );
+    }
+    if (
+      preparedValidationBundle.validation_lane &&
+      resolvedValidationLane !== preparedValidationBundle.validation_lane
+    ) {
+      mismatches.push(
+        `resolved validation lane '${resolvedValidationLane ?? "none"}' does not match prepared validation lane '${preparedValidationBundle.validation_lane}'`
+      );
+    }
+    if (mismatches.length > 0) {
+      throw new Error(
+        [
+          "Prepared product session could not restore its product validation bundle. Refusing to fall back to a generic or adapter-free start.",
+          ...mismatches.map((mismatch) => `- ${mismatch}`)
+        ].join("\n")
+      );
+    }
+  }
   if (loadedAdapter && selectedVerificationProfile) {
     loadedAdapter = {
       ...loadedAdapter,

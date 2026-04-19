@@ -58,13 +58,27 @@ type SessionIntakeSnapshot = {
   package_manager?: string;
   run_command?: string;
   check_command?: string;
+  ready_url?: string;
   app_url?: string;
   health_url?: string;
   api_base_url?: string;
   constraints?: string[];
   quality_bar?: string[];
+  must_not_break?: string[];
+  failure_expectations?: string[];
+  continuity_boundaries?: string[];
   reference_signals?: string[];
   non_goals?: string[];
+  probe_hints?: Record<string, string>;
+  custom_quality_metrics?: Array<{
+    metric_id: string;
+    label: string;
+    description: string;
+    minimum_score_out_of_ten: number;
+    required?: boolean;
+    weight?: number;
+  }>;
+  notes?: string;
 };
 
 type OpenQuestionArtifact = {
@@ -127,6 +141,7 @@ export interface SessionPreparationArtifactsInput {
   plan: LoopPlan;
   workspaceMode: OperatorWorkspaceSurface;
   targetFamily?: TargetFamily;
+  validationBundle?: SessionRunContractArtifact["validation_strategy"]["validation_bundle"];
   sessionStatus?: SessionLoopStatus;
   currentObjective?: string;
   steeringNotes?: string[];
@@ -1238,7 +1253,10 @@ export const writeSessionPreparationArtifacts = async (
     validation_strategy: {
       iteration_mode: "patch_oriented",
       evaluator_mode: "risk_triggered",
-      review_surface: "codex_review_pane"
+      review_surface: "codex_review_pane",
+      ...(input.validationBundle
+        ? { validation_bundle: input.validationBundle }
+        : {})
     },
     review_boundaries: sessionReviewBoundaries,
     approval_boundaries: sessionApprovalBoundaries,
