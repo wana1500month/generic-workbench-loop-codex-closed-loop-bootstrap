@@ -583,13 +583,13 @@ Proof-side partial credit is intentionally conservative now: verification criter
 
 The read-only `subjective-quality-judge` is now explicitly allowed under `current-thread` and `app-server` transports when it runs as a non-mutating judge, so strict browser scoring can still complete on the Codex app foreground surface.
 
-Attached `current-thread` / `app-server` rounds now try that best-effort browser baseline capture from the controller before the attached generator mutates round 1, while detached `codex-exec` bootstrap adapters still do it inside generated `apply_change`.
+Attached `current-thread` / `app-server` rounds now try that best-effort browser baseline capture from the controller before the attached generator mutates round 1, while detached `codex-exec` bootstrap adapters still do it inside generated `apply_change`. Once an attached generator checkpoint or response already exists for round 1, that pre-generator baseline window is treated as closed and the controller will not mint a new `pre_round_1` baseline on resume.
 
-Bootstrap baseline manifests now distinguish `prototype_baseline_present` from `prototype_baseline_valid`. Only `pre_round_1`, `round_1_initial_prototype_fallback`, and `operator_provided_baseline` count as valid initial baselines; round 2 or later no longer invent a new fallback baseline, and `prototype_delta` fails closed when no valid initial baseline exists.
+Bootstrap baseline manifests now distinguish `prototype_baseline_present` from `prototype_baseline_valid`. Only `pre_round_1`, `round_1_initial_prototype_fallback`, and `operator_provided_baseline` count as valid initial baselines; round 2 or later no longer invent a new fallback baseline, and `prototype_delta` fails closed when no valid initial baseline exists. Round-1 fallback baselines are now conservative for existing projects: they stay invalid by default unless the project is `new` or the recorded pre-round attempt explicitly skipped because there was no browser target yet or the target was not ready, and blocked attempts do not become valid fallbacks later.
 
 Generated `grade_round` artifacts now align their own score with browser release-score caps and persist `uncapped_release_score`, `release_score_cap`, and `release_score_cap_reasons` metadata for debugging.
 
 ## Additional validation
 
 - `npm run validate:end-pass-qa`: proves that round contracts are written, release-gate probes are surfaced, and dimension floors both pass and fail in deterministic fixtures.
-- `npm run validate:baseline-validity`: proves that baseline state distinguishes presence from validity, that round 1 can mint the only allowed fallback baseline, that round 2+ cannot silently replace an invalid late baseline, and that `prototype_delta` fails closed when no valid initial baseline exists.
+- `npm run validate:baseline-validity`: proves that baseline state distinguishes presence from validity, that attached round-1 baseline capture windows close once a checkpoint or response already exists, that existing projects do not silently mint valid round-1 fallbacks without an allowed pre-round reason, that round 2+ cannot silently replace an invalid late baseline, and that `prototype_delta` fails closed when no valid initial baseline exists.

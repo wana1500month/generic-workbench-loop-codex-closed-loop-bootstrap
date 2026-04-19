@@ -2234,6 +2234,7 @@ import {
   runCodexCommand,
   runtimePaths,
   writeArtifact,
+  writeArtifactJson,
   writeCodexSession
 } from "./runtime-helpers.mjs";
 
@@ -2315,6 +2316,9 @@ const main = async () => {
           "Reason: " + String(baselineCapture.reason ?? "none")
         ].join("\\n")
       )
+    : undefined;
+  const baselineCaptureJsonPath = baselineCapture
+    ? await writeArtifactJson("pre-round-baseline.json", baselineCapture)
     : undefined;
   const remediationBrief = {
     round_contract: roundContract
@@ -2453,6 +2457,7 @@ const main = async () => {
           remediationBriefPath,
           attachedNotePath,
           baselineCaptureNotePath,
+          baselineCaptureJsonPath,
           attachedGeneratorTaskPath ? relativeToRound(attachedGeneratorTaskPath) : undefined,
           attachedGeneratorResponsePath
             ? relativeToRound(attachedGeneratorResponsePath)
@@ -2486,6 +2491,7 @@ const main = async () => {
         remediationBriefPath,
         attachedNotePath,
         baselineCaptureNotePath,
+        baselineCaptureJsonPath,
         attachedGeneratorTaskPath ? relativeToRound(attachedGeneratorTaskPath) : undefined
       ].filter(Boolean)
     });
@@ -3236,11 +3242,16 @@ const main = async () => {
   const currentScreenshotPath = visualEvidencePaths.find((path) => isScreenshotPath(path));
   const baselineManifestPath = join(runtimePaths.runtimeDirectory, "product-baseline.json");
   const baselineScreenshotPath = join(runtimePaths.runtimeDirectory, "baseline-home.png");
+  const roundBaselineAttemptPath = join(runtimePaths.roundDirectory, "pre-round-baseline.json");
+  const artifactBaselineAttemptPath = join(runtimePaths.artifactsDirectory, "pre-round-baseline.json");
   const validBaselineSourcePhases = new Set([
     "pre_round_1",
     "round_1_initial_prototype_fallback",
     "operator_provided_baseline"
   ]);
+  const baselineAttempt =
+    (await readJsonIfExists(roundBaselineAttemptPath)) ??
+    (await readJsonIfExists(artifactBaselineAttemptPath));
   let baselineState = await readJsonIfExists(baselineManifestPath);
   const baselinePresent =
     typeof baselineState?.baseline_path === "string" && baselineState.baseline_path.length > 0;
@@ -3248,12 +3259,16 @@ const main = async () => {
     baselinePresent &&
     typeof baselineState?.source_phase === "string" &&
     validBaselineSourcePhases.has(baselineState.source_phase);
-  if (
+  const round1FallbackAllowed =
     browserSurfaceExpected &&
     packet.round === 1 &&
     currentScreenshotPath &&
-    !baselineValid
-  ) {
+    !baselineValid &&
+    (config.project_mode === "new" ||
+      baselineAttempt?.reason === "no_browser_target" ||
+      baselineAttempt?.reason === "target_not_ready") &&
+    baselineAttempt?.status !== "blocked";
+  if (round1FallbackAllowed) {
     await copyFile(currentScreenshotPath, baselineScreenshotPath);
     baselineState = {
       source_round: 1,

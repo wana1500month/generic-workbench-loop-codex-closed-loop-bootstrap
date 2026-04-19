@@ -3,6 +3,8 @@ import { dirname, join } from "node:path";
 
 import { loadJsonIfExists, writeJson } from "./file-system.js";
 import type {
+  AttachedGeneratorResponseArtifact,
+  AttachedGeneratorTaskArtifact,
   BrowserJourneyStep,
   LoadedAdapterContract,
   TargetManifest,
@@ -65,6 +67,17 @@ export const hasValidPrototypeBaseline = (
   state: PrototypeBaselineState | undefined
 ): state is PrototypeBaselineState & { baseline_path: string; source_phase: string } =>
   hasPrototypeBaseline(state) && isValidPrototypeBaselineSourcePhase(state.source_phase);
+
+export const attachedPreGeneratorBaselineWindowOpen = (input: {
+  round: number;
+  attachedGeneratorEligible: boolean;
+  existingTask?: AttachedGeneratorTaskArtifact;
+  existingResponse?: AttachedGeneratorResponseArtifact;
+}): boolean =>
+  input.round === 1 &&
+  input.attachedGeneratorEligible &&
+  !input.existingTask &&
+  !input.existingResponse;
 
 export const loadPrototypeBaselineState = async (
   runtimeDirectory: string

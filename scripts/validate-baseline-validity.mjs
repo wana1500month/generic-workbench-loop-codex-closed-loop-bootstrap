@@ -148,6 +148,32 @@ const seedSyntheticVisualEvidence = async (fixture) => {
   return { screenshotPath, tracePath };
 };
 
+const createBaselineFixture = async (tempRoot, directoryName, baseUrl, overrides = {}) => {
+  const fixture = await createBootstrapFixture(join(tempRoot, directoryName), {
+    title: "Baseline Validity App",
+    summary: "A fixture app for validating prototype baseline semantics.",
+    finishLine: "The browser app renders and can be judged against an initial baseline.",
+    targetFamily: "browser-app",
+    targetScore: 0.95,
+    projectMode: "existing",
+    checkCommand: "",
+    readyUrl: `${baseUrl}/healthz`,
+    appUrl: baseUrl,
+    referenceApps: [],
+    ...overrides
+  });
+  fixture.coreProbeResultsPath = join(fixture.roundDirectory, "core-probe-results.json");
+  fixture.targetManifestPath = join(fixture.roundDirectory, "target-manifest.json");
+  await writeJsonFile(fixture.targetManifestPath, {
+    app_url: baseUrl,
+    health_url: `${baseUrl}/healthz`
+  });
+  return fixture;
+};
+
+const writePreRoundBaselineAttempt = async (fixture, value) =>
+  writeJsonFile(join(fixture.roundDirectory, "pre-round-baseline.json"), value);
+
 const runCapability = async (fixture, capability, round, outputFile, overrides = {}) => {
   const inputPath = await writeCapabilityPacket(fixture, capability, round);
   const outputPath = join(fixture.adapterDirectory, outputFile);
@@ -198,33 +224,48 @@ const main = async () => {
     }
 
     const baseUrl = `http://127.0.0.1:${address.port}`;
-    const fixture = await createBootstrapFixture(tempRoot, {
-      title: "Baseline Validity App",
-      summary: "A fixture app for validating prototype baseline semantics.",
-      finishLine: "The browser app renders and can be judged against an initial baseline.",
-      targetFamily: "browser-app",
-      targetScore: 0.95,
-      projectMode: "existing",
-      checkCommand: "",
-      readyUrl: `${baseUrl}/healthz`,
-      appUrl: baseUrl,
-      referenceApps: []
-    });
-    fixture.coreProbeResultsPath = join(fixture.roundDirectory, "core-probe-results.json");
-    fixture.targetManifestPath = join(fixture.roundDirectory, "target-manifest.json");
-
-    await writeJsonFile(fixture.targetManifestPath, {
-      app_url: baseUrl,
-      health_url: `${baseUrl}/healthz`
-    });
+    const fixture = await createBaselineFixture(tempRoot, "helper-capture", baseUrl);
 
     const { loadAdapterContract } = await importDist("adapter-runtime.js");
-    const { captureBootstrapGeneratedBaselineIfNeeded } = await importDist(
+    const {
+      attachedPreGeneratorBaselineWindowOpen,
+      captureBootstrapGeneratedBaselineIfNeeded
+    } = await importDist(
       "prototype-baseline.js"
     );
     const loadedAdapter = await loadAdapterContract(fixture.paths.adapterPath);
     assert(loadedAdapter, "expected generated adapter contract to load");
     const playwrightAvailable = await canLoadPlaywrightCore();
+    assert(
+      attachedPreGeneratorBaselineWindowOpen({
+        round: 1,
+        attachedGeneratorEligible: true
+      }) === true,
+      "round 1 attached runs should open the pre-generator baseline window before any checkpoint exists"
+    );
+    assert(
+      attachedPreGeneratorBaselineWindowOpen({
+        round: 1,
+        attachedGeneratorEligible: true,
+        existingTask: {
+          checkpoint_id: "checkpoint-1"
+        }
+      }) === false,
+      "an existing attached-generator checkpoint should close the pre-generator baseline window"
+    );
+    assert(
+      attachedPreGeneratorBaselineWindowOpen({
+        round: 1,
+        attachedGeneratorEligible: true,
+        existingResponse: {
+          checkpoint_id: "checkpoint-1",
+          status: "applied",
+          summary: "already mutated",
+          generated_at: new Date().toISOString()
+        }
+      }) === false,
+      "an existing attached-generator response should close the pre-generator baseline window"
+    );
 
     const helperCapture = await captureBootstrapGeneratedBaselineIfNeeded({
       loadedAdapter,
@@ -257,12 +298,17 @@ const main = async () => {
     await rm(join(fixture.runtimeDirectory, "product-baseline.json"), { force: true });
     await rm(join(fixture.runtimeDirectory, "baseline-home.png"), { force: true });
     await rm(join(fixture.runtimeDirectory, "baseline-trace.zip"), { force: true });
-    await seedSyntheticVisualEvidence(fixture);
-
-    const round1ReviewPath = join(fixture.roundDirectory, "subjective-round1.json");
+    const existingProjectFixture = await createBaselineFixture(
+      tempRoot,
+      "existing-project-no-fallback",
+      baseUrl,
+      { projectMode: "existing" }
+    );
+    await seedSyntheticVisualEvidence(existingProjectFixture);
+    const round1ReviewPath = join(existingProjectFixture.roundDirectory, "subjective-round1.json");
     await writeJsonFile(round1ReviewPath, gradeRoundOverride(9.1));
-    const round1Grade = await runCapability(
-      fixture,
+    const existingRound1Grade = await runCapability(
+      existingProjectFixture,
       "grade_round",
       1,
       "grade_round-round1-result.json",
@@ -271,22 +317,62 @@ const main = async () => {
       }
     );
     assert(
-      round1Grade.result.metadata?.prototype_baseline_present === true,
-      "round 1 grade_round should persist a prototype baseline when screenshot evidence exists"
+      existingRound1Grade.result.metadata?.prototype_baseline_present === false,
+      "existing projects should not silently treat a round-1 post-mutation screenshot as a valid initial baseline"
     );
     assert(
-      round1Grade.result.metadata?.prototype_baseline_valid === true,
-      "round 1 fallback baseline should count as a valid initial prototype baseline"
+      existingRound1Grade.result.metadata?.prototype_baseline_valid === false,
+      "existing projects without an allowed pre-round baseline attempt should keep prototype_baseline_valid false"
     );
     assert(
-      round1Grade.result.metadata?.prototype_baseline_source_phase ===
-        "round_1_initial_prototype_fallback",
-      "round 1 fallback baseline should record the round_1_initial_prototype_fallback source phase"
+      !existsSync(join(existingProjectFixture.runtimeDirectory, "baseline-home.png")),
+      "existing project round 1 should not mint a fallback baseline without an allowed reason"
     );
 
-    const invalidBaselinePath = join(fixture.runtimeDirectory, "baseline-home.png");
-    assert(existsSync(invalidBaselinePath), "round 1 fallback should leave a baseline screenshot on disk");
-    await writeJsonFile(join(fixture.runtimeDirectory, "product-baseline.json"), {
+    const allowedExistingFixture = await createBaselineFixture(
+      tempRoot,
+      "existing-project-allowed-fallback",
+      baseUrl,
+      { projectMode: "existing" }
+    );
+    await seedSyntheticVisualEvidence(allowedExistingFixture);
+    await writePreRoundBaselineAttempt(allowedExistingFixture, {
+      status: "skipped",
+      reason: "target_not_ready",
+      prototype_baseline_present: false,
+      prototype_baseline_valid: false
+    });
+    const allowedRound1ReviewPath = join(
+      allowedExistingFixture.roundDirectory,
+      "subjective-round1.json"
+    );
+    await writeJsonFile(allowedRound1ReviewPath, gradeRoundOverride(9.1));
+    const allowedRound1Grade = await runCapability(
+      allowedExistingFixture,
+      "grade_round",
+      1,
+      "grade_round-round1-result.json",
+      {
+        HARNESS_SUBJECTIVE_REVIEW_PATH: allowedRound1ReviewPath
+      }
+    );
+    assert(
+      allowedRound1Grade.result.metadata?.prototype_baseline_present === true,
+      "existing projects may still mint a round-1 fallback baseline when the pre-round attempt explicitly failed because the target was not ready"
+    );
+    assert(
+      allowedRound1Grade.result.metadata?.prototype_baseline_valid === true,
+      "allowed round-1 fallback should count as a valid initial prototype baseline"
+    );
+    assert(
+      allowedRound1Grade.result.metadata?.prototype_baseline_source_phase ===
+        "round_1_initial_prototype_fallback",
+      "allowed round-1 fallback should record the round_1_initial_prototype_fallback source phase"
+    );
+
+    const invalidBaselinePath = join(allowedExistingFixture.runtimeDirectory, "baseline-home.png");
+    assert(existsSync(invalidBaselinePath), "allowed round-1 fallback should leave a baseline screenshot on disk");
+    await writeJsonFile(join(allowedExistingFixture.runtimeDirectory, "product-baseline.json"), {
       source_round: 2,
       source_phase: "post_round_2_grade_round",
       baseline_path: invalidBaselinePath,
@@ -294,10 +380,10 @@ const main = async () => {
       created_at: new Date().toISOString()
     });
 
-    const round2ReviewPath = join(fixture.roundDirectory, "subjective-round2.json");
+    const round2ReviewPath = join(allowedExistingFixture.roundDirectory, "subjective-round2.json");
     await writeJsonFile(round2ReviewPath, gradeRoundOverride(9.8));
     const round2Grade = await runCapability(
-      fixture,
+      allowedExistingFixture,
       "grade_round",
       2,
       "grade_round-round2-result.json",
@@ -335,7 +421,7 @@ const main = async () => {
       "invalid baseline plus failed prototype_delta should keep the round score below the strict target"
     );
     const persistedInvalidBaseline = await readJsonFile(
-      join(fixture.runtimeDirectory, "product-baseline.json")
+      join(allowedExistingFixture.runtimeDirectory, "product-baseline.json")
     );
     assert(
       persistedInvalidBaseline.source_phase === "post_round_2_grade_round",

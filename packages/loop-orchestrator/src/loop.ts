@@ -58,6 +58,7 @@ import {
   writeText
 } from "./file-system.js";
 import {
+  attachedPreGeneratorBaselineWindowOpen,
   captureBootstrapGeneratedBaselineIfNeeded,
   hasValidPrototypeBaseline,
   loadPrototypeBaselineState,
@@ -4111,6 +4112,20 @@ export const runClosedLoop = async (input: {
       round === 1 ? await loadPrototypeBaselineState(runRuntimeDirectory) : undefined;
     const prototypeBaselinePathInfo = prototypeBaselinePaths(runRuntimeDirectory);
     const preRoundBaselineStatusPath = join(roundDirectory, "pre-round-baseline.md");
+    const preRoundBaselineJsonPath = join(roundDirectory, "pre-round-baseline.json");
+    const existingAttachedGeneratorTask =
+      attachedGeneratorEligible && attachedGeneratorTargetRoot
+        ? await loadJsonIfExists<AttachedGeneratorTaskArtifact>(
+            artifacts.attached_generator_task_path
+          )
+        : undefined;
+    const existingAttachedGeneratorResponse =
+      attachedGeneratorEligible
+        ? await readAttachedGeneratorResponse(
+            artifacts.attached_generator_response_path,
+            existingAttachedGeneratorTask?.checkpoint_id
+          )
+        : undefined;
     const attachedGeneratorProfile = loadedAdapter?.verification_profile?.profile;
     const browserBaselineEligible =
       round === 1 &&
@@ -4119,37 +4134,72 @@ export const runClosedLoop = async (input: {
         attachedGeneratorProfile &&
           ((attachedGeneratorProfile.expected_target_surfaces ?? []).includes("browser") ||
             (attachedGeneratorProfile.core_probes ?? []).some(
-              (probe) => probe.mode === "browser" || probe.mode === "browser_journey"
-            ))
+            (probe) => probe.mode === "browser" || probe.mode === "browser_journey"
+          ))
       );
+    const preGeneratorBaselineWindowOpen = attachedPreGeneratorBaselineWindowOpen({
+      round,
+      attachedGeneratorEligible,
+      existingTask: existingAttachedGeneratorTask,
+      existingResponse: existingAttachedGeneratorResponse
+    });
     const attachedGeneratorBaselineCapture =
-      browserBaselineEligible && loadedAdapter
+      browserBaselineEligible && loadedAdapter && preGeneratorBaselineWindowOpen
         ? await captureBootstrapGeneratedBaselineIfNeeded({
             loadedAdapter,
             runtimeDirectory: runRuntimeDirectory,
             targetManifest: persistedTargetManifest
           })
-        : undefined;
+        : browserBaselineEligible && !preGeneratorBaselineWindowOpen
+          ? {
+              status: "skipped" as const,
+              reason: existingAttachedGeneratorResponse
+                ? "attached_generator_response_already_present"
+                : "attached_generator_checkpoint_already_issued",
+              ...(typeof prototypeBaselineState?.baseline_path === "string"
+                ? { baseline_path: prototypeBaselineState.baseline_path }
+                : {}),
+              ...(typeof prototypeBaselineState?.source_phase === "string"
+                ? { source_phase: prototypeBaselineState.source_phase }
+                : {}),
+              ...(typeof prototypeBaselineState?.source_round === "number"
+                ? { source_round: prototypeBaselineState.source_round }
+                : {}),
+              ...(typeof prototypeBaselineState?.source_target === "string"
+                ? { source_target: prototypeBaselineState.source_target }
+                : {}),
+              ...(Array.isArray(prototypeBaselineState?.evidence_paths)
+                ? { evidence_paths: prototypeBaselineState.evidence_paths }
+                : {}),
+              prototype_baseline_present:
+                typeof prototypeBaselineState?.baseline_path === "string" &&
+                prototypeBaselineState.baseline_path.trim().length > 0,
+              prototype_baseline_valid: hasValidPrototypeBaseline(prototypeBaselineState)
+            }
+          : undefined;
     if (attachedGeneratorBaselineCapture) {
-      await writeText(
-        preRoundBaselineStatusPath,
-        [
-          "# Pre-round baseline",
-          "",
-          `Status: ${attachedGeneratorBaselineCapture.status}`,
-          `Baseline present: ${attachedGeneratorBaselineCapture.prototype_baseline_present}`,
-          `Baseline valid: ${attachedGeneratorBaselineCapture.prototype_baseline_valid}`,
-          `Source phase: ${attachedGeneratorBaselineCapture.source_phase ?? "n/a"}`,
-          `Source round: ${String(attachedGeneratorBaselineCapture.source_round ?? "n/a")}`,
-          `Baseline path: ${attachedGeneratorBaselineCapture.baseline_path ?? "n/a"}`,
-          `Target: ${
-            attachedGeneratorBaselineCapture.source_target ??
-            attachedGeneratorBaselineCapture.readiness_url ??
-            "n/a"
-          }`,
-          `Reason: ${attachedGeneratorBaselineCapture.reason ?? "none"}`
-        ].join("\n")
-      );
+      await Promise.all([
+        writeText(
+          preRoundBaselineStatusPath,
+          [
+            "# Pre-round baseline",
+            "",
+            `Status: ${attachedGeneratorBaselineCapture.status}`,
+            `Baseline present: ${attachedGeneratorBaselineCapture.prototype_baseline_present}`,
+            `Baseline valid: ${attachedGeneratorBaselineCapture.prototype_baseline_valid}`,
+            `Source phase: ${attachedGeneratorBaselineCapture.source_phase ?? "n/a"}`,
+            `Source round: ${String(attachedGeneratorBaselineCapture.source_round ?? "n/a")}`,
+            `Baseline path: ${attachedGeneratorBaselineCapture.baseline_path ?? "n/a"}`,
+            `Target: ${
+              attachedGeneratorBaselineCapture.source_target ??
+              attachedGeneratorBaselineCapture.readiness_url ??
+              "n/a"
+            }`,
+            `Reason: ${attachedGeneratorBaselineCapture.reason ?? "none"}`
+          ].join("\n")
+        ),
+        writeJson(preRoundBaselineJsonPath, attachedGeneratorBaselineCapture)
+      ]);
       if (attachedGeneratorBaselineCapture.status === "blocked") {
         runtimeWarnings = unique([
           ...runtimeWarnings,
@@ -4159,12 +4209,6 @@ export const runClosedLoop = async (input: {
         ]);
       }
     }
-    const existingAttachedGeneratorTask =
-      attachedGeneratorEligible && attachedGeneratorTargetRoot
-        ? await loadJsonIfExists<AttachedGeneratorTaskArtifact>(
-            artifacts.attached_generator_task_path
-          )
-        : undefined;
     let attachedGeneratorTask = existingAttachedGeneratorTask;
     if (attachedGeneratorEligible && attachedGeneratorTargetRoot) {
       attachedGeneratorTask = await writeAttachedGeneratorTask({
@@ -4174,7 +4218,9 @@ export const runClosedLoop = async (input: {
         transportMode: isAttachedGeneratorTransport(transportMode)
           ? transportMode
           : "current-thread",
-        checkpointId: existingAttachedGeneratorTask?.checkpoint_id,
+        checkpointId:
+          existingAttachedGeneratorTask?.checkpoint_id ??
+          existingAttachedGeneratorResponse?.checkpoint_id,
         checkpointSeq: existingAttachedGeneratorTask?.checkpoint_seq,
         targetRoot: attachedGeneratorTargetRoot,
         taskCwd: attachedGeneratorTargetRoot,
@@ -4202,24 +4248,35 @@ export const runClosedLoop = async (input: {
             ? "Complete the generator work on the current Codex thread, then write the response JSON before resuming the controller."
             : "The App Server generator turn will write the response JSON before the controller resumes adapter verification.",
           ...(attachedGeneratorBaselineCapture
-            ? attachedGeneratorBaselineCapture.prototype_baseline_valid
-              ? [
-                  `A valid initial prototype baseline is already available at ${prototypeBaselinePathInfo.manifestPath} (${attachedGeneratorBaselineCapture.source_phase ?? "unknown source phase"}). Do not overwrite it with a post-mutation screenshot.`
-                ]
-              : [
-                  `No valid initial prototype baseline was captured before the generator started. If the browser surface is reachable before edits, capture it to ${prototypeBaselinePathInfo.manifestPath} before mutating. Otherwise leave the baseline absent and do not mark any post-mutation screenshot as valid.`
-                ]
+            ? attachedGeneratorBaselineCapture.reason ===
+                  "attached_generator_checkpoint_already_issued" ||
+                attachedGeneratorBaselineCapture.reason ===
+                  "attached_generator_response_already_present"
+              ? attachedGeneratorBaselineCapture.prototype_baseline_valid
+                ? [
+                    `The pre-generator baseline window is already closed for this checkpoint, and a valid initial prototype baseline already exists at ${prototypeBaselinePathInfo.manifestPath}. Do not overwrite it with a resumed post-mutation screenshot.`
+                  ]
+                : [
+                    `The pre-generator baseline window is already closed for this checkpoint, and no valid initial prototype baseline exists. Do not mint a new valid baseline from a resumed post-mutation screenshot.`
+                  ]
+              : attachedGeneratorBaselineCapture.prototype_baseline_valid
+                ? [
+                    `A valid initial prototype baseline is already available at ${prototypeBaselinePathInfo.manifestPath} (${attachedGeneratorBaselineCapture.source_phase ?? "unknown source phase"}). Do not overwrite it with a post-mutation screenshot.`
+                  ]
+                : [
+                    `No valid initial prototype baseline was captured before the generator started. If the browser surface is reachable before edits, capture it to ${prototypeBaselinePathInfo.manifestPath} before mutating. Otherwise leave the baseline absent and do not mark any post-mutation screenshot as valid.`
+                  ]
             : [])
         ]
       });
     }
-    let attachedGeneratorResponse =
-      attachedGeneratorEligible
-        ? await readAttachedGeneratorResponse(
-            artifacts.attached_generator_response_path,
-            attachedGeneratorTask?.checkpoint_id
-          )
-        : undefined;
+    let attachedGeneratorResponse = existingAttachedGeneratorResponse;
+    if (!attachedGeneratorResponse && attachedGeneratorEligible) {
+      attachedGeneratorResponse = await readAttachedGeneratorResponse(
+        artifacts.attached_generator_response_path,
+        attachedGeneratorTask?.checkpoint_id
+      );
+    }
     const persistedPreVerificationExecutions =
       await loadJsonIfExists<AdapterCapabilityExecution[]>(
         artifacts.pre_verification_executions_path
