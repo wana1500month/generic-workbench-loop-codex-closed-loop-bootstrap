@@ -2,6 +2,11 @@ import { existsSync } from "node:fs";
 import { extname, isAbsolute, join, resolve } from "node:path";
 
 import { repoRoot } from "./file-system.js";
+import {
+  describePrototypeBaselineSourceSemantics,
+  isPrototypeBaselineSourceSemantics,
+  prototypeBaselineSourceSemanticsForPhase
+} from "./prototype-baseline.js";
 import type {
   AdapterCapabilityExecution,
   CoreVerificationProbeExecution,
@@ -2268,6 +2273,14 @@ export const buildEvalReport = (input: {
     typeof gradeRoundExecution?.result.metadata?.prototype_baseline_source_phase === "string"
       ? gradeRoundExecution.result.metadata.prototype_baseline_source_phase
       : undefined;
+  const prototypeBaselineSourceSemantics =
+    isPrototypeBaselineSourceSemantics(
+      gradeRoundExecution?.result.metadata?.prototype_baseline_source_semantics
+    )
+      ? gradeRoundExecution.result.metadata.prototype_baseline_source_semantics
+      : prototypeBaselineSourceSemanticsForPhase(prototypeBaselineSourcePhase);
+  const prototypeBaselineSourceSemanticsDetail =
+    describePrototypeBaselineSourceSemantics(prototypeBaselineSourceSemantics);
   const prototypeBaselineSourceRound =
     typeof gradeRoundExecution?.result.metadata?.prototype_baseline_source_round === "number"
       ? gradeRoundExecution.result.metadata.prototype_baseline_source_round
@@ -2376,6 +2389,10 @@ export const buildEvalReport = (input: {
               typeof prototypeBaselineSourceRound === "number"
                 ? ` (source round ${prototypeBaselineSourceRound}).`
                 : "."
+            }${
+              prototypeBaselineSourceSemanticsDetail
+                ? ` ${prototypeBaselineSourceSemanticsDetail}`
+                : ""
             }`
           : "Browser rounds after the baseline capture must keep a persisted prototype screenshot for delta judging."
   );
@@ -2399,11 +2416,19 @@ export const buildEvalReport = (input: {
               typeof prototypeBaselineSourceRound === "number"
                 ? ` (source round ${prototypeBaselineSourceRound}).`
                 : "."
+            }${
+              prototypeBaselineSourceSemanticsDetail
+                ? ` ${prototypeBaselineSourceSemanticsDetail}`
+                : ""
             }`
           : prototypeBaselinePresent
             ? `A baseline file exists${
                 prototypeBaselineSourcePhase ? ` from '${prototypeBaselineSourcePhase}'` : ""
-              }, but that source phase does not count as a valid initial prototype baseline.`
+              }, but that source phase does not count as a valid initial prototype baseline.${
+                prototypeBaselineSourceSemanticsDetail
+                  ? ` ${prototypeBaselineSourceSemanticsDetail}`
+                  : ""
+              }`
             : "Browser rounds after the initial prototype must keep a valid initial baseline before prototype_delta can pass."
   );
   lookup.prototype_delta_present = checkResult(

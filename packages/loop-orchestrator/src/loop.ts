@@ -60,8 +60,10 @@ import {
 import {
   attachedPreGeneratorBaselineWindowOpen,
   captureBootstrapGeneratedBaselineIfNeeded,
+  describePrototypeBaselineSourceSemantics,
   hasValidPrototypeBaseline,
   loadPrototypeBaselineState,
+  prototypeBaselineSourceSemanticsForPhase,
   prototypeBaselinePaths
 } from "./prototype-baseline.js";
 import { defaultIdeaPath, readIdeaBrief } from "./idea-intake.js";
@@ -4162,6 +4164,13 @@ export const runClosedLoop = async (input: {
               ...(typeof prototypeBaselineState?.source_phase === "string"
                 ? { source_phase: prototypeBaselineState.source_phase }
                 : {}),
+              ...(prototypeBaselineSourceSemanticsForPhase(prototypeBaselineState?.source_phase)
+                ? {
+                    source_semantics: prototypeBaselineSourceSemanticsForPhase(
+                      prototypeBaselineState?.source_phase
+                    )
+                  }
+                : {}),
               ...(typeof prototypeBaselineState?.source_round === "number"
                 ? { source_round: prototypeBaselineState.source_round }
                 : {}),
@@ -4178,6 +4187,9 @@ export const runClosedLoop = async (input: {
             }
           : undefined;
     if (attachedGeneratorBaselineCapture) {
+      const baselineSourceSemanticsDetail = describePrototypeBaselineSourceSemantics(
+        attachedGeneratorBaselineCapture.source_semantics
+      );
       await Promise.all([
         writeText(
           preRoundBaselineStatusPath,
@@ -4188,6 +4200,7 @@ export const runClosedLoop = async (input: {
             `Baseline present: ${attachedGeneratorBaselineCapture.prototype_baseline_present}`,
             `Baseline valid: ${attachedGeneratorBaselineCapture.prototype_baseline_valid}`,
             `Source phase: ${attachedGeneratorBaselineCapture.source_phase ?? "n/a"}`,
+            `Source semantics: ${attachedGeneratorBaselineCapture.source_semantics ?? "n/a"}`,
             `Source round: ${String(attachedGeneratorBaselineCapture.source_round ?? "n/a")}`,
             `Baseline path: ${attachedGeneratorBaselineCapture.baseline_path ?? "n/a"}`,
             `Target: ${
@@ -4195,7 +4208,8 @@ export const runClosedLoop = async (input: {
               attachedGeneratorBaselineCapture.readiness_url ??
               "n/a"
             }`,
-            `Reason: ${attachedGeneratorBaselineCapture.reason ?? "none"}`
+            `Reason: ${attachedGeneratorBaselineCapture.reason ?? "none"}`,
+            `Meaning: ${baselineSourceSemanticsDetail ?? "n/a"}`
           ].join("\n")
         ),
         writeJson(preRoundBaselineJsonPath, attachedGeneratorBaselineCapture)

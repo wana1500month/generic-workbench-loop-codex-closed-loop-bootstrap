@@ -6,6 +6,11 @@ import {
 } from "./adapter-migration.js";
 import { writeJson, writeText } from "./file-system.js";
 import { isPureEnvironmentBlockedLineage } from "./failure-lineage.js";
+import {
+  describePrototypeBaselineSourceSemantics,
+  isPrototypeBaselineSourceSemantics,
+  prototypeBaselineSourceSemanticsForPhase
+} from "./prototype-baseline.js";
 import type {
   AdapterMigrationApplied,
   AdapterMigrationProposal,
@@ -711,6 +716,14 @@ export const buildQualityCritiqueArtifact = (input: {
     typeof gradeRoundExecution?.result.metadata?.prototype_baseline_source_phase === "string"
       ? gradeRoundExecution.result.metadata.prototype_baseline_source_phase
       : undefined;
+  const prototypeBaselineSourceSemantics =
+    isPrototypeBaselineSourceSemantics(
+      gradeRoundExecution?.result.metadata?.prototype_baseline_source_semantics
+    )
+      ? gradeRoundExecution.result.metadata.prototype_baseline_source_semantics
+      : prototypeBaselineSourceSemanticsForPhase(prototypeBaselineSourcePhase);
+  const prototypeBaselineSourceSemanticsDetail =
+    describePrototypeBaselineSourceSemantics(prototypeBaselineSourceSemantics);
   const subjectiveFindings =
     gradeRoundExecution?.result.subjective_metric_results
       ?.filter((metric) => metric.status === "fail")
@@ -731,6 +744,10 @@ export const buildQualityCritiqueArtifact = (input: {
                   prototypeBaselineSourcePhase
                     ? `. The current baseline source phase '${prototypeBaselineSourcePhase}' does not count as an initial prototype baseline.`
                     : "."
+                }${
+                  prototypeBaselineSourceSemanticsDetail
+                    ? ` ${prototypeBaselineSourceSemanticsDetail}`
+                    : ""
                 }`
               : "The current result is not yet materially beyond the initial prototype. Raise information architecture, layout, state expression, and finish-line workflow visibility so the shipped surface is visibly more complete than the baseline."
             : metric.recommended_changes[0] ??
@@ -807,7 +824,11 @@ export const buildQualityCritiqueArtifact = (input: {
       severity: "critical",
       summary: `The stored prototype baseline is not valid for prototype_delta judging${
         prototypeBaselineSourcePhase ? ` because it came from '${prototypeBaselineSourcePhase}'` : ""
-      }.`,
+      }${
+        prototypeBaselineSourceSemanticsDetail
+          ? ` ${prototypeBaselineSourceSemanticsDetail}`
+          : "."
+      }`,
       expected_change:
         "Capture or provide a valid initial prototype baseline before relying on prototype_delta. Do not reuse post-mutation screenshots from later rounds as the initial prototype.",
       evidence: gradeRoundExecution?.result.evidence_paths ?? [],

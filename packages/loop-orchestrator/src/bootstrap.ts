@@ -1923,6 +1923,27 @@ const executeBestEffortBaselineJourney = async ({ page, target, steps, timeoutMs
 export const captureBrowserBaselineIfNeeded = async (options = {}) => {
   const baselineManifestPath = join(runtimeDirectory, "product-baseline.json");
   const existingBaseline = await readJsonIfExists(baselineManifestPath);
+  const baselineSourceSemanticsForPhase = (value) => {
+    if (value === "pre_round_1") {
+      return "initial_pre_round_baseline";
+    }
+    if (value === "round_1_initial_prototype_fallback") {
+      return "first_rendered_round_fallback";
+    }
+    if (value === "operator_provided_baseline") {
+      return "operator_provided_initial_baseline";
+    }
+    if (typeof value !== "string" || value.trim().length === 0) {
+      return undefined;
+    }
+    if (value.startsWith("post_round_") || value.includes("post_")) {
+      return "post_mutation_or_late_round_baseline";
+    }
+    return "unknown_baseline_origin";
+  };
+  const existingBaselineSourceSemantics = baselineSourceSemanticsForPhase(
+    existingBaseline?.source_phase
+  );
   if (
     existingBaseline &&
     typeof existingBaseline.baseline_path === "string" &&
@@ -1931,14 +1952,23 @@ export const captureBrowserBaselineIfNeeded = async (options = {}) => {
     return {
       status: "reused",
       baseline_path: existingBaseline.baseline_path,
-      source_phase: existingBaseline.source_phase ?? null
+      source_phase: existingBaseline.source_phase ?? null,
+      ...(existingBaselineSourceSemantics
+        ? { source_semantics: existingBaselineSourceSemantics }
+        : {})
     };
   }
 
   const config = options.config ?? (await readConfig());
   const profile = options.profile ?? (await readVerificationProfile());
   if (!browserSurfaceExpected(profile)) {
-    return { status: "skipped", reason: "non_browser_surface" };
+    return {
+      status: "skipped",
+      reason: "non_browser_surface",
+      ...(existingBaselineSourceSemantics
+        ? { source_semantics: existingBaselineSourceSemantics }
+        : {})
+    };
   }
 
   const targetManifest = await readTargetManifest();
@@ -1949,7 +1979,13 @@ export const captureBrowserBaselineIfNeeded = async (options = {}) => {
     targetManifest
   );
   if (!baselineTarget) {
-    return { status: "skipped", reason: "no_browser_target" };
+    return {
+      status: "skipped",
+      reason: "no_browser_target",
+      ...(existingBaselineSourceSemantics
+        ? { source_semantics: existingBaselineSourceSemantics }
+        : {})
+    };
   }
 
   const readinessUrl = config.ready_url ?? baselineTarget;
@@ -1958,7 +1994,10 @@ export const captureBrowserBaselineIfNeeded = async (options = {}) => {
     return {
       status: "skipped",
       reason: "target_not_ready",
-      readiness_url: readinessUrl
+      readiness_url: readinessUrl,
+      ...(existingBaselineSourceSemantics
+        ? { source_semantics: existingBaselineSourceSemantics }
+        : {})
     };
   }
 
@@ -2011,6 +2050,7 @@ export const captureBrowserBaselineIfNeeded = async (options = {}) => {
     const baselineState = {
       source_round: 0,
       source_phase: "pre_round_1",
+      source_semantics: "initial_pre_round_baseline",
       baseline_path: screenshotPath,
       source_target: baselineTarget,
       probe_id: baselineProbe?.probe_id ?? null,
@@ -2022,6 +2062,7 @@ export const captureBrowserBaselineIfNeeded = async (options = {}) => {
       status: "captured",
       baseline_path: screenshotPath,
       source_phase: "pre_round_1",
+      source_semantics: "initial_pre_round_baseline",
       source_target: baselineTarget,
       evidence_paths: evidencePaths
     };
@@ -2034,7 +2075,10 @@ export const captureBrowserBaselineIfNeeded = async (options = {}) => {
     return {
       status: "blocked",
       reason: error instanceof Error ? error.message : String(error),
-      source_target: baselineTarget
+      source_target: baselineTarget,
+      ...(existingBaselineSourceSemantics
+        ? { source_semantics: existingBaselineSourceSemantics }
+        : {})
     };
   } finally {
     if (context) {
@@ -2287,20 +2331,41 @@ const main = async () => {
         ? await captureBrowserBaselineIfNeeded({ config })
         : (() => {
             const baselineManifestPath = join(runtimePaths.runtimeDirectory, "product-baseline.json");
-            return readJsonIfExists(baselineManifestPath).then((baselineState) => ({
-              status: "skipped",
-              reason: "attached_transport_requires_pre_generator_capture",
-              source_phase:
-                typeof baselineState?.source_phase === "string" ? baselineState.source_phase : undefined,
-              baseline_path:
-                typeof baselineState?.baseline_path === "string"
-                  ? baselineState.baseline_path
-                  : undefined,
-              source_target:
-                typeof baselineState?.source_target === "string"
-                  ? baselineState.source_target
-                  : undefined
-            }));
+            return readJsonIfExists(baselineManifestPath).then((baselineState) => {
+              const baselineSourceSemanticsForPhase = (value) => {
+                if (value === "pre_round_1") {
+                  return "initial_pre_round_baseline";
+                }
+                if (value === "round_1_initial_prototype_fallback") {
+                  return "first_rendered_round_fallback";
+                }
+                if (value === "operator_provided_baseline") {
+                  return "operator_provided_initial_baseline";
+                }
+                if (typeof value !== "string" || value.trim().length === 0) {
+                  return undefined;
+                }
+                if (value.startsWith("post_round_") || value.includes("post_")) {
+                  return "post_mutation_or_late_round_baseline";
+                }
+                return "unknown_baseline_origin";
+              };
+              return {
+                status: "skipped",
+                reason: "attached_transport_requires_pre_generator_capture",
+                source_phase:
+                  typeof baselineState?.source_phase === "string" ? baselineState.source_phase : undefined,
+                source_semantics: baselineSourceSemanticsForPhase(baselineState?.source_phase),
+                baseline_path:
+                  typeof baselineState?.baseline_path === "string"
+                    ? baselineState.baseline_path
+                    : undefined,
+                source_target:
+                  typeof baselineState?.source_target === "string"
+                    ? baselineState.source_target
+                    : undefined
+              };
+            });
           })()
       : undefined;
   const baselineCaptureNotePath = baselineCapture
@@ -2311,6 +2376,7 @@ const main = async () => {
           "",
           "Status: " + baselineCapture.status,
           "Source phase: " + String(baselineCapture.source_phase ?? "n/a"),
+          "Source semantics: " + String(baselineCapture.source_semantics ?? "n/a"),
           "Baseline path: " + String(baselineCapture.baseline_path ?? "n/a"),
           "Target: " + String(baselineCapture.source_target ?? baselineCapture.readiness_url ?? "n/a"),
           "Reason: " + String(baselineCapture.reason ?? "none")
@@ -3249,6 +3315,42 @@ const main = async () => {
     "round_1_initial_prototype_fallback",
     "operator_provided_baseline"
   ]);
+  const baselineSourceSemanticsForPhase = (value) => {
+    if (value === "pre_round_1") {
+      return "initial_pre_round_baseline";
+    }
+    if (value === "round_1_initial_prototype_fallback") {
+      return "first_rendered_round_fallback";
+    }
+    if (value === "operator_provided_baseline") {
+      return "operator_provided_initial_baseline";
+    }
+    if (typeof value !== "string" || value.trim().length === 0) {
+      return undefined;
+    }
+    if (value.startsWith("post_round_") || value.includes("post_")) {
+      return "post_mutation_or_late_round_baseline";
+    }
+    return "unknown_baseline_origin";
+  };
+  const describeBaselineSourceSemantics = (value) => {
+    if (value === "initial_pre_round_baseline") {
+      return "A true pre-round baseline was captured before generator mutation began.";
+    }
+    if (value === "first_rendered_round_fallback") {
+      return "No pre-round existing-product baseline was available, so the first rendered round is serving as the comparison baseline.";
+    }
+    if (value === "operator_provided_initial_baseline") {
+      return "An operator-provided initial baseline is serving as the comparison baseline.";
+    }
+    if (value === "post_mutation_or_late_round_baseline") {
+      return "The stored baseline came from post-mutation or later-round evidence, so it does not represent the initial prototype honestly.";
+    }
+    if (value === "unknown_baseline_origin") {
+      return "The stored baseline origin is unclear, so it should not be trusted as an initial prototype without operator review.";
+    }
+    return undefined;
+  };
   const baselineAttempt =
     (await readJsonIfExists(roundBaselineAttemptPath)) ??
     (await readJsonIfExists(artifactBaselineAttemptPath));
@@ -3273,6 +3375,7 @@ const main = async () => {
     baselineState = {
       source_round: 1,
       source_phase: "round_1_initial_prototype_fallback",
+      source_semantics: "first_rendered_round_fallback",
       source_path: currentScreenshotPath,
       baseline_path: baselineScreenshotPath,
       created_at: new Date().toISOString()
@@ -3285,6 +3388,12 @@ const main = async () => {
     typeof baselineState?.source_phase === "string" ? baselineState.source_phase : undefined;
   const baselineSourceRound =
     typeof baselineState?.source_round === "number" ? baselineState.source_round : undefined;
+  const baselineSourceSemantics =
+    typeof baselineState?.source_semantics === "string"
+      ? baselineState.source_semantics
+      : baselineSourceSemanticsForPhase(baselineSourcePhase);
+  const baselineSourceSemanticsDetail =
+    describeBaselineSourceSemantics(baselineSourceSemantics);
   const prototypeBaselinePresent = Boolean(baselineScreenshotReference);
   const prototypeBaselineValid =
     prototypeBaselinePresent &&
@@ -3499,6 +3608,8 @@ const main = async () => {
           current_screenshot_path: currentScreenshotPath,
           baseline_screenshot_path: baselineScreenshotReference,
           baseline_source_phase: baselineSourcePhase,
+          baseline_source_semantics: baselineSourceSemantics,
+          baseline_source_semantics_detail: baselineSourceSemanticsDetail,
           baseline_source_round: baselineSourceRound,
           prototype_baseline_valid: prototypeBaselineValid,
           visual_evidence_paths: visualEvidencePaths.map((path) =>
@@ -3633,6 +3744,8 @@ const main = async () => {
       "Visual evidence present: " + String(visualEvidencePaths.length > 0),
       "Baseline screenshot: " + String(baselineScreenshotReference ?? "none"),
       "Baseline source phase: " + String(baselineSourcePhase ?? "none"),
+      "Baseline semantics: " + String(baselineSourceSemantics ?? "none"),
+      "Baseline meaning: " + String(baselineSourceSemanticsDetail ?? "none"),
       "Baseline source round: " + String(baselineSourceRound ?? "none"),
       "Baseline valid: " + String(prototypeBaselineValid),
       "Uncapped release score: " + String(uncappedReleaseScore),
@@ -3734,6 +3847,9 @@ const main = async () => {
       prototype_baseline_present: prototypeBaselinePresent,
       prototype_baseline_valid: prototypeBaselineValid,
       ...(baselineSourcePhase ? { prototype_baseline_source_phase: baselineSourcePhase } : {}),
+      ...(baselineSourceSemantics
+        ? { prototype_baseline_source_semantics: baselineSourceSemantics }
+        : {}),
       ...(typeof baselineSourceRound === "number"
         ? { prototype_baseline_source_round: baselineSourceRound }
         : {}),

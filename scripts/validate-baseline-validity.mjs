@@ -97,12 +97,58 @@ const gradeRoundOverride = (prototypeDeltaScore) => ({
   ]
 });
 
-const canLoadPlaywrightCore = async () => {
+const browserExecutableCandidates = () =>
+  process.platform === "win32"
+    ? ["msedge", "chrome", "chromium"]
+    : process.platform === "darwin"
+      ? ["Google Chrome", "Microsoft Edge", "chromium"]
+      : ["google-chrome", "chromium", "chromium-browser", "microsoft-edge"];
+
+const resolveBrowserExecutableCandidate = () => {
+  if (
+    typeof process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH === "string" &&
+    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.trim().length > 0
+  ) {
+    return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.trim();
+  }
+  return browserExecutableCandidates()[0];
+};
+
+const canCaptureBrowserBaseline = async (baseUrl) => {
+  let browser;
+  let screenshotPath;
   try {
-    await import("playwright-core");
-    return true;
-  } catch {
-    return false;
+    const { chromium } = await import("playwright-core");
+    screenshotPath = join(process.cwd(), ".tmp", `baseline-validator-probe-${process.pid}.png`);
+    const executablePath = resolveBrowserExecutableCandidate();
+    browser = await chromium.launch({
+      headless: true,
+      ...(typeof executablePath === "string" && executablePath.length > 0
+        ? { executablePath }
+        : {})
+    });
+    const page = await browser.newPage();
+    await page.goto(baseUrl, {
+      waitUntil: "networkidle",
+      timeout: 5000
+    });
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    return {
+      available: true,
+      reason: "captured"
+    };
+  } catch (error) {
+    return {
+      available: false,
+      reason: error instanceof Error ? error.message : String(error)
+    };
+  } finally {
+    if (browser) {
+      await browser.close().catch(() => undefined);
+    }
+    if (screenshotPath) {
+      await rm(screenshotPath, { force: true }).catch(() => undefined);
+    }
   }
 };
 
@@ -235,7 +281,7 @@ const main = async () => {
     );
     const loadedAdapter = await loadAdapterContract(fixture.paths.adapterPath);
     assert(loadedAdapter, "expected generated adapter contract to load");
-    const playwrightAvailable = await canLoadPlaywrightCore();
+    const browserCaptureAvailability = await canCaptureBrowserBaseline(baseUrl);
     assert(
       attachedPreGeneratorBaselineWindowOpen({
         round: 1,
@@ -275,7 +321,7 @@ const main = async () => {
         health_url: `${baseUrl}/healthz`
       }
     });
-    if (playwrightAvailable) {
+    if (browserCaptureAvailability.available) {
       assert(
         helperCapture.status === "captured",
         "loop-side baseline helper should capture a pre-round baseline"
@@ -284,14 +330,27 @@ const main = async () => {
         helperCapture.source_phase === "pre_round_1" && helperCapture.prototype_baseline_valid,
         "loop-side baseline helper should persist a valid pre_round_1 baseline"
       );
+      assert(
+        helperCapture.source_semantics === "initial_pre_round_baseline",
+        "captured helper baseline should record initial_pre_round_baseline semantics"
+      );
     } else {
       assert(
-        helperCapture.status === "blocked",
-        "loop-side baseline helper should fail closed when browser tooling is unavailable"
+        helperCapture.status === "blocked" || helperCapture.status === "skipped",
+        "loop-side baseline helper should fail closed when browser capture is unavailable"
       );
       assert(
-        typeof helperCapture.reason === "string" && helperCapture.reason.includes("playwright-core"),
-        "blocked helper capture should surface the missing browser runtime"
+        helperCapture.prototype_baseline_valid === false,
+        "helper capture should not mark the baseline valid when browser capture is unavailable"
+      );
+      assert(
+        typeof helperCapture.reason === "string" || helperCapture.status === "skipped",
+        "helper capture should preserve a blocked/skipped reason when browser capture is unavailable"
+      );
+      assert(
+        typeof browserCaptureAvailability.reason === "string" &&
+          browserCaptureAvailability.reason.length > 0,
+        "capture probe should report why browser baseline capture is unavailable"
       );
     }
 
@@ -369,6 +428,11 @@ const main = async () => {
         "round_1_initial_prototype_fallback",
       "allowed round-1 fallback should record the round_1_initial_prototype_fallback source phase"
     );
+    assert(
+      allowedRound1Grade.result.metadata?.prototype_baseline_source_semantics ===
+        "first_rendered_round_fallback",
+      "allowed round-1 fallback should expose first_rendered_round_fallback semantics"
+    );
 
     const invalidBaselinePath = join(allowedExistingFixture.runtimeDirectory, "baseline-home.png");
     assert(existsSync(invalidBaselinePath), "allowed round-1 fallback should leave a baseline screenshot on disk");
@@ -398,6 +462,11 @@ const main = async () => {
     assert(
       round2Grade.result.metadata?.prototype_baseline_valid === false,
       "round 2 should distinguish an invalid baseline source phase from a valid initial baseline"
+    );
+    assert(
+      round2Grade.result.metadata?.prototype_baseline_source_semantics ===
+        "post_mutation_or_late_round_baseline",
+      "round 2 should surface post-mutation baseline semantics when the stored phase is from a later round"
     );
     assert(
       Array.isArray(round2Grade.result.subjective_metric_results) &&

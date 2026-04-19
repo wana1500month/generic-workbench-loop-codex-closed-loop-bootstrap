@@ -53,16 +53,26 @@ const configureSemanticBootstrapAdapter = async (fixture) => {
   );
 
   adapterContract.target_root = relative(fixture.workspaceRoot, fixture.targetRoot);
-  adapterContract.capabilities.prepare_target.command =
-    `node "${semanticExecutorPath}" patch-only-success`;
-  adapterContract.capabilities.run_target.command =
-    `node "${semanticExecutorPath}" patch-only-success`;
-  adapterContract.verification_provider.capabilities.capture_evidence.command =
-    `node "${semanticVerifierPath}" patch-only-success`;
-  adapterContract.verification_provider.capabilities.run_checks.command =
-    `node "${semanticVerifierPath}" patch-only-success`;
-  adapterContract.verification_provider.capabilities.grade_round.command =
-    `node "${semanticVerifierPath}" patch-only-success`;
+  adapterContract.capabilities.prepare_target = {
+    command: process.execPath,
+    args: [semanticExecutorPath, "patch-only-success"]
+  };
+  adapterContract.capabilities.run_target = {
+    command: process.execPath,
+    args: [semanticExecutorPath, "patch-only-success"]
+  };
+  adapterContract.verification_provider.capabilities.capture_evidence = {
+    command: process.execPath,
+    args: [semanticVerifierPath, "patch-only-success"]
+  };
+  adapterContract.verification_provider.capabilities.run_checks = {
+    command: process.execPath,
+    args: [semanticVerifierPath, "patch-only-success"]
+  };
+  adapterContract.verification_provider.capabilities.grade_round = {
+    command: process.execPath,
+    args: [semanticVerifierPath, "patch-only-success"]
+  };
 
   await writeFile(
     fixture.paths.adapterPath,

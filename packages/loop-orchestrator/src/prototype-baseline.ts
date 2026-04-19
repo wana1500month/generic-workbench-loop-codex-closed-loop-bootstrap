@@ -22,6 +22,7 @@ type BootstrapRuntimeConfig = {
 export type PrototypeBaselineState = {
   source_round?: number;
   source_phase?: string;
+  source_semantics?: PrototypeBaselineSourceSemantics;
   source_path?: string;
   baseline_path?: string;
   source_target?: string;
@@ -34,6 +35,7 @@ export type PrototypeBaselineCaptureResult = {
   status: "captured" | "reused" | "skipped" | "blocked";
   baseline_path?: string;
   source_phase?: string | null;
+  source_semantics?: PrototypeBaselineSourceSemantics;
   source_round?: number;
   source_target?: string;
   readiness_url?: string;
@@ -42,6 +44,21 @@ export type PrototypeBaselineCaptureResult = {
   prototype_baseline_present: boolean;
   prototype_baseline_valid: boolean;
 };
+
+export type PrototypeBaselineSourceSemantics =
+  | "initial_pre_round_baseline"
+  | "first_rendered_round_fallback"
+  | "operator_provided_initial_baseline"
+  | "post_mutation_or_late_round_baseline"
+  | "unknown_baseline_origin";
+
+const prototypeBaselineSourceSemanticsValues = new Set<PrototypeBaselineSourceSemantics>([
+  "initial_pre_round_baseline",
+  "first_rendered_round_fallback",
+  "operator_provided_initial_baseline",
+  "post_mutation_or_late_round_baseline",
+  "unknown_baseline_origin"
+]);
 
 export const validPrototypeBaselineSourcePhases = new Set<string>([
   "pre_round_1",
@@ -57,6 +74,52 @@ export const prototypeBaselinePaths = (runtimeDirectory: string) => ({
 
 export const isValidPrototypeBaselineSourcePhase = (value: unknown): value is string =>
   typeof value === "string" && validPrototypeBaselineSourcePhases.has(value);
+
+export const prototypeBaselineSourceSemanticsForPhase = (
+  value: unknown
+): PrototypeBaselineSourceSemantics | undefined => {
+  if (value === "pre_round_1") {
+    return "initial_pre_round_baseline";
+  }
+  if (value === "round_1_initial_prototype_fallback") {
+    return "first_rendered_round_fallback";
+  }
+  if (value === "operator_provided_baseline") {
+    return "operator_provided_initial_baseline";
+  }
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return undefined;
+  }
+  if (value.startsWith("post_round_") || value.includes("post_")) {
+    return "post_mutation_or_late_round_baseline";
+  }
+  return "unknown_baseline_origin";
+};
+
+export const isPrototypeBaselineSourceSemantics = (
+  value: unknown
+): value is PrototypeBaselineSourceSemantics =>
+  typeof value === "string" &&
+  prototypeBaselineSourceSemanticsValues.has(value as PrototypeBaselineSourceSemantics);
+
+export const describePrototypeBaselineSourceSemantics = (
+  value: PrototypeBaselineSourceSemantics | undefined
+): string | undefined => {
+  switch (value) {
+    case "initial_pre_round_baseline":
+      return "A true pre-round baseline was captured before generator mutation began.";
+    case "first_rendered_round_fallback":
+      return "No pre-round existing-product baseline was available, so the first rendered round is serving as the comparison baseline.";
+    case "operator_provided_initial_baseline":
+      return "An operator-provided initial baseline is serving as the comparison baseline.";
+    case "post_mutation_or_late_round_baseline":
+      return "The stored baseline came from post-mutation or later-round evidence, so it does not represent the initial prototype honestly.";
+    case "unknown_baseline_origin":
+      return "The stored baseline origin is unclear, so it should not be trusted as an initial prototype without operator review.";
+    default:
+      return undefined;
+  }
+};
 
 export const hasPrototypeBaseline = (
   state: PrototypeBaselineState | undefined
@@ -273,11 +336,17 @@ export const captureBootstrapGeneratedBaselineIfNeeded = async (input: {
   targetManifest?: TargetManifest;
 }): Promise<PrototypeBaselineCaptureResult> => {
   const existingBaseline = await loadPrototypeBaselineState(input.runtimeDirectory);
+  const existingBaselineSourceSemantics = prototypeBaselineSourceSemanticsForPhase(
+    existingBaseline?.source_phase
+  );
   if (hasValidPrototypeBaseline(existingBaseline)) {
     return {
       status: "reused",
       baseline_path: existingBaseline.baseline_path,
       source_phase: existingBaseline.source_phase,
+      ...(existingBaselineSourceSemantics
+        ? { source_semantics: existingBaselineSourceSemantics }
+        : {}),
       ...(typeof existingBaseline.source_round === "number"
         ? { source_round: existingBaseline.source_round }
         : {}),
@@ -300,6 +369,9 @@ export const captureBootstrapGeneratedBaselineIfNeeded = async (input: {
     return {
       status: "skipped",
       reason: "non_browser_surface",
+      ...(existingBaselineSourceSemantics
+        ? { source_semantics: existingBaselineSourceSemantics }
+        : {}),
       prototype_baseline_present: hasPrototypeBaseline(existingBaseline),
       prototype_baseline_valid: hasValidPrototypeBaseline(existingBaseline)
     };
@@ -317,6 +389,9 @@ export const captureBootstrapGeneratedBaselineIfNeeded = async (input: {
     return {
       status: "skipped",
       reason: "no_browser_target",
+      ...(existingBaselineSourceSemantics
+        ? { source_semantics: existingBaselineSourceSemantics }
+        : {}),
       prototype_baseline_present: hasPrototypeBaseline(existingBaseline),
       prototype_baseline_valid: hasValidPrototypeBaseline(existingBaseline)
     };
@@ -328,6 +403,9 @@ export const captureBootstrapGeneratedBaselineIfNeeded = async (input: {
     return {
       status: "skipped",
       reason: "target_not_ready",
+      ...(existingBaselineSourceSemantics
+        ? { source_semantics: existingBaselineSourceSemantics }
+        : {}),
       readiness_url: readinessUrl,
       source_target: baselineTarget,
       prototype_baseline_present: hasPrototypeBaseline(existingBaseline),
@@ -395,6 +473,7 @@ export const captureBootstrapGeneratedBaselineIfNeeded = async (input: {
     const baselineState: PrototypeBaselineState = {
       source_round: 0,
       source_phase: "pre_round_1",
+      source_semantics: "initial_pre_round_baseline",
       baseline_path: screenshotPath,
       source_target: baselineTarget,
       probe_id: baselineProbe?.probe_id ?? null,
@@ -406,6 +485,7 @@ export const captureBootstrapGeneratedBaselineIfNeeded = async (input: {
       status: "captured",
       baseline_path: screenshotPath,
       source_phase: "pre_round_1",
+      source_semantics: "initial_pre_round_baseline",
       source_round: 0,
       source_target: baselineTarget,
       evidence_paths: evidencePaths,
@@ -416,6 +496,9 @@ export const captureBootstrapGeneratedBaselineIfNeeded = async (input: {
     return {
       status: "blocked",
       reason: error instanceof Error ? error.message : "baseline_capture_failed",
+      ...(existingBaselineSourceSemantics
+        ? { source_semantics: existingBaselineSourceSemantics }
+        : {}),
       source_target: baselineTarget,
       prototype_baseline_present: hasPrototypeBaseline(existingBaseline),
       prototype_baseline_valid: hasValidPrototypeBaseline(existingBaseline)

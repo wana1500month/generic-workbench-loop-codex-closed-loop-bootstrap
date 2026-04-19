@@ -144,6 +144,9 @@ const maybeCompleteTaskTurn = async ({ text, turnId, itemId }) => {
   if (!responsePath) {
     return false;
   }
+  const checkpointId =
+    extractDirective(text, "Checkpoint id") ??
+    text.match(/Echo\s+"checkpoint_id"\s*:\s*"([^"]+)"/)?.[1];
 
   const simulatedFile =
     extractDirective(text, "ATTACHED_GENERATOR_SIMULATED_FILE") ??
@@ -163,6 +166,7 @@ const maybeCompleteTaskTurn = async ({ text, turnId, itemId }) => {
     responsePath,
     JSON.stringify(
       {
+        ...(checkpointId ? { checkpoint_id: checkpointId } : {}),
         status: "applied",
         summary: "fake app-server applied the requested task",
         changed_files: simulatedFile ? [simulatedFile] : [],
