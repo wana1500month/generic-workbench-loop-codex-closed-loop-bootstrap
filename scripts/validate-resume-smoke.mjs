@@ -355,6 +355,14 @@ if (rejectedResumeResult.code === 0) {
 if (!rejectedResumeResult.stderr.includes("Resume identity mismatch")) {
   throw new Error("Resume identity mismatch failure did not mention identity integrity.");
 }
+const rejectedResumeIdentity = await readJsonFile(
+  join(migrationRunDirectory, "resume-identity.json")
+);
+if (rejectedResumeIdentity?.target_family !== "api-service") {
+  throw new Error(
+    "Rejected migration resume should not overwrite the persisted resume identity."
+  );
+}
 
 console.log("[validate-resume-smoke] allow explicit migration override");
 const migratedResumeResult = await runLoop([
@@ -514,6 +522,14 @@ if (
 ) {
   throw new Error(
     "Terminal migration rejection did not explain the force-reopen requirement."
+  );
+}
+const blockedTerminalResumeIdentity = await readJsonFile(
+  join(noAdapterRunDirectory, "resume-identity.json")
+);
+if (blockedTerminalResumeIdentity?.adapter_attached !== false) {
+  throw new Error(
+    "Blocked terminal migration should not overwrite the persisted resume identity."
   );
 }
 

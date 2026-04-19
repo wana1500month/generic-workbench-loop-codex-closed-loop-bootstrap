@@ -1131,7 +1131,6 @@ export const runClosedLoop = async (input: {
     (restoredRun ? await loadResumeIdentityArtifact(runDirectory) : undefined) ??
     summaryResumeIdentity(restoredRun?.summary);
   const currentResumeIdentityPath = resumeIdentityArtifactPath(runDirectory);
-  await writeJson(currentResumeIdentityPath, currentResumeIdentity);
   const resumeDecisionPath = input.resumeRunPath
     ? join(runDirectory, "resume-decision.json")
     : undefined;

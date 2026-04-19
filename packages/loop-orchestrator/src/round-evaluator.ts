@@ -2243,12 +2243,12 @@ export const buildEvalReport = (input: {
       ? failedAdapterResults.length === 0
         ? "pass"
         : "fail"
-      : "fail",
+      : "not_applicable",
     input.loadedAdapter
       ? failedAdapterResults.length === 0
         ? "Every adapter capability completed without failure."
         : `Adapter capability failures remain: ${failedAdapterResults.map((result) => result.check_id).join(", ")}.`
-      : "No adapter is attached, so adapter execution health cannot be proven."
+      : "Adapter execution health is not applicable without an attached adapter."
   );
   const gradeRoundExecution = successfulGradeRoundExecutionFor(input.adapterExecutions);
   const browserSurfaceExpected = expectedTargetSurfacesFor(input.loadedAdapter).has("browser");
@@ -2744,38 +2744,40 @@ export const buildEvalReport = (input: {
     threshold_results.grade_score_required_met &&
     threshold_results.core_probe_required_met &&
     threshold_results.dimension_thresholds_met;
-  const thresholdGapDetailsBase = unique(
-    [
-      subjectiveJudgeNeedsEvaluatorDetail,
-      !threshold_results.adapter_required_met
-        ? "Target-reached signaling requires an attached adapter."
-        : undefined,
-      !threshold_results.grade_score_required_met
-        ? browserSurfaceExpected
-          ? "Target-reached signaling requires a numeric grade_round score with browser subjective quality results."
-          : "Target-reached signaling requires a numeric grade_round score."
-        : undefined,
-      !threshold_results.core_probe_required_met
-        ? lookup.independent_target_probe_present?.detail
-        : undefined,
-      lookup.proof_provenance_is_attested?.status === "fail"
-        ? lookup.proof_provenance_is_attested.detail
-        : undefined,
-      lookup.live_verification_present?.status === "fail"
-        ? lookup.live_verification_present.detail
-        : undefined,
-      !threshold_results.minimum_control_plane_score_met
-        ? `Control-plane score ${control_plane_score.toFixed(3)} is below the minimum ${input.rubric.minimum_control_plane_score.toFixed(3)}.`
-        : undefined,
-      !threshold_results.minimum_proof_score_met
-        ? `Proof score ${proof_score.toFixed(3)} is below the minimum ${input.rubric.minimum_proof_score.toFixed(3)}.`
-        : undefined,
-      !threshold_results.minimum_release_score_met
-        ? `Release score ${release_score.toFixed(3)} is below the target ${input.rubric.target_total_score.toFixed(3)}.`
-        : undefined,
-      ...releaseScoreCapDetails
-    ].filter((detail): detail is string => Boolean(detail))
-  );
+  const thresholdGapDetailsBase = input.loadedAdapter
+    ? unique(
+        [
+          subjectiveJudgeNeedsEvaluatorDetail,
+          !threshold_results.adapter_required_met
+            ? "Target-reached signaling requires an attached adapter."
+            : undefined,
+          !threshold_results.grade_score_required_met
+            ? browserSurfaceExpected
+              ? "Target-reached signaling requires a numeric grade_round score with browser subjective quality results."
+              : "Target-reached signaling requires a numeric grade_round score."
+            : undefined,
+          !threshold_results.core_probe_required_met
+            ? lookup.independent_target_probe_present?.detail
+            : undefined,
+          lookup.proof_provenance_is_attested?.status === "fail"
+            ? lookup.proof_provenance_is_attested.detail
+            : undefined,
+          lookup.live_verification_present?.status === "fail"
+            ? lookup.live_verification_present.detail
+            : undefined,
+          !threshold_results.minimum_control_plane_score_met
+            ? `Control-plane score ${control_plane_score.toFixed(3)} is below the minimum ${input.rubric.minimum_control_plane_score.toFixed(3)}.`
+            : undefined,
+          !threshold_results.minimum_proof_score_met
+            ? `Proof score ${proof_score.toFixed(3)} is below the minimum ${input.rubric.minimum_proof_score.toFixed(3)}.`
+            : undefined,
+          !threshold_results.minimum_release_score_met
+            ? `Release score ${release_score.toFixed(3)} is below the target ${input.rubric.target_total_score.toFixed(3)}.`
+            : undefined,
+          ...releaseScoreCapDetails
+        ].filter((detail): detail is string => Boolean(detail))
+      )
+    : [];
   const recomputeDimensionThresholds = (): {
     dimension_scores: EvalScoreDimension[];
     failedDimensionScores: EvalScoreDimension[];
