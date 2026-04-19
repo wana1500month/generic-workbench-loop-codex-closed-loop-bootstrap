@@ -40,6 +40,7 @@ export type CodexCommandInput = {
   sandboxMode?: CodexSandboxMode;
   sessionId?: string;
   metadata?: Record<string, string | number | boolean | null>;
+  allowCurrentThreadReadOnlyJudge?: boolean;
 };
 
 export type CodexCommandResult = {
@@ -80,6 +81,12 @@ export type CodexAuthPreflight = {
 const unique = <T>(values: readonly T[]): T[] => [...new Set(values)];
 const currentThreadTransportBlockedReason =
   "Current-thread transports forbid nested Codex command execution. Use the active Codex thread or App Server turn as the operator surface instead of spawning codex exec.";
+
+const isCurrentThreadReadOnlyJudge = (input: CodexCommandInput): boolean =>
+  input.allowCurrentThreadReadOnlyJudge === true &&
+  input.metadata?.role === "judge" &&
+  input.configOverrides?.approval_policy === "never" &&
+  input.configOverrides?.sandbox_mode === "read-only";
 
 const tomlLiteral = (value: string | number | boolean): string => {
   if (typeof value === "string") {
@@ -385,7 +392,11 @@ export const runCodexCommand = async (
   }
 
   const harnessTransportMode = resolvedHarnessTransportMode();
-  if (harnessTransportMode && isCurrentThreadTransport(harnessTransportMode)) {
+  if (
+    harnessTransportMode &&
+    isCurrentThreadTransport(harnessTransportMode) &&
+    !isCurrentThreadReadOnlyJudge(input)
+  ) {
     const blockedResult: CodexCommandResult = {
       code: 0,
       stdout: "",
@@ -415,6 +426,8 @@ export const runCodexCommand = async (
         disabled: true,
         current_thread_transport_blocked: true,
         transport_mode: harnessTransportMode,
+        allow_current_thread_read_only_judge:
+          input.allowCurrentThreadReadOnlyJudge === true,
         error: blockedResult.error,
         prompt_path: promptPath,
         response_path: responsePath,

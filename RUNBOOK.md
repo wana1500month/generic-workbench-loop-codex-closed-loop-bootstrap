@@ -581,6 +581,12 @@ For browser/fullstack realism on a host that does not already allow headless bro
 
 Proof-side partial credit is intentionally conservative now: verification criteria, proof checks, and rubric dimension scores use a quadratic partial-credit curve, so intermediate scores rise more slowly until most checks are actually green.
 
+The read-only `subjective-quality-judge` is now explicitly allowed under `current-thread` and `app-server` transports when it runs as a non-mutating judge, so strict browser scoring can still complete on the Codex app foreground surface.
+
+Bootstrap `apply_change` now attempts a best-effort `pre_round_1` browser baseline capture before any round-1 mutation when a browser target is already reachable, and later fallback baseline manifests record whether they were captured pre-round or only after a mutation.
+
+Generated `grade_round` artifacts now align their own score with browser release-score caps and persist `uncapped_release_score`, `release_score_cap`, and `release_score_cap_reasons` metadata for debugging.
+
 ## Additional validation
 
 - `npm run validate:end-pass-qa`: proves that round contracts are written, release-gate probes are surfaced, and dimension floors both pass and fail in deterministic fixtures.

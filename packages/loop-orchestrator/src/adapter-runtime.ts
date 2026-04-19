@@ -245,14 +245,28 @@ const commandTargetFingerprint = (input: {
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const isPrimitiveMetadataValue = (
+  value: unknown
+): value is string | number | boolean | ReadonlyArray<string | number | boolean> =>
+  typeof value === "string" ||
+  typeof value === "number" ||
+  typeof value === "boolean" ||
+  (Array.isArray(value) &&
+    value.every(
+      (entry) =>
+        typeof entry === "string" ||
+        typeof entry === "number" ||
+        typeof entry === "boolean"
+    ));
+
 const hasPrimitiveMetadata = (
   value: unknown
-): value is Record<string, string | number | boolean> =>
+): value is Record<
+  string,
+  string | number | boolean | ReadonlyArray<string | number | boolean>
+> =>
   isPlainObject(value) &&
-  Object.values(value).every(
-    (entry) =>
-      typeof entry === "string" || typeof entry === "number" || typeof entry === "boolean"
-  );
+  Object.values(value).every((entry) => isPrimitiveMetadataValue(entry));
 
 const normalizeScoreWeightBlock = (
   input: {

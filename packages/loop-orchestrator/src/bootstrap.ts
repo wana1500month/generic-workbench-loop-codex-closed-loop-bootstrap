@@ -1648,7 +1648,7 @@ const moduleImportPath = (fromDirectory: string, toFile: string): string =>
     return normalized.startsWith(".") ? normalized : `./${normalized}`;
   })();
 
-const helperTemplate = (codexRuntimeImportPath: string): string => `import { openSync } from "node:fs";
+const helperTemplate = (codexRuntimeImportPath: string): string => `import { existsSync, openSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
@@ -1779,6 +1779,310 @@ export const readJsonIfExists = async (path) => {
     return JSON.parse(await readFile(path, "utf8"));
   } catch {
     return undefined;
+  }
+};
+
+const loadChromium = async () => {
+  const playwright = await import("playwright-core");
+  return playwright.chromium;
+};
+
+const browserExecutableCandidates = () =>
+  process.platform === "win32"
+    ? ["msedge", "chrome", "chromium"]
+    : process.platform === "darwin"
+      ? ["Google Chrome", "Microsoft Edge", "chromium"]
+      : ["google-chrome", "chromium", "chromium-browser", "microsoft-edge"];
+
+const resolveBrowserExecutable = (profile) => {
+  const probeExecutable = (profile.core_probes ?? []).find(
+    (probe) =>
+      (probe.mode === "browser" || probe.mode === "browser_journey") &&
+      typeof probe.browser_executable === "string" &&
+      probe.browser_executable.trim().length > 0
+  )?.browser_executable;
+  if (typeof probeExecutable === "string" && probeExecutable.trim().length > 0) {
+    return probeExecutable.trim();
+  }
+  if (
+    typeof process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH === "string" &&
+    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.trim().length > 0
+  ) {
+    return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.trim();
+  }
+  return browserExecutableCandidates()[0];
+};
+
+const browserSurfaceExpected = (profile) =>
+  (Array.isArray(profile.expected_target_surfaces) &&
+    profile.expected_target_surfaces.includes("browser")) ||
+  (profile.core_probes ?? []).some(
+    (probe) => probe.mode === "browser" || probe.mode === "browser_journey"
+  );
+
+const selectBaselineProbe = (profile) =>
+  (profile.core_probes ?? []).find(
+    (probe) =>
+      probe.required !== false &&
+      (probe.mode === "browser" || probe.mode === "browser_journey")
+  ) ??
+  (profile.core_probes ?? []).find(
+    (probe) => probe.mode === "browser" || probe.mode === "browser_journey"
+  );
+
+const targetManifestValueForProbe = (probe, config, targetManifest) => {
+  if (probe?.target_manifest_key === "app_url") {
+    return targetManifest?.app_url ?? config.app_url;
+  }
+  if (probe?.target_manifest_key === "health_url") {
+    return targetManifest?.health_url ?? config.health_url;
+  }
+  if (probe?.target_manifest_key === "api_base_url") {
+    return targetManifest?.api_base_url ?? config.api_base_url;
+  }
+  return undefined;
+};
+
+const resolveBrowserBaselineTarget = (probe, config, targetManifest) => {
+  const literalTarget =
+    typeof probe?.target === "string" && probe.target.trim().length > 0
+      ? probe.target.trim()
+      : undefined;
+  const manifestTarget = probe
+    ? targetManifestValueForProbe(probe, config, targetManifest)
+    : undefined;
+  const baseTarget = manifestTarget ?? literalTarget ?? config.app_url ?? config.ready_url;
+  if (!baseTarget) {
+    return undefined;
+  }
+  if (probe?.target_path) {
+    return new URL(probe.target_path, baseTarget).toString();
+  }
+  return baseTarget;
+};
+
+const resolvedJourneyTarget = (target, stepValue) =>
+  typeof stepValue === "string" && stepValue.trim().length > 0
+    ? new URL(stepValue.trim(), target).toString()
+    : target;
+
+const executeBaselineJourney = async ({ page, target, steps, timeoutMs }) => {
+  for (const step of steps) {
+    const stepTimeout = step.timeout_ms ?? timeoutMs;
+    switch (step.action) {
+      case "goto":
+        await page.goto(resolvedJourneyTarget(target, step.value), {
+          waitUntil: "networkidle",
+          timeout: stepTimeout
+        });
+        break;
+      case "click":
+        await page.locator(step.selector ?? "").click({ timeout: stepTimeout });
+        break;
+      case "fill":
+        await page.locator(step.selector ?? "").fill(step.value ?? "", {
+          timeout: stepTimeout
+        });
+        break;
+      case "press":
+        await page.locator(step.selector ?? "").press(step.value ?? "", {
+          timeout: stepTimeout
+        });
+        break;
+      case "reload":
+        await page.reload({ waitUntil: "networkidle", timeout: stepTimeout });
+        break;
+      case "wait_for":
+        if (step.selector) {
+          await page.locator(step.selector).waitFor({
+            state: "visible",
+            timeout: stepTimeout
+          });
+        } else {
+          await page.waitForTimeout(stepTimeout);
+        }
+        break;
+      case "assert_visible":
+        await page.locator(step.selector ?? "").waitFor({
+          state: "visible",
+          timeout: stepTimeout
+        });
+        break;
+      case "assert_not_visible":
+        await page.locator(step.selector ?? "").waitFor({
+          state: "hidden",
+          timeout: stepTimeout
+        });
+        break;
+      case "assert_text": {
+        const text =
+          step.selector
+            ? (await page.locator(step.selector).textContent({ timeout: stepTimeout })) ?? ""
+            : (await page.textContent("body")) ?? "";
+        if (!text.includes(step.value ?? "")) {
+          throw new Error(
+            "Baseline capture expected text '" +
+              (step.value ?? "") +
+              "' but it was not visible."
+          );
+        }
+        break;
+      }
+      case "assert_value": {
+        const observedValue = await page
+          .locator(step.selector ?? "")
+          .inputValue({ timeout: stepTimeout });
+        if (observedValue !== (step.value ?? "")) {
+          throw new Error(
+            "Baseline capture expected input value '" +
+              (step.value ?? "") +
+              "' but observed '" +
+              observedValue +
+              "'."
+          );
+        }
+        break;
+      }
+      case "assert_url": {
+        const currentUrl = page.url();
+        if (!currentUrl.includes(step.value ?? "")) {
+          throw new Error(
+            "Baseline capture expected URL '" +
+              currentUrl +
+              "' to include '" +
+              (step.value ?? "") +
+              "'."
+          );
+        }
+        break;
+      }
+    }
+  }
+};
+
+export const captureBrowserBaselineIfNeeded = async (options = {}) => {
+  const baselineManifestPath = join(runtimeDirectory, "product-baseline.json");
+  const existingBaseline = await readJsonIfExists(baselineManifestPath);
+  if (
+    existingBaseline &&
+    typeof existingBaseline.baseline_path === "string" &&
+    existingBaseline.baseline_path.length > 0
+  ) {
+    return {
+      status: "reused",
+      baseline_path: existingBaseline.baseline_path,
+      source_phase: existingBaseline.source_phase ?? null
+    };
+  }
+
+  const config = options.config ?? (await readConfig());
+  const profile = options.profile ?? (await readVerificationProfile());
+  if (!browserSurfaceExpected(profile)) {
+    return { status: "skipped", reason: "non_browser_surface" };
+  }
+
+  const targetManifest = await readTargetManifest();
+  const baselineProbe = selectBaselineProbe(profile);
+  const baselineTarget = resolveBrowserBaselineTarget(
+    baselineProbe,
+    config,
+    targetManifest
+  );
+  if (!baselineTarget) {
+    return { status: "skipped", reason: "no_browser_target" };
+  }
+
+  const readinessUrl = config.ready_url ?? baselineTarget;
+  const readinessProbe = await waitForUrl(readinessUrl, 1500);
+  if (!readinessProbe.ok) {
+    return {
+      status: "skipped",
+      reason: "target_not_ready",
+      readiness_url: readinessUrl
+    };
+  }
+
+  const chromium = await loadChromium();
+  const executablePath = resolveBrowserExecutable(profile);
+  const browser = await chromium.launch({
+    headless: true,
+    ...(typeof executablePath === "string" && executablePath.length > 0
+      ? { executablePath }
+      : {})
+  });
+
+  let context;
+  let traceStarted = false;
+  const screenshotPath = join(runtimeDirectory, "baseline-home.png");
+  const tracePath = join(runtimeDirectory, "baseline-trace.zip");
+  const timeoutMs = options.timeoutMs ?? baselineProbe?.timeout_ms ?? 30000;
+
+  try {
+    context = await browser.newContext();
+    await context.tracing.start({ screenshots: true, snapshots: true });
+    traceStarted = true;
+    const page = await context.newPage();
+    if (
+      baselineProbe?.mode === "browser_journey" &&
+      Array.isArray(baselineProbe.steps) &&
+      baselineProbe.steps.length > 0
+    ) {
+      await executeBaselineJourney({
+        page,
+        target: baselineTarget,
+        steps: baselineProbe.steps,
+        timeoutMs
+      });
+    } else {
+      await page.goto(baselineTarget, {
+        waitUntil: "networkidle",
+        timeout: timeoutMs
+      });
+    }
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    if (traceStarted) {
+      await context.tracing.stop({ path: tracePath });
+      traceStarted = false;
+    }
+    const evidencePaths = [screenshotPath];
+    if (existsSync(tracePath)) {
+      evidencePaths.push(tracePath);
+    }
+    const baselineState = {
+      source_round: 0,
+      source_phase: "pre_round_1",
+      baseline_path: screenshotPath,
+      source_target: baselineTarget,
+      probe_id: baselineProbe?.probe_id ?? null,
+      created_at: new Date().toISOString(),
+      evidence_paths: evidencePaths
+    };
+    await writeRuntimeJson("product-baseline.json", baselineState);
+    return {
+      status: "captured",
+      baseline_path: screenshotPath,
+      source_phase: "pre_round_1",
+      source_target: baselineTarget,
+      evidence_paths: evidencePaths
+    };
+  } catch (error) {
+    if (traceStarted && context) {
+      try {
+        await context.tracing.stop({ path: tracePath });
+      } catch {}
+    }
+    return {
+      status: "blocked",
+      reason: error instanceof Error ? error.message : String(error),
+      source_target: baselineTarget
+    };
+  } finally {
+    if (context) {
+      try {
+        await context.close();
+      } catch {}
+    }
+    await browser.close();
   }
 };
 
@@ -1958,6 +2262,7 @@ main().catch(async (error) => {
 const applyChangeTemplate = (): string => `import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
+  captureBrowserBaselineIfNeeded,
   finalize,
   readConfig,
   readJsonIfExists,
@@ -2002,6 +2307,22 @@ const main = async () => {
     : undefined;
   const previousEvalReport = previousRoundDirectory
     ? await readJsonIfExists(join(previousRoundDirectory, "eval_report.json"))
+    : undefined;
+  const baselineCapture =
+    packet.round === 1 ? await captureBrowserBaselineIfNeeded({ config }) : undefined;
+  const baselineCaptureNotePath = baselineCapture
+    ? await writeArtifact(
+        "pre-round-baseline.md",
+        [
+          "# Pre-round baseline",
+          "",
+          "Status: " + baselineCapture.status,
+          "Source phase: " + String(baselineCapture.source_phase ?? "n/a"),
+          "Baseline path: " + String(baselineCapture.baseline_path ?? "n/a"),
+          "Target: " + String(baselineCapture.source_target ?? baselineCapture.readiness_url ?? "n/a"),
+          "Reason: " + String(baselineCapture.reason ?? "none")
+        ].join("\\n")
+      )
     : undefined;
   const remediationBrief = {
     round_contract: roundContract
@@ -2139,6 +2460,9 @@ const main = async () => {
             : "Current-thread attached generator completed the round mutation.",
         findings: [
           attachedGeneratorResponse.summary,
+          ...(baselineCapture?.status === "blocked" && baselineCapture.reason
+            ? ["Pre-round baseline capture was blocked: " + baselineCapture.reason]
+            : []),
           ...(Array.isArray(attachedGeneratorResponse.notes)
             ? attachedGeneratorResponse.notes
             : [])
@@ -2146,6 +2470,7 @@ const main = async () => {
         evidence_paths: [
           remediationBriefPath,
           attachedNotePath,
+          baselineCaptureNotePath,
           attachedGeneratorTaskPath ? relativeToRound(attachedGeneratorTaskPath) : undefined,
           attachedGeneratorResponsePath
             ? relativeToRound(attachedGeneratorResponsePath)
@@ -2168,6 +2493,9 @@ const main = async () => {
         "HARNESS_TRANSPORT=" +
           transportMode +
           " requires generator work to stay on the active thread or App Server turn instead of spawning codex exec from bootstrap apply_change.",
+        ...(baselineCapture?.status === "blocked" && baselineCapture.reason
+          ? ["Pre-round baseline capture was blocked: " + baselineCapture.reason]
+          : []),
         attachedGeneratorResponsePath
           ? "Expected attached generator response at " + attachedGeneratorResponsePath + "."
           : "HARNESS_GENERATOR_RESPONSE_PATH was not provided."
@@ -2175,6 +2503,7 @@ const main = async () => {
       evidence_paths: [
         remediationBriefPath,
         attachedNotePath,
+        baselineCaptureNotePath,
         attachedGeneratorTaskPath ? relativeToRound(attachedGeneratorTaskPath) : undefined
       ].filter(Boolean)
     });
@@ -2278,6 +2607,7 @@ const main = async () => {
   const stderrPath = await writeArtifact("apply-change.stderr.log", execution.stderr);
   const evidencePaths = [
     remediationBriefPath,
+    baselineCaptureNotePath,
     stdoutPath,
     stderrPath,
     relativeToRound(execution.promptPath),
@@ -2299,6 +2629,9 @@ const main = async () => {
       mutationSucceeded
         ? []
         : [
+            ...(baselineCapture?.status === "blocked" && baselineCapture.reason
+              ? ["Pre-round baseline capture was blocked: " + baselineCapture.reason]
+              : []),
             execution.error ||
               (execution.disabled
                 ? "HARNESS_DISABLE_CODEX_AGENTS=1 prevented generator mutation."
@@ -2926,6 +3259,12 @@ const main = async () => {
     await copyFile(currentScreenshotPath, baselineScreenshotPath);
     baselineState = {
       source_round: typeof packet.round === "number" ? packet.round : 1,
+      source_phase:
+        typeof packet.round === "number"
+          ? packet.round === 1
+            ? "round_1_post_mutation_fallback"
+            : "post_round_" + packet.round + "_grade_round"
+          : "post_round_1_grade_round",
       source_path: currentScreenshotPath,
       baseline_path: baselineScreenshotPath,
       created_at: new Date().toISOString()
@@ -2934,10 +3273,16 @@ const main = async () => {
   }
   const baselineScreenshotReference =
     typeof baselineState?.baseline_path === "string" ? baselineState.baseline_path : undefined;
+  const baselineSourcePhase =
+    typeof baselineState?.source_phase === "string" ? baselineState.source_phase : undefined;
+  const baselineSourceRound =
+    typeof baselineState?.source_round === "number" ? baselineState.source_round : undefined;
 
   const reviewOverridePath = process.env.HARNESS_SUBJECTIVE_REVIEW_PATH;
   let subjectiveReview;
   let judgeArtifacts = [];
+  let subjectiveJudgeDisabled = false;
+  let subjectiveJudgeFailureReason;
   if (subjectiveMetrics.length > 0) {
     if (reviewOverridePath) {
       subjectiveReview = await readJsonIfExists(reviewOverridePath);
@@ -2999,6 +3344,7 @@ const main = async () => {
         prompt,
         cwd: runtimePaths.targetRoot,
         artifactDirectory: runtimePaths.artifactsDirectory,
+        allowCurrentThreadReadOnlyJudge: true,
         configOverrides: {
           approval_policy: "never",
           sandbox_mode: "read-only",
@@ -3030,6 +3376,13 @@ const main = async () => {
         !judgeExecution.responseWritten ||
         !subjectiveReview
       ) {
+        subjectiveJudgeDisabled = judgeExecution.disabled === true;
+        subjectiveJudgeFailureReason = judgeExecution.disabled
+          ? judgeExecution.error ??
+            "Subjective quality judge was disabled before it could score the round."
+          : judgeExecution.error
+            ? judgeExecution.error
+            : "Subjective quality judge did not return structured output.";
         subjectiveReview = failClosedSubjectiveReview(
           subjectiveMetrics,
           judgeExecution.disabled
@@ -3114,6 +3467,8 @@ const main = async () => {
           browser_surface_expected: browserSurfaceExpected,
           current_screenshot_path: currentScreenshotPath,
           baseline_screenshot_path: baselineScreenshotReference,
+          baseline_source_phase: baselineSourcePhase,
+          baseline_source_round: baselineSourceRound,
           visual_evidence_paths: visualEvidencePaths.map((path) =>
             path.startsWith(runtimePaths.roundDirectory) ? relativeToRound(path) : path
           )
@@ -3162,7 +3517,16 @@ const main = async () => {
   const failedReleaseGateProbeIds = requiredReleaseGateProbes
     .filter((probe) => !probe.ok)
     .map((probe) => probe.probe_id);
-  const releaseScore =
+  const requiredSubjectiveFailures = subjectiveMetricResults.filter(
+    (metric) => (metric.required ?? true) && metric.status === "fail"
+  );
+  const prototypeDeltaMetric = subjectiveMetricResults.find(
+    (metric) => metric.metric_id === "prototype_delta"
+  );
+  const prototypeDeltaRequired = browserSurfaceExpected && packet.round >= 2;
+  const prototypeDeltaPassed =
+    !prototypeDeltaRequired || prototypeDeltaMetric?.status === "pass";
+  const uncappedReleaseScore =
     subjectiveAverageNormalized === undefined
       ? browserSurfaceExpected
         ? roundScore(deterministicReleaseScore * 0.6)
@@ -3170,6 +3534,42 @@ const main = async () => {
       : browserSurfaceExpected
         ? roundScore(0.35 * deterministicReleaseScore + 0.65 * subjectiveAverageNormalized)
         : roundScore(0.7 * deterministicReleaseScore + 0.3 * subjectiveAverageNormalized);
+  let releaseScore = uncappedReleaseScore;
+  const releaseScoreCapReasons = [];
+  if (browserSurfaceExpected && subjectiveMetricResults.length === 0) {
+    releaseScore = Math.min(releaseScore, 0.59);
+    releaseScoreCapReasons.push(
+      "Browser release score is capped at 0.590 because no subjective metric results were available."
+    );
+  }
+  if (browserSurfaceExpected && visualEvidencePaths.length === 0) {
+    releaseScore = Math.min(releaseScore, 0.59);
+    releaseScoreCapReasons.push(
+      "Browser release score is capped at 0.590 because no screenshots or traces were attached."
+    );
+  }
+  if (browserSurfaceExpected && requiredSubjectiveFailures.length > 0) {
+    releaseScore = Math.min(releaseScore, 0.79);
+    releaseScoreCapReasons.push(
+      "Browser release score is capped at 0.790 because required subjective metrics still fail: " +
+        requiredSubjectiveFailures.map((metric) => metric.metric_id).join(", ") +
+        "."
+    );
+  }
+  if (browserSurfaceExpected && prototypeDeltaRequired && !prototypeDeltaPassed) {
+    releaseScore = Math.min(releaseScore, 0.84);
+    releaseScoreCapReasons.push(
+      "Browser release score is capped at 0.840 because prototype_delta did not show a material improvement beyond the stored baseline."
+    );
+  }
+  if (subjectiveJudgeDisabled && subjectiveJudgeFailureReason) {
+    releaseScoreCapReasons.push(
+      "Subjective judge fallback was used: " + subjectiveJudgeFailureReason
+    );
+  }
+  releaseScore = roundScore(releaseScore);
+  const releaseScoreCap =
+    releaseScoreCapReasons.length > 0 ? releaseScore : undefined;
   const reportPath = await writeArtifact(
     "grade-summary.md",
     [
@@ -3194,6 +3594,11 @@ const main = async () => {
       "Browser surface expected: " + String(browserSurfaceExpected),
       "Visual evidence present: " + String(visualEvidencePaths.length > 0),
       "Baseline screenshot: " + String(baselineScreenshotReference ?? "none"),
+      "Baseline source phase: " + String(baselineSourcePhase ?? "none"),
+      "Baseline source round: " + String(baselineSourceRound ?? "none"),
+      "Uncapped release score: " + String(uncappedReleaseScore),
+      "Release score cap: " + String(releaseScoreCap ?? "none"),
+      "Release score cap reasons: " + (releaseScoreCapReasons.join(" | ") || "none"),
       "Release score: " + String(releaseScore),
       "Threshold verdict: " + thresholdVerdict,
       "Overall verdict: " + overallVerdict
@@ -3201,6 +3606,12 @@ const main = async () => {
   );
 
   const findings = [
+    ...(subjectiveJudgeDisabled
+      ? [
+          "Status: needs_evaluator. Subjective quality judge could not complete scoring: " +
+            (subjectiveJudgeFailureReason ?? "no judge failure reason was recorded")
+        ]
+      : []),
     ...blockingCriterionIds.map(
       (criterionId) => "Blocking criterion failed: " + criterionId + "."
     ),
@@ -3214,7 +3625,8 @@ const main = async () => {
           "/10 against the requested minimum " +
           metric.minimum_score_out_of_ten +
           "/10."
-      )
+      ),
+    ...releaseScoreCapReasons
   ].slice(0, 8);
 
   await finalize({
@@ -3268,14 +3680,31 @@ const main = async () => {
       hard_failure_count: hardFailures.length,
       subjective_metric_count: subjectiveMetrics.length,
       subjective_quality_present: subjectiveMetricResults.length > 0,
+      subjective_judge_disabled: subjectiveJudgeDisabled,
+      ...(subjectiveJudgeFailureReason
+        ? { subjective_judge_failure_reason: subjectiveJudgeFailureReason }
+        : {}),
+      ...(process.env.HARNESS_TRANSPORT
+        ? { subjective_judge_transport_mode: process.env.HARNESS_TRANSPORT }
+        : {}),
       visual_evidence_present: visualEvidencePaths.length > 0,
       prototype_baseline_present: Boolean(baselineScreenshotReference),
+      ...(baselineSourcePhase ? { prototype_baseline_source_phase: baselineSourcePhase } : {}),
+      ...(typeof baselineSourceRound === "number"
+        ? { prototype_baseline_source_round: baselineSourceRound }
+        : {}),
       failed_subjective_metric_count: subjectiveMetricResults.filter(
         (metric) => metric.status === "fail"
       ).length,
       required_subjective_failure_count: subjectiveMetricResults.filter(
         (metric) => (metric.required ?? true) && metric.status === "fail"
       ).length,
+      uncapped_release_score: uncappedReleaseScore,
+      release_score_capped: releaseScoreCapReasons.length > 0,
+      ...(typeof releaseScoreCap === "number" ? { release_score_cap: releaseScoreCap } : {}),
+      ...(releaseScoreCapReasons.length > 0
+        ? { release_score_cap_reasons: releaseScoreCapReasons }
+        : {}),
       ...(subjectiveMetricResults.find((metric) => metric.metric_id === "prototype_delta")
         ? {
             prototype_delta_score_out_of_ten:

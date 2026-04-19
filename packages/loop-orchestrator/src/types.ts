@@ -842,7 +842,10 @@ export interface AdapterCapabilityResult {
   criteria_results?: AdapterCriterionResult[];
   threshold_verdict?: "pass" | "fail";
   blocking_criterion_ids?: string[];
-  metadata?: Record<string, string | number | boolean>;
+  metadata?: Record<
+    string,
+    string | number | boolean | null | ReadonlyArray<string | number | boolean>
+  >;
   score?: number;
   overall_verdict?: RoundVerdict;
   subjective_metric_results?: SubjectiveMetricResult[];

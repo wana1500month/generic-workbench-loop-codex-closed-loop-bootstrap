@@ -2261,6 +2261,34 @@ export const buildEvalReport = (input: {
     ...input.coreProbeResults.flatMap((probe) => probe.evidence_paths)
   ]).some(isVisualEvidencePath);
   const prototypeBaselinePresent = gradeRoundExecution?.result.metadata?.prototype_baseline_present === true;
+  const prototypeBaselineSourcePhase =
+    typeof gradeRoundExecution?.result.metadata?.prototype_baseline_source_phase === "string"
+      ? gradeRoundExecution.result.metadata.prototype_baseline_source_phase
+      : undefined;
+  const prototypeBaselineSourceRound =
+    typeof gradeRoundExecution?.result.metadata?.prototype_baseline_source_round === "number"
+      ? gradeRoundExecution.result.metadata.prototype_baseline_source_round
+      : undefined;
+  const subjectiveJudgeDisabled =
+    gradeRoundExecution?.result.metadata?.subjective_judge_disabled === true;
+  const subjectiveJudgeFailureReason =
+    typeof gradeRoundExecution?.result.metadata?.subjective_judge_failure_reason === "string"
+      ? gradeRoundExecution.result.metadata.subjective_judge_failure_reason
+      : undefined;
+  const subjectiveJudgeTransportMode =
+    typeof gradeRoundExecution?.result.metadata?.subjective_judge_transport_mode === "string"
+      ? gradeRoundExecution.result.metadata.subjective_judge_transport_mode
+      : undefined;
+  const subjectiveJudgeNeedsEvaluatorDetail = subjectiveJudgeDisabled
+    ? `Status: needs_evaluator. Subjective-quality judge could not complete browser scoring${
+        subjectiveJudgeTransportMode
+          ? ` on transport '${subjectiveJudgeTransportMode}'`
+          : ""
+      }. ${
+        subjectiveJudgeFailureReason ??
+        "Allow the read-only judge on the active operator surface or provide HARNESS_SUBJECTIVE_REVIEW_PATH."
+      }`
+    : undefined;
   const prototypeDeltaMetric = subjectiveMetricResults.find(
     (metric) => metric.metric_id === "prototype_delta"
   );
@@ -2279,8 +2307,11 @@ export const buildEvalReport = (input: {
     !browserSurfaceExpected
       ? "Subjective quality evidence is not required for non-browser targets."
       : subjectiveMetricResults.length > 0
-        ? `grade_round reported ${subjectiveMetricResults.length} subjective product-quality metric result(s).`
-        : "Browser release quality requires subjective metric results, but grade_round did not report any."
+        ? subjectiveJudgeDisabled
+          ? `grade_round reported fail-closed subjective metric results after the judge was unavailable. ${subjectiveJudgeNeedsEvaluatorDetail}`
+          : `grade_round reported ${subjectiveMetricResults.length} subjective product-quality metric result(s).`
+        : subjectiveJudgeNeedsEvaluatorDetail ??
+          "Browser release quality requires subjective metric results, but grade_round did not report any."
   );
   lookup.subjective_thresholds_met = checkResult(
     "subjective_thresholds_met",
@@ -2293,6 +2324,9 @@ export const buildEvalReport = (input: {
           : "fail",
     !browserSurfaceExpected
       ? "Subjective threshold gating is not required for non-browser targets."
+      : subjectiveJudgeDisabled
+        ? subjectiveJudgeNeedsEvaluatorDetail ??
+          "Required browser subjective thresholds could not be evaluated."
       : subjectiveMetricResults.length === 0
         ? "Required browser subjective thresholds could not be evaluated."
         : failedRequiredSubjectiveMetrics.length === 0
@@ -2326,7 +2360,15 @@ export const buildEvalReport = (input: {
       : input.round < 2
         ? "Prototype baseline capture is optional on the first browser round."
         : prototypeBaselinePresent
-          ? "A persisted baseline screenshot is available for prototype-to-release comparison."
+          ? `A persisted baseline screenshot is available for prototype-to-release comparison${
+              prototypeBaselineSourcePhase
+                ? ` from '${prototypeBaselineSourcePhase}'`
+                : ""
+            }${
+              typeof prototypeBaselineSourceRound === "number"
+                ? ` (source round ${prototypeBaselineSourceRound}).`
+                : "."
+            }`
           : "Browser rounds after the baseline capture must keep a persisted prototype screenshot for delta judging."
   );
   lookup.prototype_delta_present = checkResult(
@@ -2636,6 +2678,7 @@ export const buildEvalReport = (input: {
     threshold_results.dimension_thresholds_met;
   const thresholdGapDetailsBase = unique(
     [
+      subjectiveJudgeNeedsEvaluatorDetail,
       !threshold_results.adapter_required_met
         ? "Target-reached signaling requires an attached adapter."
         : undefined,

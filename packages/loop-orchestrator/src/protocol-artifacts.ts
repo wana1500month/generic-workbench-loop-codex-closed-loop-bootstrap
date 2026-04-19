@@ -747,6 +747,41 @@ export const buildQualityCritiqueArtifact = (input: {
       }) ?? [];
   findings.push(...subjectiveFindings);
 
+  const subjectiveJudgeDisabled =
+    gradeRoundExecution?.result.metadata?.subjective_judge_disabled === true;
+  const subjectiveJudgeFailureReason =
+    typeof gradeRoundExecution?.result.metadata?.subjective_judge_failure_reason === "string"
+      ? gradeRoundExecution.result.metadata.subjective_judge_failure_reason
+      : undefined;
+  const subjectiveJudgeTransportMode =
+    typeof gradeRoundExecution?.result.metadata?.subjective_judge_transport_mode === "string"
+      ? gradeRoundExecution.result.metadata.subjective_judge_transport_mode
+      : undefined;
+  if (subjectiveJudgeDisabled) {
+    findings.push({
+      finding_id: "subjective-judge-disabled",
+      category: "proof_signal",
+      severity: "critical",
+      summary:
+        `Status: needs_evaluator. Subjective-quality judge could not complete browser scoring${
+          subjectiveJudgeTransportMode
+            ? ` on transport '${subjectiveJudgeTransportMode}'`
+            : ""
+        }.` +
+        (subjectiveJudgeFailureReason ? ` ${subjectiveJudgeFailureReason}` : ""),
+      expected_change:
+        "Allow the read-only subjective-quality judge on the active operator surface or provide HARNESS_SUBJECTIVE_REVIEW_PATH so browser quality scoring can complete honestly.",
+      evidence: gradeRoundExecution?.result.evidence_paths ?? [],
+      preserve: preserveSignals,
+      pivot_or_refine: remediationStrategy,
+      target_check_ids: carryForwardSafeTargetCheckIds([
+        "subjective_thresholds_met",
+        "target_signal_thresholds_met"
+      ]),
+      dimension_id: "subjective_release_quality"
+    });
+  }
+
   if (input.evalReport.threshold_gap_details.length > 0) {
     findings.push({
       finding_id: `threshold-gap-round-${String(input.round).padStart(2, "0")}`,

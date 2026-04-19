@@ -80,6 +80,7 @@
     "validate:bootstrap-profile-aware-verifier": "node ./scripts/validate-bootstrap-profile-aware-verifier.mjs",
     "validate:intake-gate": "node ./scripts/validate-intake-gate.mjs",
     "validate:durable-memory": "node ./scripts/validate-durable-memory.mjs",
+    "validate:current-thread-read-only-judge": "node ./scripts/validate-current-thread-read-only-judge.mjs",
     "validate:transport-mode": "node ./scripts/validate-transport-mode.mjs",
     "validate:cli-front-door": "node ./scripts/validate-cli-front-door.mjs",
     "validate:canonical-foreground-worker": "node ./scripts/validate-canonical-foreground-worker.mjs",
