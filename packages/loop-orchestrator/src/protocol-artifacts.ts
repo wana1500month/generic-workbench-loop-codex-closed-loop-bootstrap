@@ -586,6 +586,41 @@ const defaultExpectedChangeForCategory = (
   }
 };
 
+const qualityFindingPriority = (finding: QualityFinding): number => {
+  if (
+    finding.finding_id === "subjective-prototype_delta" ||
+    finding.dimension_id === "prototype_delta" ||
+    finding.target_check_ids.includes("prototype_delta_present")
+  ) {
+    return 120;
+  }
+  if (
+    finding.dimension_id === "subjective_release_quality" ||
+    finding.target_check_ids.includes("subjective_thresholds_met")
+  ) {
+    return 110;
+  }
+  if (
+    finding.target_check_ids.includes("visual_evidence_present") ||
+    finding.target_check_ids.includes("subjective_quality_present")
+  ) {
+    return 100;
+  }
+  if (finding.category === "subjective_quality") {
+    return 90;
+  }
+  if (finding.severity === "critical") {
+    return 80;
+  }
+  if (finding.severity === "high") {
+    return 70;
+  }
+  if (finding.category === "proof_signal") {
+    return 40;
+  }
+  return 20;
+};
+
 export const buildQualityCritiqueArtifact = (input: {
   round: number;
   contractArtifact: RoundContractArtifact;
@@ -678,20 +713,35 @@ export const buildQualityCritiqueArtifact = (input: {
           ? axisLookup.get(metric.quality_axis_id)
           : undefined;
         const severity: QualityFinding["severity"] =
-          metric.required === false ? "medium" : "high";
+          metric.metric_id === "prototype_delta"
+            ? "critical"
+            : metric.required === false
+              ? "medium"
+              : "high";
+        const expectedChange =
+          metric.metric_id === "prototype_delta"
+            ? "The current result is not yet materially beyond the initial prototype. Raise information architecture, layout, state expression, and finish-line workflow visibility so the shipped surface is visibly more complete than the baseline."
+            : metric.recommended_changes[0] ??
+              axis?.desired_outcome ??
+              `Raise ${metric.label} until it clears the requested threshold.`;
+        const targetCheckIds = carryForwardSafeTargetCheckIds(
+          metric.metric_id === "prototype_delta"
+            ? ["prototype_delta_present", "target_signal_thresholds_met"]
+            : ["subjective_thresholds_met", "target_signal_thresholds_met"]
+        );
         return {
-          finding_id: `subjective-${metric.metric_id}`,
+          finding_id:
+            metric.metric_id === "prototype_delta"
+              ? "subjective-prototype_delta"
+              : `subjective-${metric.metric_id}`,
           category: "subjective_quality" as const,
           severity,
           summary: `${metric.label} scored ${metric.score_out_of_ten}/10; required ${metric.minimum_score_out_of_ten}/10.`,
-          expected_change:
-            metric.recommended_changes[0] ??
-            axis?.desired_outcome ??
-            `Raise ${metric.label} until it clears the requested threshold.`,
+          expected_change: expectedChange,
           evidence: metric.evidence_paths,
           preserve: unique([...(axis?.preserve_signals ?? []), ...preserveSignals]).slice(0, 8),
           pivot_or_refine: remediationStrategy,
-          target_check_ids: ["target_signal_thresholds_met"],
+          target_check_ids: targetCheckIds,
           ...(metric.quality_axis_id ? { axis_id: metric.quality_axis_id } : {})
         };
       }) ?? [];
@@ -716,6 +766,7 @@ export const buildQualityCritiqueArtifact = (input: {
       target_check_ids: ["target_signal_thresholds_met"]
     });
   }
+  findings.sort((left, right) => qualityFindingPriority(right) - qualityFindingPriority(left));
 
   const qualityFocus = unique([
     ...(profileQualityContract?.quality_axes.map((axis) => axis.label) ?? []),
@@ -882,9 +933,9 @@ export const buildPatchRequestArtifact = (input: {
         ? [
             ...staticContractFixItems,
             ...missingManifestFixItems,
+            ...qualityFixItems,
             ...environmentFixItems,
             ...thresholdFixItems,
-            ...qualityFixItems
           ].slice(0, 4)
       : failedChecks.length > 0
         ? [

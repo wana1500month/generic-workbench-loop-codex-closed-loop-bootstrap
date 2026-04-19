@@ -554,7 +554,84 @@ const buildGeneratedQualityContract = (
   reference_signals: topReferenceSignals(answers, 6)
 });
 
-const buildGeneratedSubjectiveMetrics = (
+const defaultSubjectiveFloorFor = (targetScore: number): number => {
+  if (targetScore >= 0.95) {
+    return 9;
+  }
+  if (targetScore >= 0.9) {
+    return 8.5;
+  }
+  if (targetScore >= 0.85) {
+    return 8;
+  }
+  return 7.2;
+};
+
+const defaultSubjectiveMetricsFor = (
+  answers: BootstrapAnswers
+): NonNullable<VerificationProfile["subjective_metrics"]> => {
+  if (!browserBackedFamily(answers.targetFamily)) {
+    return [];
+  }
+
+  const floor = defaultSubjectiveFloorFor(answers.targetScore);
+  const hasReferenceDirection =
+    answers.referenceApps.length > 0 ||
+    answers.qualityBar.length > 0 ||
+    (answers.referenceSignals?.length ?? 0) > 0;
+  const metrics: NonNullable<VerificationProfile["subjective_metrics"]> = [
+    {
+      metric_id: "interaction_clarity",
+      label: "Interaction clarity",
+      description: "Primary actions should be obvious and low-friction.",
+      minimum_score_out_of_ten: floor,
+      quality_axis_id: "primary_flow",
+      required: true,
+      weight: 2
+    },
+    {
+      metric_id: "visual_hierarchy",
+      label: "Visual hierarchy",
+      description: "Layout and emphasis should make the main flow legible at a glance.",
+      minimum_score_out_of_ten: Math.max(7, floor - 0.2),
+      quality_axis_id: "primary_flow",
+      required: true,
+      weight: 2
+    },
+    {
+      metric_id: "finish_line_coherence",
+      label: "Finish-line coherence",
+      description: "The requested finish line should feel complete end-to-end.",
+      minimum_score_out_of_ten: floor,
+      quality_axis_id: "primary_flow",
+      required: true,
+      weight: 2
+    },
+    {
+      metric_id: "reference_fit",
+      label: "Reference fit",
+      description: "The build should visibly align with the requested reference direction.",
+      minimum_score_out_of_ten: Math.max(7, floor - 0.3),
+      quality_axis_id: "reference_fit",
+      required: hasReferenceDirection,
+      weight: 1.5
+    },
+    {
+      metric_id: "prototype_delta",
+      label: "Prototype-to-release improvement",
+      description:
+        "The current build should be materially beyond the initial prototype or scaffold.",
+      minimum_score_out_of_ten: Math.max(7, floor - 0.2),
+      quality_axis_id: "primary_flow",
+      required: answers.goalLevel !== "prototype",
+      weight: 2
+    }
+  ];
+
+  return metrics.filter((metric) => metric.required !== false);
+};
+
+const customSubjectiveMetricsFor = (
   answers: BootstrapAnswers
 ): NonNullable<VerificationProfile["subjective_metrics"]> =>
   (answers.customQualityMetrics ?? []).map((metric) => ({
@@ -566,6 +643,11 @@ const buildGeneratedSubjectiveMetrics = (
     required: metric.required ?? true,
     weight: metric.weight ?? 1
   }));
+
+const buildGeneratedSubjectiveMetrics = (
+  answers: BootstrapAnswers
+): NonNullable<VerificationProfile["subjective_metrics"]> =>
+  mergeSubjectiveMetrics(defaultSubjectiveMetricsFor(answers), customSubjectiveMetricsFor(answers));
 
 const uniqueCriteria = (
   criteria: VerificationProfile["criteria"]
@@ -656,13 +738,13 @@ const buildGeneratedCriteria = (
         hard: probe.required ?? true
       }
     ]);
-  const customMetricCriteria = (answers.customQualityMetrics ?? []).map((metric) => ({
-    criterion_id: `subjective_metric_${metric.metricId}_minimum`,
+  const subjectiveMetricCriteria = buildGeneratedSubjectiveMetrics(answers).map((metric) => ({
+    criterion_id: `subjective_metric_${metric.metric_id}_minimum`,
     capability: "grade_round" as const,
-    summary: `${metric.label} must score at least ${metric.minimumScoreOutOfTen}/10.`,
+    summary: `${metric.label} must score at least ${metric.minimum_score_out_of_ten}/10.`,
     operator: "number_gte" as const,
-    expected_value: String(metric.minimumScoreOutOfTen),
-    quality_axis_id: metric.metricId,
+    expected_value: String(metric.minimum_score_out_of_ten),
+    quality_axis_id: metric.quality_axis_id ?? metric.metric_id,
     hard: metric.required ?? true
   }));
 
@@ -701,7 +783,7 @@ const buildGeneratedCriteria = (
       hard: true
     },
     ...releaseGateProbeCriteria,
-    ...customMetricCriteria
+    ...subjectiveMetricCriteria
   ]);
 };
 
@@ -999,18 +1081,35 @@ const buildGeneratedVerificationProfile = async (
     generatedSubjectiveMetrics
   );
   const mergedScorePolicy =
-    generatedSubjectiveMetrics.length > 0
+    generatedSubjectiveMetrics.length > 0 && browserBackedFamily(answers.targetFamily)
       ? {
           ...(baseProfile.score_policy ?? {}),
           proof_weights: {
-            ...(baseProfile.score_policy?.proof_weights ?? {}),
+            proof_pass_rate: 0.15,
+            criterion_pass_rate: 0.2,
+            threshold_verdict: 0.05,
             external_grade: Math.max(
               baseProfile.score_policy?.proof_weights?.external_grade ?? 0,
-              0.35
+              0.6
             )
+          },
+          release_weights: {
+            control_plane_score: 0.2,
+            proof_score: 0.8
           }
         }
-      : baseProfile.score_policy;
+      : generatedSubjectiveMetrics.length > 0
+        ? {
+            ...(baseProfile.score_policy ?? {}),
+            proof_weights: {
+              ...(baseProfile.score_policy?.proof_weights ?? {}),
+              external_grade: Math.max(
+                baseProfile.score_policy?.proof_weights?.external_grade ?? 0,
+                0.35
+              )
+            }
+          }
+        : baseProfile.score_policy;
   const mergedExpectedTargetSurfaces = uniqueList([
     ...(baseProfile.expected_target_surfaces ?? []),
     ...targetSurfacesForFamily(answers.targetFamily)
@@ -2674,20 +2773,24 @@ main().catch(async (error) => {
 });
 `;
 
-const gradeRoundTemplate = (): string => `import { join } from "node:path";
+const gradeRoundTemplate = (): string => `import { copyFile } from "node:fs/promises";
+import { extname, isAbsolute, join } from "node:path";
 
 import {
   finalize,
   readConfig,
   readCoreProbeResults,
   readIdeaMarkdown,
+  readPacket,
   readJsonIfExists,
   readVerificationProfile,
+  relativeToRound,
   roundScore,
   runCodexCommand,
   runtimePaths,
   writeArtifact,
-  writeArtifactJson
+  writeArtifactJson,
+  writeRuntimeJson
 } from "./runtime-helpers.mjs";
 
 const subjectiveMetricSchema = {
@@ -2727,6 +2830,21 @@ const clampScore = (value) =>
     ? Math.max(0, Math.min(10, Number(value.toFixed(1))))
     : 0;
 
+const unique = (values) =>
+  [...new Set(values.filter((value) => typeof value === "string" && value.length > 0))];
+
+const screenshotExtensions = new Set([".png", ".jpg", ".jpeg", ".webp"]);
+
+const isScreenshotPath = (value) => screenshotExtensions.has(extname(value).toLowerCase());
+
+const isTracePath = (value) => {
+  const normalized = value.toLowerCase();
+  return normalized.endsWith(".zip") && normalized.includes("trace");
+};
+
+const resolveEvidencePath = (value) =>
+  isAbsolute(value) ? value : join(runtimePaths.roundDirectory, value);
+
 const failClosedSubjectiveReview = (metrics, summary) => ({
   summary,
   metrics: metrics.map((metric) => ({
@@ -2741,6 +2859,7 @@ const failClosedSubjectiveReview = (metrics, summary) => ({
 
 const main = async () => {
   const config = await readConfig();
+  const packet = await readPacket();
   const ideaMarkdown = await readIdeaMarkdown();
   const profile = await readVerificationProfile();
   const coreProbeResults = await readCoreProbeResults();
@@ -2761,6 +2880,10 @@ const main = async () => {
   const releaseGateProbes = coreProbeResults.filter(
     (probe) => (probe.role ?? "supporting") === "release_gate"
   );
+  const browserSurfaceExpected =
+    (Array.isArray(profile.expected_target_surfaces) &&
+      profile.expected_target_surfaces.includes("browser")) ||
+    releaseGateProbes.some((probe) => probe.mode === "browser_journey");
   const requiredReleaseGateProbes = releaseGateProbes.filter(
     (probe) => probe.required !== false
   );
@@ -2789,6 +2912,28 @@ const main = async () => {
   const deterministicReleaseScore = roundScore(
     0.2 * checksPass + 0.15 * commandPass + 0.65 * releaseGatePassRate
   );
+  const visualEvidencePaths = unique([
+    ...checksEvidencePaths,
+    ...coreProbeResults.flatMap((probe) => probe.evidence_paths ?? [])
+  ])
+    .map((path) => resolveEvidencePath(path))
+    .filter((path) => isScreenshotPath(path) || isTracePath(path));
+  const currentScreenshotPath = visualEvidencePaths.find((path) => isScreenshotPath(path));
+  const baselineManifestPath = join(runtimePaths.runtimeDirectory, "product-baseline.json");
+  const baselineScreenshotPath = join(runtimePaths.runtimeDirectory, "baseline-home.png");
+  let baselineState = await readJsonIfExists(baselineManifestPath);
+  if (browserSurfaceExpected && !baselineState && currentScreenshotPath) {
+    await copyFile(currentScreenshotPath, baselineScreenshotPath);
+    baselineState = {
+      source_round: typeof packet.round === "number" ? packet.round : 1,
+      source_path: currentScreenshotPath,
+      baseline_path: baselineScreenshotPath,
+      created_at: new Date().toISOString()
+    };
+    await writeRuntimeJson("product-baseline.json", baselineState);
+  }
+  const baselineScreenshotReference =
+    typeof baselineState?.baseline_path === "string" ? baselineState.baseline_path : undefined;
 
   const reviewOverridePath = process.env.HARNESS_SUBJECTIVE_REVIEW_PATH;
   let subjectiveReview;
@@ -2817,6 +2962,9 @@ const main = async () => {
         "Use only the supplied product brief, quality contract, requested metrics, and captured evidence.",
         "Be conservative when evidence is thin.",
         "Do not score visual or design metrics above 6/10 if there is no direct rendered evidence such as screenshots or browser traces.",
+        "Open and inspect any screenshot or browser trace paths listed below before scoring visual metrics.",
+        "If a baseline screenshot is provided, compare the current UI against the baseline and score prototype_delta conservatively.",
+        "Do not score prototype_delta above 6/10 unless the rendered product shows material improvement in layout, hierarchy, workflow visibility, or state expression.",
         "",
         "# Product brief",
         ideaMarkdown || config.product_summary || config.product_title,
@@ -2829,6 +2977,18 @@ const main = async () => {
         "",
         "# Core probe summary",
         JSON.stringify(evidenceInventory.core_probe_results, null, 2),
+        "",
+        "# Browser evidence",
+        JSON.stringify(
+          {
+            browser_surface_expected: browserSurfaceExpected,
+            current_screenshot_path: currentScreenshotPath,
+            baseline_screenshot_path: baselineScreenshotReference,
+            visual_evidence_paths: visualEvidencePaths
+          },
+          null,
+          2
+        ),
         "",
         "# Evidence inventory",
         JSON.stringify(evidenceInventory, null, 2)
@@ -2844,7 +3004,7 @@ const main = async () => {
           sandbox_mode: "read-only",
           "sandbox_read_only.network_access": false
         },
-        addDirs: [runtimePaths.roundDirectory],
+        addDirs: [runtimePaths.roundDirectory, runtimePaths.runtimeDirectory],
         outputSchema: subjectiveMetricSchema,
         metadata: {
           role: "judge",
@@ -2873,10 +3033,10 @@ const main = async () => {
         subjectiveReview = failClosedSubjectiveReview(
           subjectiveMetrics,
           judgeExecution.disabled
-            ? "Subjective quality judge was disabled, so configured custom metrics failed closed."
+            ? "Subjective quality judge was disabled, so configured subjective metrics failed closed."
             : judgeExecution.error
-              ? "Subjective quality judge was unavailable, so configured custom metrics failed closed."
-              : "Subjective quality judge did not return structured output, so configured custom metrics failed closed."
+              ? "Subjective quality judge was unavailable, so configured subjective metrics failed closed."
+              : "Subjective quality judge did not return structured output, so configured subjective metrics failed closed."
         );
       }
     }
@@ -2950,7 +3110,13 @@ const main = async () => {
           overall_subjective_score_out_of_ten:
             typeof weightedSubjectiveScore === "number"
               ? roundScore(weightedSubjectiveScore)
-              : undefined
+              : undefined,
+          browser_surface_expected: browserSurfaceExpected,
+          current_screenshot_path: currentScreenshotPath,
+          baseline_screenshot_path: baselineScreenshotReference,
+          visual_evidence_paths: visualEvidencePaths.map((path) =>
+            path.startsWith(runtimePaths.roundDirectory) ? relativeToRound(path) : path
+          )
         })
       : undefined;
 
@@ -2998,8 +3164,12 @@ const main = async () => {
     .map((probe) => probe.probe_id);
   const releaseScore =
     subjectiveAverageNormalized === undefined
-      ? deterministicReleaseScore
-      : roundScore(0.7 * deterministicReleaseScore + 0.3 * subjectiveAverageNormalized);
+      ? browserSurfaceExpected
+        ? roundScore(deterministicReleaseScore * 0.6)
+        : deterministicReleaseScore
+      : browserSurfaceExpected
+        ? roundScore(0.35 * deterministicReleaseScore + 0.65 * subjectiveAverageNormalized)
+        : roundScore(0.7 * deterministicReleaseScore + 0.3 * subjectiveAverageNormalized);
   const reportPath = await writeArtifact(
     "grade-summary.md",
     [
@@ -3021,6 +3191,9 @@ const main = async () => {
         (typeof weightedSubjectiveScore === "number"
           ? String(roundScore(weightedSubjectiveScore))
           : "n/a"),
+      "Browser surface expected: " + String(browserSurfaceExpected),
+      "Visual evidence present: " + String(visualEvidencePaths.length > 0),
+      "Baseline screenshot: " + String(baselineScreenshotReference ?? "none"),
       "Release score: " + String(releaseScore),
       "Threshold verdict: " + thresholdVerdict,
       "Overall verdict: " + overallVerdict
@@ -3070,7 +3243,7 @@ const main = async () => {
             {
               path: subjectiveReviewPath,
               kind: "json",
-              description: "Subjective quality review for user-defined metrics.",
+              description: "Subjective quality review for configured product-quality metrics.",
               derived_from_capabilities: ["run_checks"],
               derived_from_evidence_paths: checksEvidencePaths
             }
@@ -3094,9 +3267,22 @@ const main = async () => {
       failed_release_gate_probe_count: failedReleaseGateProbeIds.length,
       hard_failure_count: hardFailures.length,
       subjective_metric_count: subjectiveMetrics.length,
+      subjective_quality_present: subjectiveMetricResults.length > 0,
+      visual_evidence_present: visualEvidencePaths.length > 0,
+      prototype_baseline_present: Boolean(baselineScreenshotReference),
       failed_subjective_metric_count: subjectiveMetricResults.filter(
         (metric) => metric.status === "fail"
       ).length,
+      required_subjective_failure_count: subjectiveMetricResults.filter(
+        (metric) => (metric.required ?? true) && metric.status === "fail"
+      ).length,
+      ...(subjectiveMetricResults.find((metric) => metric.metric_id === "prototype_delta")
+        ? {
+            prototype_delta_score_out_of_ten:
+              subjectiveMetricResults.find((metric) => metric.metric_id === "prototype_delta")
+                ?.score_out_of_ten ?? 0
+          }
+        : {}),
       ...(typeof weightedSubjectiveScore === "number"
         ? { subjective_average_out_of_ten: roundScore(weightedSubjectiveScore) }
         : {})

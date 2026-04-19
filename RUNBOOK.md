@@ -48,6 +48,8 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Default operation is a single agent and one worktree per lane or run. Reach for worktrees or subagents only when the request explicitly needs parallel exploration or comparator work.
 - `bootstrap generator`: now receives an inline remediation brief built from the current round contract, generator plan, latest patch request, latest quality critique, and latest eval threshold gaps so patch-only mutation is no longer prompt-stateless
 - `bootstrap grader`: now preserves `quality_contract`, `quality_axis_id`, and `subjective_metrics` through runtime loading, so intake-authored quality semantics reach grading, critique, and patch-request generation intact
+- Browser-backed bootstrap bundles now auto-inject default subjective metrics such as `interaction_clarity`, `visual_hierarchy`, `finish_line_coherence`, optional `reference_fit`, and `prototype_delta`, with stricter minimums derived from `target_score`.
+- Browser-backed `target_reached` now also depends on subjective release quality and prototype delta: rendered screenshots or traces must exist, a baseline screenshot must persist beyond the first browser round, and release scoring can be capped when browser subjective evidence or visible product lift is missing.
 - `same-thread transport`: keeps the active operator surface on the same thread or turn, forbids nested `codex exec` calls from shared runtime paths, routes bootstrap `apply_change` through attached generator task/response artifacts, and lets attached App Server runs refine planner/generator-plan through same-thread skill turns plus contract/eval through inline review turns
 
 ## Round contract and dimension floors
@@ -576,6 +578,8 @@ For browser/fullstack realism on a host that does not already allow headless bro
 `validate:failure-policy` directly checks that weighted policy snapshots and hard-rule stops stay aligned with controller decisions, including plateau-driven recontract that now opens through `policy_snapshot` itself. Use it when editing reopen logic in `failure-lineage.ts` or `attempt-lifecycle.ts`.
 
 `reference-adapter:install-ci` now derives the harness repository and ref from the current git remote and branch by default. Pass `--harness-repo` or `--harness-ref` only when you need to override that auto-detected source.
+
+Proof-side partial credit is intentionally conservative now: verification criteria, proof checks, and rubric dimension scores use a quadratic partial-credit curve, so intermediate scores rise more slowly until most checks are actually green.
 
 ## Additional validation
 

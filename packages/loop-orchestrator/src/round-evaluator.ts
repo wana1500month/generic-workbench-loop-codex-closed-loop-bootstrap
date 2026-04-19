@@ -75,6 +75,11 @@ const knownCheckIds = new Set<string>([
   "adapter_criteria_are_grounded",
   "adapter_criteria_match_profile",
   "independent_target_probe_present",
+  "subjective_quality_present",
+  "subjective_thresholds_met",
+  "visual_evidence_present",
+  "prototype_baseline_present",
+  "prototype_delta_present",
   "target_signal_thresholds_met"
 ]);
 
@@ -91,7 +96,12 @@ const proofEvaluatorChecks = new Set<string>([
   "proof_boundary_is_independent",
   "adapter_criteria_are_grounded",
   "adapter_criteria_match_profile",
-  "independent_target_probe_present"
+  "independent_target_probe_present",
+  "subjective_quality_present",
+  "subjective_thresholds_met",
+  "visual_evidence_present",
+  "prototype_baseline_present",
+  "prototype_delta_present"
 ]);
 const nonScoringDerivedChecks = new Set<string>([
   "target_signal_thresholds_met",
@@ -256,14 +266,29 @@ const isSatisfiedCheck = (result: RoundCheckResult): boolean => result.status !=
 const isApplicableCheck = (result: RoundCheckResult): boolean =>
   result.status !== "not_applicable";
 
-const scoreFromResults = (results: readonly RoundCheckResult[]): number =>
-  results.filter(isApplicableCheck).length === 0
+const ratioScore = (passedItems: number, totalItems: number): number =>
+  totalItems === 0 ? 0 : passedItems / totalItems;
+
+const strictPartialCreditScore = (passedItems: number, totalItems: number): number =>
+  totalItems === 0
     ? 0
-    : Number(
-        (
-          results.filter(isPassingCheck).length / results.filter(isApplicableCheck).length
-        ).toFixed(3)
-      );
+    : Number(Math.pow(ratioScore(passedItems, totalItems), 2).toFixed(3));
+
+const scoreFromResults = (
+  results: readonly RoundCheckResult[],
+  options?: { strictPartialCredit?: boolean }
+): number => {
+  const applicableResults = results.filter(isApplicableCheck);
+  const applicableCount = applicableResults.length;
+  if (applicableCount === 0) {
+    return 0;
+  }
+
+  const passedCount = applicableResults.filter(isPassingCheck).length;
+  return options?.strictPartialCredit
+    ? strictPartialCreditScore(passedCount, applicableCount)
+    : Number(ratioScore(passedCount, applicableCount).toFixed(3));
+};
 
 const isKnownCheck = (checkId: string): boolean => knownCheckIds.has(checkId);
 
@@ -374,6 +399,30 @@ const releaseScoreWeightsFor = (loadedAdapter?: LoadedAdapterContract) =>
       control_plane_score: 0.6,
       proof_score: 0.4
     }
+  );
+
+const visualEvidenceExtensions = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".gif",
+  ".bmp"
+]);
+
+const isVisualEvidencePath = (path: string): boolean => {
+  const normalized = path.toLowerCase();
+  if (visualEvidenceExtensions.has(extname(normalized))) {
+    return true;
+  }
+  return normalized.endsWith(".zip") && normalized.includes("trace");
+};
+
+const successfulGradeRoundExecutionFor = (
+  adapterExecutions: readonly AdapterCapabilityExecution[]
+): AdapterCapabilityExecution | undefined =>
+  adapterExecutions.find(
+    (execution) => execution.capability === "grade_round" && execution.result.ok
   );
 
 const assertionTagLabel = (tag: VerificationAssertionTag): string => {
@@ -2046,13 +2095,13 @@ const buildDimensionScores = (input: {
         ? 1
         : totalItems === 0
           ? 0
-          : Number((passedItems / totalItems).toFixed(3));
+          : strictPartialCreditScore(passedItems, totalItems);
     const passed = !applicable || score + 0.0005 >= dimension.minimum_score;
     const detail = !applicable
       ? "Not applicable for the current adapter or target surfaces."
       : totalItems === 0
         ? "No contributing checks or release-gate probes were available for this dimension."
-        : `${passedItems}/${totalItems} contributing checks and probes passed.`;
+        : `${passedItems}/${totalItems} contributing checks and probes passed; strict partial-credit score is ${score.toFixed(3)}.`;
 
     return {
       dimension_id: dimension.dimension_id,
@@ -2194,6 +2243,111 @@ export const buildEvalReport = (input: {
         : `Adapter capability failures remain: ${failedAdapterResults.map((result) => result.check_id).join(", ")}.`
       : "No adapter is attached, so adapter execution health cannot be proven."
   );
+  const gradeRoundExecution = successfulGradeRoundExecutionFor(input.adapterExecutions);
+  const browserSurfaceExpected = expectedTargetSurfacesFor(input.loadedAdapter).has("browser");
+  const subjectiveMetricResults = gradeRoundExecution?.result.subjective_metric_results ?? [];
+  const requiredSubjectiveMetricResults = subjectiveMetricResults.filter(
+    (metric) => metric.required !== false
+  );
+  const failedRequiredSubjectiveMetrics = requiredSubjectiveMetricResults.filter(
+    (metric) => metric.status === "fail"
+  );
+  const gradeRoundEvidencePaths = unique([
+    ...(gradeRoundExecution?.verified_evidence_paths ?? []),
+    ...(gradeRoundExecution?.result.evidence_paths ?? [])
+  ]);
+  const visualEvidencePresent = unique([
+    ...gradeRoundEvidencePaths,
+    ...input.coreProbeResults.flatMap((probe) => probe.evidence_paths)
+  ]).some(isVisualEvidencePath);
+  const prototypeBaselinePresent = gradeRoundExecution?.result.metadata?.prototype_baseline_present === true;
+  const prototypeDeltaMetric = subjectiveMetricResults.find(
+    (metric) => metric.metric_id === "prototype_delta"
+  );
+  const prototypeDeltaRequired = browserSurfaceExpected && input.round >= 2;
+  const prototypeDeltaPassed =
+    !prototypeDeltaRequired
+      ? true
+      : prototypeDeltaMetric?.status === "pass";
+  lookup.subjective_quality_present = checkResult(
+    "subjective_quality_present",
+    !browserSurfaceExpected
+      ? "not_applicable"
+      : subjectiveMetricResults.length > 0
+        ? "pass"
+        : "fail",
+    !browserSurfaceExpected
+      ? "Subjective quality evidence is not required for non-browser targets."
+      : subjectiveMetricResults.length > 0
+        ? `grade_round reported ${subjectiveMetricResults.length} subjective product-quality metric result(s).`
+        : "Browser release quality requires subjective metric results, but grade_round did not report any."
+  );
+  lookup.subjective_thresholds_met = checkResult(
+    "subjective_thresholds_met",
+    !browserSurfaceExpected
+      ? "not_applicable"
+      : subjectiveMetricResults.length === 0
+        ? "fail"
+        : failedRequiredSubjectiveMetrics.length === 0
+          ? "pass"
+          : "fail",
+    !browserSurfaceExpected
+      ? "Subjective threshold gating is not required for non-browser targets."
+      : subjectiveMetricResults.length === 0
+        ? "Required browser subjective thresholds could not be evaluated."
+        : failedRequiredSubjectiveMetrics.length === 0
+          ? "Every required subjective metric cleared its configured threshold."
+          : `Required subjective metrics remain below threshold: ${failedRequiredSubjectiveMetrics.map((metric) => metric.metric_id).join(", ")}.`
+  );
+  lookup.visual_evidence_present = checkResult(
+    "visual_evidence_present",
+    !browserSurfaceExpected
+      ? "not_applicable"
+      : visualEvidencePresent
+        ? "pass"
+        : "fail",
+    !browserSurfaceExpected
+      ? "Rendered browser evidence is not required for non-browser targets."
+      : visualEvidencePresent
+        ? "Rendered browser evidence is attached via screenshots or traces."
+        : "Browser release quality requires rendered screenshots or traces, but none were attached."
+  );
+  lookup.prototype_baseline_present = checkResult(
+    "prototype_baseline_present",
+    !browserSurfaceExpected
+      ? "not_applicable"
+      : input.round < 2
+        ? "pass"
+        : prototypeBaselinePresent
+          ? "pass"
+          : "fail",
+    !browserSurfaceExpected
+      ? "Prototype baseline comparison is not required for non-browser targets."
+      : input.round < 2
+        ? "Prototype baseline capture is optional on the first browser round."
+        : prototypeBaselinePresent
+          ? "A persisted baseline screenshot is available for prototype-to-release comparison."
+          : "Browser rounds after the baseline capture must keep a persisted prototype screenshot for delta judging."
+  );
+  lookup.prototype_delta_present = checkResult(
+    "prototype_delta_present",
+    !browserSurfaceExpected
+      ? "not_applicable"
+      : !prototypeDeltaRequired
+        ? "pass"
+        : prototypeDeltaPassed
+          ? "pass"
+          : "fail",
+    !browserSurfaceExpected
+      ? "Prototype delta scoring is not required for non-browser targets."
+      : !prototypeDeltaRequired
+        ? "Prototype delta scoring is deferred until a follow-up browser round exists."
+        : prototypeDeltaMetric
+          ? prototypeDeltaMetric.status === "pass"
+            ? "The current browser surface materially improves beyond the stored baseline."
+            : "The current result is not yet materially beyond the initial prototype in layout, hierarchy, workflow visibility, or state expression."
+          : "Browser rounds after the baseline capture must score prototype_delta explicitly."
+  );
 
   const preReleaseAcceptanceResults = unique([
     ...thresholdAcceptanceCheckIds.filter((checkId) => checkId !== "release_blockers_recorded"),
@@ -2204,7 +2358,16 @@ export const buildEvalReport = (input: {
     "proof_boundary_is_independent",
     "adapter_evidence_is_meaningful",
     "adapter_criteria_are_grounded",
-    "adapter_criteria_match_profile"
+    "adapter_criteria_match_profile",
+    ...(browserSurfaceExpected
+      ? [
+          "subjective_quality_present",
+          "subjective_thresholds_met",
+          "visual_evidence_present",
+          "prototype_baseline_present",
+          "prototype_delta_present"
+        ]
+      : [])
   ])
     .map(
       (checkId) =>
@@ -2268,14 +2431,7 @@ export const buildEvalReport = (input: {
     "release_blockers_recorded",
     "previous_patch_request_addressed",
     "previous_patch_request_resolved",
-    "adapter_claims_are_honest",
-    "proof_provenance_is_attested",
-    "live_verification_present",
-    "independent_target_probe_present",
-    "proof_boundary_is_independent",
-    "adapter_evidence_is_meaningful",
-    "adapter_criteria_are_grounded",
-    "adapter_criteria_match_profile",
+    ...Array.from(proofEvaluatorChecks),
     "target_signal_thresholds_met",
     ...adapterResults.map((result) => result.check_id)
   ]).map((checkId) => {
@@ -2293,22 +2449,15 @@ export const buildEvalReport = (input: {
     return checkResult(checkId, "fail", `No evaluator rule is defined for check '${checkId}'.`);
   });
 
-  const externalGrade = input.adapterExecutions.find(
-    (execution) =>
-      execution.capability === "grade_round" &&
-      execution.result.ok &&
-      execution.result.score !== undefined
-  )?.result.score;
+  const externalGrade =
+    gradeRoundExecution?.result.score !== undefined ? gradeRoundExecution.result.score : undefined;
   const criterionResultsForScoring = verificationProfileEvaluation.criterionChecks.length > 0
     ? verificationProfileEvaluation.criterionChecks
     : input.loadedAdapter
       ? (
-          input.adapterExecutions.find(
-            (execution) =>
-              execution.capability === "grade_round" &&
-              execution.result.ok &&
-              execution.verified_criteria_results.length > 0
-          )?.verified_criteria_results ??
+          gradeRoundExecution?.verified_criteria_results.length
+            ? gradeRoundExecution.verified_criteria_results
+            :
           input.adapterExecutions
             .filter((execution) => execution.capability === "run_checks" && execution.result.ok)
             .flatMap((execution) => execution.verified_criteria_results)
@@ -2321,15 +2470,10 @@ export const buildEvalReport = (input: {
         )
       : [];
   const criterionPassRate = input.loadedAdapter
-    ? scoreFromResults(criterionResultsForScoring)
+    ? scoreFromResults(criterionResultsForScoring, { strictPartialCredit: true })
     : 0;
   const thresholdVerdictScore = input.loadedAdapter
-    ? input.adapterExecutions.find(
-        (execution) =>
-          execution.capability === "grade_round" &&
-          execution.result.ok &&
-          execution.result.threshold_verdict !== undefined
-      )?.result.threshold_verdict === "pass" &&
+    ? gradeRoundExecution?.result.threshold_verdict === "pass" &&
       verificationProfileEvaluation.hardFailedCriterionIds.length === 0
       ? 1
       : 0
@@ -2340,12 +2484,7 @@ export const buildEvalReport = (input: {
       ...input.coreProbeResults.flatMap((result) => result.evidence_paths)
     ]
   );
-  const adapterVerdict = input.adapterExecutions.find(
-    (execution) =>
-      execution.capability === "grade_round" &&
-      execution.result.ok &&
-      execution.result.overall_verdict
-  )?.result.overall_verdict;
+  const adapterVerdict = gradeRoundExecution?.result.overall_verdict;
   const hasCriticalAdapterFailure = failedAdapterResults.some((result) =>
     criticalAdapterFailures.has(result.check_id)
   );
@@ -2389,8 +2528,12 @@ export const buildEvalReport = (input: {
       )
     : [];
   const control_plane_score = scoreFromResults(controlPlaneResults);
-  const proofPassRate = input.loadedAdapter ? scoreFromResults(proofResults) : 0;
-  const skepticalProofPassRate = input.loadedAdapter ? scoreFromResults(skepticalProofResults) : 0;
+  const proofPassRate = input.loadedAdapter
+    ? scoreFromResults(proofResults, { strictPartialCredit: true })
+    : 0;
+  const skepticalProofPassRate = input.loadedAdapter
+    ? scoreFromResults(skepticalProofResults, { strictPartialCredit: true })
+    : 0;
   const skepticalProofFailed = skepticalProofResults.some(isFailingCheck);
   const hasProofExecution = input.adapterExecutions.some(
     (execution) =>
@@ -2419,7 +2562,7 @@ export const buildEvalReport = (input: {
     ).toFixed(3)
   );
   const releaseScoreWeights = releaseScoreWeightsFor(input.loadedAdapter);
-  const release_score = Number(
+  let release_score = Number(
     (
       input.loadedAdapter
         ? control_plane_score * releaseScoreWeights.control_plane_score +
@@ -2427,6 +2570,32 @@ export const buildEvalReport = (input: {
         : control_plane_score * releaseScoreWeights.control_plane_score
     ).toFixed(3)
   );
+  const releaseScoreCapDetails: string[] = [];
+  if (browserSurfaceExpected && subjectiveMetricResults.length === 0) {
+    release_score = Math.min(release_score, 0.59);
+    releaseScoreCapDetails.push(
+      "Release score is capped at 0.590 because browser release quality did not report any subjective metrics."
+    );
+  }
+  if (browserSurfaceExpected && !visualEvidencePresent) {
+    release_score = Math.min(release_score, 0.59);
+    releaseScoreCapDetails.push(
+      "Release score is capped at 0.590 because no rendered browser screenshots or traces were attached."
+    );
+  }
+  if (browserSurfaceExpected && failedRequiredSubjectiveMetrics.length > 0) {
+    release_score = Math.min(release_score, 0.79);
+    releaseScoreCapDetails.push(
+      `Release score is capped at 0.790 because required subjective metrics still fail: ${failedRequiredSubjectiveMetrics.map((metric) => metric.metric_id).join(", ")}.`
+    );
+  }
+  if (browserSurfaceExpected && prototypeDeltaRequired && !prototypeDeltaPassed) {
+    release_score = Math.min(release_score, 0.84);
+    releaseScoreCapDetails.push(
+      "Release score is capped at 0.840 because the current browser surface does not yet materially improve beyond the stored baseline."
+    );
+  }
+  release_score = Number(release_score.toFixed(3));
   const coreOwnedEvaluatorProfileAttached =
     !input.loadedAdapter || input.loadedAdapter.verification_profile_source === "core";
   const threshold_results: ReleaseThresholdResults = {
@@ -2440,7 +2609,10 @@ export const buildEvalReport = (input: {
     adapter_required_met:
       input.rubric.target_signal_requires_adapter ? Boolean(input.loadedAdapter) : true,
     grade_score_required_met:
-      input.rubric.target_signal_requires_grade_score ? externalGrade !== undefined : true,
+      input.rubric.target_signal_requires_grade_score
+        ? externalGrade !== undefined &&
+          (!browserSurfaceExpected || subjectiveMetricResults.length > 0)
+        : true,
     core_probe_required_met:
       !input.loadedAdapter
         ? true
@@ -2468,7 +2640,9 @@ export const buildEvalReport = (input: {
         ? "Target-reached signaling requires an attached adapter."
         : undefined,
       !threshold_results.grade_score_required_met
-        ? "Target-reached signaling requires a numeric grade_round score."
+        ? browserSurfaceExpected
+          ? "Target-reached signaling requires a numeric grade_round score with browser subjective quality results."
+          : "Target-reached signaling requires a numeric grade_round score."
         : undefined,
       !threshold_results.core_probe_required_met
         ? lookup.independent_target_probe_present?.detail
@@ -2487,7 +2661,8 @@ export const buildEvalReport = (input: {
         : undefined,
       !threshold_results.minimum_release_score_met
         ? `Release score ${release_score.toFixed(3)} is below the target ${input.rubric.target_total_score.toFixed(3)}.`
-        : undefined
+        : undefined,
+      ...releaseScoreCapDetails
     ].filter((detail): detail is string => Boolean(detail))
   );
   const recomputeDimensionThresholds = (): {

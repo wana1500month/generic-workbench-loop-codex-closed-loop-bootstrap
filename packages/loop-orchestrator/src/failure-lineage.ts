@@ -176,6 +176,25 @@ const repeatedCountFromHistory = <T>(
   return count;
 };
 
+const repeatedUnresolvedCheckCount = (
+  history: readonly RoundSummary[],
+  currentFailureLineage: FailureLineage,
+  checkId: string
+): number => {
+  if (!currentFailureLineage.failing_check_ids.includes(checkId)) {
+    return 0;
+  }
+
+  let count = 1;
+  for (const round of [...history].reverse()) {
+    if (!round.unresolved_check_ids.includes(checkId)) {
+      break;
+    }
+    count += 1;
+  }
+  return count;
+};
+
 export const buildFailureLineagePolicySnapshot = (input: {
   history: readonly RoundSummary[];
   failureLineage: FailureLineage;
@@ -196,9 +215,24 @@ export const buildFailureLineagePolicySnapshot = (input: {
     (round) => round.failure_lineage?.failure_classification
   );
   const plateauDeltaWindow = input.scoreDeltas.slice(-3);
+  const repeatedSubjectiveThresholdFailures = repeatedUnresolvedCheckCount(
+    input.history,
+    input.failureLineage,
+    "subjective_thresholds_met"
+  );
+  const repeatedPrototypeDeltaFailures = repeatedUnresolvedCheckCount(
+    input.history,
+    input.failureLineage,
+    "prototype_delta_present"
+  );
+  const repeatedBrowserQualityFailures = Math.max(
+    repeatedSubjectiveThresholdFailures,
+    repeatedPrototypeDeltaFailures
+  );
   const plateauWithoutProgress =
-    plateauDeltaWindow.length > 0 &&
-    plateauDeltaWindow.every((delta) => delta <= 0.01);
+    (plateauDeltaWindow.length > 0 &&
+      plateauDeltaWindow.every((delta) => delta <= 0.01)) ||
+    repeatedBrowserQualityFailures >= 2;
   const plateauLimitReached =
     input.plateauLimit > 0 && input.projectedPlateauCount >= input.plateauLimit;
   const contradictionCount = input.failureLineage.contradictory_witness_assertion_ids.length;
@@ -224,7 +258,11 @@ export const buildFailureLineagePolicySnapshot = (input: {
     plateau_without_progress: plateauWithoutProgress
       ? plateauLimitReached
         ? 0.71
-        : 0.52
+        : repeatedPrototypeDeltaFailures >= 2
+          ? 0.69
+          : repeatedSubjectiveThresholdFailures >= 2
+            ? 0.64
+            : 0.52
       : 0,
     patch_entropy_spike: patchEntropySpike
       ? Math.min(0.9, 0.45 + Math.max(0, input.patchEntropy - 2) * 0.1)
@@ -295,13 +333,18 @@ export const buildFailureLineagePolicySnapshot = (input: {
   ) {
     recommendedAction = "recontract";
     reasons.push(
-      dominantTriggerCode === "plateau_without_progress" && plateauLimitReached
-        ? `Score improvement plateaued for ${input.projectedPlateauCount} consecutive rounds, which reached the bounded reopen threshold of ${input.plateauLimit}.`
-        : dominantTriggerCode === "repeated_same_failure_signature"
-        ? "The same unresolved failure signature repeated across attempts."
-        : dominantTriggerCode === "patch_entropy_spike"
-          ? "Patch request entropy spiked beyond a stable repair envelope."
-          : "Recent policy signals indicate patch authority has collapsed."
+      dominantTriggerCode === "plateau_without_progress" && repeatedPrototypeDeltaFailures >= 2
+        ? "Prototype delta failed across consecutive browser rounds, so the product surface is plateauing even if proof signals still move."
+        : dominantTriggerCode === "plateau_without_progress" &&
+            repeatedSubjectiveThresholdFailures >= 2
+          ? "Required browser subjective thresholds failed across consecutive rounds, so product quality is not improving enough to stay patch-only."
+          : dominantTriggerCode === "plateau_without_progress" && plateauLimitReached
+            ? `Score improvement plateaued for ${input.projectedPlateauCount} consecutive rounds, which reached the bounded reopen threshold of ${input.plateauLimit}.`
+            : dominantTriggerCode === "repeated_same_failure_signature"
+              ? "The same unresolved failure signature repeated across attempts."
+              : dominantTriggerCode === "patch_entropy_spike"
+                ? "Patch request entropy spiked beyond a stable repair envelope."
+                : "Recent policy signals indicate patch authority has collapsed."
     );
   } else {
     reasons.push(

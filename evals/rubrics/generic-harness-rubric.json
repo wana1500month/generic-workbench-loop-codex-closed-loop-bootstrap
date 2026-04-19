@@ -86,6 +86,35 @@
       ]
     },
     {
+      "dimension_id": "subjective_release_quality",
+      "label": "Subjective release quality",
+      "description": "Rendered product quality must clear a strict subjective bar.",
+      "minimum_score": 1,
+      "requires_adapter": true,
+      "requires_target_surfaces": [
+        "browser"
+      ],
+      "check_ids": [
+        "subjective_quality_present",
+        "subjective_thresholds_met",
+        "visual_evidence_present"
+      ]
+    },
+    {
+      "dimension_id": "prototype_delta",
+      "label": "Prototype delta",
+      "description": "The shipped surface must materially improve beyond the initial prototype.",
+      "minimum_score": 1,
+      "requires_adapter": true,
+      "requires_target_surfaces": [
+        "browser"
+      ],
+      "check_ids": [
+        "prototype_baseline_present",
+        "prototype_delta_present"
+      ]
+    },
+    {
       "dimension_id": "api_release_qa",
       "label": "API release QA",
       "description": "API-facing targets must ship passing release-gate HTTP checks under the core profile.",
