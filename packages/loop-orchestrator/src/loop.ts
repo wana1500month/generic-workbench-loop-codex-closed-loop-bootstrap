@@ -1048,11 +1048,20 @@ export const runClosedLoop = async (input: {
   const preparedSessionSeed = restoredRun
     ? undefined
     : await loadPreparedSessionSeedForRun(runDirectory);
-  const preparedBundleSeed =
-    preparedSessionSeed ??
-    (restoredRun ? await loadPreparedSessionSeedForRun(runDirectory) : undefined);
+  const restoredRunContractSeed = restoredRun
+    ? await loadPreparedSessionSeedForRun(runDirectory)
+    : undefined;
   const preparedValidationBundle =
-    preparedBundleSeed?.runContract.validation_strategy.validation_bundle;
+    preparedSessionSeed?.runContract.validation_strategy.validation_bundle;
+  const restoredValidationBundle =
+    restoredRunContractSeed?.runContract.validation_strategy.validation_bundle;
+  const persistedValidationBundle =
+    preparedValidationBundle ?? restoredValidationBundle;
+  const explicitBundleOverrideRequested =
+    input.adapterPath !== undefined ||
+    input.rubricPath !== undefined ||
+    input.evaluatorProfilePath !== undefined ||
+    input.targetFamily !== undefined;
   const preservePreparedAttemptBudget =
     preparedSessionSeed !== undefined && singleForegroundSeedDefaults;
   const attemptBudget =
@@ -1075,7 +1084,7 @@ export const runClosedLoop = async (input: {
     ? join(runDirectory, "effective-rubric.json")
     : resolve(
         input.rubricPath ??
-          preparedValidationBundle?.rubric_path ??
+          persistedValidationBundle?.rubric_path ??
           defaultRubricPath
       );
   const hydratedRubric = restoredRun
@@ -1088,7 +1097,7 @@ export const runClosedLoop = async (input: {
   let loadedAdapter = await loadAdapterContract(
     input.adapterPath ??
       restoredRun?.summary.adapter_contract_path ??
-      preparedValidationBundle?.adapter_contract_path
+      persistedValidationBundle?.adapter_contract_path
   );
 
   const bundleSelection = resolveEvaluatorBundleSelection({
@@ -1097,9 +1106,9 @@ export const runClosedLoop = async (input: {
     rubric: hydratedRubric,
     rubricPath: absoluteRubricPath,
     preparedEvaluatorProfilePath:
-      preparedValidationBundle?.evaluator_profile_path,
-    preparedTargetFamily: preparedValidationBundle?.target_family,
-    preparedValidationLane: preparedValidationBundle?.validation_lane,
+      persistedValidationBundle?.evaluator_profile_path,
+    preparedTargetFamily: persistedValidationBundle?.target_family,
+    preparedValidationLane: persistedValidationBundle?.validation_lane,
     summaryEvaluatorProfilePath: restoredRun?.summary.evaluator_profile_path,
     summaryTargetFamily: restoredRun?.summary.target_family,
     summaryValidationLane: restoredRun?.summary.validation_lane,
@@ -1117,10 +1126,19 @@ export const runClosedLoop = async (input: {
     selectedVerificationProfile?.profile.validation_lane ??
     bundleSelection.validationLane ??
     restoredRun?.summary.validation_lane;
-  if (
-    preparedValidationBundle &&
-    preparedValidationBundle.target_family !== "generic-core"
-  ) {
+  const shouldEnforcePreparedProductBundle =
+    preparedValidationBundle !== undefined &&
+    preparedValidationBundle.target_family !== "generic-core";
+  const shouldEnforceRestoredProductBundle =
+    restoredValidationBundle !== undefined &&
+    restoredValidationBundle.target_family !== "generic-core" &&
+    !explicitBundleOverrideRequested;
+  const enforcedValidationBundle = shouldEnforcePreparedProductBundle
+    ? preparedValidationBundle
+    : shouldEnforceRestoredProductBundle
+      ? restoredValidationBundle
+      : undefined;
+  if (enforcedValidationBundle) {
     const mismatches: string[] = [];
     if (!loadedAdapter) {
       mismatches.push(
@@ -1132,17 +1150,17 @@ export const runClosedLoop = async (input: {
         "prepared session did not resolve an evaluator profile path"
       );
     }
-    if (resolvedTargetFamily !== preparedValidationBundle.target_family) {
+    if (resolvedTargetFamily !== enforcedValidationBundle.target_family) {
       mismatches.push(
-        `resolved target family '${resolvedTargetFamily ?? "none"}' does not match prepared target family '${preparedValidationBundle.target_family}'`
+        `resolved target family '${resolvedTargetFamily ?? "none"}' does not match prepared target family '${enforcedValidationBundle.target_family}'`
       );
     }
     if (
-      preparedValidationBundle.validation_lane &&
-      resolvedValidationLane !== preparedValidationBundle.validation_lane
+      enforcedValidationBundle.validation_lane &&
+      resolvedValidationLane !== enforcedValidationBundle.validation_lane
     ) {
       mismatches.push(
-        `resolved validation lane '${resolvedValidationLane ?? "none"}' does not match prepared validation lane '${preparedValidationBundle.validation_lane}'`
+        `resolved validation lane '${resolvedValidationLane ?? "none"}' does not match prepared validation lane '${enforcedValidationBundle.validation_lane}'`
       );
     }
     if (mismatches.length > 0) {
@@ -1159,29 +1177,32 @@ export const runClosedLoop = async (input: {
   const resolvedSessionEvaluatorProfilePath =
     bundleSelection.evaluatorProfilePath ??
     restoredRun?.summary.evaluator_profile_path;
+  const shouldCarryPersistedValidationBundle =
+    Boolean(persistedValidationBundle) && !explicitBundleOverrideRequested;
   const resolvedSessionValidationBundle =
-    preparedValidationBundle ??
-    (resolvedTargetFamily && resolvedTargetFamily !== "generic-core"
-      ? {
-          target_family: resolvedTargetFamily,
-          ...(resolvedValidationLane
-            ? { validation_lane: resolvedValidationLane }
-            : {}),
-          ...(resolvedSessionAdapterContractPath
-            ? {
-                adapter_contract_path: resolvedSessionAdapterContractPath
-              }
-            : {}),
-          rubric_path: absoluteRubricPath,
-          ...(resolvedSessionEvaluatorProfilePath
-            ? {
-                evaluator_profile_path: resolve(
-                  resolvedSessionEvaluatorProfilePath
-                )
-              }
-            : {})
-        }
-      : undefined);
+    shouldCarryPersistedValidationBundle
+      ? persistedValidationBundle
+      : resolvedTargetFamily && resolvedTargetFamily !== "generic-core"
+        ? {
+            target_family: resolvedTargetFamily,
+            ...(resolvedValidationLane
+              ? { validation_lane: resolvedValidationLane }
+              : {}),
+            ...(resolvedSessionAdapterContractPath
+              ? {
+                  adapter_contract_path: resolvedSessionAdapterContractPath
+                }
+              : {}),
+            rubric_path: absoluteRubricPath,
+            ...(resolvedSessionEvaluatorProfilePath
+              ? {
+                  evaluator_profile_path: resolve(
+                    resolvedSessionEvaluatorProfilePath
+                  )
+                }
+              : {})
+          }
+        : undefined;
   if (loadedAdapter && selectedVerificationProfile) {
     loadedAdapter = {
       ...loadedAdapter,

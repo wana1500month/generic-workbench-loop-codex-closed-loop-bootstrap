@@ -428,6 +428,10 @@ Validation:
 - `npm run validate:prepared-product-start-bundle-recovery` proves that same
   product session keeps `runtime/run-contract.json.validation_bundle` through
   session refresh and summary-missing `--resume-run` recovery.
+- `npm run validate:prepared-product-start-bundle-migration` proves those
+  restored product bundles do not preempt explicit resume migrations, so
+  `Resume identity mismatch` stays fail-closed by default and
+  `--allow-resume-migration` refreshes the persisted bundle metadata.
 - `npm run validate:loop-ui-session-status` proves the runtime dashboard
   prefers `runtime/session-status.json` over stale operator-surface session
   projections.
