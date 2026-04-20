@@ -92,6 +92,7 @@
     "validate:prepared-product-start-bundle": "node ./scripts/validate-prepared-product-start-bundle.mjs",
     "validate:prepared-product-start-bundle-recovery": "node ./scripts/validate-prepared-product-start-bundle-recovery.mjs",
     "validate:prepared-product-start-bundle-migration": "node ./scripts/validate-prepared-product-start-bundle-migration.mjs",
+    "validate:prepared-session-consumption-boundary": "node ./scripts/validate-prepared-session-consumption-boundary.mjs",
     "validate:session-status-event-stream": "node ./scripts/validate-session-status-event-stream.mjs",
     "validate:loop-ui-session-status": "node ./scripts/validate-loop-ui-session-status.mjs",
     "validate:app-server-session-stream": "node ./scripts/validate-app-server-session-stream.mjs",

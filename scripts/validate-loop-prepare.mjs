@@ -115,8 +115,22 @@ const main = async () => {
     const startedRunDirectory = extractRunDirectory(startExecution.stdout);
     assert.equal(startedRunDirectory, prepared.runDirectory);
 
-    const summary = await readSummary(prepared.runDirectory);
+    const [summary, refreshedSessionStatus, refreshedOperatorSurface] =
+      await Promise.all([
+        readSummary(prepared.runDirectory),
+        readJsonFile(prepared.sessionStatusPath),
+        readJsonFile(prepared.operatorSurfacePath)
+      ]);
     assertStopReason(summary, "awaiting_codex_checkpoint");
+    assert.equal(refreshedSessionStatus.session_status, "running");
+    assert.equal(refreshedSessionStatus.readiness, "running");
+    assert.equal(refreshedSessionStatus.next_attention, "codex");
+    assert.equal(
+      refreshedSessionStatus.latest_stop_reason,
+      "awaiting_codex_checkpoint"
+    );
+    assert.equal(refreshedOperatorSurface.session.session_status, "running");
+    assert.equal(refreshedOperatorSurface.attention_required, "codex");
 
     const refreshedRunContract = await readJsonFile(prepared.runContractPath);
     assert.equal(refreshedRunContract.start_gate.required, true);

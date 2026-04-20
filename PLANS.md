@@ -432,6 +432,11 @@ Validation:
   restored product bundles do not preempt explicit resume migrations, so
   `Resume identity mismatch` stays fail-closed by default and
   `--allow-resume-migration` refreshes the persisted bundle metadata.
+- `npm run validate:prepared-session-consumption-boundary` proves that a
+  started same-thread prepared session leaves `ready_to_start`, is no longer
+  discoverable as a startable prepared candidate, and cannot be re-consumed by
+  a later unbound current-thread start after its temporary bundle artifacts are
+  gone.
 - `npm run validate:loop-ui-session-status` proves the runtime dashboard
   prefers `runtime/session-status.json` over stale operator-surface session
   projections.

@@ -156,16 +156,50 @@ export const loadPreparedSessionSeedForRun = async (
   });
 };
 
+const markerMatchesPreparedThread = (
+  markerThreadId: string | undefined,
+  currentThreadId: string | undefined
+): boolean => (currentThreadId ? markerThreadId === currentThreadId : !markerThreadId);
+
+const matchesPreparedThread = (
+  sessionStatus: SessionStatusArtifact,
+  currentThreadId: string | undefined
+): boolean => {
+  const preparedThreadId = sessionStatus.session_binding.thread_id;
+  if (currentThreadId) {
+    return preparedThreadId === currentThreadId;
+  }
+  return !preparedThreadId && sessionStatus.session_binding.binding_state !== "bound";
+};
+
+const isPreparedRunAwaitingStart = async (input: {
+  runDirectory: string;
+  currentThreadId?: string;
+  sessionStatus?: SessionStatusArtifact;
+  preparedSeed?: PreparedSessionSeed;
+}): Promise<boolean> => {
+  if (!input.sessionStatus || !input.preparedSeed) {
+    return false;
+  }
+  if (input.sessionStatus.session_status !== "ready_to_start") {
+    return false;
+  }
+  if (input.sessionStatus.latest_stop_reason !== undefined) {
+    return false;
+  }
+  if (!matchesPreparedThread(input.sessionStatus, input.currentThreadId)) {
+    return false;
+  }
+  return !(await pathExists(join(input.runDirectory, "summary.json")));
+};
+
 export const findLatestPreparedRunAwaitingStart = async (
   runsDirectory: string,
   currentThreadId?: string
 ): Promise<{ runId: string; runDirectory: string } | undefined> => {
   try {
     const marker = await loadReadyToStartSessionMarker(runsDirectory);
-    if (
-      marker &&
-      (currentThreadId === undefined || marker.thread_id === currentThreadId)
-    ) {
+    if (marker && markerMatchesPreparedThread(marker.thread_id, currentThreadId)) {
       const markerSessionStatus = await loadJsonIfExists<SessionStatusArtifact>(
         runtimeStatePathsForRun(marker.run_directory).sessionStatusPath
       );
@@ -173,8 +207,12 @@ export const findLatestPreparedRunAwaitingStart = async (
         marker.run_directory
       );
       if (
-        markerSessionStatus?.session_status === "ready_to_start" &&
-        markerPreparedSeed
+        await isPreparedRunAwaitingStart({
+          runDirectory: marker.run_directory,
+          currentThreadId,
+          sessionStatus: markerSessionStatus,
+          preparedSeed: markerPreparedSeed
+        })
       ) {
         return {
           runId: marker.run_id,
@@ -197,10 +235,12 @@ export const findLatestPreparedRunAwaitingStart = async (
         loadPreparedSessionSeedForRun(runDirectory)
       ]);
       if (
-        sessionStatus?.session_status === "ready_to_start" &&
-        (currentThreadId === undefined ||
-          sessionStatus.session_binding.thread_id === currentThreadId) &&
-        preparedSeed
+        await isPreparedRunAwaitingStart({
+          runDirectory,
+          currentThreadId,
+          sessionStatus,
+          preparedSeed
+        })
       ) {
         return {
           runId,

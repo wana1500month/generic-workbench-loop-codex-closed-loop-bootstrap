@@ -2069,6 +2069,10 @@ export const runClosedLoop = async (input: {
     stopReason: LoopRunSummary["stop_reason"] | undefined
   ): SessionLoopStatus | undefined => {
     switch (stopReason) {
+      case "awaiting_codex_checkpoint":
+      case "awaiting_current_thread_handoff":
+      case "awaiting_manual_generator":
+        return "running";
       case "awaiting_human_input":
       case "new_run_required":
         return "needs_steering";
