@@ -425,6 +425,9 @@ Validation:
 - `npm run validate:prepared-product-start-bundle` proves a `ready_to_start`
   product session carries its adapter/rubric/evaluator identity into
   `loop:start:codex` and refuses `generic-core` fallback.
+- `npm run validate:prepared-product-start-bundle-recovery` proves that same
+  product session keeps `runtime/run-contract.json.validation_bundle` through
+  session refresh and summary-missing `--resume-run` recovery.
 - `npm run validate:loop-ui-session-status` proves the runtime dashboard
   prefers `runtime/session-status.json` over stale operator-surface session
   projections.

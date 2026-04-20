@@ -1048,8 +1048,11 @@ export const runClosedLoop = async (input: {
   const preparedSessionSeed = restoredRun
     ? undefined
     : await loadPreparedSessionSeedForRun(runDirectory);
+  const preparedBundleSeed =
+    preparedSessionSeed ??
+    (restoredRun ? await loadPreparedSessionSeedForRun(runDirectory) : undefined);
   const preparedValidationBundle =
-    preparedSessionSeed?.runContract.validation_strategy.validation_bundle;
+    preparedBundleSeed?.runContract.validation_strategy.validation_bundle;
   const preservePreparedAttemptBudget =
     preparedSessionSeed !== undefined && singleForegroundSeedDefaults;
   const attemptBudget =
@@ -1151,6 +1154,34 @@ export const runClosedLoop = async (input: {
       );
     }
   }
+  const resolvedSessionAdapterContractPath =
+    loadedAdapter?.contract_path ?? restoredRun?.summary.adapter_contract_path;
+  const resolvedSessionEvaluatorProfilePath =
+    bundleSelection.evaluatorProfilePath ??
+    restoredRun?.summary.evaluator_profile_path;
+  const resolvedSessionValidationBundle =
+    preparedValidationBundle ??
+    (resolvedTargetFamily && resolvedTargetFamily !== "generic-core"
+      ? {
+          target_family: resolvedTargetFamily,
+          ...(resolvedValidationLane
+            ? { validation_lane: resolvedValidationLane }
+            : {}),
+          ...(resolvedSessionAdapterContractPath
+            ? {
+                adapter_contract_path: resolvedSessionAdapterContractPath
+              }
+            : {}),
+          rubric_path: absoluteRubricPath,
+          ...(resolvedSessionEvaluatorProfilePath
+            ? {
+                evaluator_profile_path: resolve(
+                  resolvedSessionEvaluatorProfilePath
+                )
+              }
+            : {})
+        }
+      : undefined);
   if (loadedAdapter && selectedVerificationProfile) {
     loadedAdapter = {
       ...loadedAdapter,
@@ -2137,6 +2168,9 @@ export const runClosedLoop = async (input: {
       plan,
       workspaceMode: initialOperatorSurfaceArtifact.workspace_surface,
       targetFamily: resolvedTargetFamily,
+      ...(resolvedSessionValidationBundle
+        ? { validationBundle: resolvedSessionValidationBundle }
+        : {}),
       sessionStatus: deriveSessionStatus({
         override: input?.status,
         stopReason: input?.stopReason ?? sessionLatestStopReason,
