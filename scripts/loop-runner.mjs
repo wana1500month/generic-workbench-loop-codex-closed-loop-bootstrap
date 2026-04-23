@@ -1,7 +1,12 @@
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  latestModifiedTimeMs,
+  runCommand,
+  runPinnedTypeScriptBuild
+} from "./lib/front-door-build.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npmExecutable = "npm";
@@ -64,57 +69,20 @@ const readNpmConfigValue = (keys, options = {}) => {
   return undefined;
 };
 
-const runCommand = async (command, args, options = {}) =>
-  new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(command, args, {
-      cwd: repoRoot,
-      env: process.env,
-      shell: options.shell ?? false,
-      windowsHide: true
-    });
-
-    child.stdout.on("data", (chunk) => {
-      process.stdout.write(chunk);
-    });
-    child.stderr.on("data", (chunk) => {
-      process.stderr.write(chunk);
-    });
-    child.on("error", rejectPromise);
-    child.on("close", (code) => {
-      resolvePromise(code ?? 1);
-    });
-  });
-
 const runBuild = async () => {
-  const primaryExitCode = await runCommand(npmExecutable, ["run", "build", "--silent"], {
-    shell: process.platform === "win32"
-  });
+  const primaryExitCode = await runCommand(
+    repoRoot,
+    npmExecutable,
+    ["run", "build", "--silent"],
+    { shell: process.platform === "win32" }
+  );
   if (primaryExitCode === 0) {
     return 0;
   }
 
   // Retry with the pinned compiler when the host TypeScript binary exits abnormally.
-  return runCommand(
-    "npx",
-    ["-p", "typescript@5.8.3", "tsc", "-b", "--force", "--pretty", "false"],
-    { shell: process.platform === "win32" }
-  );
-};
-
-const latestModifiedTimeMs = (targetPath) => {
-  if (!existsSync(targetPath)) {
-    return 0;
-  }
-
-  const stats = statSync(targetPath);
-  if (!stats.isDirectory()) {
-    return stats.mtimeMs;
-  }
-
-  return readdirSync(targetPath, { withFileTypes: true }).reduce((latest, entry) => {
-    const entryPath = resolve(targetPath, entry.name);
-    return Math.max(latest, latestModifiedTimeMs(entryPath));
-  }, stats.mtimeMs);
+  // Keep the fallback pinned so init/build/recovery all share the same compiler version.
+  return runPinnedTypeScriptBuild(repoRoot, ["--force"]);
 };
 
 const readOnlyFrontDoorNeedsBuild = () => {
@@ -141,6 +109,7 @@ const mutatingCliFrontDoorCommands = new Set(["resume", "phase"]);
 if (rawArgs.includes("--supervised")) {
   const delegatedArgs = rawArgs.filter((value) => value !== "--supervised");
   const exitCode = await runCommand(
+    repoRoot,
     process.execPath,
     ["./scripts/loop-supervisor.mjs", ...delegatedArgs],
     { shell: false }
@@ -160,7 +129,7 @@ if (
   if (buildExitCode !== 0) {
     process.exitCode = buildExitCode;
   } else {
-    const cliExitCode = await runCommand(process.execPath, [
+    const cliExitCode = await runCommand(repoRoot, process.execPath, [
       "--input-type=module",
       "--eval",
       runnerCliImport,
@@ -382,7 +351,7 @@ const buildExitCode = await runBuild();
 if (buildExitCode !== 0) {
   process.exitCode = buildExitCode;
 } else {
-  const cliExitCode = await runCommand(process.execPath, [
+  const cliExitCode = await runCommand(repoRoot, process.execPath, [
     "--input-type=module",
     "--eval",
     runnerCliImport,

@@ -3,6 +3,7 @@ import { openSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { runCommand, runPinnedTypeScriptBuild } from "./lib/front-door-build.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distCliPath = join(repoRoot, "packages", "loop-orchestrator", "dist", "cli.js");
@@ -64,36 +65,15 @@ const writeJsonFile = async (path, value) => {
 
 const sleep = (ms) => new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
 
-const runCommand = async (command, args, options = {}) =>
-  new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(command, args, {
-      cwd: options.cwd ?? repoRoot,
-      env: process.env,
-      shell: options.shell ?? process.platform === "win32",
-      windowsHide: true
-    });
-    child.stdout.on("data", (chunk) => {
-      process.stdout.write(chunk);
-    });
-    child.stderr.on("data", (chunk) => {
-      process.stderr.write(chunk);
-    });
-    child.on("error", rejectPromise);
-    child.on("close", (code) => {
-      resolvePromise(code ?? 1);
-    });
-  });
-
 const runBuild = async () => {
-  const primaryExitCode = await runCommand(npmExecutable, ["run", "build", "--silent"]);
+  const primaryExitCode = await runCommand(repoRoot, npmExecutable, ["run", "build", "--silent"], {
+    shell: process.platform === "win32"
+  });
   if (primaryExitCode === 0) {
     return 0;
   }
 
-  return runCommand(
-    "npx",
-    ["-p", "typescript@5.8.3", "tsc", "-b", "--force", "--pretty", "false"]
-  );
+  return runPinnedTypeScriptBuild(repoRoot, ["--force"]);
 };
 
 const loadRuntimeHealthModule = async () =>
@@ -279,7 +259,7 @@ const terminateController = async (child) => {
     return;
   }
 
-  await runCommand("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+  await runCommand(repoRoot, "taskkill", ["/PID", String(child.pid), "/T", "/F"], {
     shell: false
   }).catch(() => 1);
   await waitForChildClose(child);

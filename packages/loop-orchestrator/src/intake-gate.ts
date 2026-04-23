@@ -1,3 +1,8 @@
+import {
+  hasExplicitProductBuildPhrase,
+  hasProductBuildNoun,
+  hasProductBuildVerb
+} from "./product-build-signals.js";
 import type { TargetFamily } from "./types.js";
 
 type ProductFieldId =
@@ -385,9 +390,9 @@ const detectProductBuildRequest = (
   request: string,
   normalizedLower: string
 ): boolean => {
-  const hasNoun = includesAny(normalizedLower, PRODUCT_BUILD_NOUNS);
-  const hasVerb = includesAny(normalizedLower, PRODUCT_BUILD_VERBS);
-  if (hasNoun && hasVerb) {
+  const hasNoun = hasProductBuildNoun(normalizedLower);
+  const hasVerb = hasProductBuildVerb(normalizedLower);
+  if ((hasNoun && hasVerb) || hasExplicitProductBuildPhrase(normalizedLower)) {
     return true;
   }
 

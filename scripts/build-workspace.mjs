@@ -1,28 +1,8 @@
-import { spawn } from "node:child_process";
-
-const runCommand = async (command, args, options = {}) =>
-  new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(command, args, {
-      cwd: process.cwd(),
-      env: process.env,
-      shell: options.shell ?? false,
-      windowsHide: true
-    });
-
-    child.stdout.on("data", (chunk) => {
-      process.stdout.write(chunk);
-    });
-    child.stderr.on("data", (chunk) => {
-      process.stderr.write(chunk);
-    });
-    child.on("error", rejectPromise);
-    child.on("close", (code) => {
-      resolvePromise(code ?? 1);
-    });
-  });
+import { runCommand, runPinnedTypeScriptBuild } from "./lib/front-door-build.mjs";
 
 const main = async () => {
   const primaryExitCode = await runCommand(
+    process.cwd(),
     "npx",
     ["tsc", "-b", "--pretty", "false"],
     { shell: process.platform === "win32" }
@@ -32,11 +12,7 @@ const main = async () => {
     return;
   }
 
-  const fallbackExitCode = await runCommand(
-    "npx",
-    ["-p", "typescript@5.8.3", "tsc", "-b", "--force", "--pretty", "false"],
-    { shell: process.platform === "win32" }
-  );
+  const fallbackExitCode = await runPinnedTypeScriptBuild(process.cwd(), ["--force"]);
 
   process.exitCode = fallbackExitCode;
 };

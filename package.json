@@ -8,6 +8,11 @@
   ],
   "scripts": {
     "build": "node ./scripts/build-workspace.mjs",
+    "test": "node ./scripts/run-validation-batch.mjs core",
+    "smoke": "node ./scripts/run-validation-batch.mjs smoke",
+    "validate:core": "node ./scripts/run-validation-batch.mjs core",
+    "validate:product-front-door": "node ./scripts/run-validation-batch.mjs product-front-door",
+    "validate:external": "node ./scripts/run-validation-batch.mjs external",
     "loop:intent": "node ./scripts/loop-intent.mjs",
     "loop:intake": "node ./scripts/loop-intake.mjs",
     "loop:prepare": "node ./scripts/loop-prepare.mjs",
@@ -120,6 +125,6 @@
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
-    "typescript": "^5.8.3"
+    "typescript": "5.9.3"
   }
 }

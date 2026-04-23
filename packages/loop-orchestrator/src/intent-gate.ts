@@ -3,6 +3,7 @@ import {
   renderIntakeGateResponse,
   type IntakeGateResult
 } from "./intake-gate.js";
+import { hasExplicitProductBuildPhrase } from "./product-build-signals.js";
 
 type HarnessIntentFieldId = "change_goal" | "current_gap" | "success_criteria";
 type RunControlAction = "start" | "status" | "stop" | "resume";
@@ -399,9 +400,6 @@ const evaluatorExampleSignals: IntentSignal[] = [
   { label: "사례", pattern: /\uC0AC\uB840/u },
   { label: "회귀", pattern: /\uD68C\uADC0/u }
 ];
-
-const productContextPattern =
-  /\b(?:build|create|ship|prototype|design)\b.{0,48}\b(?:app|service|editor|dashboard|api|agent|workspace|storyboard)\b|\b(?:app|service|editor|dashboard|api|agent|workspace|storyboard)\b.{0,48}\b(?:build|create|ship|prototype|design)\b|(?:\uAD6C\uD604|\uB9CC\uB4E4|\uAC1C\uBC1C|\uC124\uACC4).{0,24}(?:\uC571|\uC11C\uBE44\uC2A4|\uC5D0\uB514\uD130|\uB300\uC2DC\uBCF4\uB4DC|api|agent)|(?:\uC571|\uC11C\uBE44\uC2A4|\uC5D0\uB514\uD130|\uB300\uC2DC\uBCF4\uB4DC|api|agent).{0,24}(?:\uAD6C\uD604|\uB9CC\uB4E4|\uAC1C\uBC1C|\uC124\uACC4)/i;
 
 const runReferencePattern =
   /(evals[\\/]+runs[\\/]+run-\d+|(?:[A-Za-z]:\\|\.{1,2}[\\/])?[^\r\n\s]*run-\d+[^\r\n\s]*)/i;
@@ -959,7 +957,7 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
   const locale: "en" | "ko" =
     detectIntentLocale(normalizedRequest) === "ko" || hasLocalizedSignalHint ? "ko" : "en";
 
-  const hasProductContext = productContextPattern.test(sanitizedRequest);
+  const hasProductContext = hasExplicitProductBuildPhrase(sanitizedRequest);
   const hasReferenceNoise = sanitizedRequest !== normalizedRequest;
   const hasHarnessSurface = matchedHarnessSignals.length > 0;
   const hasStrongHarnessSurface = matchedHarnessSignals.some((signal) =>
@@ -1018,7 +1016,6 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
 
   const productScore =
     (intake.is_product_build_request ? 4 : 0) +
-    (hasProductContext ? 2 : 0) +
     (isPrepareReadyIntakeStatus(intake.status) ? 1 : 0);
 
   const resumeScore =

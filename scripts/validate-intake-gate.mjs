@@ -41,6 +41,21 @@ assert.equal(askProductResult.missing_execution_fields.length, 0);
 assert.equal(askProductResult.extracted_target_score, 0.9);
 assert.equal(askProductResult.extracted_max_rounds, 3);
 
+for (const request of [
+  "Build me a todo app with auth",
+  "Create a CRM web app for sales reps",
+  "Make a booking service for salons"
+]) {
+  const result = evaluateIntakeRequest(request);
+  assert.equal(result.is_product_build_request, true, request);
+  assert.equal(result.status, "ask_product_questions", request);
+}
+
+const nonProduct = evaluateIntakeRequest(
+  "Make patch authority carry-forward safer in the harness control plane."
+);
+assert.equal(nonProduct.status, "not_product_build_request");
+
 const productFilledRequest =
   "Build a storyboard editor for indie animators. The target users are solo creators. The core workflows are arranging boards, dragging panels, and writing notes. References can be Linear and Figma. Good enough means those workflows run end to end.";
 

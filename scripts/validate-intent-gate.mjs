@@ -114,6 +114,16 @@ for (const fixture of fixtures) {
   }
 }
 
+for (const request of [
+  "Build me a todo app with auth",
+  "Create a CRM web app for sales reps",
+  "Make a booking service for salons"
+]) {
+  const result = evaluateLoopIntent(request);
+  assert.equal(result.intent, "product_build", request);
+  assert.notEqual(result.intake_status, "not_product_build_request", request);
+}
+
 const harnessHumanOutput = renderLoopIntentResponse(
   evaluateLoopIntent(
     "Add a new loop:intent router so harness-design requests stop falling through product intake. The current gap is that harness requests are misclassified as product builds, and success means the operator lands in the harness lane without extra intake prompts. Keep loop:intake product-only, add .agents/skills for the operator surface, and make the next step explicit."
