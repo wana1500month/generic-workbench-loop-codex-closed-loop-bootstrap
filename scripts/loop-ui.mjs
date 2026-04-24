@@ -166,6 +166,8 @@ const sessionSnapshotFromOperatorSurface = (operatorSurface) => {
     readiness: operatorSurface.session.readiness,
     next_attention: operatorSurface.session.next_attention,
     attention_kind: operatorSurface.session.attention_kind ?? "none",
+    ui_visibility: operatorSurface.session.ui_visibility ?? "user_boundary",
+    foreground_owner: operatorSurface.session.foreground_owner ?? "human",
     deferred_question_count: operatorSurface.session.deferred_question_count ?? 0,
     steering_note_count: operatorSurface.session.steering_note_count ?? 0,
     review_feedback_count: operatorSurface.session.review_feedback_count ?? 0,
@@ -196,6 +198,8 @@ const selectSessionSnapshot = (sessionStatus, operatorSurface) => {
       readiness: sessionStatus.readiness,
       next_attention: sessionStatus.next_attention,
       attention_kind: sessionStatus.attention_kind ?? "none",
+      ui_visibility: sessionStatus.ui_visibility ?? "user_boundary",
+      foreground_owner: sessionStatus.foreground_owner ?? "human",
       deferred_question_count: sessionStatus.deferred_question_count ?? 0,
       steering_note_count: sessionStatus.steering_note_count ?? 0,
       review_feedback_count: sessionStatus.review_feedback_count ?? 0,
@@ -379,7 +383,7 @@ export const renderLoopUiSnapshot = (snapshot) =>
     `Round: ${snapshot.active.round ?? "none"} / Phase: ${snapshot.active.phase} (${snapshot.active.phase_status})`,
     `Execution: ${snapshot.execution_state}`,
     snapshot.session
-      ? `Session: ${snapshot.session.session_status} / ${snapshot.session.readiness} / attention ${snapshot.session.next_attention} / kind ${snapshot.session.attention_kind} / source ${snapshot.session.source}`
+      ? `Session: ${snapshot.session.session_status} / ${snapshot.session.readiness} / attention ${snapshot.session.next_attention} / visibility ${snapshot.session.ui_visibility} / owner ${snapshot.session.foreground_owner} / kind ${snapshot.session.attention_kind} / source ${snapshot.session.source}`
       : "Session: none",
     snapshot.session
       ? `Session objective: ${snapshot.session.objective}`

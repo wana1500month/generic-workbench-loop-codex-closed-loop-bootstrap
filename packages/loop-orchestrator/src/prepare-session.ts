@@ -1,5 +1,5 @@
 import { mkdir, readdir } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 
 import {
   buildBootstrapAnswersFromSeed,
@@ -14,6 +14,7 @@ import {
   loadDurableMemoryContext
 } from "./durable-memory.js";
 import {
+  appendJsonLine,
   loadJson,
   loadJsonIfExists,
   nextRunId,
@@ -22,6 +23,10 @@ import {
   writeJson
 } from "./file-system.js";
 import { defaultIdeaPath, readIdeaBrief } from "./idea-intake.js";
+import type {
+  FrontDoorSessionArtifact,
+  SessionIntakeSnapshot
+} from "./intake-schema.js";
 import {
   buildOperatorSurfaceArtifact,
   resolveOperatorSurfaceContext,
@@ -47,46 +52,6 @@ import type {
   TransportMode
 } from "./types.js";
 
-type SessionIntakeSnapshot = {
-  project_mode?: "new" | "existing";
-  target_family?: TargetFamily;
-  target_score?: number;
-  max_rounds?: number;
-  product_title?: string;
-  product_summary?: string;
-  target_users?: string[];
-  core_features?: string[];
-  reference_apps?: string[];
-  finish_line?: string;
-  goal_level?: "prototype" | "mvp" | "usable" | "production-like" | "custom";
-  target_root?: string;
-  framework_hint?: string;
-  package_manager?: string;
-  run_command?: string;
-  check_command?: string;
-  ready_url?: string;
-  app_url?: string;
-  health_url?: string;
-  api_base_url?: string;
-  constraints?: string[];
-  quality_bar?: string[];
-  must_not_break?: string[];
-  failure_expectations?: string[];
-  continuity_boundaries?: string[];
-  reference_signals?: string[];
-  non_goals?: string[];
-  probe_hints?: BootstrapProbeHints;
-  custom_quality_metrics?: Array<{
-    metric_id: string;
-    label: string;
-    description: string;
-    minimum_score_out_of_ten: number;
-    required?: boolean;
-    weight?: number;
-  }>;
-  notes?: string;
-};
-
 export interface PrepareSessionResult {
   runId: string;
   runDirectory: string;
@@ -108,6 +73,19 @@ export interface ReadyToStartSessionMarker {
   run_directory: string;
   updated_at: string;
   thread_id?: string;
+}
+
+export interface PrepareSessionRunInput {
+  runDirectory?: string;
+  ideaPath?: string;
+  rubricPath?: string;
+  targetFamily?: TargetFamily;
+  targetScore?: number;
+  maxRounds?: number;
+  workspaceMode?: OperatorWorkspaceSurface;
+  transportMode?: TransportMode;
+  controllerMode?: ControllerMode;
+  frontDoorSessionPath?: string;
 }
 
 const defaultRubricPath = join(
@@ -135,6 +113,91 @@ const readThreadBindingStateFromEnv = (): ThreadBindingState | undefined => {
 const inferWorkspaceMode = (
   projectMode: SessionIntakeSnapshot["project_mode"] | undefined
 ): OperatorWorkspaceSurface => (projectMode === "new" ? "worktree" : "local");
+
+const normalizeRelativePath = (path: string): string =>
+  path.replace(/\\/g, "/");
+
+const resolveTargetRootForIntake = (targetRoot: string): string =>
+  resolve(repoRoot, targetRoot);
+
+const eventsPathForFrontDoorSession = (sessionPath: string): string =>
+  sessionPath.replace(/\.json$/u, ".events.jsonl");
+
+const loadReadyFrontDoorSession = async (
+  frontDoorSessionPath: string
+): Promise<{
+  artifact: FrontDoorSessionArtifact;
+  path: string;
+  discoverySource: SessionRunContractArtifact["discovery_source"];
+}> => {
+  const resolvedPath = resolve(repoRoot, frontDoorSessionPath);
+  const artifact = await loadJson<FrontDoorSessionArtifact>(resolvedPath);
+  if (artifact.lane !== "product_build") {
+    throw new Error(
+      `Front-door session ${frontDoorSessionPath} is not a product_build session.`
+    );
+  }
+  if (artifact.phase !== "ready_for_prepare") {
+    throw new Error(
+      `Front-door session ${frontDoorSessionPath} is ${artifact.phase}, not ready_for_prepare.`
+    );
+  }
+  if (!artifact.intake.target_root?.trim()) {
+    throw new Error(
+      `Front-door session ${frontDoorSessionPath} is missing intake.target_root.`
+    );
+  }
+
+  return {
+    artifact,
+    path: resolvedPath,
+    discoverySource: {
+      front_door_session_path: normalizeRelativePath(relative(repoRoot, resolvedPath)),
+      turn_count: artifact.turn_count,
+      session_id: artifact.session_id,
+      ...(artifact.thread_id ? { thread_id: artifact.thread_id } : {})
+    }
+  };
+};
+
+const materializeFrontDoorSessionIntake = async (input: {
+  rootDirectory: string;
+  session: FrontDoorSessionArtifact;
+}): Promise<void> => {
+  const intake = input.session.intake;
+  await Promise.all([
+    writeJson(join(input.rootDirectory, "intake.json"), intake),
+    writeJson(join(resolveTargetRootForIntake(intake.target_root!), "intake.json"), intake)
+  ]);
+};
+
+const markFrontDoorSessionPrepared = async (input: {
+  sessionPath: string;
+  session: FrontDoorSessionArtifact;
+  runId: string;
+  runDirectory: string;
+}): Promise<void> => {
+  const updatedAt = new Date().toISOString();
+  const preparedSession: FrontDoorSessionArtifact = {
+    ...input.session,
+    phase: "prepared",
+    updated_at: updatedAt
+  };
+  await Promise.all([
+    writeJson(input.sessionPath, preparedSession),
+    appendJsonLine(eventsPathForFrontDoorSession(input.sessionPath), {
+      type: "session_prepared",
+      session_id: preparedSession.session_id,
+      thread_id: preparedSession.thread_id,
+      turn_count: preparedSession.turn_count,
+      status: "prepared",
+      phase: "prepared",
+      run_id: input.runId,
+      run_directory: input.runDirectory,
+      updated_at: updatedAt
+    })
+  ]);
+};
 
 export const readyToStartMarkerPathForRuns = (runsDirectory: string): string =>
   join(runsDirectory, "ready-to-start-session.json");
@@ -263,17 +326,9 @@ export const findLatestPreparedRunAwaitingStart = async (
   return undefined;
 };
 
-export const prepareSessionRun = async (input: {
-  runDirectory?: string;
-  rubricPath?: string;
-  targetFamily?: TargetFamily;
-  targetScore?: number;
-  maxRounds?: number;
-  workspaceMode?: OperatorWorkspaceSurface;
-  transportMode?: TransportMode;
-  controllerMode?: ControllerMode;
-  ideaPath?: string;
-}): Promise<PrepareSessionResult> => {
+export const prepareSessionRun = async (
+  input: PrepareSessionRunInput
+): Promise<PrepareSessionResult> => {
   const runsDirectory = join(repoRoot, "evals", "runs");
   const resolvedRunDirectory = input.runDirectory
     ? resolve(input.runDirectory)
@@ -286,7 +341,16 @@ export const prepareSessionRun = async (input: {
     resolvedRunDirectory ?? join(runsDirectory, runId);
   await mkdir(runDirectory, { recursive: true });
 
+  const frontDoorSession = input.frontDoorSessionPath
+    ? await loadReadyFrontDoorSession(input.frontDoorSessionPath)
+    : undefined;
   const idea = await readIdeaBrief(input.ideaPath ?? defaultIdeaPath);
+  if (frontDoorSession) {
+    await materializeFrontDoorSessionIntake({
+      rootDirectory: dirname(idea.source_path),
+      session: frontDoorSession.artifact
+    });
+  }
   const durableMemory = await loadDurableMemoryContext(idea);
   await ensureDurableMemoryArtifacts(
     durableMemory.rootDirectory,
@@ -378,6 +442,18 @@ export const prepareSessionRun = async (input: {
     };
   }
 
+  if (frontDoorSession) {
+    const refreshedIntake = await loadJsonIfExists<SessionIntakeSnapshot>(
+      join(durableMemory.rootDirectory, "intake.json")
+    );
+    if (refreshedIntake?.target_root?.trim()) {
+      await writeJson(
+        join(resolveTargetRootForIntake(refreshedIntake.target_root), "intake.json"),
+        refreshedIntake
+      );
+    }
+  }
+
   const rubric = await loadJson<LoopRubric>(resolvedRubricPath);
   if (input.targetScore !== undefined) {
     rubric.target_total_score = input.targetScore;
@@ -463,6 +539,9 @@ export const prepareSessionRun = async (input: {
     plan,
     workspaceMode,
     targetFamily: resolvedTargetFamily,
+    ...(frontDoorSession?.discoverySource
+      ? { discoverySource: frontDoorSession.discoverySource }
+      : {}),
     ...(preparedValidationBundle
       ? { validationBundle: preparedValidationBundle }
       : {})
@@ -505,6 +584,14 @@ export const prepareSessionRun = async (input: {
     updated_at: new Date().toISOString(),
     ...(sessionContext.threadId ? { thread_id: sessionContext.threadId } : {})
   } satisfies ReadyToStartSessionMarker);
+  if (frontDoorSession) {
+    await markFrontDoorSessionPrepared({
+      sessionPath: frontDoorSession.path,
+      session: frontDoorSession.artifact,
+      runId,
+      runDirectory
+    });
+  }
 
   return {
     runId,

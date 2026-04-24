@@ -11,6 +11,7 @@ import type {
   OperatorAppVisibility,
   OperatorAttentionRequired,
   OperatorEntrypoint,
+  OperatorForegroundOwner,
   OperatorHandoffState,
   OperatorLaunchOrigin,
   OperatorPresentationMode,
@@ -18,6 +19,7 @@ import type {
   OperatorRecommendedSkill,
   OperatorResumeSkill,
   OperatorSurfaceOwner,
+  OperatorUiVisibility,
   OperatorWorkerSkill,
   OperatorWorkspaceSurface,
   RunStopReason,
@@ -144,6 +146,8 @@ export interface CurrentThreadAutoContinueContract {
   checkpoint_seq?: number;
   checkpoint_kind?: CurrentThreadCheckpointKind;
   attention_required?: OperatorAttentionRequired;
+  ui_visibility: OperatorUiVisibility;
+  foreground_owner: OperatorForegroundOwner;
   active_prompt_path?: string;
   active_response_path?: string;
   recommended_skill?: OperatorRecommendedSkill;
@@ -324,6 +328,8 @@ export interface OperatorSurfaceArtifact {
   phase?: ControllerRoundPhase;
   phase_status?: ControllerPhaseStatus;
   attention_required?: OperatorAttentionRequired;
+  ui_visibility: OperatorUiVisibility;
+  foreground_owner: OperatorForegroundOwner;
   checkpoint_kind?: CurrentThreadCheckpointKind;
   checkpoint_id?: string;
   checkpoint_seq?: number;

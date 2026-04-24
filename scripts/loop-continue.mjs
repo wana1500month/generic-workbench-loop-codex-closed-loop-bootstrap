@@ -112,6 +112,19 @@ const buildProgressSignature = (statusReport) =>
 const buildResumeCommand = (runDirectory) =>
   `npm run loop:resume -- --run-dir ${runDirectory} --json`;
 
+const uiVisibilityForContractState = (state) =>
+  state === "codex_checkpoint" ? "internal_checkpoint" : "user_boundary";
+
+const foregroundOwnerForContractState = (state) => {
+  if (state === "codex_checkpoint") {
+    return "codex";
+  }
+  if (state === "external_stop") {
+    return "external";
+  }
+  return "human";
+};
+
 const buildContract = (input) => ({
   state: input.state,
   run_id: input.statusReport.run_id,
@@ -130,6 +143,8 @@ const buildContract = (input) => ({
   ...(input.statusReport.active?.attention_required
     ? { attention_required: input.statusReport.active.attention_required }
     : {}),
+  ui_visibility: uiVisibilityForContractState(input.state),
+  foreground_owner: foregroundOwnerForContractState(input.state),
   ...(input.statusReport.active?.active_prompt_path
     ? { active_prompt_path: input.statusReport.active.active_prompt_path }
     : {}),

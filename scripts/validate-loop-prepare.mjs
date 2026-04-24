@@ -92,7 +92,13 @@ const main = async () => {
     assert.equal(sessionStatus.session_status, "ready_to_start");
     assert.equal(sessionStatus.readiness, "ready_to_run");
     assert.equal(sessionStatus.attention_kind, "decision");
+    assert.equal(sessionStatus.ui_visibility, "user_boundary");
+    assert.equal(sessionStatus.foreground_owner, "human");
     assert.equal(operatorSurface.session.session_status, "ready_to_start");
+    assert.equal(operatorSurface.ui_visibility, "user_boundary");
+    assert.equal(operatorSurface.foreground_owner, "human");
+    assert.equal(operatorSurface.session.ui_visibility, "user_boundary");
+    assert.equal(operatorSurface.session.foreground_owner, "human");
     assert.match(operatorSurface.next_action, /Preparation is complete/i);
     assert.equal(
       operatorSurface.recommended_command,
@@ -125,12 +131,18 @@ const main = async () => {
     assert.equal(refreshedSessionStatus.session_status, "running");
     assert.equal(refreshedSessionStatus.readiness, "running");
     assert.equal(refreshedSessionStatus.next_attention, "codex");
+    assert.equal(refreshedSessionStatus.ui_visibility, "internal_checkpoint");
+    assert.equal(refreshedSessionStatus.foreground_owner, "codex");
     assert.equal(
       refreshedSessionStatus.latest_stop_reason,
       "awaiting_codex_checkpoint"
     );
     assert.equal(refreshedOperatorSurface.session.session_status, "running");
     assert.equal(refreshedOperatorSurface.attention_required, "codex");
+    assert.equal(refreshedOperatorSurface.ui_visibility, "internal_checkpoint");
+    assert.equal(refreshedOperatorSurface.foreground_owner, "codex");
+    assert.equal(refreshedOperatorSurface.session.ui_visibility, "internal_checkpoint");
+    assert.equal(refreshedOperatorSurface.session.foreground_owner, "codex");
 
     const refreshedRunContract = await readJsonFile(prepared.runContractPath);
     assert.equal(refreshedRunContract.start_gate.required, true);

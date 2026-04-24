@@ -17,7 +17,7 @@ intake and execution sessions.
 4. Prefer reasonable defaults over low-value questions.
 5. When discovery is sufficient, switch to prepare mode.
 6. Before heavy implementation, create or update:
-   - Prefer `npm run loop:prepare -- --json` on shell/operator surfaces; same-thread skill flows may call the same prepare writer internally.
+   - Prefer `npm run loop:prepare -- --front-door-session <path> --json` after `loop:discover` reaches `ready_for_prepare`; same-thread skill flows may call the same prepare writer internally.
    - `runtime/build-brief.json`
    - `runtime/run-contract.json`
    - `runtime/operator-surface.json`

@@ -1,7 +1,6 @@
 import {
-  hasExplicitProductBuildPhrase,
-  hasProductBuildNoun,
-  hasProductBuildVerb
+  detectProductBuildIntent,
+  type ProductBuildDetection
 } from "./product-build-signals.js";
 import type { TargetFamily } from "./types.js";
 
@@ -41,6 +40,7 @@ export interface IntakeGateResult {
   phase: IntakePhase;
   locale: "en" | "ko";
   is_product_build_request: boolean;
+  product_build_detection?: ProductBuildDetection;
   missing_fields: IntakeFieldId[];
   missing_product_fields: ProductFieldId[];
   missing_execution_fields: ExecutionFieldId[];
@@ -389,11 +389,10 @@ const extractSummary = (request: string): string | undefined => {
 const detectProductBuildRequest = (
   request: string,
   normalizedLower: string
-): boolean => {
-  const hasNoun = hasProductBuildNoun(normalizedLower);
-  const hasVerb = hasProductBuildVerb(normalizedLower);
-  if ((hasNoun && hasVerb) || hasExplicitProductBuildPhrase(normalizedLower)) {
-    return true;
+): ProductBuildDetection => {
+  const detection = detectProductBuildIntent(normalizedLower);
+  if (detection.is_product_build || detection.strength === "rejected") {
+    return detection;
   }
 
   const continuationSignalCount = [
@@ -407,7 +406,15 @@ const detectProductBuildRequest = (
     extractMaxRoundsEnhanced(normalizedLower) !== undefined
   ].filter(Boolean).length;
 
-  return continuationSignalCount >= 2 && normalizeText(request).length >= 16;
+  return continuationSignalCount >= 2 && normalizeText(request).length >= 16
+    ? {
+        is_product_build: true,
+        strength: "weak",
+        matched_nouns: detection.matched_nouns,
+        matched_verbs: detection.matched_verbs,
+        rejected_by: detection.rejected_by
+      }
+    : detection;
 };
 
 const extractProjectMode = (normalizedLower: string): "new" | "existing" | undefined => {
@@ -769,7 +776,8 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
   const normalized = normalizeText(request);
   const normalizedLower = lowerText(request);
   const locale = detectLocale(request);
-  const isProductBuildRequest = detectProductBuildRequest(request, normalizedLower);
+  const productBuildDetection = detectProductBuildRequest(request, normalizedLower);
+  const isProductBuildRequest = productBuildDetection.is_product_build;
 
   if (!isProductBuildRequest) {
     return {
@@ -777,6 +785,7 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
       phase: "none",
       locale,
       is_product_build_request: false,
+      product_build_detection: productBuildDetection,
       missing_fields: [],
       missing_product_fields: [],
       missing_execution_fields: [],
@@ -807,6 +816,7 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
       phase: "product",
       locale,
       is_product_build_request: true,
+      product_build_detection: productBuildDetection,
       missing_fields: missingProductFields,
       missing_product_fields: missingProductFields,
       missing_execution_fields: [],
@@ -835,6 +845,7 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
       phase: "execution",
       locale,
       is_product_build_request: true,
+      product_build_detection: productBuildDetection,
       missing_fields: [...missingProductFields, ...missingExecutionFields],
       missing_product_fields: [],
       missing_execution_fields: missingExecutionFields,
@@ -854,6 +865,7 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
     phase: "prepare",
     locale,
     is_product_build_request: true,
+    product_build_detection: productBuildDetection,
     missing_fields: [],
     missing_product_fields: [],
     missing_execution_fields: [],

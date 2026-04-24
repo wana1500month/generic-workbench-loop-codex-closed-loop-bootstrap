@@ -27,12 +27,15 @@ npm test
 ```bash
 npm run loop:intent -- --json "Build a dashboard app for operators"
 npm run loop:intake -- --json "Build a dashboard app for operators"
-npm run loop:prepare -- --json
+npm run loop:discover -- --thread-id thread-123 --message "Build a dashboard app for operators" --json
+npm run loop:prepare -- --front-door-session evals/front-door-sessions/session-thread-123.json --json
 npm run loop:start:codex -- --json
 npm run loop:status -- --json
 ```
 
-`loop:intent`, `loop:intake`, and `loop:prepare` rebuild only when the compiled front-door dist is missing or stale.
+`loop:intake` stays a stateless staged gate. `loop:discover` is the file-backed discovery surface that accumulates intake answers per thread under `evals/front-door-sessions/`. Once that session reaches `ready_for_prepare`, `loop:prepare -- --front-door-session <path>` materializes the snapshot into run-owned artifacts and leaves the run at `ready_to_start`.
+
+`loop:intent`, `loop:intake`, `loop:discover`, and `loop:prepare` rebuild only when the compiled front-door dist is missing or stale.
 
 ## Validation Suites
 

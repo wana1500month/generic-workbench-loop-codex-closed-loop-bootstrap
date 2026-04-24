@@ -194,6 +194,8 @@ const main = async () => {
       session: buildOperatorSurfaceSessionProjection(sessionStatusArtifact)
     });
     assert.equal(startGateSurface.attention_required, "human");
+    assert.equal(startGateSurface.ui_visibility, "user_boundary");
+    assert.equal(startGateSurface.foreground_owner, "human");
     assert.equal(startGateSurface.recommended_skill, "loop-control");
     assert.equal(startGateSurface.user_visible_pause, true);
     assert.match(startGateSurface.next_action, /waiting at ready_to_start/);
@@ -228,6 +230,14 @@ const main = async () => {
     assert.equal(
       snapshot.session.attention_kind,
       sessionStatusArtifact.attention_kind
+    );
+    assert.equal(
+      snapshot.session.ui_visibility,
+      sessionStatusArtifact.ui_visibility
+    );
+    assert.equal(
+      snapshot.session.foreground_owner,
+      sessionStatusArtifact.foreground_owner
     );
     assert.equal(snapshot.session.objective, sessionStatusArtifact.objective);
     assert.equal(
@@ -272,6 +282,8 @@ const main = async () => {
     assert.equal(snapshot.session.session_status, "ready_to_start");
     assert.equal(snapshot.session.next_attention, "human");
     assert.equal(snapshot.session.attention_kind, "decision");
+    assert.equal(snapshot.session.ui_visibility, "user_boundary");
+    assert.equal(snapshot.session.foreground_owner, "human");
     assert.equal(snapshot.paths.session_status_path, runtimePaths.sessionStatusPath);
     assert.equal(
       snapshot.paths.session_status_events_path,

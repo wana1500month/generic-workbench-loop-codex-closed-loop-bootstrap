@@ -1,6 +1,8 @@
 import type {
   CurrentThreadCheckpointKind,
+  OperatorForegroundOwner,
   OperatorRecommendedSkill,
+  OperatorUiVisibility,
   OperatorWorkspaceSurface,
   RunStopReason,
   TargetFamily,
@@ -139,6 +141,12 @@ export interface SessionRunContractArtifact {
   workspace_mode: OperatorWorkspaceSurface;
   objective: string;
   non_goals: string[];
+  discovery_source?: {
+    front_door_session_path: string;
+    turn_count: number;
+    session_id?: string;
+    thread_id?: string;
+  };
   discovery_policy: {
     max_questions_per_turn: number;
     ask_only_missing_high_impact_questions: boolean;
@@ -164,6 +172,10 @@ export interface SessionRunContractArtifact {
       rubric_path?: string;
       evaluator_profile_path?: string;
     };
+  };
+  continuation_policy?: {
+    mode: "patch_first";
+    recontract_only_on: string[];
   };
   review_boundaries: SessionReviewBoundary[];
   approval_boundaries: SessionApprovalBoundary[];
@@ -201,6 +213,8 @@ export interface SessionStatusArtifact {
   readiness: SessionReadiness;
   next_attention: SessionAttention;
   attention_kind: SessionAttentionKind;
+  ui_visibility: OperatorUiVisibility;
+  foreground_owner: OperatorForegroundOwner;
   objective: string;
   workspace_mode: OperatorWorkspaceSurface;
   current_thread_required: boolean;
@@ -271,6 +285,8 @@ export interface OperatorSurfaceSessionProjection {
   readiness: SessionReadiness;
   next_attention: SessionAttention;
   attention_kind: SessionAttentionKind;
+  ui_visibility: OperatorUiVisibility;
+  foreground_owner: OperatorForegroundOwner;
   deferred_question_count: number;
   steering_note_count: number;
   review_feedback_count: number;

@@ -100,6 +100,8 @@ interface StatusReport {
     phase?: ControllerRoundPhase;
     phase_status?: string;
     attention_required?: string;
+    ui_visibility?: string;
+    foreground_owner?: string;
     checkpoint_kind?: string;
     checkpoint_id?: string;
     checkpoint_seq?: number;
@@ -818,6 +820,8 @@ const buildStatusReport = async (runDirectory: string): Promise<StatusReport> =>
       ...(operatorSurface?.attention_required
         ? { attention_required: operatorSurface.attention_required }
         : {}),
+      ui_visibility: operatorSurface?.ui_visibility,
+      foreground_owner: operatorSurface?.foreground_owner,
       ...(operatorSurface?.checkpoint_kind
         ? { checkpoint_kind: operatorSurface.checkpoint_kind }
         : {}),
@@ -1084,6 +1088,11 @@ const printRunResult = (
   if (statusReport?.active.attention_required) {
     console.log(`Attention: ${statusReport.active.attention_required}`);
   }
+  if (statusReport?.active.ui_visibility || statusReport?.active.foreground_owner) {
+    console.log(
+      `Foreground: ${statusReport.active.foreground_owner ?? "none"} / ${statusReport.active.ui_visibility ?? "none"}`
+    );
+  }
   if (statusReport?.active.checkpoint_kind) {
     console.log(`Checkpoint: ${statusReport.active.checkpoint_kind}`);
   }
@@ -1146,6 +1155,9 @@ const printStatusReport = (report: StatusReport): void => {
       `Visibility: ${report.operator_surface.app_visibility} via ${report.operator_surface.entrypoint}`
     );
     console.log(
+      `Foreground: ${report.operator_surface.foreground_owner} / ${report.operator_surface.ui_visibility}`
+    );
+    console.log(
       `Handoff: ${report.operator_surface.handoff_state} / Worker: ${report.operator_surface.worker_skill ?? "none"} / Recovery: ${report.operator_surface.recovery_skill ?? report.operator_surface.resume_skill} / Requires Codex app: ${report.operator_surface.requires_codex_app ? "yes" : "no"}`
     );
     if (report.operator_surface.worktree_id || report.operator_surface.worktree_path) {
@@ -1155,7 +1167,7 @@ const printStatusReport = (report: StatusReport): void => {
     }
     if (report.operator_surface.session) {
       console.log(
-        `Session: ${report.operator_surface.session.session_status} / ${report.operator_surface.session.readiness} / attention ${report.operator_surface.session.next_attention} / kind ${report.operator_surface.session.attention_kind} / questions ${report.operator_surface.session.deferred_question_count}`
+        `Session: ${report.operator_surface.session.session_status} / ${report.operator_surface.session.readiness} / attention ${report.operator_surface.session.next_attention} / visibility ${report.operator_surface.session.ui_visibility} / owner ${report.operator_surface.session.foreground_owner} / kind ${report.operator_surface.session.attention_kind} / questions ${report.operator_surface.session.deferred_question_count}`
       );
       console.log(`Session objective: ${report.operator_surface.session.objective}`);
       console.log(
@@ -1190,7 +1202,7 @@ const printStatusReport = (report: StatusReport): void => {
     report.active.auto_resume_eligible !== undefined
   ) {
     console.log(
-      `Attention: ${report.active.attention_required ?? "none"} / Checkpoint: ${report.active.checkpoint_kind ?? "none"} / Auto resume: ${report.active.auto_resume_eligible ? "yes" : "no"}`
+      `Attention: ${report.active.attention_required ?? "none"} / Foreground: ${report.active.foreground_owner ?? "none"} / Visibility: ${report.active.ui_visibility ?? "none"} / Checkpoint: ${report.active.checkpoint_kind ?? "none"} / Auto resume: ${report.active.auto_resume_eligible ? "yes" : "no"}`
     );
   }
   if (report.active.checkpoint_id) {

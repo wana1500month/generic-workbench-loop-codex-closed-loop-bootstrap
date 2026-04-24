@@ -90,6 +90,8 @@ export type OperatorHandoffState =
   | "manual"
   | "headless";
 export type OperatorAttentionRequired = "none" | "codex" | "human" | "external";
+export type OperatorUiVisibility = "internal_checkpoint" | "user_boundary";
+export type OperatorForegroundOwner = "codex" | "human" | "external";
 export type CurrentThreadCheckpointKind =
   | "planner"
   | "contract-review"

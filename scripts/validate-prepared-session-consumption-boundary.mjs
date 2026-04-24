@@ -132,12 +132,18 @@ const main = async () => {
     assert.equal(startedSessionStatus.session_status, "running");
     assert.equal(startedSessionStatus.readiness, "running");
     assert.equal(startedSessionStatus.next_attention, "codex");
+    assert.equal(startedSessionStatus.ui_visibility, "internal_checkpoint");
+    assert.equal(startedSessionStatus.foreground_owner, "codex");
     assert.equal(
       startedSessionStatus.latest_stop_reason,
       "awaiting_codex_checkpoint"
     );
     assert.equal(startedOperatorSurface.session.session_status, "running");
     assert.equal(startedOperatorSurface.attention_required, "codex");
+    assert.equal(startedOperatorSurface.ui_visibility, "internal_checkpoint");
+    assert.equal(startedOperatorSurface.foreground_owner, "codex");
+    assert.equal(startedOperatorSurface.session.ui_visibility, "internal_checkpoint");
+    assert.equal(startedOperatorSurface.session.foreground_owner, "codex");
 
     const sameThreadCandidateAfterStart =
       await findLatestPreparedRunAwaitingStart(runsDirectory, threadId);

@@ -181,6 +181,16 @@ const assertTransportSurface = async (
     "Expected transport-state ui_surface.session.attention_kind to mirror session-status."
   );
   assert(
+    transportState.ui_surface?.session?.ui_visibility ===
+      sessionStatus.ui_visibility,
+    "Expected transport-state ui_surface.session.ui_visibility to mirror session-status."
+  );
+  assert(
+    transportState.ui_surface?.session?.foreground_owner ===
+      sessionStatus.foreground_owner,
+    "Expected transport-state ui_surface.session.foreground_owner to mirror session-status."
+  );
+  assert(
     transportState.ui_surface?.session?.session_binding?.surface ===
       sessionStatus.session_binding.surface,
     "Expected transport-state ui_surface.session.session_binding.surface to mirror session-status."

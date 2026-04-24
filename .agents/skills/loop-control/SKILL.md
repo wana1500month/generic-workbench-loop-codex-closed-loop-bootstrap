@@ -44,6 +44,7 @@ npm run loop:stop -- --run-dir evals/runs/run-###
 - Do not let `app-builder-loop` auto-start heavy implementation after prepare; once the session says `ready_to_start`, wait for an explicit `루프 시작` or `start loop`.
 - After `npm run loop:start:codex -- --json` or `npm run loop:resume -- --run-dir <run> --json` succeeds, inspect the returned operator surface immediately.
 - If `attention_required = codex`, do not answer the user yet. Keep control inside `$loop-control` by calling `npm run loop:continue -- --run-dir <run> --json` until the run reaches a user-visible boundary.
+- Treat `ui_visibility = internal_checkpoint` and `foreground_owner = codex` as the machine-readable form of that same rule; only `ui_visibility = user_boundary` is eligible for a user-facing reply.
 - In the Codex app, `start` and `resume` mean machine-readable foreground entry plus immediate same-thread continuation through `loop:continue`; do not stop after the first Codex-owned checkpoint.
 - Only use `loop:start:bg` when the operator explicitly asks for detached or background supervision.
 - Treat `loop:start:manual` as an intentional shell-owned downgrade, not the default attached start path.

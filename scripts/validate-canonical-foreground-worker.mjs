@@ -69,6 +69,10 @@ assert.equal(startReport.operator_surface.worker_skill, "loop-control");
 assert.equal(startReport.operator_surface.recovery_skill, "attached-loop");
 assert.equal(startReport.operator_surface.recommended_skill, "loop-control");
 assert.equal(startReport.operator_surface.resume_skill, "attached-loop");
+assert.equal(startReport.operator_surface.ui_visibility, "internal_checkpoint");
+assert.equal(startReport.operator_surface.foreground_owner, "codex");
+assert.equal(startReport.operator_surface.session.ui_visibility, "internal_checkpoint");
+assert.equal(startReport.operator_surface.session.foreground_owner, "codex");
 
 console.log("[validate-canonical-foreground-worker] loop:continue contract stays on loop-control");
 const continueExecution = await runPackageScript(
@@ -82,6 +86,8 @@ assert.equal(continueContract.state, "codex_checkpoint");
 assert.equal(continueContract.worker, "loop-control");
 assert.equal(continueContract.recovery_skill, "attached-loop");
 assert.equal(continueContract.user_visible_pause, false);
+assert.equal(continueContract.ui_visibility, "internal_checkpoint");
+assert.equal(continueContract.foreground_owner, "codex");
 assert.equal(continueContract.recommended_skill, undefined);
 
 console.log("[validate-canonical-foreground-worker] status output orders worker before recovery");

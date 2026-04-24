@@ -56,6 +56,16 @@ const nonProduct = evaluateIntakeRequest(
 );
 assert.equal(nonProduct.status, "not_product_build_request");
 
+for (const request of [
+  "Build onboarding docs for our service",
+  "Design product strategy for Q2",
+  "Create a SaaS pricing page copy refresh",
+  "Add a new loop:intent router so harness-design requests stop falling through product intake"
+]) {
+  const result = evaluateIntakeRequest(request);
+  assert.equal(result.status, "not_product_build_request", request);
+}
+
 const productFilledRequest =
   "Build a storyboard editor for indie animators. The target users are solo creators. The core workflows are arranging boards, dragging panels, and writing notes. References can be Linear and Figma. Good enough means those workflows run end to end.";
 

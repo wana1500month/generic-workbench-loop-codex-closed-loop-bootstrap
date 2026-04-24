@@ -4,16 +4,21 @@ const suites = {
   "product-front-door": [
     "validate:intent-gate",
     "validate:intake-gate",
+    "validate:front-door-session",
     "validate:cli-front-door",
     "validate:loop-prepare"
   ],
   core: [
     "validate:intent-gate",
     "validate:intake-gate",
+    "validate:front-door-session",
     "validate:lifecycle-api",
     "validate:transport-mode",
     "validate:score-policy",
     "validate:loop-prepare",
+    "validate:canonical-foreground-worker",
+    "validate:loop-continue",
+    "validate:no-foreground-handoff-language",
     "validate:durable-memory",
     "validate:baseline-validity"
   ],

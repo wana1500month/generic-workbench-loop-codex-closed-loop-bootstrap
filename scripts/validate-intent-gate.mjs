@@ -124,6 +124,18 @@ for (const request of [
   assert.notEqual(result.intake_status, "not_product_build_request", request);
 }
 
+assert.equal(
+  evaluateLoopIntent("Design product strategy for Q2").intent,
+  "unknown"
+);
+
+assert.equal(
+  evaluateLoopIntent(
+    "Add a new loop:intent router so harness-design requests stop falling through product intake"
+  ).intent,
+  "harness_design"
+);
+
 const harnessHumanOutput = renderLoopIntentResponse(
   evaluateLoopIntent(
     "Add a new loop:intent router so harness-design requests stop falling through product intake. The current gap is that harness requests are misclassified as product builds, and success means the operator lands in the harness lane without extra intake prompts. Keep loop:intake product-only, add .agents/skills for the operator surface, and make the next step explicit."

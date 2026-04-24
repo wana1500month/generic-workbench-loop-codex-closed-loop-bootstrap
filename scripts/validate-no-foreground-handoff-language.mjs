@@ -45,6 +45,11 @@ assert(
   "Expected AGENTS.md to keep foreground continuation inside $loop-control."
 );
 assert(
+  agentsInstructions.includes("`ui_visibility = internal_checkpoint`") &&
+    agentsInstructions.includes("`foreground_owner = codex`"),
+  "Expected AGENTS.md to encode internal checkpoint visibility and Codex foreground ownership."
+);
+assert(
   !agentsInstructions.includes("then continue on the same thread with `$attached-loop`"),
   "AGENTS.md should not describe $attached-loop as the canonical foreground continuation."
 );
@@ -58,6 +63,11 @@ assert(
 assert(
   loopControlSkill.includes("use `$attached-loop` only to recover an already-existing foreground run after interruption"),
   "Expected loop-control skill to demote $attached-loop to recovery-only semantics."
+);
+assert(
+  loopControlSkill.includes("`ui_visibility = internal_checkpoint`") &&
+    loopControlSkill.includes("`foreground_owner = codex`"),
+  "Expected loop-control skill to treat internal checkpoint visibility as machine-readable autocontinue policy."
 );
 
 console.log("foreground handoff language validation passed.");

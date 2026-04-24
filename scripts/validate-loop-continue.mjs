@@ -85,6 +85,8 @@ assert.equal(firstContract.state, "codex_checkpoint");
 assert.equal(firstContract.worker, "loop-control");
 assert.equal(firstContract.recovery_skill, "attached-loop");
 assert.equal(firstContract.user_visible_pause, false);
+assert.equal(firstContract.ui_visibility, "internal_checkpoint");
+assert.equal(firstContract.foreground_owner, "codex");
 assert.equal(firstContract.checkpoint_kind, "planner");
 assert.equal(firstContract.recommended_skill, undefined);
 assert.equal(typeof firstContract.checkpoint_id, "string");
@@ -119,6 +121,8 @@ await writeFile(
 const staleResult = await readContinueContract(staleRunDirectory);
 assert.equal(staleResult.state, "human_stop");
 assert.equal(staleResult.guard_reason, "stale_checkpoint_response");
+assert.equal(staleResult.ui_visibility, "user_boundary");
+assert.equal(staleResult.foreground_owner, "human");
 const staleDirectory = join(staleRunDirectory, "runtime", "stale-checkpoint-responses");
 const staleEntries = await readdir(staleDirectory);
 assert(
@@ -137,5 +141,7 @@ await writeFile(
 const hopLimitedContract = await readContinueContract(hopRunDirectory, ["--hop-limit", "0"]);
 assert.equal(hopLimitedContract.state, "human_stop");
 assert.equal(hopLimitedContract.guard_reason, "hop_limit_reached");
+assert.equal(hopLimitedContract.ui_visibility, "user_boundary");
+assert.equal(hopLimitedContract.foreground_owner, "human");
 
 console.log("loop continue validation passed.");

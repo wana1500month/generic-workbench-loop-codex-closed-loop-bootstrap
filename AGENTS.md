@@ -28,6 +28,7 @@ The closed-loop harness is the core runtime engine, and `product_build` is only 
 - In the Codex app, default new loop starts to `npm run loop:start:codex` or `$loop-control`. Use `npm run loop:start:bg` only when the operator explicitly asks for detached background supervision.
 - In the Codex app, `루프 시작` must not end with a user-visible checkpoint-waiting message. Start with `npm run loop:start:codex -- --json`, then keep control inside `$loop-control` through `npm run loop:continue -- --run-dir <run> --json` until the run reaches a human stop, an external block, or a terminal state.
 - A Codex-owned checkpoint is never a user-visible pause. Foreground start or resume stays inside `$loop-control` until the run reaches a human stop, an external block, or a terminal state.
+- Runtime surfaces must encode this explicitly: `attention_required = codex` means `ui_visibility = internal_checkpoint` and `foreground_owner = codex`; human, external, and terminal boundaries are `ui_visibility = user_boundary`.
 - If a user asks this repo to build or design an app, service, editor, dashboard, API, agent, or product feature, the first response must follow the intake protocol in `INTAKE_PROTOCOL.md`.
 - Do not jump straight to adapter analysis, family classification, MVP breakdown, UX proposals, wireframes, architecture advice, or stack recommendations before the intake is complete.
 - Treat missing intake fields as a hard block. This should fail closed: ask questions instead of guessing.

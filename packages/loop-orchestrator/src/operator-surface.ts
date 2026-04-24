@@ -1,6 +1,10 @@
 import { dirname, relative, resolve } from "node:path";
 
 import { repoRoot, writeJson, writeText } from "./file-system.js";
+import {
+  foregroundOwnerForAttention,
+  uiVisibilityForAttention
+} from "./foreground-surface.js";
 import type {
   AdapterMigrationDecision,
   CurrentThreadCheckpointKind,
@@ -680,6 +684,8 @@ export const buildOperatorSurfaceArtifact = (input: {
           transportMode: input.transportMode,
           phaseStatus: input.phaseStatus
         }));
+  const uiVisibility = uiVisibilityForAttention(attentionRequired);
+  const foregroundOwner = foregroundOwnerForAttention(attentionRequired);
   const startGateDecisionSurface =
     startGateReady && attentionRequired === "human";
   const autoResumeEligible =
@@ -778,6 +784,8 @@ export const buildOperatorSurfaceArtifact = (input: {
     ...(attentionRequired !== "none"
       ? { attention_required: attentionRequired }
       : {}),
+    ui_visibility: uiVisibility,
+    foreground_owner: foregroundOwner,
     ...(input.checkpointKind ? { checkpoint_kind: input.checkpointKind } : {}),
     ...(input.checkpointId ? { checkpoint_id: input.checkpointId } : {}),
     ...(input.checkpointSeq !== undefined
@@ -841,6 +849,8 @@ export const renderOperatorSurfaceMarkdown = (
 - Phase: ${artifact.phase ?? "none"}
 - Phase status: ${artifact.phase_status ?? "none"}
 - Attention required: ${artifact.attention_required ?? "none"}
+- UI visibility: ${artifact.ui_visibility}
+- Foreground owner: ${artifact.foreground_owner}
 - Checkpoint kind: ${artifact.checkpoint_kind ?? "none"}
 - Checkpoint id: ${artifact.checkpoint_id ?? "none"}
 - Checkpoint seq: ${artifact.checkpoint_seq ?? "none"}
@@ -871,6 +881,8 @@ export const renderOperatorSurfaceMarkdown = (
 - Readiness: ${artifact.session?.readiness ?? "none"}
 - Next attention: ${artifact.session?.next_attention ?? "none"}
 - Attention kind: ${artifact.session?.attention_kind ?? "none"}
+- UI visibility: ${artifact.session?.ui_visibility ?? "none"}
+- Foreground owner: ${artifact.session?.foreground_owner ?? "none"}
 - Deferred questions: ${artifact.session?.deferred_question_count ?? 0}
 - Steering notes: ${artifact.session?.steering_note_count ?? 0}
 - Review feedback: ${artifact.session?.review_feedback_count ?? 0}

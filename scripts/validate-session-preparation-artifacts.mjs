@@ -36,6 +36,7 @@ const expectedBuildBriefKeys = [
 const expectedRunContractKeys = [
   "approval_boundaries",
   "brief_id",
+  "continuation_policy",
   "contract_id",
   "created_at",
   "current_thread_required",
@@ -207,6 +208,8 @@ const main = async () => {
     assert.equal(sessionStatus.readiness, "ready_to_run");
     assert.equal(sessionStatus.next_attention, "human");
     assert.equal(sessionStatus.attention_kind, "decision");
+    assert.equal(sessionStatus.ui_visibility, "user_boundary");
+    assert.equal(sessionStatus.foreground_owner, "human");
     assert.equal(sessionStatus.session_binding.surface, "current-thread");
     assert.equal(sessionStatus.session_binding.binding_state, "bound");
     assert.equal(sessionStatus.session_binding.thread_id, "thread-prepare-001");
@@ -301,6 +304,8 @@ const main = async () => {
     assert.equal(refreshedSessionStatus.readiness, "needs_input");
     assert.equal(refreshedSessionStatus.next_attention, "human");
     assert.equal(refreshedSessionStatus.attention_kind, "steering");
+    assert.equal(refreshedSessionStatus.ui_visibility, "user_boundary");
+    assert.equal(refreshedSessionStatus.foreground_owner, "human");
     assert.equal(refreshedSessionStatus.session_binding.surface, "current-thread");
     assert.equal(refreshedSessionStatus.session_binding.binding_state, "bound");
     assert.equal(refreshedSessionStatus.session_binding.thread_id, "thread-prepare-001");
@@ -340,6 +345,14 @@ const main = async () => {
     assert.equal(
       refreshedSessionStream.latest_session.attention_kind,
       refreshedSessionStatus.attention_kind
+    );
+    assert.equal(
+      refreshedSessionStream.latest_session.ui_visibility,
+      refreshedSessionStatus.ui_visibility
+    );
+    assert.equal(
+      refreshedSessionStream.latest_session.foreground_owner,
+      refreshedSessionStatus.foreground_owner
     );
     assert.ok(
       refreshedOpenQuestions.review_feedback.includes(

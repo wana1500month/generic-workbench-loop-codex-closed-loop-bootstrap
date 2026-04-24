@@ -7,6 +7,11 @@ import {
   writeJson,
   writeText
 } from "./file-system.js";
+import {
+  foregroundOwnerForAttention,
+  uiVisibilityForAttention
+} from "./foreground-surface.js";
+import type { SessionIntakeSnapshot } from "./intake-schema.js";
 import type { DurableMemoryContext } from "./durable-memory.js";
 import type {
   AdapterMigrationDecision,
@@ -40,46 +45,6 @@ import type {
   ThreadBindingState,
   TransportMode
 } from "./types.js";
-
-type SessionIntakeSnapshot = {
-  product_title?: string;
-  product_summary?: string;
-  target_users?: string[];
-  core_features?: string[];
-  reference_apps?: string[];
-  finish_line?: string;
-  target_family?: TargetFamily;
-  goal_level?: BuildBriefDeliveryLevel;
-  target_score?: number;
-  max_rounds?: number;
-  target_root?: string;
-  project_mode?: "new" | "existing";
-  framework_hint?: string;
-  package_manager?: string;
-  run_command?: string;
-  check_command?: string;
-  ready_url?: string;
-  app_url?: string;
-  health_url?: string;
-  api_base_url?: string;
-  constraints?: string[];
-  quality_bar?: string[];
-  must_not_break?: string[];
-  failure_expectations?: string[];
-  continuity_boundaries?: string[];
-  reference_signals?: string[];
-  non_goals?: string[];
-  probe_hints?: Record<string, string>;
-  custom_quality_metrics?: Array<{
-    metric_id: string;
-    label: string;
-    description: string;
-    minimum_score_out_of_ten: number;
-    required?: boolean;
-    weight?: number;
-  }>;
-  notes?: string;
-};
 
 type OpenQuestionArtifact = {
   id: string;
@@ -142,6 +107,7 @@ export interface SessionPreparationArtifactsInput {
   workspaceMode: OperatorWorkspaceSurface;
   targetFamily?: TargetFamily;
   validationBundle?: SessionRunContractArtifact["validation_strategy"]["validation_bundle"];
+  discoverySource?: SessionRunContractArtifact["discovery_source"];
   sessionStatus?: SessionLoopStatus;
   currentObjective?: string;
   steeringNotes?: string[];
@@ -627,17 +593,20 @@ export const buildSessionStatusArtifact = (input: {
     checkpointResponsePath: input.checkpointResponsePath,
     checkpointSkill: input.checkpointSkill
   });
+  const nextAttention = sessionAttentionForStatus(input.sessionStatus);
 
   return {
     run_id: input.runId,
     updated_at: input.updatedAt,
     session_status: input.sessionStatus,
     readiness: sessionReadinessForStatus(input.sessionStatus),
-    next_attention: sessionAttentionForStatus(input.sessionStatus),
+    next_attention: nextAttention,
     attention_kind: sessionAttentionKindForStatus({
       status: input.sessionStatus,
       decisionOptions: input.decisionOptions
     }),
+    ui_visibility: uiVisibilityForAttention(nextAttention),
+    foreground_owner: foregroundOwnerForAttention(nextAttention),
     objective: input.objective,
     workspace_mode: input.workspaceMode,
     current_thread_required: input.currentThreadRequired ?? true,
@@ -678,6 +647,8 @@ const stableSessionFields = (
   readiness: artifact.readiness,
   next_attention: artifact.next_attention,
   attention_kind: artifact.attention_kind,
+  ui_visibility: artifact.ui_visibility,
+  foreground_owner: artifact.foreground_owner,
   objective: artifact.objective,
   workspace_mode: artifact.workspace_mode,
   current_thread_required: artifact.current_thread_required,
@@ -765,6 +736,8 @@ export const buildOperatorSurfaceSessionProjection = (
   readiness: artifact.readiness,
   next_attention: artifact.next_attention,
   attention_kind: artifact.attention_kind,
+  ui_visibility: artifact.ui_visibility,
+  foreground_owner: artifact.foreground_owner,
   deferred_question_count: artifact.deferred_question_count,
   steering_note_count: artifact.steering_note_count,
   review_feedback_count: artifact.review_feedback_count,
@@ -1234,6 +1207,7 @@ export const writeSessionPreparationArtifacts = async (
     workspace_mode: input.workspaceMode,
     objective,
     non_goals: buildBrief.constraints.non_goals,
+    ...(input.discoverySource ? { discovery_source: input.discoverySource } : {}),
     discovery_policy: {
       max_questions_per_turn: 3,
       ask_only_missing_high_impact_questions: true,
@@ -1257,6 +1231,16 @@ export const writeSessionPreparationArtifacts = async (
       ...(input.validationBundle
         ? { validation_bundle: input.validationBundle }
         : {})
+    },
+    continuation_policy: {
+      mode: "patch_first",
+      recontract_only_on: [
+        "missing_patch_authority",
+        "release_gate_regression",
+        "scope_drift",
+        "repeated_unresolved_signature",
+        "plateau_without_progress"
+      ]
     },
     review_boundaries: sessionReviewBoundaries,
     approval_boundaries: sessionApprovalBoundaries,

@@ -3,7 +3,7 @@ import {
   renderIntakeGateResponse,
   type IntakeGateResult
 } from "./intake-gate.js";
-import { hasExplicitProductBuildPhrase } from "./product-build-signals.js";
+import { detectProductBuildIntent } from "./product-build-signals.js";
 
 type HarnessIntentFieldId = "change_goal" | "current_gap" | "success_criteria";
 type RunControlAction = "start" | "status" | "stop" | "resume";
@@ -957,7 +957,8 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
   const locale: "en" | "ko" =
     detectIntentLocale(normalizedRequest) === "ko" || hasLocalizedSignalHint ? "ko" : "en";
 
-  const hasProductContext = hasExplicitProductBuildPhrase(sanitizedRequest);
+  const productBuildDetection = detectProductBuildIntent(sanitizedRequest);
+  const hasProductContext = productBuildDetection.is_product_build;
   const hasReferenceNoise = sanitizedRequest !== normalizedRequest;
   const hasHarnessSurface = matchedHarnessSignals.length > 0;
   const hasStrongHarnessSurface = matchedHarnessSignals.some((signal) =>

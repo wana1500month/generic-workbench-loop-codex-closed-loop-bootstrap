@@ -22,12 +22,13 @@ type PrepareArgs = {
   workspaceMode?: OperatorWorkspaceSurface;
   transportMode?: TransportMode;
   controllerMode?: ControllerMode;
+  frontDoorSessionPath?: string;
   json: boolean;
   errors: string[];
 };
 
 const usage = [
-  "Usage: npm run loop:prepare -- [--run-dir <run-dir>] [--target-family <family>] [--target-score <score>] [--max-rounds <count>] [--workspace-mode <local|worktree>] [--transport <transport>] [--controller-mode <attached|detached>] [--json]",
+  "Usage: npm run loop:prepare -- [--front-door-session <path>] [--run-dir <run-dir>] [--target-family <family>] [--target-score <score>] [--max-rounds <count>] [--workspace-mode <local|worktree>] [--transport <transport>] [--controller-mode <attached|detached>] [--json]",
   "",
   "Writes runtime/build-brief.json, runtime/run-contract.json, runtime/operator-surface.json, runtime/open-questions.json, runtime/session-status.json, runtime/session-status-events.jsonl, runtime/session-stream.json, and docs/EXECUTION_PLAN.md without starting the loop."
 ].join("\n");
@@ -56,6 +57,7 @@ const parseArgs = (argv: readonly string[]): PrepareArgs => {
   let workspaceMode: OperatorWorkspaceSurface | undefined;
   let transportMode: TransportMode | undefined;
   let controllerMode: ControllerMode | undefined;
+  let frontDoorSessionPath: string | undefined;
   let json = false;
   const errors: string[] = [];
 
@@ -126,6 +128,11 @@ const parseArgs = (argv: readonly string[]): PrepareArgs => {
       index += 1;
       continue;
     }
+    if (value === "--front-door-session") {
+      frontDoorSessionPath = argv[index + 1];
+      index += 1;
+      continue;
+    }
 
     errors.push(`Unexpected argument: ${value}`);
   }
@@ -139,6 +146,7 @@ const parseArgs = (argv: readonly string[]): PrepareArgs => {
     workspaceMode,
     transportMode,
     controllerMode,
+    frontDoorSessionPath,
     json,
     errors
   };
@@ -161,7 +169,10 @@ const main = async (): Promise<void> => {
     ...(args.maxRounds !== undefined ? { maxRounds: args.maxRounds } : {}),
     ...(args.workspaceMode ? { workspaceMode: args.workspaceMode } : {}),
     ...(args.transportMode ? { transportMode: args.transportMode } : {}),
-    ...(args.controllerMode ? { controllerMode: args.controllerMode } : {})
+    ...(args.controllerMode ? { controllerMode: args.controllerMode } : {}),
+    ...(args.frontDoorSessionPath
+      ? { frontDoorSessionPath: resolve(repoRoot, args.frontDoorSessionPath) }
+      : {})
   });
 
   if (args.json) {
@@ -178,6 +189,9 @@ const main = async (): Promise<void> => {
           session_stream_path: result.sessionStreamPath,
           operator_surface_path: result.operatorSurfacePath,
           execution_plan_path: result.executionPlanPath,
+          ...(args.frontDoorSessionPath
+            ? { front_door_session_path: resolve(repoRoot, args.frontDoorSessionPath) }
+            : {}),
           ...(result.adapterPath ? { adapter_path: result.adapterPath } : {}),
           ...(result.rubricPath ? { rubric_path: result.rubricPath } : {}),
           ...(result.evaluatorProfilePath
@@ -197,6 +211,9 @@ const main = async (): Promise<void> => {
   console.log(`Session status: ${result.sessionStatusPath}`);
   console.log(`Operator surface: ${result.operatorSurfacePath}`);
   console.log(`Execution plan: ${result.executionPlanPath}`);
+  if (args.frontDoorSessionPath) {
+    console.log(`Front-door session: ${resolve(repoRoot, args.frontDoorSessionPath)}`);
+  }
   if (result.adapterPath) {
     console.log(`Prepared adapter: ${result.adapterPath}`);
   }
