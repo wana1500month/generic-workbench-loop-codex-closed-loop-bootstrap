@@ -181,6 +181,13 @@ const markFrontDoorSessionPrepared = async (input: {
   const preparedSession: FrontDoorSessionArtifact = {
     ...input.session,
     phase: "prepared",
+    last_question_ids: [],
+    last_question_batch: [],
+    prepared_run: {
+      run_id: input.runId,
+      run_directory: input.runDirectory,
+      prepared_at: updatedAt
+    },
     updated_at: updatedAt
   };
   await Promise.all([
@@ -339,11 +346,24 @@ export const prepareSessionRun = async (
       : await nextRunId(runsDirectory);
   const runDirectory =
     resolvedRunDirectory ?? join(runsDirectory, runId);
-  await mkdir(runDirectory, { recursive: true });
 
   const frontDoorSession = input.frontDoorSessionPath
     ? await loadReadyFrontDoorSession(input.frontDoorSessionPath)
     : undefined;
+  const envThreadId = process.env.CODEX_THREAD_ID?.trim() || undefined;
+  const discoveryThreadId =
+    frontDoorSession?.artifact.thread_id?.trim() || undefined;
+  if (envThreadId && discoveryThreadId && envThreadId !== discoveryThreadId) {
+    throw new Error(
+      `Front-door session belongs to thread ${discoveryThreadId}, but current CODEX_THREAD_ID is ${envThreadId}.`
+    );
+  }
+  const effectiveThreadId = envThreadId ?? discoveryThreadId;
+  const effectiveThreadBindingState: ThreadBindingState =
+    effectiveThreadId
+      ? "bound"
+      : readThreadBindingStateFromEnv() ?? "unbound";
+  await mkdir(runDirectory, { recursive: true });
   const idea = await readIdeaBrief(input.ideaPath ?? defaultIdeaPath);
   if (frontDoorSession) {
     await materializeFrontDoorSessionIntake({
@@ -509,7 +529,9 @@ export const prepareSessionRun = async (
   const sessionContext = resolveOperatorSurfaceContext({
     controllerMode,
     transportMode,
-    threadId: process.env.CODEX_THREAD_ID?.trim() || undefined
+    threadId: effectiveThreadId,
+    threadBindingState: effectiveThreadBindingState,
+    launchOrigin: effectiveThreadId ? "codex-app-thread" : undefined
   });
   const workspaceMode =
     input.workspaceMode && workspaceModes.has(input.workspaceMode)
@@ -528,9 +550,7 @@ export const prepareSessionRun = async (
     operatorSurfacePath: runtimePaths.operatorSurfacePath,
     executionPlanPath,
     transportMode,
-    threadBindingState:
-      readThreadBindingStateFromEnv() ??
-      sessionContext.threadBindingState,
+    threadBindingState: effectiveThreadBindingState,
     threadId: sessionContext.threadId,
     turnId: undefined,
     idea,
@@ -562,9 +582,7 @@ export const prepareSessionRun = async (
     threadId: sessionContext.threadId,
     launchOrigin: sessionContext.launchOrigin,
     surfaceOwner: sessionContext.surfaceOwner,
-    threadBindingState:
-      readThreadBindingStateFromEnv() ??
-      sessionContext.threadBindingState,
+    threadBindingState: effectiveThreadBindingState,
     entrypoint: sessionContext.entrypoint,
     appVisibility: sessionContext.appVisibility,
     recommendedSkill: "loop-control",

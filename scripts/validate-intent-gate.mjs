@@ -117,11 +117,23 @@ for (const fixture of fixtures) {
 for (const request of [
   "Build me a todo app with auth",
   "Create a CRM web app for sales reps",
-  "Make a booking service for salons"
+  "Make a booking service for salons",
+  "Create a support agent for customer replies",
+  "Build an internal platform for finance approvals"
 ]) {
   const result = evaluateLoopIntent(request);
   assert.equal(result.intent, "product_build", request);
   assert.notEqual(result.intake_status, "not_product_build_request", request);
+}
+
+for (const request of [
+  "Create customer service strategy for support team",
+  "Build a service roadmap for Q2",
+  "Make internal platform documentation for admins",
+  "Create an agent evaluation spec for QA"
+]) {
+  const result = evaluateLoopIntent(request);
+  assert.notEqual(result.intent, "product_build", request);
 }
 
 assert.equal(

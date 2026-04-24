@@ -102,8 +102,11 @@ const NON_PRODUCT_WORK_PATTERNS: readonly PatternLabel[] = [
   { label: "refresh", pattern: /\brefresh\b/i }
 ] as const;
 
-const EXPLICIT_PRODUCT_BUILD_PHRASE =
-  /\b(?:app(?:lication)?|web\s*app|service|platform|portal|tool|dashboard|editor|workspace|website|api|agent|system|saas)\b.{0,32}\bfor\b/i;
+const STRONG_EXPLICIT_PRODUCT_BUILD_PHRASE =
+  /\b(?:app(?:lication)?|web\s*app|dashboard|editor|workspace|website|api|saas)\b.{0,32}\bfor\b/i;
+
+const WEAK_EXPLICIT_PRODUCT_BUILD_PHRASE =
+  /\b(?:build|create|make|prototype|ship)\b\s+(?:me\s+|us\s+|a\s+|an\s+|the\s+)?[^.!?]{0,48}\b(?:service|platform|portal|tool|agent|system)\b[^.!?]{0,48}\bfor\b/i;
 
 const BUILD_OBJECT_PATTERN =
   /\b(?:build|create|make|prototype|ship)\b\s+(?:me\s+|us\s+|a\s+|an\s+|the\s+)?(.+?)(?:[.!?]|$)/i;
@@ -122,7 +125,8 @@ const extractBuildObject = (value: string): string | undefined =>
   BUILD_OBJECT_PATTERN.exec(value)?.[1]?.trim();
 
 export const hasExplicitProductBuildPhrase = (value: string): boolean =>
-  EXPLICIT_PRODUCT_BUILD_PHRASE.test(value);
+  STRONG_EXPLICIT_PRODUCT_BUILD_PHRASE.test(value) ||
+  WEAK_EXPLICIT_PRODUCT_BUILD_PHRASE.test(value);
 
 export const detectProductBuildIntent = (value: string): ProductBuildDetection => {
   const strongNouns = matchPatternLabels(value, STRONG_PRODUCT_NOUN_PATTERNS);
@@ -151,22 +155,20 @@ export const detectProductBuildIntent = (value: string): ProductBuildDetection =
     buildObject,
     STRONG_PRODUCT_NOUN_PATTERNS
   );
-  const buildObjectWeakNouns = matchPatternLabels(
-    buildObject,
-    WEAK_PRODUCT_NOUN_PATTERNS
-  );
   const buildObjectRejectedBy = unique([
     ...matchHintLabels(buildObject, KO_NON_PRODUCT_WORK_HINTS),
     ...matchPatternLabels(buildObject, NON_PRODUCT_WORK_PATTERNS)
   ]);
-  const explicitProductBuildPhrase = hasExplicitProductBuildPhrase(value);
+  const strongExplicitProductBuildPhrase =
+    STRONG_EXPLICIT_PRODUCT_BUILD_PHRASE.test(value);
+  const weakExplicitProductBuildPhrase =
+    WEAK_EXPLICIT_PRODUCT_BUILD_PHRASE.test(value);
   const hasVerb = matchedVerbs.length > 0;
   const hasStrongSurfaceNoun = strongNouns.length > 0 || koNouns.length > 0;
   const hasWeakNoun = weakNouns.length > 0;
 
   if (
     buildObjectRejectedBy.length > 0 &&
-    !explicitProductBuildPhrase &&
     buildObjectStrongNouns.length === 0
   ) {
     return {
@@ -178,7 +180,7 @@ export const detectProductBuildIntent = (value: string): ProductBuildDetection =
     };
   }
 
-  if (explicitProductBuildPhrase || (hasVerb && hasStrongSurfaceNoun)) {
+  if (strongExplicitProductBuildPhrase || (hasVerb && hasStrongSurfaceNoun)) {
     return {
       is_product_build: true,
       strength: "strong",
@@ -188,7 +190,11 @@ export const detectProductBuildIntent = (value: string): ProductBuildDetection =
     };
   }
 
-  if (hasVerb && hasWeakNoun) {
+  if (
+    (weakExplicitProductBuildPhrase || (hasVerb && hasWeakNoun)) &&
+    rejectedBy.length === 0 &&
+    buildObjectRejectedBy.length === 0
+  ) {
     return {
       is_product_build: true,
       strength: "weak",
@@ -200,7 +206,7 @@ export const detectProductBuildIntent = (value: string): ProductBuildDetection =
 
   return {
     is_product_build: false,
-    strength: rejectedBy.length > 0 ? "rejected" : "weak",
+    strength: buildObjectRejectedBy.length > 0 ? "rejected" : "weak",
     matched_nouns: matchedNouns,
     matched_verbs: matchedVerbs,
     rejected_by: unique([...rejectedBy, ...buildObjectRejectedBy])

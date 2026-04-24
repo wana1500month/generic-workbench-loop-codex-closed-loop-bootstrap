@@ -44,7 +44,9 @@ assert.equal(askProductResult.extracted_max_rounds, 3);
 for (const request of [
   "Build me a todo app with auth",
   "Create a CRM web app for sales reps",
-  "Make a booking service for salons"
+  "Make a booking service for salons",
+  "Create a support agent for customer replies",
+  "Build an internal platform for finance approvals"
 ]) {
   const result = evaluateIntakeRequest(request);
   assert.equal(result.is_product_build_request, true, request);
@@ -60,7 +62,11 @@ for (const request of [
   "Build onboarding docs for our service",
   "Design product strategy for Q2",
   "Create a SaaS pricing page copy refresh",
-  "Add a new loop:intent router so harness-design requests stop falling through product intake"
+  "Add a new loop:intent router so harness-design requests stop falling through product intake",
+  "Create customer service strategy for support team",
+  "Build a service roadmap for Q2",
+  "Make internal platform documentation for admins",
+  "Create an agent evaluation spec for QA"
 ]) {
   const result = evaluateIntakeRequest(request);
   assert.equal(result.status, "not_product_build_request", request);

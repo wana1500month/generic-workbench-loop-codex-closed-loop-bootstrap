@@ -7,15 +7,22 @@ Generic request routing now lives in:
 
 - `npm run loop:intent -- "<user request>"`
 
-The operator-facing lane for product-build requests is the same-thread `app-builder-loop` skill. The executable staged gate inside that lane is:
+The operator-facing lane for product-build requests is the same-thread `app-builder-loop` skill. The stateless parser/helper inside that lane is:
 
 - `npm run loop:intake -- "<user request>"`
+
+The stateful product-build discovery front door is:
+
+- `npm run loop:discover -- --thread-id <thread-id> --message "<turn>" --json`
 
 Only enter this protocol after the request has been classified as
 `product_build`, or when the request is obviously a product-build prompt.
 
-If that gate returns `ask_product_questions` or `ask_execution_questions`,
-the next assistant reply should contain those questions only.
+Use `loop:discover` for the real same-thread UX. If it returns
+`ask_product_questions` or `ask_execution_questions`, the next assistant reply
+should contain those questions only. If it returns `ready_for_prepare`, run
+`loop:prepare -- --front-door-session <path> --json`, then stop at
+`ready_to_start`.
 
 ## Goal
 
@@ -36,7 +43,7 @@ the model jump directly into design or implementation advice.
 7. Only after the intake is sufficiently filled may the agent:
    - write a short preparation summary if useful
    - enter prepare mode on the same thread
-   - write the session preparation artifacts, preferably through `npm run loop:prepare -- --json` on shell/operator surfaces
+   - write the session preparation artifacts, preferably through `npm run loop:prepare -- --front-door-session <path> --json` on shell/operator surfaces
    - stop at `ready_to_start`
    - wait for an explicit `루프 시작` or `start loop` before running
 

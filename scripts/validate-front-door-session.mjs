@@ -20,8 +20,17 @@ const main = async () => {
   const targetRootRelative = `tmp-targets/${basename(tempRoot)}-target-app`;
   const targetRoot = resolve(repoRoot, targetRootRelative);
   const ideaPath = join(workspaceRoot, "IDEA.md");
-  const previousSessionsDirectory = process.env.HARNESS_FRONT_DOOR_SESSIONS_DIRECTORY;
+  const previousEnv = {
+    HARNESS_FRONT_DOOR_SESSIONS_DIRECTORY:
+      process.env.HARNESS_FRONT_DOOR_SESSIONS_DIRECTORY,
+    CODEX_THREAD_ID: process.env.CODEX_THREAD_ID,
+    HARNESS_THREAD_BINDING_STATE: process.env.HARNESS_THREAD_BINDING_STATE,
+    HARNESS_LAUNCH_ORIGIN: process.env.HARNESS_LAUNCH_ORIGIN
+  };
   process.env.HARNESS_FRONT_DOOR_SESSIONS_DIRECTORY = sessionsDirectory;
+  delete process.env.CODEX_THREAD_ID;
+  delete process.env.HARNESS_THREAD_BINDING_STATE;
+  delete process.env.HARNESS_LAUNCH_ORIGIN;
 
   try {
     await mkdir(workspaceRoot, { recursive: true });
@@ -52,6 +61,9 @@ const main = async () => {
     assert.equal(firstTurn.phase, "product");
     assert.ok(firstTurn.front_door_session_path?.endsWith("session-thread-123.json"));
     assert.match(firstTurn.intake.product_summary ?? "", /todo app with auth/i);
+    assert.equal(firstTurn.intake.target_score, undefined);
+    assert.equal(firstTurn.intake.max_rounds, undefined);
+    assert.ok(firstTurn.last_question_ids.length > 0);
     assert.equal(firstTurn.turn_count, 1);
 
     const secondTurn = await runFrontDoorDiscoveryTurn({
@@ -94,6 +106,20 @@ const main = async () => {
     assert.equal(restored?.turn_count, 4);
     assert.equal(restored?.intake.target_root, targetRootRelative);
 
+    process.env.CODEX_THREAD_ID = "different-thread";
+    await assert.rejects(
+      () =>
+        prepareSessionRun({
+          runDirectory: join(tempRoot, "mismatch-run"),
+          ideaPath,
+          frontDoorSessionPath: fourthTurn.front_door_session_path,
+          transportMode: "current-thread",
+          controllerMode: "attached"
+        }),
+      /belongs to thread thread-123/
+    );
+    delete process.env.CODEX_THREAD_ID;
+
     const prepared = await prepareSessionRun({
       ideaPath,
       frontDoorSessionPath: fourthTurn.front_door_session_path,
@@ -135,10 +161,72 @@ const main = async () => {
       "plateau_without_progress"
     ]);
     assert.equal(preparedSession.phase, "prepared");
+    assert.equal(preparedSession.last_question_ids.length, 0);
+    assert.equal(preparedSession.last_question_batch.length, 0);
+    assert.equal(preparedSession.prepared_run.run_id, prepared.runId);
+    assert.equal(preparedSession.prepared_run.run_directory, prepared.runDirectory);
+    assert.match(preparedSession.prepared_run.prepared_at, /\d{4}-\d{2}-\d{2}T/);
+    assert.equal(preparedSessionStatus.session_binding.thread_id, "thread-123");
+    assert.equal(preparedSessionStatus.session_binding.binding_state, "bound");
     assert.equal(preparedSessionStatus.ui_visibility, "user_boundary");
     assert.equal(preparedSessionStatus.foreground_owner, "human");
     assert.equal(preparedOperatorSurface.ui_visibility, "user_boundary");
     assert.equal(preparedOperatorSurface.foreground_owner, "human");
+
+    const preparedStatus = await getFrontDoorSessionStatus("thread-123");
+    assert.equal(preparedStatus.status, "prepared");
+    assert.equal(preparedStatus.phase, "prepared");
+    assert.equal(preparedStatus.intake.target_root, targetRootRelative);
+
+    const afterPreparedTurn = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-123",
+      message: "Actually change it to a CRM app"
+    });
+    assert.equal(afterPreparedTurn.status, "prepared");
+    assert.equal(afterPreparedTurn.phase, "prepared");
+    assert.equal(
+      afterPreparedTurn.intake.product_summary,
+      preparedStatus.intake.product_summary
+    );
+    assert.equal(afterPreparedTurn.intake.target_root, targetRootRelative);
+
+    const terseFirst = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-terse",
+      message: "Build me a todo app with auth"
+    });
+    assert.equal(terseFirst.status, "ask_product_questions");
+
+    const terseSecond = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-terse",
+      message: [
+        "1. Solo founders",
+        "2. create tasks, assign priorities, archive completed tasks",
+        "3. none"
+      ].join("\n")
+    });
+    assert.deepEqual(terseSecond.intake.target_users, ["Solo founders"]);
+    assert.ok(terseSecond.intake.core_features.includes("create tasks"));
+    assert.deepEqual(terseSecond.intake.reference_apps, []);
+
+    const terseThird = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-terse",
+      message: "They can sign in and manage tasks end to end."
+    });
+    assert.match(terseThird.intake.finish_line ?? "", /manage tasks/i);
+
+    const defaultsFirst = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-default-override",
+      message: "Build me a todo app with auth"
+    });
+    assert.equal(defaultsFirst.intake.target_score, undefined);
+    assert.equal(defaultsFirst.intake.max_rounds, undefined);
+
+    const defaultsSecond = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-default-override",
+      message: "target score 0.85 and max rounds 5"
+    });
+    assert.equal(defaultsSecond.intake.target_score, 0.85);
+    assert.equal(defaultsSecond.intake.max_rounds, 5);
 
     const secondThread = await runFrontDoorDiscoveryTurn({
       threadId: "thread-456",
@@ -180,10 +268,12 @@ const main = async () => {
     assert.equal(parsedCliResult.phase, "product");
     assert.ok(parsedCliResult.front_door_session_path.endsWith("session-thread-cli.json"));
   } finally {
-    if (previousSessionsDirectory === undefined) {
-      delete process.env.HARNESS_FRONT_DOOR_SESSIONS_DIRECTORY;
-    } else {
-      process.env.HARNESS_FRONT_DOOR_SESSIONS_DIRECTORY = previousSessionsDirectory;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
     }
     await cleanupTempRoot(tempRoot);
     await cleanupTempRoot(targetRoot);

@@ -11,13 +11,19 @@ export interface FrontDoorSessionPaths {
 }
 
 export interface FrontDoorSessionEvent {
-  type: "session_created" | "session_updated" | "session_status";
+  type:
+    | "session_created"
+    | "session_updated"
+    | "session_status"
+    | "session_prepared";
   session_id: string;
   thread_id?: string;
   turn_count: number;
   status: string;
   phase: string;
   message?: string;
+  run_id?: string;
+  run_directory?: string;
   updated_at: string;
 }
 

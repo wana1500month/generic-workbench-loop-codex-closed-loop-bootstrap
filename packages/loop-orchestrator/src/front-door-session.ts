@@ -13,6 +13,7 @@ import {
 import type {
   DiscoveryPhase,
   FrontDoorSessionArtifact,
+  FrontDoorSessionStatus,
   ProductIntakeFieldId,
   ExecutionIntakeFieldId,
   SessionIntakeFieldId,
@@ -20,11 +21,7 @@ import type {
 } from "./intake-schema.js";
 
 export interface FrontDoorSessionTurnResult {
-  status:
-    | "not_product_build_request"
-    | "ask_product_questions"
-    | "ask_execution_questions"
-    | "ready_for_prepare";
+  status: FrontDoorSessionStatus;
   phase: DiscoveryPhase | "none";
   session_id?: string;
   thread_id?: string;
@@ -34,6 +31,7 @@ export interface FrontDoorSessionTurnResult {
   missing_product_fields: ProductIntakeFieldId[];
   missing_execution_fields: ExecutionIntakeFieldId[];
   asked_question_ids: SessionIntakeFieldId[];
+  last_question_ids: SessionIntakeFieldId[];
   intake: SessionIntakeSnapshot;
   defaults_accepted: string[];
   unresolved_conflicts: FrontDoorSessionArtifact["unresolved_conflicts"];
@@ -49,7 +47,10 @@ const statusForPhase = (
   if (phase === "execution") {
     return "ask_execution_questions";
   }
-  return "ready_for_prepare";
+  if (phase === "ready_for_prepare") {
+    return "ready_for_prepare";
+  }
+  return "prepared";
 };
 
 const uniqueFieldIds = (
@@ -67,6 +68,9 @@ const toDiscoveryPhase = (
   }
   if (status === "ready_for_prepare") {
     return "ready_for_prepare";
+  }
+  if (status === "prepared") {
+    return "prepared";
   }
   return "none";
 };
@@ -87,6 +91,7 @@ const buildArtifactResult = (
   missing_product_fields: artifact.missing_product_fields,
   missing_execution_fields: artifact.missing_execution_fields,
   asked_question_ids: artifact.asked_question_ids,
+  last_question_ids: artifact.last_question_ids ?? [],
   intake: artifact.intake,
   defaults_accepted: artifact.defaults_accepted,
   unresolved_conflicts: artifact.unresolved_conflicts,
@@ -123,6 +128,16 @@ export const runFrontDoorDiscoveryTurn = async (input: {
     throw new Error("A discovery message is required.");
   }
 
+  if (existingSession?.phase === "prepared") {
+    const paths = frontDoorSessionPathsForThread(input.threadId);
+    return buildArtifactResult(
+      existingSession,
+      paths.session_path,
+      paths.events_path,
+      "prepared"
+    );
+  }
+
   const initialAggregate = existingSession
     ? buildDiscoveryAggregateRequest({
         sourceRequest,
@@ -140,6 +155,7 @@ export const runFrontDoorDiscoveryTurn = async (input: {
       missing_product_fields: [],
       missing_execution_fields: [],
       asked_question_ids: [],
+      last_question_ids: [],
       intake: {},
       defaults_accepted: [],
       unresolved_conflicts: [],
@@ -180,6 +196,7 @@ export const runFrontDoorDiscoveryTurn = async (input: {
       ...(existingSession?.asked_question_ids ?? []),
       ...questionIds
     ]),
+    last_question_ids: questionIds,
     last_question_batch: resolvedResult.questions,
     defaults_accepted: mergeResult.defaultsAccepted,
     unresolved_conflicts: mergeResult.unresolvedConflicts,

@@ -25,6 +25,19 @@ export type DiscoveryPhase =
   | "ready_for_prepare"
   | "prepared";
 
+export type FrontDoorSessionStatus =
+  | "not_product_build_request"
+  | "ask_product_questions"
+  | "ask_execution_questions"
+  | "ready_for_prepare"
+  | "prepared";
+
+export interface PreparedRunReference {
+  run_id: string;
+  run_directory: string;
+  prepared_at: string;
+}
+
 export interface SessionCustomQualityMetric {
   metric_id: string;
   label: string;
@@ -84,9 +97,11 @@ export interface FrontDoorSessionArtifact {
   missing_product_fields: ProductIntakeFieldId[];
   missing_execution_fields: ExecutionIntakeFieldId[];
   asked_question_ids: SessionIntakeFieldId[];
+  last_question_ids: SessionIntakeFieldId[];
   last_question_batch: string[];
   defaults_accepted: string[];
   unresolved_conflicts: FrontDoorSessionConflict[];
+  prepared_run?: PreparedRunReference;
   turn_count: number;
   created_at: string;
   updated_at: string;

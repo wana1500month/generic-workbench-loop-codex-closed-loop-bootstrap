@@ -11,11 +11,11 @@ intake and execution sessions.
 
 ## Workflow
 
-1. Start in discovery mode.
-2. Ask only the missing high-impact questions.
+1. Start with `npm run loop:discover -- --thread-id <thread-id> --message "<turn>" --json`.
+2. Ask only the missing high-impact questions returned by `loop:discover`.
 3. Ask at most 1 to 3 short questions per turn.
 4. Prefer reasonable defaults over low-value questions.
-5. When discovery is sufficient, switch to prepare mode.
+5. When `loop:discover` returns `ready_for_prepare`, switch to prepare mode.
 6. Before heavy implementation, create or update:
    - Prefer `npm run loop:prepare -- --front-door-session <path> --json` after `loop:discover` reaches `ready_for_prepare`; same-thread skill flows may call the same prepare writer internally.
    - `runtime/build-brief.json`
@@ -34,6 +34,8 @@ intake and execution sessions.
 ## Hard rules
 
 - Follow `INTAKE_PROTOCOL.md` before acting like implementation is ready.
+- Treat `loop:intake` as the stateless parser and `loop:discover` as the stateful same-thread discovery front door.
+- Once a discovery session is prepared, treat it as immutable; use `loop:start:codex` rather than reopening discovery.
 - Keep the first phase product-first. Do not jump straight into layout, stack,
   adapter, or validation plans until the product is concrete enough.
 - Do not ask the user to pick a target family unless they explicitly want to

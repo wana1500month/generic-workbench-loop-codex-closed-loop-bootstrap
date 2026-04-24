@@ -6,7 +6,8 @@ const suites = {
     "validate:intake-gate",
     "validate:front-door-session",
     "validate:cli-front-door",
-    "validate:loop-prepare"
+    "validate:loop-prepare",
+    "validate:prepared-session-consumption-boundary"
   ],
   core: [
     "validate:intent-gate",
@@ -16,6 +17,7 @@ const suites = {
     "validate:transport-mode",
     "validate:score-policy",
     "validate:loop-prepare",
+    "validate:prepared-session-consumption-boundary",
     "validate:canonical-foreground-worker",
     "validate:loop-continue",
     "validate:no-foreground-handoff-language",
