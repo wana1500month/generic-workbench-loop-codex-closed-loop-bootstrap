@@ -98,13 +98,17 @@ const firstSentence = (value: string): string | undefined =>
     .map((sentence) => sentence.trim())
     .find(Boolean);
 
-const extractTargetUsers = (message: string): string[] | undefined => {
+const extractExplicitTargetUsers = (message: string): string[] | undefined => {
   const explicitMatch = firstMatch(message, [
-    /\b(?:target users?|primary users?|users?)\s*(?:are|is|:)?\s*(.+?)(?:[.!?]|$)/i,
-    /\bfor\s+(.+?)(?:[.!?]|$)/i
+    /\b(?:target users?|primary users?|users?)\s*(?:are|is|:)?\s*(.+?)(?:[.!?]|$)/i
   ]);
-  if (explicitMatch) {
-    return splitInlineList(explicitMatch);
+  return explicitMatch ? splitInlineList(explicitMatch) : undefined;
+};
+
+const extractImplicitTargetUsers = (message: string): string[] | undefined => {
+  const explicitForMatch = firstMatch(message, [/\bfor\s+(.+?)(?:[.!?]|$)/i]);
+  if (explicitForMatch) {
+    return splitInlineList(explicitForMatch);
   }
 
   const sentences = message
@@ -115,7 +119,7 @@ const extractTargetUsers = (message: string): string[] | undefined => {
     sentences.length >= 1 &&
     sentences[0] !== undefined &&
     sentences[0].split(/\s+/).length <= 6 &&
-    !/\b(build|create|make|prototype|ship|references?|good enough|finish line|this is|target root|target score|max rounds?|run command|ready url)\b/i.test(
+    !/\b(build|create|make|prototype|ship|references?|good enough|finish line|this is|target root|target score|max rounds?|run command|ready url|new project|existing project)\b/i.test(
       sentences[0]
     )
   ) {
@@ -125,9 +129,15 @@ const extractTargetUsers = (message: string): string[] | undefined => {
   return undefined;
 };
 
-const extractCoreFeatures = (message: string): string[] | undefined => {
+const extractExplicitCoreFeatures = (message: string): string[] | undefined => {
   const explicitMatch = firstMatch(message, [
-    /\b(?:core workflows?|workflows?|core features?|features?)\s*(?:are|is|:)?\s*(.+?)(?:[.!?]|$)/i,
+    /\b(?:core workflows?|workflows?|core features?|features?)\s*(?:are|is|:)?\s*(.+?)(?:[.!?]|$)/i
+  ]);
+  return explicitMatch ? splitInlineList(explicitMatch) : undefined;
+};
+
+const extractImplicitCoreFeatures = (message: string): string[] | undefined => {
+  const explicitMatch = firstMatch(message, [
     /\b(?:the )?first version needs\s+(.+?)(?:[.!?]|$)/i,
     /\bmust\s+(.+?)(?:[.!?]|$)/i,
     /\bneeds? to\s+(.+?)(?:[.!?]|$)/i
@@ -135,7 +145,7 @@ const extractCoreFeatures = (message: string): string[] | undefined => {
   return explicitMatch ? splitInlineList(explicitMatch) : undefined;
 };
 
-const extractReferenceApps = (message: string): string[] | undefined => {
+const extractExplicitReferenceApps = (message: string): string[] | undefined => {
   if (
     /\b(?:references?|reference products?|reference apps?|visuals?)\b.*\bnone\b/i.test(
       message
@@ -145,9 +155,17 @@ const extractReferenceApps = (message: string): string[] | undefined => {
   }
 
   const explicitMatch = firstMatch(message, [
-    /\b(?:reference products?|reference apps?|reference visuals?|references?|visual direction)\s*(?:can be|are|is|:)?\s*(.+?)(?:[.!?]|$)/i,
-    /\blike\s+(.+?)(?:[.!?]|$)/i
+    /\b(?:reference products?|reference apps?|reference visuals?|references?|visual direction)\s*(?:can be|are|is|:)?\s*(.+?)(?:[.!?]|$)/i
   ]);
+  return explicitMatch ? splitInlineList(explicitMatch) : undefined;
+};
+
+const extractImplicitReferenceApps = (message: string): string[] | undefined => {
+  if (isNoneAnswer(message)) {
+    return [];
+  }
+
+  const explicitMatch = firstMatch(message, [/\blike\s+(.+?)(?:[.!?]|$)/i]);
   return explicitMatch ? splitInlineList(explicitMatch) : undefined;
 };
 
@@ -169,6 +187,44 @@ const extractUrl = (message: string, label: string): string | undefined => {
   return firstMatch(message, [pattern]);
 };
 
+const isExecutionQuestionPair = (
+  questionIds: readonly SessionIntakeFieldId[]
+): boolean =>
+  questionIds.some((fieldId) =>
+    [
+      "project_mode",
+      "target_root",
+      "target_score",
+      "max_rounds",
+      "run_command",
+      "ready_url"
+    ].includes(fieldId)
+  );
+
+const answerForField = (
+  lines: readonly string[],
+  index: number,
+  isExecutionPair: boolean
+): string | undefined => {
+  if (lines[index]) {
+    return lines[index];
+  }
+  if (lines.length === 1 && isExecutionPair) {
+    return lines[0];
+  }
+  return undefined;
+};
+
+const stripTrailingPunctuation = (value: string): string =>
+  value.replace(/[.!?]+$/u, "");
+
+const parsePathAnswer = (value: string): string | undefined => {
+  const candidate =
+    value.match(/[A-Za-z0-9._-]+(?:[\\/][^\s,;.!?]+)+/)?.[0] ??
+    value.match(/(?:\/|\.\/|\.\.\/)[^\s,;.!?]+/)?.[0];
+  return candidate ? stripTrailingPunctuation(candidate) : undefined;
+};
+
 const extractCandidatesFromQuestionOrder = (
   message: string,
   questionIds: readonly SessionIntakeFieldId[]
@@ -177,13 +233,14 @@ const extractCandidatesFromQuestionOrder = (
   if (lines.length === 0 || questionIds.length === 0) {
     return {};
   }
-  if (questionIds.length > 1 && lines.length < 2) {
+  const isExecutionPair = isExecutionQuestionPair(questionIds);
+  if (questionIds.length > 1 && lines.length < 2 && !isExecutionPair) {
     return {};
   }
 
   const result: Partial<SessionIntakeSnapshot> = {};
   questionIds.forEach((fieldId, index) => {
-    const answer = lines[index];
+    const answer = answerForField(lines, index, isExecutionPair);
     if (!answer) {
       return;
     }
@@ -202,14 +259,14 @@ const extractCandidatesFromQuestionOrder = (
         result.finish_line = normalizeInlineValue(answer);
         break;
       case "project_mode":
-        if (/\bnew\b/i.test(answer)) {
+        if (/\bnew\b|\bfrom scratch\b|\bnew project\b/i.test(answer)) {
           result.project_mode = "new";
-        } else if (/\bexisting\b/i.test(answer)) {
+        } else if (/\bexisting\b|\bcurrent\b|\bexisting project\b/i.test(answer)) {
           result.project_mode = "existing";
         }
         break;
       case "target_root":
-        result.target_root = normalizeInlineValue(answer);
+        result.target_root = parsePathAnswer(answer) ?? normalizeInlineValue(answer);
         break;
       case "target_score": {
         const targetScore = parseTargetScoreAnswer(answer);
@@ -251,22 +308,49 @@ const extractCandidates = (input: {
   previousQuestionIds?: readonly SessionIntakeFieldId[];
 }): Partial<SessionIntakeSnapshot> => {
   const { message, sourceRequest, intakeResult } = input;
+  const previousQuestionIds = input.previousQuestionIds ?? [];
+  const hasQuestionContext = previousQuestionIds.length > 0;
+  const previousQuestionSet = new Set(previousQuestionIds);
+  const shouldImplicitlyParse = (field: SessionIntakeFieldId): boolean =>
+    !hasQuestionContext || previousQuestionSet.has(field);
   const explicit = explicitFieldMentions(message);
   const productSummary =
     intakeResult.extracted_summary ??
     firstSentence(sourceRequest) ??
     firstSentence(message);
 
-  const targetUsers = extractTargetUsers(message) ?? extractTargetUsers(sourceRequest);
+  const targetUsers =
+    extractExplicitTargetUsers(message) ??
+    (shouldImplicitlyParse("target_users")
+      ? extractImplicitTargetUsers(message)
+      : undefined) ??
+    (!hasQuestionContext
+      ? extractExplicitTargetUsers(sourceRequest) ??
+        extractImplicitTargetUsers(sourceRequest)
+      : undefined);
   const coreFeatures =
-    extractCoreFeatures(message) ??
-    (message === sourceRequest ? extractCoreFeatures(sourceRequest) : undefined);
+    extractExplicitCoreFeatures(message) ??
+    (shouldImplicitlyParse("core_workflows")
+      ? extractImplicitCoreFeatures(message)
+      : undefined) ??
+    (!hasQuestionContext && message === sourceRequest
+      ? extractExplicitCoreFeatures(sourceRequest) ??
+        extractImplicitCoreFeatures(sourceRequest)
+      : undefined);
   const referenceApps =
-    extractReferenceApps(message) ??
-    (message === sourceRequest ? extractReferenceApps(sourceRequest) : undefined);
+    extractExplicitReferenceApps(message) ??
+    (shouldImplicitlyParse("references")
+      ? extractImplicitReferenceApps(message)
+      : undefined) ??
+    (!hasQuestionContext && message === sourceRequest
+      ? extractExplicitReferenceApps(sourceRequest) ??
+        extractImplicitReferenceApps(sourceRequest)
+      : undefined);
   const finishLine =
     extractFinishLine(message) ??
-    (message === sourceRequest ? extractFinishLine(sourceRequest) : undefined);
+    (!hasQuestionContext && message === sourceRequest
+      ? extractFinishLine(sourceRequest)
+      : undefined);
   const runCommand = extractCommand(message, [
     /\brun command\s*(?:is|:)?\s*(.+?)(?:[.!?]|$)/i,
     /\bstart command\s*(?:is|:)?\s*(.+?)(?:[.!?]|$)/i
@@ -310,7 +394,7 @@ const extractCandidates = (input: {
 
   return {
     ...regexCandidates,
-    ...extractCandidatesFromQuestionOrder(message, input.previousQuestionIds ?? [])
+    ...extractCandidatesFromQuestionOrder(message, previousQuestionIds)
   };
 };
 

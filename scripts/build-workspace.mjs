@@ -3,32 +3,19 @@ import { join } from "node:path";
 
 import { runCommand, runPinnedTypeScriptBuild } from "./lib/front-door-build.mjs";
 
+const resolveLocalTsc = () =>
+  join(process.cwd(), "node_modules", "typescript", "bin", "tsc");
+
 const main = async () => {
-  const localTsc = join(
-    process.cwd(),
-    "node_modules",
-    ".bin",
-    process.platform === "win32" ? "tsc.cmd" : "tsc"
-  );
+  const localTsc = resolveLocalTsc();
 
   if (existsSync(localTsc)) {
-    process.exitCode = await runCommand(
-      process.cwd(),
+    process.exitCode = await runCommand(process.cwd(), process.execPath, [
       localTsc,
-      ["-b", "--pretty", "false"]
-    );
-    return;
-  }
-
-  const primaryExitCode = await runCommand(process.cwd(), "npx", [
-    "--no-install",
-    "tsc",
-    "-b",
-    "--pretty",
-    "false"
-  ], { shell: process.platform === "win32" });
-
-  if (primaryExitCode === 0) {
+      "-b",
+      "--pretty",
+      "false"
+    ]);
     return;
   }
 
@@ -38,9 +25,9 @@ const main = async () => {
   }
 
   console.error(
-    "TypeScript is not installed. Run `npm ci`, or set HARNESS_ALLOW_NPX_INSTALL=1 to allow npx fallback."
+    "TypeScript is not installed locally. Run `npm ci`, or set HARNESS_ALLOW_NPX_INSTALL=1 to allow npx fallback."
   );
-  process.exitCode = primaryExitCode;
+  process.exitCode = 1;
 };
 
 await main();

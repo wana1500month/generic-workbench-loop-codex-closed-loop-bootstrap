@@ -214,6 +214,32 @@ const main = async () => {
     });
     assert.match(terseThird.intake.finish_line ?? "", /manage tasks/i);
 
+    const terseFinishFirst = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-terse-finish",
+      message: "Build me a todo app with auth"
+    });
+    assert.equal(terseFinishFirst.status, "ask_product_questions");
+
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-terse-finish",
+      message: ["1. Solo founders", "2. tasks", "3. none"].join("\n")
+    });
+
+    const finishTurn = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-terse-finish",
+      message: "MVP works"
+    });
+    assert.equal(finishTurn.intake.finish_line, "MVP works");
+    assert.deepEqual(finishTurn.intake.target_users, ["Solo founders"]);
+
+    const executionTurn = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-terse-finish",
+      message: "new, tmp-targets/foo"
+    });
+    assert.equal(executionTurn.intake.project_mode, "new");
+    assert.equal(executionTurn.intake.target_root, "tmp-targets/foo");
+    assert.deepEqual(executionTurn.intake.target_users, ["Solo founders"]);
+
     const defaultsFirst = await runFrontDoorDiscoveryTurn({
       threadId: "thread-default-override",
       message: "Build me a todo app with auth"

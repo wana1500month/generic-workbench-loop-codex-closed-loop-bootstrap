@@ -46,7 +46,10 @@ for (const request of [
   "Create a CRM web app for sales reps",
   "Make a booking service for salons",
   "Create a support agent for customer replies",
-  "Build an internal platform for finance approvals"
+  "Build an internal platform for finance approvals",
+  "Create an API for developers",
+  "Create a website for a service",
+  "Build an agent review dashboard for QA"
 ]) {
   const result = evaluateIntakeRequest(request);
   assert.equal(result.is_product_build_request, true, request);
@@ -66,7 +69,11 @@ for (const request of [
   "Create customer service strategy for support team",
   "Build a service roadmap for Q2",
   "Make internal platform documentation for admins",
-  "Create an agent evaluation spec for QA"
+  "Create an agent evaluation spec for QA",
+  "Build an API spec for developers",
+  "Build a dashboard strategy for operators",
+  "Create website copy for a service",
+  "Create API documentation for developers"
 ]) {
   const result = evaluateIntakeRequest(request);
   assert.equal(result.status, "not_product_build_request", request);

@@ -102,6 +102,26 @@ const NON_PRODUCT_WORK_PATTERNS: readonly PatternLabel[] = [
   { label: "refresh", pattern: /\brefresh\b/i }
 ] as const;
 
+const PRODUCT_NOUN_SOURCE = String.raw`(?:app(?:lication)?|web\s*app|dashboard|editor|workspace|storyboard|website|api|saas|service|platform|portal|tool|agent|system)`;
+const NON_PRODUCT_DELIVERABLE_SOURCE = String.raw`(?:docs?|documentation|spec|strategy|roadmap|copy|content|proposal|analysis|audit|migration\s+plan|evaluation\s+spec)`;
+
+const NON_PRODUCT_DELIVERABLE_OBJECT_PATTERNS: readonly PatternLabel[] = [
+  {
+    label: "product deliverable",
+    pattern: new RegExp(
+      String.raw`\b${PRODUCT_NOUN_SOURCE}\b[^.!?]{0,24}\b${NON_PRODUCT_DELIVERABLE_SOURCE}\b`,
+      "i"
+    )
+  },
+  {
+    label: "deliverable for product",
+    pattern: new RegExp(
+      String.raw`\b${NON_PRODUCT_DELIVERABLE_SOURCE}\b[^.!?]{0,24}\bfor\b[^.!?]{0,24}\b${PRODUCT_NOUN_SOURCE}\b`,
+      "i"
+    )
+  }
+] as const;
+
 const STRONG_EXPLICIT_PRODUCT_BUILD_PHRASE =
   /\b(?:app(?:lication)?|web\s*app|dashboard|editor|workspace|website|api|saas)\b.{0,32}\bfor\b/i;
 
@@ -159,6 +179,10 @@ export const detectProductBuildIntent = (value: string): ProductBuildDetection =
     ...matchHintLabels(buildObject, KO_NON_PRODUCT_WORK_HINTS),
     ...matchPatternLabels(buildObject, NON_PRODUCT_WORK_PATTERNS)
   ]);
+  const nonProductDeliverableObject = matchPatternLabels(
+    buildObject,
+    NON_PRODUCT_DELIVERABLE_OBJECT_PATTERNS
+  );
   const strongExplicitProductBuildPhrase =
     STRONG_EXPLICIT_PRODUCT_BUILD_PHRASE.test(value);
   const weakExplicitProductBuildPhrase =
@@ -166,6 +190,20 @@ export const detectProductBuildIntent = (value: string): ProductBuildDetection =
   const hasVerb = matchedVerbs.length > 0;
   const hasStrongSurfaceNoun = strongNouns.length > 0 || koNouns.length > 0;
   const hasWeakNoun = weakNouns.length > 0;
+
+  if (nonProductDeliverableObject.length > 0) {
+    return {
+      is_product_build: false,
+      strength: "rejected",
+      matched_nouns: matchedNouns,
+      matched_verbs: matchedVerbs,
+      rejected_by: unique([
+        ...rejectedBy,
+        ...buildObjectRejectedBy,
+        ...nonProductDeliverableObject
+      ])
+    };
+  }
 
   if (
     buildObjectRejectedBy.length > 0 &&
