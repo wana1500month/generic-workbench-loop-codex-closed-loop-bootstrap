@@ -238,6 +238,46 @@ const main = async () => {
       "https://figma.com"
     ]);
 
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-reference-products-label",
+      message: "Build me a todo app with auth"
+    });
+    const referenceProductsLabelTurn = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-reference-products-label",
+      message: "Reference products are Linear and Figma."
+    });
+    assert.deepEqual(referenceProductsLabelTurn.intake.reference_apps, [
+      "Linear",
+      "Figma"
+    ]);
+
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-reference-apps-label",
+      message: "Build me a todo app with auth"
+    });
+    const referenceAppsLabelTurn = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-reference-apps-label",
+      message: "Reference apps: Linear, Figma."
+    });
+    assert.deepEqual(referenceAppsLabelTurn.intake.reference_apps, [
+      "Linear",
+      "Figma"
+    ]);
+
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-reference-url-and-path",
+      message: "Build me a todo app with auth"
+    });
+    const referenceUrlAndPathTurn = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-reference-url-and-path",
+      message:
+        "References can be https://example.com/and/path and https://foo.com/or/view."
+    });
+    assert.deepEqual(referenceUrlAndPathTurn.intake.reference_apps, [
+      "https://example.com/and/path",
+      "https://foo.com/or/view"
+    ]);
+
     const terseThird = await runFrontDoorDiscoveryTurn({
       threadId: "thread-terse",
       message: "They can sign in and manage tasks end to end."

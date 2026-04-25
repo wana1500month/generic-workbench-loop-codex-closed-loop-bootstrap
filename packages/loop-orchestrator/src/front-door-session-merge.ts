@@ -23,6 +23,8 @@ type ScalarFieldKey = Exclude<
 >;
 
 const listJoinPattern = /\s*(?:,|;|\band\b|\bor\b)\s*|\s+\/\s+/i;
+const urlPattern = /https?:\/\/[^\s,;]+/gi;
+const referenceLabelPattern = String.raw`reference products?|reference apps?|reference visuals?|visual direction|references?|visuals?`;
 const explicitTargetScorePattern = /\btarget\s*score\b|\bscore\b/i;
 const explicitMaxRoundsPattern = /\bmax(?:imum)?\s*rounds?\b|\brounds?\b/i;
 
@@ -35,13 +37,37 @@ const normalizeInlineValue = (value: string): string =>
     .replace(/\s+/g, " ")
     .trim();
 
-const splitInlineList = (value: string): string[] =>
-  uniqueStrings(
-    value
+const stripFinalSentencePunctuation = (value: string): string =>
+  value
+    .trim()
+    .replace(/[!?]+$/u, "")
+    .replace(/\.(?=\s*$)/u, "")
+    .trim();
+
+const protectUrls = (
+  value: string
+): { protectedValue: string; urls: Map<string, string> } => {
+  const urls = new Map<string, string>();
+  const protectedValue = value.replace(urlPattern, (url) => {
+    const key = `__URL_${urls.size}__`;
+    urls.set(key, stripFinalSentencePunctuation(url));
+    return key;
+  });
+
+  return { protectedValue, urls };
+};
+
+const splitInlineList = (value: string): string[] => {
+  const { protectedValue, urls } = protectUrls(value);
+
+  return uniqueStrings(
+    protectedValue
       .replace(/\b(?:and|or)\b|및/gi, ",")
       .split(listJoinPattern)
       .map((entry) => normalizeInlineValue(entry))
+      .map((entry) => urls.get(entry) ?? entry)
   );
+};
 
 const splitAnswerLines = (message: string): string[] =>
   message
@@ -57,13 +83,6 @@ const normalizeNoneAnswer = (value: string): string =>
   value
     .trim()
     .replace(/[.!?。]+$/u, "")
-    .trim();
-
-const stripFinalSentencePunctuation = (value: string): string =>
-  value
-    .trim()
-    .replace(/[!?]+$/u, "")
-    .replace(/\.(?=\s*$)/u, "")
     .trim();
 
 const trimAtNextIntakeLabel = (value: string): string =>
@@ -184,10 +203,7 @@ const extractImplicitCoreFeatures = (message: string): string[] | undefined => {
 };
 
 const extractExplicitReferenceApps = (message: string): string[] | undefined => {
-  const value = extractLabeledRestOfLine(
-    message,
-    String.raw`references?|reference products?|reference apps?|reference visuals?|visual direction`
-  );
+  const value = extractLabeledRestOfLine(message, referenceLabelPattern);
   if (!value) {
     return undefined;
   }

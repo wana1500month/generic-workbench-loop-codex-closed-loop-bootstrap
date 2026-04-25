@@ -62,7 +62,9 @@ for (const request of [
   "Build an audit portal for compliance",
   "감사팀용 대시보드 만들어줘",
   "문서 관리툴 만들어줘",
-  "콘텐츠 관리 시스템 만들어줘"
+  "콘텐츠 관리 시스템 만들어줘",
+  "리뷰 관리 도구 만들어줘",
+  "문서 자동화 도구 만들어줘"
 ]) {
   const result = evaluateIntakeRequest(request);
   assert.equal(result.is_product_build_request, true, request);

@@ -22,6 +22,7 @@ const KO_PRODUCT_NOUN_HINTS = [
   "\uD3B8\uC9D1\uD234",
   "\uAD00\uB9AC\uD234",
   "\uD234",
+  "\uB3C4\uAD6C",
   "\uC2DC\uC2A4\uD15C",
   "\uD3EC\uD138",
   "\uC2A4\uD1A0\uB9AC\uBCF4\uB4DC"
@@ -191,6 +192,7 @@ const KO_PRODUCT_ORDER_HINTS = [
 const KO_PRODUCT_SURFACE_AFTER_DELIVERABLE_HINTS = [
   "\uAD00\uB9AC\uD234",
   "\uD234",
+  "\uB3C4\uAD6C",
   "\uC2DC\uC2A4\uD15C",
   "\uD3EC\uD138",
   "\uB300\uC2DC\uBCF4\uB4DC",
