@@ -57,6 +57,14 @@ const protectUrls = (
   return { protectedValue, urls };
 };
 
+const normalizeListEntry = (
+  entry: string,
+  urls: ReadonlyMap<string, string>
+): string => {
+  const normalized = normalizeInlineValue(entry);
+  return urls.get(normalized) ?? stripFinalSentencePunctuation(normalized);
+};
+
 const splitInlineList = (value: string): string[] => {
   const { protectedValue, urls } = protectUrls(value);
 
@@ -64,8 +72,7 @@ const splitInlineList = (value: string): string[] => {
     protectedValue
       .replace(/\b(?:and|or)\b|및/gi, ",")
       .split(listJoinPattern)
-      .map((entry) => normalizeInlineValue(entry))
-      .map((entry) => urls.get(entry) ?? entry)
+      .map((entry) => normalizeListEntry(entry, urls))
   );
 };
 

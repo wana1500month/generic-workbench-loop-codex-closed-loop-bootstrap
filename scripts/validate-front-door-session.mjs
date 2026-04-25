@@ -278,6 +278,29 @@ const main = async () => {
       "https://foo.com/or/view"
     ]);
 
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-reference-numbered-period",
+      message: "Build me a todo app with auth"
+    });
+    const referenceNumberedPeriodTurn = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-reference-numbered-period",
+      message: [
+        "1. Solo founders.",
+        "2. create tasks and archive them.",
+        "3. Linear and Figma."
+      ].join("\n")
+    });
+    assert.deepEqual(referenceNumberedPeriodTurn.intake.target_users, [
+      "Solo founders"
+    ]);
+    assert.ok(
+      referenceNumberedPeriodTurn.intake.core_features.includes("create tasks")
+    );
+    assert.deepEqual(referenceNumberedPeriodTurn.intake.reference_apps, [
+      "Linear",
+      "Figma"
+    ]);
+
     const terseThird = await runFrontDoorDiscoveryTurn({
       threadId: "thread-terse",
       message: "They can sign in and manage tasks end to end."
