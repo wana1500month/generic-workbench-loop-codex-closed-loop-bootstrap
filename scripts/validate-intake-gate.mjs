@@ -53,7 +53,16 @@ for (const request of [
   "Build an API docs portal for developers",
   "Build a documentation portal for API developers",
   "Create API documentation tool for developers",
-  "Create a website copy editor for marketers"
+  "Create a website copy editor for marketers",
+  "Build a dashboard for audit teams",
+  "Build a portal for content teams",
+  "Build a content management system for marketers",
+  "Build a review management tool for HR",
+  "Build a documentation portal for developers",
+  "Build an audit portal for compliance",
+  "감사팀용 대시보드 만들어줘",
+  "문서 관리툴 만들어줘",
+  "콘텐츠 관리 시스템 만들어줘"
 ]) {
   const result = evaluateIntakeRequest(request);
   assert.equal(result.is_product_build_request, true, request);
@@ -77,7 +86,10 @@ for (const request of [
   "Build an API spec for developers",
   "Build a dashboard strategy for operators",
   "Create website copy for a service",
-  "Create API documentation for developers"
+  "Create API documentation for developers",
+  "API 문서 만들어줘",
+  "서비스 로드맵 만들어줘",
+  "대시보드 전략 작성해줘"
 ]) {
   const result = evaluateIntakeRequest(request);
   assert.equal(result.status, "not_product_build_request", request);

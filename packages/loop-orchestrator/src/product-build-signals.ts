@@ -22,6 +22,8 @@ const KO_PRODUCT_NOUN_HINTS = [
   "\uD3B8\uC9D1\uD234",
   "\uAD00\uB9AC\uD234",
   "\uD234",
+  "\uC2DC\uC2A4\uD15C",
+  "\uD3EC\uD138",
   "\uC2A4\uD1A0\uB9AC\uBCF4\uB4DC"
 ] as const;
 
@@ -103,8 +105,8 @@ const NON_PRODUCT_WORK_PATTERNS: readonly PatternLabel[] = [
 ] as const;
 
 const PRODUCT_NOUN_SOURCE = String.raw`(?:app(?:lication)?|web\s*app|dashboard|editor|workspace|storyboard|website|api|saas|service|platform|portal|tool|agent|system)`;
-const NON_PRODUCT_DELIVERABLE_SOURCE = String.raw`(?:docs?|documentation|spec|strategy|roadmap|copy|content|proposal|analysis|audit|migration\s+plan|evaluation\s+spec)`;
-const PRODUCT_SURFACE_AFTER_DELIVERABLE_SOURCE = String.raw`(?:portal|site|website|app(?:lication)?|dashboard|editor|tool|workspace)`;
+const NON_PRODUCT_DELIVERABLE_SOURCE = String.raw`(?:docs?|documentation|spec|strategy|roadmap|copy|content|proposal|analysis|audit|review|migration(?:\s+planning|\s+plan)?|evaluation\s+spec)`;
+const PRODUCT_SURFACE_AFTER_DELIVERABLE_SOURCE = String.raw`(?:portal|site|website|app(?:lication)?|dashboard|editor|tool|workspace|system)`;
 
 const NON_PRODUCT_DELIVERABLE_OBJECT_PATTERNS: readonly PatternLabel[] = [
   {
@@ -127,14 +129,14 @@ const DELIVERABLE_AS_PRODUCT_MODIFIER_PATTERNS: readonly PatternLabel[] = [
   {
     label: "deliverable as product modifier",
     pattern: new RegExp(
-      String.raw`\b${NON_PRODUCT_DELIVERABLE_SOURCE}\b\s+${PRODUCT_SURFACE_AFTER_DELIVERABLE_SOURCE}\b`,
+      String.raw`\b${NON_PRODUCT_DELIVERABLE_SOURCE}\b[^.!?]{0,24}\b${PRODUCT_SURFACE_AFTER_DELIVERABLE_SOURCE}\b`,
       "i"
     )
   },
   {
     label: "product deliverable surface",
     pattern: new RegExp(
-      String.raw`\b(?:api|website|service|platform)\b[^.!?]{0,16}\b${NON_PRODUCT_DELIVERABLE_SOURCE}\b\s+${PRODUCT_SURFACE_AFTER_DELIVERABLE_SOURCE}\b`,
+      String.raw`\b(?:api|website|service|platform)\b[^.!?]{0,16}\b${NON_PRODUCT_DELIVERABLE_SOURCE}\b[^.!?]{0,24}\b${PRODUCT_SURFACE_AFTER_DELIVERABLE_SOURCE}\b`,
       "i"
     )
   }
@@ -161,6 +163,59 @@ const matchHintLabels = (value: string, hints: readonly string[]): string[] =>
 
 const extractBuildObject = (value: string): string | undefined =>
   BUILD_OBJECT_PATTERN.exec(value)?.[1]?.trim();
+
+const stripAudienceTail = (value: string): string => {
+  const stripped = value.replace(/\b(?:for|to)\b.+$/i, "").trim();
+  return stripped.length > 0 ? stripped : value.trim();
+};
+
+const findFirstHintIndex = (
+  value: string,
+  hints: readonly string[]
+): { hint: string; index: number } | undefined => {
+  let found: { hint: string; index: number } | undefined;
+  for (const hint of hints) {
+    const index = value.indexOf(hint);
+    if (index >= 0 && (found === undefined || index < found.index)) {
+      found = { hint, index };
+    }
+  }
+  return found;
+};
+
+const KO_PRODUCT_ORDER_HINTS = [
+  ...KO_PRODUCT_NOUN_HINTS,
+  "api"
+] as const;
+
+const KO_PRODUCT_SURFACE_AFTER_DELIVERABLE_HINTS = [
+  "\uAD00\uB9AC\uD234",
+  "\uD234",
+  "\uC2DC\uC2A4\uD15C",
+  "\uD3EC\uD138",
+  "\uB300\uC2DC\uBCF4\uB4DC",
+  "\uC571",
+  "\uC6F9\uC571",
+  "\uC0AC\uC774\uD2B8",
+  "\uC5D0\uB514\uD130",
+  "\uD3B8\uC9D1\uAE30",
+  "\uD3B8\uC9D1\uD234"
+] as const;
+
+const matchKoNonProductDeliverableObjects = (value: string): string[] => {
+  const product = findFirstHintIndex(value, KO_PRODUCT_ORDER_HINTS);
+  const deliverable = findFirstHintIndex(value, KO_NON_PRODUCT_WORK_HINTS);
+  if (!product || !deliverable || deliverable.index <= product.index) {
+    return [];
+  }
+
+  const trailingText = value.slice(deliverable.index + deliverable.hint.length);
+  if (matchHintLabels(trailingText, KO_PRODUCT_SURFACE_AFTER_DELIVERABLE_HINTS).length > 0) {
+    return [];
+  }
+
+  return [`${product.hint} ${deliverable.hint}`];
+};
 
 export const hasExplicitProductBuildPhrase = (value: string): boolean =>
   STRONG_EXPLICIT_PRODUCT_BUILD_PHRASE.test(value) ||
@@ -189,20 +244,34 @@ export const detectProductBuildIntent = (value: string): ProductBuildDetection =
   ]);
 
   const buildObject = extractBuildObject(value) ?? value;
+  const buildObjectCore = stripAudienceTail(buildObject);
   const buildObjectStrongNouns = matchPatternLabels(
-    buildObject,
+    buildObjectCore,
     STRONG_PRODUCT_NOUN_PATTERNS
   );
-  const buildObjectRejectedBy = unique([
-    ...matchHintLabels(buildObject, KO_NON_PRODUCT_WORK_HINTS),
-    ...matchPatternLabels(buildObject, NON_PRODUCT_WORK_PATTERNS)
-  ]);
-  const nonProductDeliverableObject = matchPatternLabels(
-    buildObject,
-    NON_PRODUCT_DELIVERABLE_OBJECT_PATTERNS
+  const buildObjectWeakNouns = matchPatternLabels(
+    buildObjectCore,
+    WEAK_PRODUCT_NOUN_PATTERNS
   );
+  const buildObjectKoNouns = matchHintLabels(
+    buildObjectCore,
+    KO_PRODUCT_NOUN_HINTS
+  );
+  const buildObjectSurfaceNouns = unique([
+    ...buildObjectStrongNouns,
+    ...buildObjectWeakNouns,
+    ...buildObjectKoNouns
+  ]);
+  const buildObjectRejectedBy = unique([
+    ...matchHintLabels(buildObjectCore, KO_NON_PRODUCT_WORK_HINTS),
+    ...matchPatternLabels(buildObjectCore, NON_PRODUCT_WORK_PATTERNS)
+  ]);
+  const nonProductDeliverableObject = unique([
+    ...matchPatternLabels(buildObjectCore, NON_PRODUCT_DELIVERABLE_OBJECT_PATTERNS),
+    ...matchKoNonProductDeliverableObjects(buildObjectCore)
+  ]);
   const deliverableAsProductModifier = matchPatternLabels(
-    buildObject,
+    buildObjectCore,
     DELIVERABLE_AS_PRODUCT_MODIFIER_PATTERNS
   );
   const strongExplicitProductBuildPhrase =
@@ -232,7 +301,8 @@ export const detectProductBuildIntent = (value: string): ProductBuildDetection =
 
   if (
     buildObjectRejectedBy.length > 0 &&
-    buildObjectStrongNouns.length === 0
+    buildObjectSurfaceNouns.length === 0 &&
+    deliverableAsProductModifier.length === 0
   ) {
     return {
       is_product_build: false,
@@ -255,8 +325,8 @@ export const detectProductBuildIntent = (value: string): ProductBuildDetection =
 
   if (
     (weakExplicitProductBuildPhrase || (hasVerb && hasWeakNoun)) &&
-    rejectedBy.length === 0 &&
-    buildObjectRejectedBy.length === 0
+    (buildObjectRejectedBy.length === 0 ||
+      deliverableAsProductModifier.length > 0)
   ) {
     return {
       is_product_build: true,

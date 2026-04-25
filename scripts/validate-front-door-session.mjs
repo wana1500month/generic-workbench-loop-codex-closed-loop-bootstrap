@@ -208,6 +208,36 @@ const main = async () => {
     assert.ok(terseSecond.intake.core_features.includes("create tasks"));
     assert.deepEqual(terseSecond.intake.reference_apps, []);
 
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-reference-url",
+      message: "Build me a todo app with auth"
+    });
+    const referenceUrlTurn = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-reference-url",
+      message: [
+        "1. Solo founders",
+        "2. create tasks and archive them",
+        "3. https://linear.app and https://figma.com"
+      ].join("\n")
+    });
+    assert.deepEqual(referenceUrlTurn.intake.reference_apps, [
+      "https://linear.app",
+      "https://figma.com"
+    ]);
+
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-reference-url-labeled",
+      message: "Build me a todo app with auth"
+    });
+    const labeledReferenceUrlTurn = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-reference-url-labeled",
+      message: "References can be https://linear.app and https://figma.com."
+    });
+    assert.deepEqual(labeledReferenceUrlTurn.intake.reference_apps, [
+      "https://linear.app",
+      "https://figma.com"
+    ]);
+
     const terseThird = await runFrontDoorDiscoveryTurn({
       threadId: "thread-terse",
       message: "They can sign in and manage tasks end to end."

@@ -22,7 +22,7 @@ type ScalarFieldKey = Exclude<
   | "custom_quality_metrics"
 >;
 
-const listJoinPattern = /\s*(?:,|;|\band\b|\bor\b|\/)\s*/i;
+const listJoinPattern = /\s*(?:,|;|\band\b|\bor\b)\s*|\s+\/\s+/i;
 const explicitTargetScorePattern = /\btarget\s*score\b|\bscore\b/i;
 const explicitMaxRoundsPattern = /\bmax(?:imum)?\s*rounds?\b|\brounds?\b/i;
 
@@ -58,6 +58,34 @@ const normalizeNoneAnswer = (value: string): string =>
     .trim()
     .replace(/[.!?。]+$/u, "")
     .trim();
+
+const stripFinalSentencePunctuation = (value: string): string =>
+  value
+    .trim()
+    .replace(/[!?]+$/u, "")
+    .replace(/\.(?=\s*$)/u, "")
+    .trim();
+
+const trimAtNextIntakeLabel = (value: string): string =>
+  value
+    .replace(
+      /\.\s+(?=(?:good enough means|finish line|success means|mvp means|target users?|primary users?|core workflows?|workflows?|core features?|features?|target root|target score|max(?:imum)? rounds?|run command|ready url)\b).+$/i,
+      ""
+    )
+    .trim();
+
+const extractLabeledRestOfLine = (
+  message: string,
+  labelPattern: string
+): string | undefined => {
+  const match = new RegExp(
+    String.raw`\b(?:${labelPattern})\b\s*(?:can be|are|is|:)?\s*(.+)$`,
+    "im"
+  ).exec(message);
+  return match?.[1]
+    ? stripFinalSentencePunctuation(trimAtNextIntakeLabel(match[1]))
+    : undefined;
+};
 
 const isNoneAnswer = (value: string): boolean =>
   /^(?:none|no|no references?|없음|없어요|없습니다|없다)$/i.test(
@@ -156,18 +184,17 @@ const extractImplicitCoreFeatures = (message: string): string[] | undefined => {
 };
 
 const extractExplicitReferenceApps = (message: string): string[] | undefined => {
-  if (
-    /\b(?:references?|reference products?|reference apps?|visuals?)\b.*\bnone\b/i.test(
-      message
-    )
-  ) {
+  const value = extractLabeledRestOfLine(
+    message,
+    String.raw`references?|reference products?|reference apps?|reference visuals?|visual direction`
+  );
+  if (!value) {
+    return undefined;
+  }
+  if (isNoneAnswer(value)) {
     return [];
   }
-
-  const explicitMatch = firstMatch(message, [
-    /\b(?:reference products?|reference apps?|reference visuals?|references?|visual direction)\s*(?:can be|are|is|:)?\s*(.+?)(?:[.!?]|$)/i
-  ]);
-  return explicitMatch ? splitInlineList(explicitMatch) : undefined;
+  return splitInlineList(value);
 };
 
 const extractImplicitReferenceApps = (message: string): string[] | undefined => {
