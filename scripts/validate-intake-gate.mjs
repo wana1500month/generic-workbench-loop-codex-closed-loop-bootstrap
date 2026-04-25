@@ -49,7 +49,11 @@ for (const request of [
   "Build an internal platform for finance approvals",
   "Create an API for developers",
   "Create a website for a service",
-  "Build an agent review dashboard for QA"
+  "Build an agent review dashboard for QA",
+  "Build an API docs portal for developers",
+  "Build a documentation portal for API developers",
+  "Create API documentation tool for developers",
+  "Create a website copy editor for marketers"
 ]) {
   const result = evaluateIntakeRequest(request);
   assert.equal(result.is_product_build_request, true, request);

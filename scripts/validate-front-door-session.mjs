@@ -240,6 +240,106 @@ const main = async () => {
     assert.equal(executionTurn.intake.target_root, "tmp-targets/foo");
     assert.deepEqual(executionTurn.intake.target_users, ["Solo founders"]);
 
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-users-can-finish",
+      message: "Build me a todo app with auth"
+    });
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-users-can-finish",
+      message: ["1. Solo founders", "2. tasks", "3. none"].join("\n")
+    });
+    const usersCanFinish = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-users-can-finish",
+      message: "Users can sign in and manage tasks end to end."
+    });
+    assert.equal(
+      usersCanFinish.intake.finish_line,
+      "Users can sign in and manage tasks end to end."
+    );
+    assert.deepEqual(usersCanFinish.intake.target_users, ["Solo founders"]);
+
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-none-period",
+      message: "Build me a todo app with auth"
+    });
+    const noneWithPeriodSecond = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-none-period",
+      message: [
+        "1. Solo founders",
+        "2. create tasks and archive them",
+        "3. none."
+      ].join("\n")
+    });
+    assert.deepEqual(noneWithPeriodSecond.intake.reference_apps, []);
+
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-no-references-period",
+      message: "Build me a todo app with auth"
+    });
+    const noReferencesSecond = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-no-references-period",
+      message: [
+        "1. Solo founders",
+        "2. create tasks and archive them",
+        "3. No references."
+      ].join("\n")
+    });
+    assert.deepEqual(noReferencesSecond.intake.reference_apps, []);
+
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-windows-path",
+      message: "Build me a todo app with auth"
+    });
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-windows-path",
+      message: [
+        "1. Solo founders",
+        "2. create tasks and archive them",
+        "3. none"
+      ].join("\n")
+    });
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-windows-path",
+      message: "Users can manage tasks end to end."
+    });
+    const windowsExecution = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-windows-path",
+      message: String.raw`new, C:\Users\SUNGMOK\Desktop\harness\todo-app`
+    });
+    assert.equal(windowsExecution.intake.project_mode, "new");
+    assert.equal(
+      windowsExecution.intake.target_root,
+      String.raw`C:\Users\SUNGMOK\Desktop\harness\todo-app`
+    );
+
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-existing-runtime",
+      message: "Build me a todo app with auth"
+    });
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-existing-runtime",
+      message: [
+        "1. Solo founders",
+        "2. create tasks and archive them",
+        "3. none"
+      ].join("\n")
+    });
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-existing-runtime",
+      message: "Users can manage tasks end to end."
+    });
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-existing-runtime",
+      message:
+        "existing, tmp-targets/existing-runtime, target score 0.9 and max rounds 3"
+    });
+    const runtimeHints = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-existing-runtime",
+      message: "npm run dev, http://127.0.0.1:3000/"
+    });
+    assert.equal(runtimeHints.intake.run_command, "npm run dev");
+    assert.equal(runtimeHints.intake.ready_url, "http://127.0.0.1:3000/");
+
     const defaultsFirst = await runFrontDoorDiscoveryTurn({
       threadId: "thread-default-override",
       message: "Build me a todo app with auth"

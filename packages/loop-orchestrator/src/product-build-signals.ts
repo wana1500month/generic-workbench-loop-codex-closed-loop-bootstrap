@@ -104,6 +104,7 @@ const NON_PRODUCT_WORK_PATTERNS: readonly PatternLabel[] = [
 
 const PRODUCT_NOUN_SOURCE = String.raw`(?:app(?:lication)?|web\s*app|dashboard|editor|workspace|storyboard|website|api|saas|service|platform|portal|tool|agent|system)`;
 const NON_PRODUCT_DELIVERABLE_SOURCE = String.raw`(?:docs?|documentation|spec|strategy|roadmap|copy|content|proposal|analysis|audit|migration\s+plan|evaluation\s+spec)`;
+const PRODUCT_SURFACE_AFTER_DELIVERABLE_SOURCE = String.raw`(?:portal|site|website|app(?:lication)?|dashboard|editor|tool|workspace)`;
 
 const NON_PRODUCT_DELIVERABLE_OBJECT_PATTERNS: readonly PatternLabel[] = [
   {
@@ -117,6 +118,23 @@ const NON_PRODUCT_DELIVERABLE_OBJECT_PATTERNS: readonly PatternLabel[] = [
     label: "deliverable for product",
     pattern: new RegExp(
       String.raw`\b${NON_PRODUCT_DELIVERABLE_SOURCE}\b[^.!?]{0,24}\bfor\b[^.!?]{0,24}\b${PRODUCT_NOUN_SOURCE}\b`,
+      "i"
+    )
+  }
+] as const;
+
+const DELIVERABLE_AS_PRODUCT_MODIFIER_PATTERNS: readonly PatternLabel[] = [
+  {
+    label: "deliverable as product modifier",
+    pattern: new RegExp(
+      String.raw`\b${NON_PRODUCT_DELIVERABLE_SOURCE}\b\s+${PRODUCT_SURFACE_AFTER_DELIVERABLE_SOURCE}\b`,
+      "i"
+    )
+  },
+  {
+    label: "product deliverable surface",
+    pattern: new RegExp(
+      String.raw`\b(?:api|website|service|platform)\b[^.!?]{0,16}\b${NON_PRODUCT_DELIVERABLE_SOURCE}\b\s+${PRODUCT_SURFACE_AFTER_DELIVERABLE_SOURCE}\b`,
       "i"
     )
   }
@@ -183,6 +201,10 @@ export const detectProductBuildIntent = (value: string): ProductBuildDetection =
     buildObject,
     NON_PRODUCT_DELIVERABLE_OBJECT_PATTERNS
   );
+  const deliverableAsProductModifier = matchPatternLabels(
+    buildObject,
+    DELIVERABLE_AS_PRODUCT_MODIFIER_PATTERNS
+  );
   const strongExplicitProductBuildPhrase =
     STRONG_EXPLICIT_PRODUCT_BUILD_PHRASE.test(value);
   const weakExplicitProductBuildPhrase =
@@ -191,7 +213,10 @@ export const detectProductBuildIntent = (value: string): ProductBuildDetection =
   const hasStrongSurfaceNoun = strongNouns.length > 0 || koNouns.length > 0;
   const hasWeakNoun = weakNouns.length > 0;
 
-  if (nonProductDeliverableObject.length > 0) {
+  if (
+    nonProductDeliverableObject.length > 0 &&
+    deliverableAsProductModifier.length === 0
+  ) {
     return {
       is_product_build: false,
       strength: "rejected",

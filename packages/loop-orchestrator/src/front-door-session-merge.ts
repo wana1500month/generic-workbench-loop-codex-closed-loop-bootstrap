@@ -53,8 +53,16 @@ const splitAnswerLines = (message: string): string[] =>
     )
     .filter(Boolean);
 
+const normalizeNoneAnswer = (value: string): string =>
+  value
+    .trim()
+    .replace(/[.!?。]+$/u, "")
+    .trim();
+
 const isNoneAnswer = (value: string): boolean =>
-  /^(?:none|no|no references?|없음|없어요|없습니다|없다)$/i.test(value.trim());
+  /^(?:none|no|no references?|없음|없어요|없습니다|없다)$/i.test(
+    normalizeNoneAnswer(value)
+  );
 
 const parseTargetScoreAnswer = (value: string): number | undefined => {
   const match = value.match(/\b(?:0?\.\d+|1(?:\.0)?|\d{1,3})\b/);
@@ -100,7 +108,9 @@ const firstSentence = (value: string): string | undefined =>
 
 const extractExplicitTargetUsers = (message: string): string[] | undefined => {
   const explicitMatch = firstMatch(message, [
-    /\b(?:target users?|primary users?|users?)\s*(?:are|is|:)?\s*(.+?)(?:[.!?]|$)/i
+    /\b(?:target users?|primary users?)\s*(?:are|is|:)\s*(.+?)(?:[.!?]|$)/i,
+    /\b(?:target users?|primary users?)\s+(?!can\b)(.+?)(?:[.!?]|$)/i,
+    /\busers?\s*(?:are|is|:)\s*(.+?)(?:[.!?]|$)/i
   ]);
   return explicitMatch ? splitInlineList(explicitMatch) : undefined;
 };
@@ -220,9 +230,23 @@ const stripTrailingPunctuation = (value: string): string =>
 
 const parsePathAnswer = (value: string): string | undefined => {
   const candidate =
+    value.match(/[A-Za-z]:\\[^\r\n,;!?]+/)?.[0] ??
     value.match(/[A-Za-z0-9._-]+(?:[\\/][^\s,;.!?]+)+/)?.[0] ??
     value.match(/(?:\/|\.\/|\.\.\/)[^\s,;.!?]+/)?.[0];
-  return candidate ? stripTrailingPunctuation(candidate) : undefined;
+  return candidate ? stripTrailingPunctuation(candidate).trim() : undefined;
+};
+
+const parseUrlAnswer = (value: string): string | undefined => {
+  const candidate = value.match(/https?:\/\/[^\s,;]+/)?.[0];
+  return candidate ? stripTrailingPunctuation(candidate).trim() : undefined;
+};
+
+const parseRunCommandAnswer = (value: string): string | undefined => {
+  const withoutUrl = value.replace(/,?\s*https?:\/\/[^\s,;]+/i, "").trim();
+  const candidate = withoutUrl.match(
+    /\b(?:npm|pnpm|yarn|bun|node|python|python3|uvicorn|docker(?: compose)?|make)\s+[^\r\n,;]+/i
+  )?.[0];
+  return candidate?.trim();
 };
 
 const extractCandidatesFromQuestionOrder = (
@@ -283,10 +307,11 @@ const extractCandidatesFromQuestionOrder = (
         break;
       }
       case "run_command":
-        result.run_command = normalizeInlineValue(answer);
+        result.run_command =
+          parseRunCommandAnswer(answer) ?? normalizeInlineValue(answer);
         break;
       case "ready_url":
-        result.ready_url = normalizeInlineValue(answer);
+        result.ready_url = parseUrlAnswer(answer) ?? normalizeInlineValue(answer);
         break;
       default:
         break;
