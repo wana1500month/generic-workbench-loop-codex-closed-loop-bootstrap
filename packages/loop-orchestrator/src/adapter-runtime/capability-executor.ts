@@ -162,6 +162,20 @@ export const executeAdapterCapability = async (input: {
     );
   }
 
+  if (execution.outputLimitExceeded) {
+    const failedAt = execution.finishedAt;
+    await writeJson(attemptPath, {
+      ...runningAttempt,
+      status: "failed",
+      updated_at: failedAt,
+      finished_at: failedAt,
+      exit_code: execution.code
+    } satisfies AdapterCapabilityAttemptArtifact);
+    throw new Error(
+      `Adapter command exceeded output cap (${execution.outputLimitBytes} bytes per stream): ${capabilitySpec.command}`
+    );
+  }
+
   let rawResult: unknown;
   if (await pathExists(resultPath)) {
     rawResult = withExecutionMetadata(await loadJson<unknown>(resultPath), executionId);

@@ -52,6 +52,7 @@ See [ADAPTER_CONTRACT.md](./ADAPTER_CONTRACT.md).
 
 ## Main Docs
 
+- [docs/OPERATOR_QUICKSTART.md](./docs/OPERATOR_QUICKSTART.md)
 - [RUNBOOK.md](./RUNBOOK.md)
 - [SPEC.md](./SPEC.md)
 - [AGENT_PROTOCOL.md](./AGENT_PROTOCOL.md)

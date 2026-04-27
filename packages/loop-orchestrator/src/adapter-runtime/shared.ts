@@ -1,11 +1,12 @@
-import { access, mkdir, readFile, rename, stat } from "node:fs/promises";
+import { access, mkdir, readFile, realpath, rename, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { dirname, extname, isAbsolute, join, resolve } from "node:path";
+import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { resolvedAdapterTargetRoot } from "../adapter-paths.js";
 import { loadJson, repoRoot, writeJson, writeText } from "../file-system.js";
 import { stopProcessTree } from "../process-runtime.js";
+import { validateTargetUrlPolicy } from "../target-url-policy.js";
 import type {
   AdapterCapabilityExecution,
   AdapterCriterionResult,
@@ -321,6 +322,80 @@ export const pathExists = async (path: string): Promise<boolean> => {
   }
 };
 
+const positiveIntegerEnv = (name: string, fallback: number): number => {
+  const parsed = Number(process.env[name]);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+export const evidenceMaxBytes = (): number =>
+  positiveIntegerEnv("HARNESS_EVIDENCE_MAX_BYTES", 10 * 1024 * 1024);
+
+export const commandOutputMaxBytes = (): number =>
+  positiveIntegerEnv("HARNESS_COMMAND_OUTPUT_MAX_BYTES", 1024 * 1024);
+
+const credentialBasenames = new Set([
+  ".env",
+  "auth.json",
+  "credentials",
+  "credentials.json",
+  "id_dsa",
+  "id_ecdsa",
+  "id_ed25519",
+  "id_rsa",
+  "secret",
+  "secrets",
+  "token",
+  "tokens"
+]);
+
+const pathLooksCredentialLike = (path: string): boolean => {
+  const parts = path.split(/[\\/]+/).filter(Boolean);
+  if (parts.some((part) => part.toLowerCase() === ".codex")) {
+    return true;
+  }
+  const basename = parts[parts.length - 1]?.toLowerCase();
+  return Boolean(
+    basename &&
+      (credentialBasenames.has(basename) ||
+        basename.startsWith(".env.") ||
+        basename.endsWith(".pem") ||
+        basename.endsWith(".key"))
+  );
+};
+
+const isPathInside = (root: string, candidate: string): boolean => {
+  const rootPath = process.platform === "win32" ? root.toLowerCase() : root;
+  const candidatePath = process.platform === "win32" ? candidate.toLowerCase() : candidate;
+  const relationship = relative(rootPath, candidatePath);
+  return relationship === "" || (!relationship.startsWith("..") && !isAbsolute(relationship));
+};
+
+const safeRealpath = async (path: string): Promise<string> => {
+  try {
+    return await realpath(path);
+  } catch {
+    return resolve(path);
+  }
+};
+
+const allowedEvidenceRoots = async (input: {
+  baseDirectory: string;
+  cwd: string;
+  targetRoot: string;
+  runDirectory: string;
+  roundDirectory: string;
+}): Promise<string[]> =>
+  unique(
+    await Promise.all(
+      [
+        input.roundDirectory,
+        input.runDirectory,
+        input.targetRoot,
+        input.baseDirectory
+      ].map((candidate) => safeRealpath(resolve(candidate)))
+    )
+  );
+
 export const attemptPathForCapability = (
   roundDirectory: string,
   capability: AdapterCapabilityName
@@ -462,12 +537,8 @@ export const defaultProbeRoleForMode = (
   mode === "http_json" || mode === "browser_journey" ? "release_gate" : "supporting";
 
 export const isHttpUrl = (value: string): boolean => {
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === "http:" || parsed.protocol === "https:";
-  } catch {
-    return false;
-  }
+  const policy = validateTargetUrlPolicy(value);
+  return policy.ok;
 };
 
 export const normalizedEvidenceKind = (
@@ -641,6 +712,11 @@ export const resolveEvidencePath = async (input: {
   if (!trimmedPath) {
     return undefined;
   }
+  if (pathLooksCredentialLike(trimmedPath)) {
+    return undefined;
+  }
+
+  const allowedRoots = await allowedEvidenceRoots(input);
 
   const candidates = isAbsolute(trimmedPath)
     ? [trimmedPath]
@@ -653,9 +729,18 @@ export const resolveEvidencePath = async (input: {
       ]);
 
   for (const candidate of candidates) {
-    if (await pathExists(candidate)) {
-      return candidate;
+    if (pathLooksCredentialLike(candidate) || !(await pathExists(candidate))) {
+      continue;
     }
+    const realCandidate = await safeRealpath(candidate);
+    if (!allowedRoots.some((root) => isPathInside(root, realCandidate))) {
+      continue;
+    }
+    const stats = await stat(realCandidate);
+    if (!stats.isFile() || stats.size > evidenceMaxBytes()) {
+      continue;
+    }
+    return realCandidate;
   }
 
   return undefined;
@@ -1654,13 +1739,14 @@ export const validateAdapterCapabilityResult = async (input: {
           continue;
         }
         const value = rawValue.trim();
-        if (!isHttpUrl(value)) {
+        const targetUrlPolicy = validateTargetUrlPolicy(value);
+        if (!targetUrlPolicy.ok || !targetUrlPolicy.url) {
           validationErrors.push(
-            `Capability 'run_target' returned non-http target_manifest.${key} '${value}'.`
+            `Capability 'run_target' returned disallowed target_manifest.${key} '${value}': ${targetUrlPolicy.reason ?? "URL is not allowed."}`
           );
           continue;
         }
-        targetManifest[key] = value;
+        targetManifest[key] = targetUrlPolicy.url;
       }
       if (Object.keys(targetManifest).length === 0) {
         validationErrors.push(
@@ -1849,6 +1935,42 @@ export const shellExecutableFor = (
   }
 };
 
+interface BufferedOutput {
+  text: string;
+  bytes: number;
+  truncated: boolean;
+}
+
+const appendBoundedOutput = (
+  output: BufferedOutput,
+  chunk: Buffer | string,
+  maxBytes: number
+): boolean => {
+  if (output.truncated) {
+    return true;
+  }
+
+  const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+  const remaining = maxBytes - output.bytes;
+  if (remaining <= 0) {
+    output.truncated = true;
+    output.text += `\n[output truncated after ${maxBytes} bytes]\n`;
+    return true;
+  }
+
+  if (buffer.length > remaining) {
+    output.text += buffer.subarray(0, remaining).toString();
+    output.text += `\n[output truncated after ${maxBytes} bytes]\n`;
+    output.bytes = maxBytes;
+    output.truncated = true;
+    return true;
+  }
+
+  output.text += buffer.toString();
+  output.bytes += buffer.length;
+  return false;
+};
+
 export const execCommand = async (input: {
   command: string;
   args?: string[];
@@ -1864,6 +1986,8 @@ export const execCommand = async (input: {
   finishedAt: string;
   durationMs: number;
   timedOut: boolean;
+  outputLimitExceeded: boolean;
+  outputLimitBytes: number;
 }> =>
   new Promise((resolvePromise, rejectPromise) => {
     const startedAtDate = new Date();
@@ -1884,19 +2008,27 @@ export const execCommand = async (input: {
           windowsHide: true
         });
 
-    let stdout = "";
-    let stderr = "";
+    const stdout: BufferedOutput = { text: "", bytes: 0, truncated: false };
+    const stderr: BufferedOutput = { text: "", bytes: 0, truncated: false };
     let timedOut = false;
+    let outputLimitExceeded = false;
+    const outputLimitBytes = commandOutputMaxBytes();
     const timer = setTimeout(() => {
       timedOut = true;
       void stopProcessTree(child.pid ?? -1);
     }, input.timeoutMs);
 
     child.stdout?.on("data", (chunk: Buffer | string) => {
-      stdout += chunk.toString();
+      if (appendBoundedOutput(stdout, chunk, outputLimitBytes) && !outputLimitExceeded) {
+        outputLimitExceeded = true;
+        void stopProcessTree(child.pid ?? -1);
+      }
     });
     child.stderr?.on("data", (chunk: Buffer | string) => {
-      stderr += chunk.toString();
+      if (appendBoundedOutput(stderr, chunk, outputLimitBytes) && !outputLimitExceeded) {
+        outputLimitExceeded = true;
+        void stopProcessTree(child.pid ?? -1);
+      }
     });
     child.on("error", rejectPromise);
     child.on("close", (code) => {
@@ -1904,12 +2036,14 @@ export const execCommand = async (input: {
       const finishedAtDate = new Date();
       resolvePromise({
         code,
-        stdout,
-        stderr,
+        stdout: stdout.text,
+        stderr: stderr.text,
         startedAt: startedAtDate.toISOString(),
         finishedAt: finishedAtDate.toISOString(),
         durationMs: finishedAtDate.getTime() - startedAtDate.getTime(),
-        timedOut
+        timedOut,
+        outputLimitExceeded,
+        outputLimitBytes
       });
     });
   });

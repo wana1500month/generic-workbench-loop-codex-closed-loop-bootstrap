@@ -27,7 +27,9 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `progress.jsonl`: append-friendly task journal for restart-safe event history
 - `done_when.md`: human-readable stop condition that should stay aligned with the real closeout bar
 - `init.sh`: fast session bootstrap for workbench setup, `evals/runs` storage creation, and canonical front-door commands
+- `docs/OPERATOR_QUICKSTART.md`: short Codex app operator entrypoint for clean ZIP setup, lane-centric skills, validation, and security defaults
 - `.agents/skills/*/SKILL.md`: repo-local Codex app operator surfaces, with lane-centric entry skills such as `intent-router`, `app-builder-loop`, `harness-design`, `run-resume`, `evaluator-tuning`, `run-attempt`, and `closeout`; `product-intake` remains the staged intake gate inside `app-builder-loop`; compatibility aliases such as `harness-intake`, `harness-run-attempt`, and `harness-closeout` remain only for older automation
+- `.agents/skills/*/scripts/*.mjs`: skill helpers attempt `npm run build --silent` when the compiled `packages/loop-orchestrator/dist` entrypoint is missing, then print a direct `./init.sh` or `npm ci && npm run build` recovery message if build bootstrap fails
 - `.agents/skills/app-builder-loop/SKILL.md`: session-supervised product-build skill for discovery -> prepare -> `ready_to_start` -> running on one Codex foreground thread
 - `.agents/skills/*/agents/openai.yaml`: UI-facing Codex app metadata for the key lane-centric skills
 - `.codex-plugin/plugin.json` and `.agents/plugins/marketplace.json`: repo-root local plugin metadata for Codex app discovery
@@ -55,6 +57,16 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Browser-backed bootstrap bundles now auto-inject default subjective metrics such as `interaction_clarity`, `visual_hierarchy`, `finish_line_coherence`, optional `reference_fit`, and `prototype_delta`, with stricter minimums derived from `target_score`.
 - Browser-backed `target_reached` now also depends on subjective release quality and prototype delta: rendered screenshots or traces must exist, a baseline screenshot must persist beyond the first browser round, and release scoring can be capped when browser subjective evidence or visible product lift is missing.
 - `same-thread transport`: keeps the active operator surface on the same thread or turn, forbids nested `codex exec` calls from shared runtime paths, routes bootstrap `apply_change` through attached generator task/response artifacts, and lets attached App Server runs refine planner/generator-plan through same-thread skill turns plus contract/eval through inline review turns
+
+## Security guards
+
+- Evidence path resolution now fail-closes to allowlisted runtime roots: `roundDirectory`, `runDirectory`, `targetRoot`, and adapter `baseDirectory`. The core may resolve relative candidates from capability `cwd`, but the final real path must still land inside the allowlist before evidence is accepted.
+- Credential-looking evidence paths are rejected before content inspection, including `.codex` paths, `.env` files, auth or credentials files, private keys, token files, and secret files.
+- Evidence files must be regular files and stay under `HARNESS_EVIDENCE_MAX_BYTES`, which defaults to `10485760`.
+- Core HTTP, HTTP JSON, browser, and browser journey probes accept only localhost or loopback target URLs by default. External target probes require `HARNESS_ALLOW_NONLOCAL_TARGET_URLS=1`, while private, link-local, loopback, broadcast, and metadata hosts remain blocked in nonlocal mode.
+- Core fetch probes use manual redirects and cap response body capture with `HARNESS_HTTP_BODY_MAX_BYTES`, which defaults to `1048576`.
+- Adapter capability commands and core shell/browser probe commands cap stdout and stderr with `HARNESS_COMMAND_OUTPUT_MAX_BYTES`, which defaults to `1048576`; adapter capabilities fail when the cap is exceeded.
+- Run `npm run validate:security-guards` after `npm run build` to check evidence containment, URL policy, and command output caps.
 
 ## Round contract and dimension floors
 

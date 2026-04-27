@@ -13,12 +13,7 @@
       "Interactive",
       "Write"
     ],
-    "defaultPrompt": [
-      "Route this request into the right harness lane and tell me the next file-backed step.",
-      "Use loop-control when the operator wants to start, inspect, resume, or stop a run from the Codex app.",
-      "Run the attached loop from the current Codex thread without nested exec calls.",
-      "Inspect a persisted run and decide whether to resume, hold, or close it."
-    ],
+    "defaultPrompt": "Route this request into the right harness lane and tell me the next file-backed step. On first use from a clean ZIP, run ./init.sh or npm ci && npm run build if compiled dist files are missing; skill helpers will try an automatic build and print the exact recovery command if it fails. Use loop-control for start/status/resume/stop, and run attached loops from the current Codex thread without nested exec calls.",
     "brandColor": "#0F766E"
   }
 }

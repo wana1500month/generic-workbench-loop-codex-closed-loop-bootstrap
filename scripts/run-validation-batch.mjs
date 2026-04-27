@@ -15,6 +15,7 @@ const suites = {
     "validate:front-door-session",
     "validate:lifecycle-api",
     "validate:transport-mode",
+    "validate:security-guards",
     "validate:score-policy",
     "validate:loop-prepare",
     "validate:prepared-session-consumption-boundary",

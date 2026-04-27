@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 
 import { resolvedAdapterTargetRoot } from "./adapter-paths.js";
 import { loadJsonIfExists, writeJson, writeText } from "./file-system.js";
+import { assertAllowedTargetUrl } from "./target-url-policy.js";
 import type {
   CoreProbeAttestation,
   ProbeFailureClassification,
@@ -30,6 +31,17 @@ const defaultSemanticLevelForMode = (
 ): ProbeSemanticLevel =>
   mode === "http_json" || mode === "browser_journey" ? "feature" : "liveness";
 
+const positiveIntegerEnv = (name: string, fallback: number): number => {
+  const parsed = Number(process.env[name]);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const httpBodyMaxBytes = (): number =>
+  positiveIntegerEnv("HARNESS_HTTP_BODY_MAX_BYTES", 1024 * 1024);
+
+const commandOutputMaxBytes = (): number =>
+  positiveIntegerEnv("HARNESS_COMMAND_OUTPUT_MAX_BYTES", 1024 * 1024);
+
 const targetManifestValueForProbe = (
   probe: VerificationCoreProbe,
   targetManifest?: TargetManifest
@@ -45,6 +57,7 @@ const resolvedLiveProbeTarget = (input: {
   probe: VerificationCoreProbe;
   targetManifest?: TargetManifest;
 }): string => {
+  const context = `Core verification probe '${input.probe.probe_id}'`;
   const manifestValue = targetManifestValueForProbe(input.probe, input.targetManifest)?.trim();
   if (manifestValue || input.probe.target?.trim()) {
     const baseTarget = manifestValue ?? input.probe.target?.trim();
@@ -54,12 +67,12 @@ const resolvedLiveProbeTarget = (input: {
       );
     }
     if (input.probe.target_path) {
-      return new URL(input.probe.target_path, baseTarget).toString();
+      return assertAllowedTargetUrl(new URL(input.probe.target_path, baseTarget).toString(), context);
     }
-    return baseTarget;
+    return assertAllowedTargetUrl(baseTarget, context);
   }
   if (input.probe.target?.trim()) {
-    return input.probe.target.trim();
+    return assertAllowedTargetUrl(input.probe.target.trim(), context);
   }
   if (input.probe.target_manifest_key) {
     throw new Error(
@@ -139,6 +152,55 @@ const stringValueForJsonPath = (value: unknown, jsonPath: string): string | unde
   return current === undefined ? undefined : JSON.stringify(current);
 };
 
+const readResponseTextLimited = async (
+  response: Response,
+  maxBytes: number
+): Promise<{ text: string; truncated: boolean }> => {
+  if (!response.body) {
+    const text = await response.text();
+    const buffer = Buffer.from(text);
+    return {
+      text: buffer.subarray(0, maxBytes).toString(),
+      truncated: buffer.length > maxBytes
+    };
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  let truncated = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done || !value) {
+      break;
+    }
+
+    const chunk = Buffer.from(value);
+    const remaining = maxBytes - totalBytes;
+    if (remaining <= 0) {
+      truncated = true;
+      await reader.cancel();
+      break;
+    }
+    if (chunk.length > remaining) {
+      chunks.push(chunk.subarray(0, remaining));
+      totalBytes = maxBytes;
+      truncated = true;
+      await reader.cancel();
+      break;
+    }
+
+    chunks.push(chunk);
+    totalBytes += chunk.length;
+  }
+
+  return {
+    text: Buffer.concat(chunks).toString("utf8"),
+    truncated
+  };
+};
+
 const resolvedProbeTarget = (input: {
   probe: VerificationCoreProbe;
   loadedAdapter: LoadedAdapterContract;
@@ -194,13 +256,15 @@ const executeHttpProbe = async (input: {
     targetManifest: input.targetManifest
   });
   const response = await fetch(target, {
-    signal: AbortSignal.timeout(timeoutMs)
+    signal: AbortSignal.timeout(timeoutMs),
+    redirect: "manual"
   });
-  const body = await response.text();
+  const { text: body, truncated } = await readResponseTextLimited(response, httpBodyMaxBytes());
   const bodyPath = join(input.probeDirectory, `${input.probe.probe_id}-body.txt`);
   await writeText(bodyPath, body);
   const ok =
     response.ok &&
+    !truncated &&
     body.includes(input.probe.expected_value ?? "");
   return {
     ok,
@@ -210,7 +274,7 @@ const executeHttpProbe = async (input: {
     target,
     observedValue: `status=${response.status}; body_contains=${body.includes(
       input.probe.expected_value ?? ""
-    )}`,
+    )}; body_truncated=${truncated}`,
     evidencePaths: [bodyPath]
   };
 };
@@ -233,11 +297,25 @@ const executeHttpJsonProbe = async (input: {
     targetManifest: input.targetManifest
   });
   const response = await fetch(target, {
-    signal: AbortSignal.timeout(timeoutMs)
+    signal: AbortSignal.timeout(timeoutMs),
+    redirect: "manual"
   });
-  const rawBody = await response.text();
+  const { text: rawBody, truncated } = await readResponseTextLimited(
+    response,
+    httpBodyMaxBytes()
+  );
   const bodyPath = join(input.probeDirectory, `${input.probe.probe_id}-body.json`);
   await writeText(bodyPath, rawBody);
+
+  if (truncated) {
+    return {
+      ok: false,
+      summary: `HTTP JSON probe '${input.probe.probe_id}' response from '${target}' exceeded the body cap.`,
+      target,
+      observedValue: `status=${response.status}; observed=body_truncated`,
+      evidencePaths: [bodyPath]
+    };
+  }
 
   if (!input.probe.json_path || input.probe.expected_value === undefined) {
     return {
@@ -311,22 +389,50 @@ const execCommand = async (input: {
     let stdout = "";
     let stderr = "";
     let timedOut = false;
+    let outputLimitExceeded = false;
+    const outputLimitBytes = commandOutputMaxBytes();
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill();
     }, input.timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer | string) => {
-      stdout += chunk.toString();
+      const text = chunk.toString();
+      if (Buffer.byteLength(stdout) + Buffer.byteLength(text) > outputLimitBytes) {
+        const remaining = Math.max(outputLimitBytes - Buffer.byteLength(stdout), 0);
+        stdout += Buffer.from(text).subarray(0, remaining).toString();
+        stdout += `\n[output truncated after ${outputLimitBytes} bytes]\n`;
+        outputLimitExceeded = true;
+        child.kill();
+        return;
+      }
+      stdout += text;
     });
     child.stderr.on("data", (chunk: Buffer | string) => {
-      stderr += chunk.toString();
+      const text = chunk.toString();
+      if (Buffer.byteLength(stderr) + Buffer.byteLength(text) > outputLimitBytes) {
+        const remaining = Math.max(outputLimitBytes - Buffer.byteLength(stderr), 0);
+        stderr += Buffer.from(text).subarray(0, remaining).toString();
+        stderr += `\n[output truncated after ${outputLimitBytes} bytes]\n`;
+        outputLimitExceeded = true;
+        child.kill();
+        return;
+      }
+      stderr += text;
     });
     child.on("error", rejectPromise);
     child.on("close", (code) => {
       clearTimeout(timer);
       if (timedOut) {
         rejectPromise(new Error(`Core verification probe timed out: ${input.command}`));
+        return;
+      }
+      if (outputLimitExceeded) {
+        rejectPromise(
+          new Error(
+            `Core verification probe exceeded output cap (${outputLimitBytes} bytes per stream): ${input.command}`
+          )
+        );
         return;
       }
       resolvePromise({ code, stdout, stderr });
@@ -399,10 +505,8 @@ const resolvedJourneyTarget = (
   target: string,
   stepValue?: string
 ): string => {
-  if (!stepValue?.trim()) {
-    return target;
-  }
-  return new URL(stepValue.trim(), target).toString();
+  const resolved = stepValue?.trim() ? new URL(stepValue.trim(), target).toString() : target;
+  return assertAllowedTargetUrl(resolved, "Browser journey probe step");
 };
 
 const executeBrowserProbe = async (input: {

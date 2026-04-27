@@ -70,6 +70,7 @@
     "validate:reference-adapter:canonical:chat": "node ./scripts/validate-reference-adapter.mjs --canonical --template canonical-chat",
     "validate:reference-adapter:canonical:chat:patch-only": "node ./scripts/validate-reference-adapter.mjs --canonical --template canonical-chat-patch-only",
     "validate:reference-adapter:canonical:chat:recontract": "node ./scripts/validate-reference-adapter.mjs --canonical --template canonical-chat-recontract",
+    "validate:security-guards": "node ./scripts/validate-security-guards.mjs",
     "validate:score-policy": "node ./scripts/validate-score-policy.mjs",
     "validate:adapter-drift": "node ./scripts/validate-adapter-drift.mjs",
     "validate:adapter-migration-generated-runtime": "node ./scripts/validate-adapter-migration-generated-runtime.mjs",
