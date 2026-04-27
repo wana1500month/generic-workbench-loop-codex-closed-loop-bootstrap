@@ -1062,6 +1062,9 @@ export const writeSessionPreparationArtifacts = async (
   const existingSessionStatus =
     await loadJsonIfExists<SessionStatusArtifact>(input.sessionStatusPath);
   const targetManifestHints = buildTargetManifestHints(intake);
+  const isProductBuild = Boolean(
+    input.discoverySource || intake?.product_title || intake?.target_family
+  );
   const projectMode = intake?.project_mode ?? "existing";
   const primarySurface = inferPrimarySurface(intake?.target_family ?? input.targetFamily);
   const secondarySurfaces = inferSecondarySurfaces({
@@ -1089,15 +1092,20 @@ export const writeSessionPreparationArtifacts = async (
   const targetUsers =
     intake?.target_users && intake.target_users.length > 0
       ? unique(intake.target_users)
-      : input.durableMemory.targetUsers;
+      : isProductBuild
+        ? []
+        : input.durableMemory.targetUsers;
   const coreWorkflows =
     intake?.core_features && intake.core_features.length > 0
       ? unique(intake.core_features)
-      : input.durableMemory.coreFeatures;
-  const primaryFinishLine =
-    intake?.finish_line ??
-    input.durableMemory.finishLine ??
-    input.durableMemory.qualityBar[0];
+      : isProductBuild
+        ? []
+        : input.durableMemory.coreFeatures;
+  const primaryFinishLine = isProductBuild
+    ? intake?.finish_line ?? intake?.quality_bar?.[0]
+    : intake?.finish_line ??
+      input.durableMemory.finishLine ??
+      input.durableMemory.qualityBar[0];
   const stackPreferences = unique([
     intake?.framework_hint ?? "",
     intake?.package_manager ?? ""
@@ -1119,11 +1127,13 @@ export const writeSessionPreparationArtifacts = async (
   const steeringNotes = unique(input.steeringNotes ?? []);
   const reviewFeedback = unique(input.reviewFeedback ?? []);
   const externalBlockers = unique(input.externalBlockers ?? []);
-  const successDefinition = unique([
-    primaryFinishLine ?? "",
-    ...(intake?.quality_bar ?? []),
-    ...(!intake?.finish_line ? input.durableMemory.qualityBar : [])
-  ]).slice(0, 4);
+  const successDefinition = (isProductBuild
+    ? unique([primaryFinishLine ?? "", ...(intake?.quality_bar ?? [])])
+    : unique([
+        primaryFinishLine ?? "",
+        ...(intake?.quality_bar ?? []),
+        ...(!intake?.finish_line ? input.durableMemory.qualityBar : [])
+      ])).slice(0, 4);
   const targetRoot = intake?.target_root ?? input.rootDirectory;
   const objective =
     input.currentObjective ??

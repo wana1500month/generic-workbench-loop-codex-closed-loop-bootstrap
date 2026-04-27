@@ -29,7 +29,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `init.sh`: fast session bootstrap for workbench setup, `evals/runs` storage creation, and canonical front-door commands
 - `docs/OPERATOR_QUICKSTART.md`: short Codex app operator entrypoint for clean ZIP setup, lane-centric skills, validation, and security defaults
 - `.agents/skills/*/SKILL.md`: repo-local Codex app operator surfaces, with lane-centric entry skills such as `intent-router`, `app-builder-loop`, `harness-design`, `run-resume`, `evaluator-tuning`, `run-attempt`, and `closeout`; `product-intake` remains the staged intake gate inside `app-builder-loop`; compatibility aliases such as `harness-intake`, `harness-run-attempt`, and `harness-closeout` remain only for older automation
-- `.agents/skills/*/scripts/*.mjs`: skill helpers attempt `npm run build --silent` when the compiled `packages/loop-orchestrator/dist` entrypoint is missing, then print a direct `./init.sh` or `npm ci && npm run build` recovery message if build bootstrap fails
+- `.agents/skills/*/scripts/*.mjs`: skill helpers attempt `bash ./init.sh` when the compiled `packages/loop-orchestrator/dist` entrypoint is missing, then print a direct `bash ./init.sh` or `npm ci && npm run build` recovery message if build bootstrap fails
 - `.agents/skills/app-builder-loop/SKILL.md`: session-supervised product-build skill for discovery -> prepare -> `ready_to_start` -> running on one Codex foreground thread
 - `.agents/skills/*/agents/openai.yaml`: UI-facing Codex app metadata for the key lane-centric skills
 - `.codex-plugin/plugin.json` and `.agents/plugins/marketplace.json`: repo-root local plugin metadata for Codex app discovery

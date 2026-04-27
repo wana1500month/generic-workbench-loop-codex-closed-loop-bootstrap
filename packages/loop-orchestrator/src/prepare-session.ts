@@ -180,6 +180,7 @@ const buildSessionIdeaFromIntake = (input: {
   baseIdea: IdeaBrief;
   durableMemory: DurableMemoryContext;
   intake?: SessionIntakeSnapshot;
+  isProductBuild?: boolean;
 }): IdeaBrief => {
   const title =
     input.intake?.product_title ??
@@ -192,12 +193,19 @@ const buildSessionIdeaFromIntake = (input: {
       : input.durableMemory.coreFeatures.length > 0
         ? input.durableMemory.coreFeatures
         : input.baseIdea.user_goals;
-  const qualityBar = unique([
-    input.intake?.finish_line ?? input.durableMemory.finishLine ?? "",
-    ...(input.intake?.quality_bar ?? input.durableMemory.qualityBar)
-  ]);
+  const qualityBar = input.isProductBuild
+    ? unique([
+        input.intake?.finish_line ?? "",
+        ...(input.intake?.quality_bar ?? [])
+      ])
+    : unique([
+        input.intake?.finish_line ?? input.durableMemory.finishLine ?? "",
+        ...(input.intake?.quality_bar ?? input.durableMemory.qualityBar)
+      ]);
   const constraints = unique([
-    ...(input.intake?.constraints ?? input.durableMemory.constraints),
+    ...(input.isProductBuild
+      ? input.intake?.constraints ?? []
+      : input.intake?.constraints ?? input.durableMemory.constraints),
     ...(input.intake?.target_root ? [`Target root: ${input.intake.target_root}`] : []),
     ...(input.intake?.project_mode ? [`Project mode: ${input.intake.project_mode}`] : [])
   ]);
@@ -443,6 +451,7 @@ export const prepareSessionRun = async (
     durableMemory.context.maxRounds ??
     3;
   const bootstrapTargetFamily = normalizeBootstrapTargetFamily(resolvedTargetFamily);
+  const isProductBuild = bootstrapTargetFamily !== undefined;
   const bootstrapPaths = createBootstrapArtifactPaths(durableMemory.rootDirectory);
   let preparedValidationBundle:
     | SessionRunContractArtifact["validation_strategy"]["validation_bundle"]
@@ -481,10 +490,19 @@ export const prepareSessionRun = async (
         appUrl: intake.app_url,
         healthUrl: intake.health_url,
         apiBaseUrl: intake.api_base_url,
-        constraints: intake?.constraints ?? durableMemory.context.constraints,
-        qualityBar: intake?.quality_bar ?? durableMemory.context.qualityBar,
+        constraints: isProductBuild
+          ? intake?.constraints ?? []
+          : intake?.constraints ?? durableMemory.context.constraints,
+        qualityBar: isProductBuild
+          ? unique([
+              intake?.finish_line ?? "",
+              ...(intake?.quality_bar ?? [])
+            ])
+          : intake?.quality_bar ?? durableMemory.context.qualityBar,
         notes: intake?.notes,
-        mustNotBreak: intake?.must_not_break ?? durableMemory.context.mustNotBreak,
+        mustNotBreak: isProductBuild
+          ? intake?.must_not_break ?? []
+          : intake?.must_not_break ?? durableMemory.context.mustNotBreak,
         failureExpectations: intake?.failure_expectations,
         continuityBoundaries: intake?.continuity_boundaries,
         referenceSignals: intake?.reference_signals,
@@ -573,7 +591,8 @@ export const prepareSessionRun = async (
   const sessionIdea = buildSessionIdeaFromIntake({
     baseIdea: idea,
     durableMemory: durableMemory.context,
-    intake
+    intake,
+    isProductBuild
   });
   const scenario = buildScenarioFromIdea(sessionIdea);
   const plan = buildLoopPlan({

@@ -496,6 +496,12 @@ const main = async () => {
     });
     assert.equal(koThird.status, "ready_for_prepare");
     assert.equal(koThird.intake.project_mode, "new");
+    assert.deepEqual(
+      koThird.unresolved_conflicts.filter(
+        (conflict) => conflict.field === "product_summary"
+      ),
+      []
+    );
     assert.match(koThird.intake.target_root ?? "", /^\.\/apps\/가계부-앱/);
 
     const koPrepared = await prepareSessionRun({
@@ -504,9 +510,10 @@ const main = async () => {
       transportMode: "current-thread",
       controllerMode: "attached"
     });
-    const [koBuildBrief, koRunContract] = await Promise.all([
+    const [koBuildBrief, koRunContract, koVerificationProfile] = await Promise.all([
       readJsonFile(koPrepared.buildBriefPath),
-      readJsonFile(koPrepared.runContractPath)
+      readJsonFile(koPrepared.runContractPath),
+      readJsonFile(koPrepared.evaluatorProfilePath)
     ]);
     assert.equal(koBuildBrief.product.title, "가계부 앱");
     assert.match(koBuildBrief.product.summary, /가계부/);
@@ -519,6 +526,35 @@ const main = async () => {
     assert.match(koRunContract.objective, /가계부 앱/);
     assert.doesNotMatch(koRunContract.objective, /Generic Codex Workbench/);
     assert.doesNotMatch(JSON.stringify(koBuildBrief), /Generic Codex Workbench/);
+    assert.doesNotMatch(
+      JSON.stringify(koBuildBrief.product.success_definition),
+      /workbench|controller|adapter/i
+    );
+    assert.doesNotMatch(
+      JSON.stringify(koVerificationProfile.quality_contract),
+      /workbench|controller|adapter/i
+    );
+    const koWorkflowProbes = koVerificationProfile.core_probes.filter((probe) =>
+      /^Core workflow remains visible: /.test(probe.label)
+    );
+    for (const workflow of koBuildBrief.product.core_workflows) {
+      assert.ok(
+        koWorkflowProbes.some((probe) => probe.label.includes(workflow)),
+        JSON.stringify(koWorkflowProbes, null, 2)
+      );
+    }
+    const koWorkflowSelectors = koWorkflowProbes.map(
+      (probe) => probe.steps.at(-1)?.selector
+    );
+    assert.equal(
+      new Set(koWorkflowSelectors).size,
+      koWorkflowSelectors.length,
+      JSON.stringify(koWorkflowSelectors, null, 2)
+    );
+    assert.ok(
+      !koWorkflowSelectors.includes("[data-testid='feature-generated-app']"),
+      JSON.stringify(koWorkflowSelectors, null, 2)
+    );
 
     await runFrontDoorDiscoveryTurn({
       threadId: "thread-correction",

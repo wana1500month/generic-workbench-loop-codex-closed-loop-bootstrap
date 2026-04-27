@@ -190,12 +190,19 @@ const goalPresets: Record<Exclude<GoalLevel, "custom">, number> = {
   "production-like": 0.95
 };
 
-const slugify = (value: string): string =>
+const slugifyAscii = (value: string): string =>
   value
+    .normalize("NFKD")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 48) || "generated-app";
+    .slice(0, 48);
+
+const slugify = (value: string): string =>
+  slugifyAscii(value) || "generated-app";
+
+const slugForIndexedFeature = (value: string, index: number): string =>
+  slugifyAscii(value) || `feature-${index + 1}`;
 
 const splitList = (value: string): string[] =>
   value
@@ -586,7 +593,7 @@ const buildGeneratedQualityAxes = (
   answers: BootstrapAnswers
 ): NonNullable<VerificationProfile["quality_contract"]>["quality_axes"] => {
   const featureAxes = answers.coreFeatures.slice(0, 3).map((feature, index) => {
-    const featureSlug = slugify(feature) || `feature-${index + 1}`;
+    const featureSlug = slugForIndexedFeature(feature, index);
     return {
       axis_id: `feature_${featureSlug}`,
       label: `Feature: ${feature}`,
@@ -983,13 +990,17 @@ const buildGeneratedCoreProbes = (
     continuityBoundaries.has("reopen");
   const featureSlugs = answers.coreFeatures
     .slice(0, 3)
-    .map((feature, index) => ({
-      feature,
-      featureSlug: slugify(feature) || `feature-${index + 1}`,
-      axisId: qualityContract.quality_axes.find(
-        (axis) => axis.axis_id === `feature_${slugify(feature) || `feature-${index + 1}`}`
-      )?.axis_id ?? `feature_${slugify(feature) || `feature-${index + 1}`}`
-    }));
+    .map((feature, index) => {
+      const featureSlug = slugForIndexedFeature(feature, index);
+      const axisId = `feature_${featureSlug}`;
+      return {
+        feature,
+        featureSlug,
+        axisId:
+          qualityContract.quality_axes.find((axis) => axis.axis_id === axisId)
+            ?.axis_id ?? axisId
+      };
+    });
   const probes: VerificationCoreProbe[] = [];
 
   if (answers.healthUrl) {

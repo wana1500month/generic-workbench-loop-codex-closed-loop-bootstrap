@@ -1,11 +1,25 @@
 import { strict as assert } from "node:assert";
 import { spawn } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const args = process.argv.slice(2);
+const zipArgIndex = args.indexOf("--zip");
+const zipEqualsArg = args.find((arg) => arg.startsWith("--zip="));
+const positionalZipArg = args.find(
+  (arg) => !arg.startsWith("-") && /\.zip$/i.test(arg)
+);
+const zipPath =
+  zipArgIndex >= 0 && args[zipArgIndex + 1]
+    ? resolve(repoRoot, args[zipArgIndex + 1])
+    : zipEqualsArg
+      ? resolve(repoRoot, zipEqualsArg.slice("--zip=".length))
+      : positionalZipArg
+        ? resolve(repoRoot, positionalZipArg)
+    : undefined;
 
 const runCommand = async (command, args, options = {}) =>
   new Promise((resolvePromise, rejectPromise) => {
@@ -38,12 +52,51 @@ const copyPath = async (source, destination) => {
   });
 };
 
+const extractZip = async (sourceZip, destination) => {
+  await mkdir(destination, { recursive: true });
+  if (process.platform === "win32") {
+    const result = await runCommand(
+      "powershell",
+      [
+        "-NoProfile",
+        "-Command",
+        "Expand-Archive -Path $env:HARNESS_RELEASE_ZIP -DestinationPath $env:HARNESS_RELEASE_ROOT -Force"
+      ],
+      {
+        env: {
+          ...process.env,
+          HARNESS_RELEASE_ZIP: sourceZip,
+          HARNESS_RELEASE_ROOT: destination
+        },
+        shell: false
+      }
+    );
+    assert.equal(
+      result.code,
+      0,
+      `release zip extraction failed.\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`
+    );
+    return;
+  }
+
+  const unzipResult = await runCommand("unzip", ["-q", sourceZip, "-d", destination]);
+  assert.equal(
+    unzipResult.code,
+    0,
+    `release zip extraction failed.\nSTDOUT:\n${unzipResult.stdout}\nSTDERR:\n${unzipResult.stderr}`
+  );
+};
+
 const requiredReleasePaths = [
   "package.json",
   "package-lock.json",
   "scripts/loop-intent.mjs",
   "scripts/loop-discover.mjs",
+  "scripts/loop-intake.mjs",
+  "scripts/loop-prepare.mjs",
   "scripts/lib/front-door-build.mjs",
+  "scripts/package-release.mjs",
+  "init.sh",
   "packages/loop-orchestrator/dist",
   ".agents",
   ".codex",
@@ -66,20 +119,41 @@ const main = async () => {
     "front-door-session-cli.js"
   );
 
-  assert.ok(existsSync(distIntent), "packages/loop-orchestrator/dist is missing.");
-  assert.ok(existsSync(distDiscover), "front-door session dist CLI is missing.");
+  if (!zipPath) {
+    assert.ok(existsSync(distIntent), "packages/loop-orchestrator/dist is missing.");
+    assert.ok(existsSync(distDiscover), "front-door session dist CLI is missing.");
+  }
 
   await mkdir(join(repoRoot, ".tmp"), { recursive: true });
   const tempRoot = await mkdtemp(join(repoRoot, ".tmp", "release-zip-"));
-  const releaseRoot = join(tempRoot, "release-root");
+  let releaseRoot = join(tempRoot, "release-root");
 
   try {
-    for (const relativePath of requiredReleasePaths) {
-      const source = join(repoRoot, relativePath);
-      if (existsSync(source)) {
-        await copyPath(source, join(releaseRoot, relativePath));
+    if (zipPath) {
+      assert.ok(existsSync(zipPath), `release zip not found: ${zipPath}`);
+      await extractZip(zipPath, releaseRoot);
+      const nestedRoot = join(releaseRoot, "generic-codex-workbench");
+      if (existsSync(join(nestedRoot, "package.json"))) {
+        releaseRoot = nestedRoot;
       }
+    } else {
+      for (const relativePath of requiredReleasePaths) {
+        const source = join(repoRoot, relativePath);
+        if (existsSync(source)) {
+          await copyPath(source, join(releaseRoot, relativePath));
+        }
+      }
+      await chmod(join(releaseRoot, "init.sh"), 0o755).catch(() => undefined);
     }
+
+    assert.ok(
+      existsSync(join(releaseRoot, "packages", "loop-orchestrator", "dist", "intent-gate-cli.js")),
+      "release image is missing packages/loop-orchestrator/dist/intent-gate-cli.js"
+    );
+    assert.ok(
+      existsSync(join(releaseRoot, "packages", "loop-orchestrator", "dist", "front-door-session-cli.js")),
+      "release image is missing packages/loop-orchestrator/dist/front-door-session-cli.js"
+    );
 
     await mkdir(join(releaseRoot, ".tmp"), { recursive: true });
     await writeFile(join(releaseRoot, ".tmp", ".gitkeep"), "", "utf8");

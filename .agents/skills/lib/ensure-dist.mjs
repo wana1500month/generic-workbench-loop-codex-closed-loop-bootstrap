@@ -45,7 +45,7 @@ export const ensureDistModule = async (repoRoot, relativeModulePath) => {
         ok: false,
         distModulePath,
         message:
-          `Missing ${relativeModulePath} and bootstrap failed. Run ./init.sh once, then retry.`
+          `Missing ${relativeModulePath} and bootstrap failed. Run bash ./init.sh once, then retry.`
       };
     }
   }

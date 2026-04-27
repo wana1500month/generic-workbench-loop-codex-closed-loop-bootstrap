@@ -663,6 +663,12 @@ const hasExplicitProjectMode = (message: string): boolean =>
     message
   );
 
+const hasExplicitProductIdentity = (message: string): boolean =>
+  new RegExp(
+    String.raw`(?:${productTitleLabelPattern}|product\s*summary|product\s*brief|what\s+to\s+build)\s*(?:can be|are|is|는|은|:|=)?`,
+    "iu"
+  ).test(message);
+
 const replaceFieldsForTurn = (
   message: string,
   previousQuestionIds: readonly SessionIntakeFieldId[]
@@ -673,6 +679,9 @@ const replaceFieldsForTurn = (
     switch (field) {
       case "target_users":
         replace.add("target_users");
+        break;
+      case "product_summary":
+        replace.add("product_summary");
         break;
       case "core_workflows":
         replace.add("core_features");
@@ -708,6 +717,9 @@ const replaceFieldsForTurn = (
   }
   if (hasExplicitProjectMode(message)) {
     replace.add("project_mode");
+  }
+  if (hasExplicitProductIdentity(message)) {
+    replace.add("product_summary");
   }
 
   return replace;
@@ -777,9 +789,15 @@ export const buildDiscoveryAggregateRequest = (input: {
   intake: SessionIntakeSnapshot;
   latestMessage?: string;
 }): string => {
-  const lines = [input.sourceRequest.trim()];
   const { intake } = input;
+  const lines = [input.sourceRequest.trim()];
 
+  if (intake.product_title) {
+    lines.push(`Product title: ${intake.product_title}.`);
+  }
+  if (intake.product_summary) {
+    lines.push(`Product summary: ${intake.product_summary}.`);
+  }
   if (intake.target_users?.length) {
     lines.push(`The target users are ${intake.target_users.join(", ")}.`);
   }
@@ -863,7 +881,16 @@ export const mergeFrontDoorSessionTurn = (input: {
   const replaceFields = replaceFieldsForTurn(input.message, previousQuestionIds);
 
   applyScalarField(nextIntake, "product_title", candidates.product_title, input.turnCount, conflicts);
-  applyScalarField(nextIntake, "product_summary", candidates.product_summary, input.turnCount, conflicts);
+  if (!nextIntake.product_summary || replaceFields.has("product_summary")) {
+    applyScalarField(
+      nextIntake,
+      "product_summary",
+      candidates.product_summary,
+      input.turnCount,
+      conflicts,
+      { replace: replaceFields.has("product_summary") }
+    );
+  }
   applyScalarField(nextIntake, "target_family", candidates.target_family, input.turnCount, conflicts);
   applyScalarField(nextIntake, "project_mode", candidates.project_mode, input.turnCount, conflicts, {
     replace: replaceFields.has("project_mode")

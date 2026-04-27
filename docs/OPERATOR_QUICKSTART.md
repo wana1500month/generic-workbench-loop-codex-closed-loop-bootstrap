@@ -7,7 +7,7 @@ This repository is a generic Codex workbench for closed-loop harness runs. It do
 Run one bootstrap command before using plugin skills:
 
 ```bash
-./init.sh
+bash ./init.sh
 ```
 
 On Windows shells, use the equivalent npm path:
