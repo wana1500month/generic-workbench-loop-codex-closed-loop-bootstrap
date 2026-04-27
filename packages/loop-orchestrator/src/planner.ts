@@ -213,9 +213,21 @@ export const buildLoopPlan = (input: {
   rubric: LoopRubric;
   maxRounds: number;
   idea: IdeaBrief;
+  planKind?: "harness" | "product_build";
 }): LoopPlan => {
   const focusAreas = rankFocusAreas(input.idea);
-  const plannerAcceptanceChecks = checksForFocusAreas(focusAreas);
+  const isProductBuild = input.planKind === "product_build";
+  const productBuildChecks = [
+    "build_brief_matches_user_intake",
+    "target_root_created_or_updated",
+    "core_workflows_have_user_visible_paths",
+    "local_runtime_starts",
+    "browser_journey_evidence_present",
+    "no_scope_drift_from_build_brief"
+  ];
+  const plannerAcceptanceChecks = isProductBuild
+    ? productBuildChecks
+    : checksForFocusAreas(focusAreas);
 
   return {
     scenario_id: input.scenario.scenario_id,
@@ -228,10 +240,12 @@ export const buildLoopPlan = (input: {
     stop_after_plateau_rounds: input.rubric.stop_after_plateau_rounds,
     max_remediation_rounds: input.rubric.max_remediation_rounds,
     max_rounds: input.maxRounds,
-    north_star:
-      "Keep this repository focused on reusable harness mechanics: planner-owned spec expansion, evaluator-driven remediation, skeptical proof gates, external adapter boundaries, and file-based handoff.",
-    attempt_strategy:
-      "Run the planner once, let the generator take a long build attempt against that spec, then allow the evaluator to reopen remediation attempts only when thresholds or skeptical checks fail.",
+    north_star: isProductBuild
+      ? `Ship the requested first-version product, ${input.idea.title}, with honest runtime evidence for the captured core workflows.`
+      : "Keep this repository focused on reusable harness mechanics: planner-owned spec expansion, evaluator-driven remediation, skeptical proof gates, external adapter boundaries, and file-based handoff.",
+    attempt_strategy: isProductBuild
+      ? "Build the first version against the normalized build brief, run the local product surface, collect workflow evidence, then remediate only against failed proof gates."
+      : "Run the planner once, let the generator take a long build attempt against that spec, then allow the evaluator to reopen remediation attempts only when thresholds or skeptical checks fail.",
     planner_focus_areas: focusAreas,
     planner_acceptance_checks: plannerAcceptanceChecks,
     remediation_policy: [
@@ -239,12 +253,20 @@ export const buildLoopPlan = (input: {
       "Use patch-request.json plus QA feedback to drive remediation attempts instead of re-planning the whole build contract.",
       "Stop early as soon as contract completion or target_reached can be claimed honestly."
     ],
-    planner_notes: unique([
-      "Do not bundle a sample product surface into the harness repository.",
-      "Prefer protocol clarity over fake end-to-end completeness.",
-      "Keep patch requests authoritative enough to drive the next build attempt.",
-      "Treat external adapters as capability providers, not as source code to absorb into this repo."
-    ]).slice(0, 10),
+    planner_notes: isProductBuild
+      ? unique([
+          `Product title: ${input.idea.title}.`,
+          "Do not optimize the harness itself during this product build.",
+          "Keep the build scoped to the captured target root.",
+          "Every claimed workflow must have runtime or browser evidence.",
+          "Use the build brief and run contract as the source of truth."
+        ]).slice(0, 10)
+      : unique([
+          "Do not bundle a sample product surface into the harness repository.",
+          "Prefer protocol clarity over fake end-to-end completeness.",
+          "Keep patch requests authoritative enough to drive the next build attempt.",
+          "Treat external adapters as capability providers, not as source code to absorb into this repo."
+        ]).slice(0, 10),
     idea_title: input.idea.title,
     idea_source_path: input.idea.source_path
   };

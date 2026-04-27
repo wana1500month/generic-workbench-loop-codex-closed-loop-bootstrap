@@ -5,6 +5,7 @@ const suites = {
     "validate:intent-gate",
     "validate:intake-gate",
     "validate:front-door-session",
+    "validate:release-zip",
     "validate:cli-front-door",
     "validate:loop-prepare",
     "validate:prepared-session-consumption-boundary"

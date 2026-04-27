@@ -191,7 +191,7 @@ const RELATIVE_PATH_PATTERN =
 const TARGET_ROOT_VALUE_PATTERN_SOURCE = String.raw`(?:[A-Za-z]:\\[^\r\n\s),.;!?]+|(?:\/|\.\/|\.\.\/)[^\r\n\s),.;!?]+|[A-Za-z0-9._-]+(?:[\\/][^\r\n\s),.;!?]+)+)`;
 const TARGET_ROOT_CONTEXT_PATTERNS = [
   new RegExp(
-    String.raw`(?:target root|root(?: directory)?|working directory|project root|target folder|working folder|\uC791\uC5C5\s*\uD3F4\uB354|\uC791\uC5C5\uD3F4\uB354|\uB300\uC0C1\s*\uD3F4\uB354|\uD504\uB85C\uC81D\uD2B8\s*\uD3F4\uB354)\s*(?:is|\uB294|\uC740|:|=)\s*(${TARGET_ROOT_VALUE_PATTERN_SOURCE})`,
+    String.raw`(?:target root|root(?: directory)?|working directory|project root|target folder|working folder|\uC791\uC5C5\s*\uD3F4\uB354|\uC791\uC5C5\uD3F4\uB354|\uB300\uC0C1\s*\uD3F4\uB354|\uD504\uB85C\uC81D\uD2B8\s*\uD3F4\uB354|\uACBD\uB85C)\s*(?:is|\uB294|\uC740|:|=)\s*(${TARGET_ROOT_VALUE_PATTERN_SOURCE})`,
     "iu"
   ),
   new RegExp(
@@ -199,7 +199,9 @@ const TARGET_ROOT_CONTEXT_PATTERNS = [
     "iu"
   )
 ];
-const URL_PATTERN = /https?:\/\/[^\s)]+/i;
+const READY_URL_CONTEXT_PATTERNS = [
+  /(?:ready url|app url|health url|api url|준비\s*URL|앱\s*URL|헬스\s*URL)\s*(?:is|는|은|:|=)?\s*(https?:\/\/[^\s)]+)/iu
+];
 const RUN_COMMAND_PATTERN =
   /\b(?:npm|pnpm|yarn|bun|node|python|python3|uvicorn|docker(?: compose)?|make)\s+[^\r\n]+/i;
 const MAX_QUESTIONS_PER_TURN = 3;
@@ -367,7 +369,37 @@ export const inferProductTargetFamily = (
   return "browser-app";
 };
 
+const cleanBuildRequestSummary = (request: string): string | undefined => {
+  const normalized = normalizeText(request)
+    .replace(/[.!?。！？]+$/u, "")
+    .trim();
+
+  const ko = normalized
+    .replace(
+      /(?:을|를)?\s*(?:만들어줘|만들어 줘|만들어|구현해줘|구현해 줘|구현|개발해줘|제작해줘|빌드해줘)\s*$/u,
+      ""
+    )
+    .trim();
+
+  if (ko !== normalized && ko.length >= 2) {
+    return ko;
+  }
+
+  const en = normalized.match(
+    /\b(?:build|create|make|prototype|ship)\b\s+(?:me\s+|us\s+|a\s+|an\s+|the\s+)?(.+?)(?:[.!?]|$)/i
+  )?.[1];
+
+  return en?.trim();
+};
+
 const extractSummary = (request: string): string | undefined => {
+  const buildObjectSummary = cleanBuildRequestSummary(request);
+  if (buildObjectSummary) {
+    return buildObjectSummary.length <= 160
+      ? buildObjectSummary
+      : `${buildObjectSummary.slice(0, 157).trimEnd()}...`;
+  }
+
   const normalized = normalizeText(request);
   if (normalized.length < 12) {
     return undefined;
@@ -499,11 +531,7 @@ const extractTargetRoot = (request: string): string | undefined => {
     }
   }
 
-  const match =
-    request.match(WINDOWS_PATH_PATTERN)?.[0] ??
-    request.match(RELATIVE_PATH_PATTERN)?.[1] ??
-    request.match(PATH_PATTERN)?.[0];
-  return match ? sanitizeExtractedPath(match) : undefined;
+  return undefined;
 };
 
 const normalizeTargetScoreValue = (raw: string): number | undefined => {
@@ -616,8 +644,14 @@ const extractRunCommand = (request: string): string | undefined => {
 };
 
 const extractReadyUrl = (request: string): string | undefined => {
-  const match = request.match(URL_PATTERN)?.[0]?.trim();
-  return match && match.length > 0 ? match : undefined;
+  for (const pattern of READY_URL_CONTEXT_PATTERNS) {
+    const match = pattern.exec(request)?.[1]?.trim();
+    if (match) {
+      return match;
+    }
+  }
+
+  return undefined;
 };
 
 const referencesExplicitlyAbsent = (normalizedLower: string): boolean =>
@@ -644,11 +678,12 @@ const buildProductFieldStates = (
 ): IntakeFieldState<ProductFieldId>[] => {
   const normalized = normalizeText(request);
   const normalizedLower = normalized.toLowerCase();
+  const extractedSummary = extractSummary(request);
 
   return [
     {
       id: "product_summary",
-      satisfied: normalized.length >= 24,
+      satisfied: extractedSummary !== undefined,
       question: "정확히 뭘 만드는지 한 문장으로 고정해줘."
     },
     {
@@ -663,8 +698,7 @@ const buildProductFieldStates = (
     },
     {
       id: "references",
-      satisfied:
-        includesAny(normalizedLower, REFERENCE_HINTS) || referencesExplicitlyAbsent(normalizedLower),
+      satisfied: true,
       question: "참고 제품이나 참고 화면이 있나? 없으면 없다고 적어줘."
     },
     {

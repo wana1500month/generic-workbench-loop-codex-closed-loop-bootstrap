@@ -44,6 +44,17 @@ const main = async () => {
       ].join("\n"),
       "utf8"
     );
+    const genericIdeaPath = join(workspaceRoot, "GENERIC_IDEA.md");
+    await writeFile(
+      genericIdeaPath,
+      [
+        "# Generic Codex Workbench",
+        "",
+        "Harness memory should never replace front-door product intake.",
+        ""
+      ].join("\n"),
+      "utf8"
+    );
 
     const [
       { getFrontDoorSessionStatus, runFrontDoorDiscoveryTurn },
@@ -97,7 +108,11 @@ const main = async () => {
     assert.equal(fourthTurn.phase, "ready_for_prepare");
     assert.equal(fourthTurn.intake.project_mode, "new");
     assert.equal(fourthTurn.intake.target_root, targetRootRelative);
-    assert.deepEqual(fourthTurn.defaults_accepted, ["max_rounds", "target_score"]);
+    assert.deepEqual(fourthTurn.defaults_accepted, [
+      "max_rounds",
+      "target_root",
+      "target_score"
+    ]);
     assert.equal(fourthTurn.turn_count, 4);
 
     const restored = await getFrontDoorSessionStatus("thread-123");
@@ -201,7 +216,7 @@ const main = async () => {
       message: [
         "1. Solo founders",
         "2. create tasks, assign priorities, archive completed tasks",
-        "3. none"
+        "3. users can manage tasks end to end"
       ].join("\n")
     });
     assert.deepEqual(terseSecond.intake.target_users, ["Solo founders"]);
@@ -214,11 +229,7 @@ const main = async () => {
     });
     const referenceUrlTurn = await runFrontDoorDiscoveryTurn({
       threadId: "thread-reference-url",
-      message: [
-        "1. Solo founders",
-        "2. create tasks and archive them",
-        "3. https://linear.app and https://figma.com"
-      ].join("\n")
+      message: "References can be https://linear.app and https://figma.com."
     });
     assert.deepEqual(referenceUrlTurn.intake.reference_apps, [
       "https://linear.app",
@@ -282,13 +293,17 @@ const main = async () => {
       threadId: "thread-reference-numbered-period",
       message: "Build me a todo app with auth"
     });
-    const referenceNumberedPeriodTurn = await runFrontDoorDiscoveryTurn({
+    await runFrontDoorDiscoveryTurn({
       threadId: "thread-reference-numbered-period",
       message: [
         "1. Solo founders.",
         "2. create tasks and archive them.",
-        "3. Linear and Figma."
+        "3. users can manage tasks end to end."
       ].join("\n")
+    });
+    const referenceNumberedPeriodTurn = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-reference-numbered-period",
+      message: "References: Linear and Figma."
     });
     assert.deepEqual(referenceNumberedPeriodTurn.intake.target_users, [
       "Solo founders"
@@ -315,7 +330,7 @@ const main = async () => {
 
     await runFrontDoorDiscoveryTurn({
       threadId: "thread-terse-finish",
-      message: ["1. Solo founders", "2. tasks", "3. none"].join("\n")
+      message: ["1. Solo founders", "2. tasks"].join("\n")
     });
 
     const finishTurn = await runFrontDoorDiscoveryTurn({
@@ -339,7 +354,7 @@ const main = async () => {
     });
     await runFrontDoorDiscoveryTurn({
       threadId: "thread-users-can-finish",
-      message: ["1. Solo founders", "2. tasks", "3. none"].join("\n")
+      message: ["1. Solo founders", "2. tasks"].join("\n")
     });
     const usersCanFinish = await runFrontDoorDiscoveryTurn({
       threadId: "thread-users-can-finish",
@@ -357,11 +372,7 @@ const main = async () => {
     });
     const noneWithPeriodSecond = await runFrontDoorDiscoveryTurn({
       threadId: "thread-none-period",
-      message: [
-        "1. Solo founders",
-        "2. create tasks and archive them",
-        "3. none."
-      ].join("\n")
+      message: "References: none."
     });
     assert.deepEqual(noneWithPeriodSecond.intake.reference_apps, []);
 
@@ -371,11 +382,7 @@ const main = async () => {
     });
     const noReferencesSecond = await runFrontDoorDiscoveryTurn({
       threadId: "thread-no-references-period",
-      message: [
-        "1. Solo founders",
-        "2. create tasks and archive them",
-        "3. No references."
-      ].join("\n")
+      message: "References: No references."
     });
     assert.deepEqual(noReferencesSecond.intake.reference_apps, []);
 
@@ -388,7 +395,7 @@ const main = async () => {
       message: [
         "1. Solo founders",
         "2. create tasks and archive them",
-        "3. none"
+        "3. users can manage tasks end to end"
       ].join("\n")
     });
     await runFrontDoorDiscoveryTurn({
@@ -414,7 +421,7 @@ const main = async () => {
       message: [
         "1. Solo founders",
         "2. create tasks and archive them",
-        "3. none"
+        "3. users can manage tasks end to end"
       ].join("\n")
     });
     await runFrontDoorDiscoveryTurn({
@@ -458,6 +465,77 @@ const main = async () => {
     );
     assert.equal(secondThread.intake.target_root, undefined);
 
+    const koFirst = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-budget",
+      message: "가계부 앱 만들어줘"
+    });
+    assert.equal(koFirst.status, "ask_product_questions");
+    assert.equal(koFirst.intake.product_title, "가계부 앱");
+    assert.match(koFirst.intake.product_summary ?? "", /가계부 앱/);
+    assert.equal(koFirst.intake.target_root, undefined);
+    assert.equal(koFirst.intake.target_users, undefined);
+
+    const koSecond = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-budget",
+      message: [
+        "개인 사용자용.",
+        "수입/지출 기록, 카테고리 관리, 월별 통계.",
+        "로컬에서 거래 추가/삭제와 통계 확인이 가능하면 성공."
+      ].join("\n")
+    });
+    assert.deepEqual(koSecond.intake.target_users, ["개인 사용자용"]);
+    assert.ok(
+      koSecond.intake.core_features.includes("수입/지출 기록"),
+      JSON.stringify(koSecond, null, 2)
+    );
+    assert.equal(koSecond.intake.target_root, undefined);
+
+    const koThird = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-budget",
+      message: "새 프로젝트로 진행해."
+    });
+    assert.equal(koThird.status, "ready_for_prepare");
+    assert.equal(koThird.intake.project_mode, "new");
+    assert.match(koThird.intake.target_root ?? "", /^\.\/apps\/가계부-앱/);
+
+    const koPrepared = await prepareSessionRun({
+      ideaPath: genericIdeaPath,
+      frontDoorSessionPath: koThird.front_door_session_path,
+      transportMode: "current-thread",
+      controllerMode: "attached"
+    });
+    const [koBuildBrief, koRunContract] = await Promise.all([
+      readJsonFile(koPrepared.buildBriefPath),
+      readJsonFile(koPrepared.runContractPath)
+    ]);
+    assert.equal(koBuildBrief.product.title, "가계부 앱");
+    assert.match(koBuildBrief.product.summary, /가계부/);
+    assert.deepEqual(koBuildBrief.product.target_users, ["개인 사용자용"]);
+    assert.ok(koBuildBrief.product.core_workflows.includes("수입/지출 기록"));
+    assert.ok(
+      koBuildBrief.product.success_definition.some((entry) => /거래 추가/.test(entry)),
+      JSON.stringify(koBuildBrief, null, 2)
+    );
+    assert.match(koRunContract.objective, /가계부 앱/);
+    assert.doesNotMatch(koRunContract.objective, /Generic Codex Workbench/);
+    assert.doesNotMatch(JSON.stringify(koBuildBrief), /Generic Codex Workbench/);
+
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-correction",
+      message: "Build a budgeting web app for individuals"
+    });
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-correction",
+      message:
+        "Core workflows: add income/expense transactions, categorize them, and view monthly summary. Finish line: users can manage a monthly budget."
+    });
+    const corrected = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-correction",
+      message: "This is a new project. Target root is ./budget-app."
+    });
+    assert.equal(corrected.intake.target_root, "./budget-app");
+    assert.notEqual(corrected.intake.target_root, "income/expense");
+
     const cliResult = await runCommand(
       process.execPath,
       [
@@ -496,6 +574,7 @@ const main = async () => {
     }
     await cleanupTempRoot(tempRoot);
     await cleanupTempRoot(targetRoot);
+    await cleanupTempRoot(join(repoRoot, "apps", "가계부-앱"));
   }
 };
 

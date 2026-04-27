@@ -24,7 +24,12 @@ type ScalarFieldKey = Exclude<
 
 const listJoinPattern = /\s*(?:,|;|\band\b|\bor\b)\s*|\s+\/\s+/i;
 const urlPattern = /https?:\/\/[^\s,;]+/gi;
-const referenceLabelPattern = String.raw`reference products?|reference apps?|reference visuals?|visual direction|references?|visuals?`;
+const targetUsersLabelPattern = String.raw`target users?|primary users?|주\s*사용자|대상\s*사용자|사용자|유저|주\s*유저`;
+const coreFeaturesLabelPattern = String.raw`core workflows?|workflows?|core features?|features?|핵심\s*작업|핵심\s*기능|핵심\s*플로우|첫\s*버전\s*기능`;
+const finishLineLabelPattern = String.raw`good enough means|finish line(?: is)?|success means|mvp means|성공\s*기준|완성\s*기준|첫\s*버전\s*기준|MVP\s*기준`;
+const referenceLabelPattern = String.raw`reference products?|reference apps?|reference visuals?|visual direction|references?|visuals?|참고\s*제품|참고\s*앱|참고\s*화면|참고|레퍼런스`;
+const productTitleLabelPattern = String.raw`product title|app name|product name|제품명|앱\s*이름|서비스\s*이름`;
+const nextIntakeLabelPattern = String.raw`good enough means|finish line|success means|mvp means|target users?|primary users?|core workflows?|workflows?|core features?|features?|references?|target root|target score|max(?:imum)? rounds?|run command|ready url|주\s*사용자|대상\s*사용자|핵심\s*작업|핵심\s*기능|핵심\s*플로우|참고\s*앱|참고|레퍼런스|성공\s*기준|완성\s*기준|작업\s*폴더|프로젝트\s*폴더|대상\s*폴더|경로`;
 const explicitTargetScorePattern = /\btarget\s*score\b|\bscore\b/i;
 const explicitMaxRoundsPattern = /\bmax(?:imum)?\s*rounds?\b|\brounds?\b/i;
 
@@ -89,13 +94,13 @@ const splitAnswerLines = (message: string): string[] =>
 const normalizeNoneAnswer = (value: string): string =>
   value
     .trim()
-    .replace(/[.!?。]+$/u, "")
+    .replace(/[.!?。！？]+$/u, "")
     .trim();
 
 const trimAtNextIntakeLabel = (value: string): string =>
   value
     .replace(
-      /\.\s+(?=(?:good enough means|finish line|success means|mvp means|target users?|primary users?|core workflows?|workflows?|core features?|features?|target root|target score|max(?:imum)? rounds?|run command|ready url)\b).+$/i,
+      new RegExp(String.raw`\s+(?=(?:${nextIntakeLabelPattern})(?:\s*(?:can be|are|is|는|은|:|=)|\b)).+$`, "iu"),
       ""
     )
     .trim();
@@ -105,8 +110,8 @@ const extractLabeledRestOfLine = (
   labelPattern: string
 ): string | undefined => {
   const match = new RegExp(
-    String.raw`\b(?:${labelPattern})\b\s*(?:can be|are|is|:)?\s*(.+)$`,
-    "im"
+    String.raw`(?:^|[\r\n]|[.;!?。！？]\s*)(?:${labelPattern})\s*(?:can be|are|is|는|은|:|=)?\s*(.+)$`,
+    "imu"
   ).exec(message);
   return match?.[1]
     ? stripFinalSentencePunctuation(trimAtNextIntakeLabel(match[1]))
@@ -114,7 +119,7 @@ const extractLabeledRestOfLine = (
 };
 
 const isNoneAnswer = (value: string): boolean =>
-  /^(?:none|no|no references?|없음|없어요|없습니다|없다)$/i.test(
+  /^(?:none|no|no references?|없음|없어|없어요|없습니다|없다)$/i.test(
     normalizeNoneAnswer(value)
   );
 
@@ -156,16 +161,72 @@ const firstMatch = (value: string, patterns: readonly RegExp[]): string | undefi
 
 const firstSentence = (value: string): string | undefined =>
   value
-    .split(/(?<=[.!?])\s+/)
+    .split(/(?<=[.!?。！？])\s+/u)
     .map((sentence) => sentence.trim())
     .find(Boolean);
 
+const koBuildVerbPattern =
+  /(?:만들|만들어|만들어줘|구현|개발|제작|설계|기획|빌드)/u;
+const koProductSurfacePattern =
+  /(?:앱|웹앱|서비스|사이트|대시보드|툴|도구|시스템|포털|에디터|편집기|API|api)/u;
+const enBuildVerbPattern = /\b(?:build|create|make|prototype|ship)\b/i;
+const enProductSurfacePattern =
+  /\b(?:app|application|web app|website|site|dashboard|tool|service|system|portal|editor|api|agent)\b/i;
+
+const looksLikeProductBuildRequestSentence = (sentence: string): boolean => {
+  const normalized = sentence.trim();
+  return (
+    (koBuildVerbPattern.test(normalized) && koProductSurfacePattern.test(normalized)) ||
+    (enBuildVerbPattern.test(normalized) && enProductSurfacePattern.test(normalized))
+  );
+};
+
+const titleCase = (value: string): string =>
+  value
+    .split(/\s+/)
+    .map((word) => (word.length > 0 ? `${word[0]!.toUpperCase()}${word.slice(1)}` : word))
+    .join(" ");
+
+const deriveProductTitle = (request: string): string | undefined => {
+  const normalized = normalizeInlineValue(request)
+    .replace(/[.!?。！？]+$/u, "")
+    .trim();
+
+  if (!normalized) {
+    return undefined;
+  }
+
+  const ko = normalized
+    .replace(
+      /(?:을|를)?\s*(?:만들어줘|만들어 줘|만들어|구현해줘|구현해 줘|구현|개발해줘|제작해줘|빌드해줘)\s*$/u,
+      ""
+    )
+    .trim();
+
+  if (ko !== normalized && ko.length >= 2 && ko.length <= 80) {
+    return ko;
+  }
+
+  const enBuildObject = normalized.match(
+    /\b(?:build|create|make|prototype|ship)\b\s+(?:me\s+|us\s+|a\s+|an\s+|the\s+)?(.+?)(?:\s+for\s+.+)?$/i
+  )?.[1];
+
+  if (enBuildObject) {
+    return titleCase(enBuildObject.replace(/[.!?]+$/u, "").trim());
+  }
+
+  return normalized.length <= 80 ? normalized : undefined;
+};
+
 const extractExplicitTargetUsers = (message: string): string[] | undefined => {
-  const explicitMatch = firstMatch(message, [
-    /\b(?:target users?|primary users?)\s*(?:are|is|:)\s*(.+?)(?:[.!?]|$)/i,
-    /\b(?:target users?|primary users?)\s+(?!can\b)(.+?)(?:[.!?]|$)/i,
-    /\busers?\s*(?:are|is|:)\s*(.+?)(?:[.!?]|$)/i
-  ]);
+  const labeledMatch = extractLabeledRestOfLine(message, targetUsersLabelPattern);
+  const explicitMatch =
+    labeledMatch ??
+    firstMatch(message, [
+      /\b(?:target users?|primary users?)\s*(?:are|is|:)\s*(.+?)(?:[.!?]|$)/i,
+      /\b(?:target users?|primary users?)\s+(?!can\b)(.+?)(?:[.!?]|$)/i,
+      /\busers?\s*(?:are|is|:)\s*(.+?)(?:[.!?]|$)/i
+    ]);
   return explicitMatch ? splitInlineList(explicitMatch) : undefined;
 };
 
@@ -176,27 +237,34 @@ const extractImplicitTargetUsers = (message: string): string[] | undefined => {
   }
 
   const sentences = message
-    .split(/(?<=[.!?])\s+/)
+    .split(/(?<=[.!?。！？])\s+/u)
     .map((sentence) => sentence.trim())
     .filter(Boolean);
+  const first = sentences[0];
+  if (first && looksLikeProductBuildRequestSentence(first)) {
+    return undefined;
+  }
   if (
     sentences.length >= 1 &&
-    sentences[0] !== undefined &&
-    sentences[0].split(/\s+/).length <= 6 &&
+    first !== undefined &&
+    first.split(/\s+/).length <= 6 &&
     !/\b(build|create|make|prototype|ship|references?|good enough|finish line|this is|target root|target score|max rounds?|run command|ready url|new project|existing project)\b/i.test(
-      sentences[0]
+      first
     )
   ) {
-    return [sentences[0].replace(/[.!?]+$/u, "").trim()];
+    return [first.replace(/[.!?。！？]+$/u, "").trim()];
   }
 
   return undefined;
 };
 
 const extractExplicitCoreFeatures = (message: string): string[] | undefined => {
-  const explicitMatch = firstMatch(message, [
-    /\b(?:core workflows?|workflows?|core features?|features?)\s*(?:are|is|:)?\s*(.+?)(?:[.!?]|$)/i
-  ]);
+  const labeledMatch = extractLabeledRestOfLine(message, coreFeaturesLabelPattern);
+  const explicitMatch =
+    labeledMatch ??
+    firstMatch(message, [
+      /\b(?:core workflows?|workflows?|core features?|features?)\s*(?:are|is|:)?\s*(.+?)(?:[.!?]|$)/i
+    ]);
   return explicitMatch ? splitInlineList(explicitMatch) : undefined;
 };
 
@@ -230,6 +298,7 @@ const extractImplicitReferenceApps = (message: string): string[] | undefined => 
 };
 
 const extractFinishLine = (message: string): string | undefined =>
+  extractLabeledRestOfLine(message, finishLineLabelPattern) ??
   firstMatch(message, [
     /\b(?:good enough means|finish line(?: is)?|success means|mvp means)\s+(.+?)(?:[.!?]|$)/i
   ]);
@@ -333,14 +402,18 @@ const extractCandidatesFromQuestionOrder = (
         result.finish_line = normalizeInlineValue(answer);
         break;
       case "project_mode":
-        if (/\bnew\b|\bfrom scratch\b|\bnew project\b/i.test(answer)) {
+        if (/\bnew\b|\bfrom scratch\b|\bnew project\b|새\s*프로젝트|처음부터|새로/u.test(answer)) {
           result.project_mode = "new";
-        } else if (/\bexisting\b|\bcurrent\b|\bexisting project\b/i.test(answer)) {
+        } else if (/\bexisting\b|\bcurrent\b|\bexisting project\b|기존\s*프로젝트|현재/u.test(answer)) {
           result.project_mode = "existing";
         }
         break;
       case "target_root":
-        result.target_root = parsePathAnswer(answer) ?? normalizeInlineValue(answer);
+        result.target_root =
+          parsePathAnswer(answer) ??
+          (isExecutionPair && questionIds.length > 1
+            ? undefined
+            : normalizeInlineValue(answer));
         break;
       case "target_score": {
         const targetScore = parseTargetScoreAnswer(answer);
@@ -389,6 +462,10 @@ const extractCandidates = (input: {
   const shouldImplicitlyParse = (field: SessionIntakeFieldId): boolean =>
     !hasQuestionContext || previousQuestionSet.has(field);
   const explicit = explicitFieldMentions(message);
+  const productTitle =
+    extractLabeledRestOfLine(message, productTitleLabelPattern) ??
+    deriveProductTitle(sourceRequest) ??
+    deriveProductTitle(message);
   const productSummary =
     intakeResult.extracted_summary ??
     firstSentence(sourceRequest) ??
@@ -439,6 +516,7 @@ const extractCandidates = (input: {
   const apiBaseUrl = extractUrl(message, "api base url");
 
   const regexCandidates: Partial<SessionIntakeSnapshot> = {
+    ...(productTitle ? { product_title: productTitle } : {}),
     ...(productSummary ? { product_summary: productSummary } : {}),
     ...(targetUsers ? { target_users: targetUsers } : {}),
     ...(coreFeatures ? { core_features: coreFeatures } : {}),
@@ -488,12 +566,24 @@ const areArraysEquivalent = (
   return leftSorted.every((value, index) => value === rightSorted[index]);
 };
 
+const removeConflictsForField = (
+  conflicts: FrontDoorSessionConflict[],
+  field: keyof SessionIntakeSnapshot
+): void => {
+  for (let index = conflicts.length - 1; index >= 0; index -= 1) {
+    if (conflicts[index]?.field === field) {
+      conflicts.splice(index, 1);
+    }
+  }
+};
+
 const applyScalarField = (
   target: SessionIntakeSnapshot,
   field: ScalarFieldKey,
   candidate: SessionIntakeSnapshot[ScalarFieldKey],
   sourceTurn: number,
-  conflicts: FrontDoorSessionConflict[]
+  conflicts: FrontDoorSessionConflict[],
+  options: { replace?: boolean } = {}
 ): void => {
   const targetRecord = target as Partial<
     Record<ScalarFieldKey, SessionIntakeSnapshot[ScalarFieldKey]>
@@ -502,8 +592,9 @@ const applyScalarField = (
     return;
   }
   const existing = targetRecord[field];
-  if (existing === undefined) {
+  if (existing === undefined || options.replace) {
     targetRecord[field] = candidate;
+    removeConflictsForField(conflicts, field);
     return;
   }
   if (existing === candidate) {
@@ -525,12 +616,18 @@ const applyArrayField = (
   >,
   candidate: string[] | undefined,
   sourceTurn: number,
-  conflicts: FrontDoorSessionConflict[]
+  conflicts: FrontDoorSessionConflict[],
+  options: { replace?: boolean } = {}
 ): void => {
   if (candidate === undefined) {
     return;
   }
   const normalizedCandidate = uniqueStrings(candidate);
+  if (options.replace) {
+    target[field] = normalizedCandidate;
+    removeConflictsForField(conflicts, field);
+    return;
+  }
   const existing = target[field];
   if (existing === undefined) {
     target[field] = normalizedCandidate;
@@ -551,10 +648,99 @@ const applyArrayField = (
   }
 };
 
+const messageLooksLikeCorrection = (message: string): boolean =>
+  /\b(?:actually|change|replace|set|correct)\b|(?:정정|수정|변경|바꿔|교체|실제로는)/iu.test(
+    message
+  );
+
+const hasExplicitTargetRoot = (message: string): boolean =>
+  /(?:target root|root directory|working directory|project root|target folder|working folder|작업\s*폴더|프로젝트\s*폴더|대상\s*폴더|경로)\s*(?:is|는|은|:|=)?/iu.test(
+    message
+  );
+
+const hasExplicitProjectMode = (message: string): boolean =>
+  /\b(?:new project|existing project|from scratch)\b|(?:새\s*프로젝트|기존\s*프로젝트|처음부터|새로)/iu.test(
+    message
+  );
+
+const replaceFieldsForTurn = (
+  message: string,
+  previousQuestionIds: readonly SessionIntakeFieldId[]
+): Set<keyof SessionIntakeSnapshot> => {
+  const replace = new Set<keyof SessionIntakeSnapshot>();
+
+  for (const field of previousQuestionIds) {
+    switch (field) {
+      case "target_users":
+        replace.add("target_users");
+        break;
+      case "core_workflows":
+        replace.add("core_features");
+        break;
+      case "references":
+        replace.add("reference_apps");
+        break;
+      case "finish_line":
+        replace.add("finish_line");
+        break;
+      case "project_mode":
+        replace.add("project_mode");
+        break;
+      case "target_root":
+        replace.add("target_root");
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (messageLooksLikeCorrection(message)) {
+    if (hasExplicitTargetRoot(message)) {
+      replace.add("target_root");
+    }
+    if (hasExplicitProjectMode(message)) {
+      replace.add("project_mode");
+    }
+  }
+
+  if (hasExplicitTargetRoot(message)) {
+    replace.add("target_root");
+  }
+  if (hasExplicitProjectMode(message)) {
+    replace.add("project_mode");
+  }
+
+  return replace;
+};
+
+const safePathSegment = (value: string): string =>
+  value
+    .normalize("NFKC")
+    .trim()
+    .replace(/[\\/:"*?<>|]+/g, " ")
+    .replace(/[^\p{Letter}\p{Number}._-]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64) || "app";
+
+const defaultTargetRootForNewProject = (
+  intake: SessionIntakeSnapshot
+): string | undefined => {
+  if (intake.project_mode !== "new") {
+    return undefined;
+  }
+  if (intake.target_root?.trim()) {
+    return intake.target_root;
+  }
+
+  const title = intake.product_title ?? intake.product_summary;
+  return title?.trim() ? `./apps/${safePathSegment(title)}` : undefined;
+};
+
 const defaultAcceptanceSet = (
   existing: readonly string[],
   intakeResult: IntakeGateResult,
-  message: string
+  message: string,
+  intake: SessionIntakeSnapshot
 ): string[] => {
   const accepted = new Set(existing);
   const explicit = explicitFieldMentions(message);
@@ -577,6 +763,10 @@ const defaultAcceptanceSet = (
     !intakeResult.missing_execution_fields.includes("max_rounds")
   ) {
     accepted.add("max_rounds");
+  }
+
+  if (intake.project_mode === "new" && intake.target_root?.trim()) {
+    accepted.add("target_root");
   }
 
   return [...accepted].sort();
@@ -669,11 +859,18 @@ export const mergeFrontDoorSessionTurn = (input: {
     intakeResult: input.intakeResult,
     previousQuestionIds: input.existingSession?.last_question_ids ?? []
   });
+  const previousQuestionIds = input.existingSession?.last_question_ids ?? [];
+  const replaceFields = replaceFieldsForTurn(input.message, previousQuestionIds);
 
+  applyScalarField(nextIntake, "product_title", candidates.product_title, input.turnCount, conflicts);
   applyScalarField(nextIntake, "product_summary", candidates.product_summary, input.turnCount, conflicts);
   applyScalarField(nextIntake, "target_family", candidates.target_family, input.turnCount, conflicts);
-  applyScalarField(nextIntake, "project_mode", candidates.project_mode, input.turnCount, conflicts);
-  applyScalarField(nextIntake, "target_root", candidates.target_root, input.turnCount, conflicts);
+  applyScalarField(nextIntake, "project_mode", candidates.project_mode, input.turnCount, conflicts, {
+    replace: replaceFields.has("project_mode")
+  });
+  applyScalarField(nextIntake, "target_root", candidates.target_root, input.turnCount, conflicts, {
+    replace: replaceFields.has("target_root")
+  });
   applyScalarField(nextIntake, "target_score", candidates.target_score, input.turnCount, conflicts);
   applyScalarField(nextIntake, "max_rounds", candidates.max_rounds, input.turnCount, conflicts);
   applyScalarField(nextIntake, "run_command", candidates.run_command, input.turnCount, conflicts);
@@ -682,10 +879,28 @@ export const mergeFrontDoorSessionTurn = (input: {
   applyScalarField(nextIntake, "app_url", candidates.app_url, input.turnCount, conflicts);
   applyScalarField(nextIntake, "health_url", candidates.health_url, input.turnCount, conflicts);
   applyScalarField(nextIntake, "api_base_url", candidates.api_base_url, input.turnCount, conflicts);
-  applyScalarField(nextIntake, "finish_line", candidates.finish_line, input.turnCount, conflicts);
-  applyArrayField(nextIntake, "target_users", candidates.target_users, input.turnCount, conflicts);
-  applyArrayField(nextIntake, "core_features", candidates.core_features, input.turnCount, conflicts);
-  applyArrayField(nextIntake, "reference_apps", candidates.reference_apps, input.turnCount, conflicts);
+  applyScalarField(nextIntake, "finish_line", candidates.finish_line, input.turnCount, conflicts, {
+    replace: replaceFields.has("finish_line")
+  });
+  applyArrayField(nextIntake, "target_users", candidates.target_users, input.turnCount, conflicts, {
+    replace: replaceFields.has("target_users")
+  });
+  applyArrayField(nextIntake, "core_features", candidates.core_features, input.turnCount, conflicts, {
+    replace: replaceFields.has("core_features")
+  });
+  applyArrayField(nextIntake, "reference_apps", candidates.reference_apps, input.turnCount, conflicts, {
+    replace: replaceFields.has("reference_apps")
+  });
+
+  if (!nextIntake.reference_apps) {
+    nextIntake.reference_apps = [];
+  }
+
+  const defaultTargetRoot = defaultTargetRootForNewProject(nextIntake);
+  if (defaultTargetRoot && !nextIntake.target_root) {
+    nextIntake.target_root = defaultTargetRoot;
+    removeConflictsForField(conflicts, "target_root");
+  }
 
   return {
     intake: nextIntake,
@@ -693,7 +908,8 @@ export const mergeFrontDoorSessionTurn = (input: {
     defaultsAccepted: defaultAcceptanceSet(
       input.existingSession?.defaults_accepted ?? [],
       input.intakeResult,
-      input.message
+      input.message,
+      nextIntake
     )
   };
 };

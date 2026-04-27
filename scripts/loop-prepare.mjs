@@ -18,6 +18,10 @@ const watchPaths = [
 ];
 const prepareCliImport =
   "process.argv=[process.argv[0],'./packages/loop-orchestrator/dist/prepare-session-cli.js',...process.argv.slice(1)]; await import('./packages/loop-orchestrator/dist/prepare-session-cli.js')";
+const exitAfterFlush = (code) => {
+  process.exitCode = code;
+  setImmediate(() => process.exit(code));
+};
 const buildExitCode = needsBuild(distEntryPath, watchPaths)
   ? await runCommand(repoRoot, "npm", ["run", "build", "--silent"], {
       shell: process.platform === "win32"
@@ -25,7 +29,7 @@ const buildExitCode = needsBuild(distEntryPath, watchPaths)
   : 0;
 
 if (buildExitCode !== 0) {
-  process.exitCode = buildExitCode;
+  exitAfterFlush(buildExitCode);
 } else {
   const cliExitCode = await runCommand(repoRoot, process.execPath, [
     "--input-type=module",
@@ -34,5 +38,5 @@ if (buildExitCode !== 0) {
     "--",
     ...process.argv.slice(2)
   ]);
-  process.exitCode = cliExitCode;
+  exitAfterFlush(cliExitCode);
 }

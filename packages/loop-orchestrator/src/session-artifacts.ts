@@ -12,6 +12,7 @@ import {
   uiVisibilityForAttention
 } from "./foreground-surface.js";
 import type { SessionIntakeSnapshot } from "./intake-schema.js";
+import { validatePreparedProductSessionIntegrity } from "./prepared-session-integrity.js";
 import type { DurableMemoryContext } from "./durable-memory.js";
 import type {
   AdapterMigrationDecision,
@@ -190,6 +191,34 @@ const slugify = (value: string): string =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "") || "session";
+
+const titleCase = (value: string): string =>
+  value
+    .split(/\s+/)
+    .map((word) => (word.length > 0 ? `${word[0]!.toUpperCase()}${word.slice(1)}` : word))
+    .join(" ");
+
+const deriveTitleFromSummary = (summary: string | undefined): string | undefined => {
+  const cleaned = summary
+    ?.replace(/[.!?。！？]+$/u, "")
+    .replace(
+      /^(?:build|create|make|prototype|ship)\s+(?:me\s+|us\s+|a\s+|an\s+|the\s+)?/i,
+      ""
+    )
+    .replace(
+      /(?:을|를)?\s*(?:만들어줘|만들어 줘|만들어|구현해줘|구현해 줘|구현|개발해줘|제작해줘|빌드해줘)\s*$/u,
+      ""
+    )
+    .trim();
+
+  if (!cleaned) {
+    return undefined;
+  }
+
+  return /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/u.test(cleaned)
+    ? cleaned.slice(0, 80)
+    : titleCase(cleaned.slice(0, 80));
+};
 
 const inferGoalLevelFromTargetScore = (
   targetScore: number | undefined
@@ -1052,6 +1081,23 @@ export const writeSessionPreparationArtifacts = async (
     ...(intake?.reference_apps ?? []),
     ...(intake?.reference_signals ?? [])
   ]);
+  const productTitle =
+    intake?.product_title ??
+    deriveTitleFromSummary(intake?.product_summary) ??
+    input.durableMemory.title;
+  const productSummary = intake?.product_summary ?? input.durableMemory.summary;
+  const targetUsers =
+    intake?.target_users && intake.target_users.length > 0
+      ? unique(intake.target_users)
+      : input.durableMemory.targetUsers;
+  const coreWorkflows =
+    intake?.core_features && intake.core_features.length > 0
+      ? unique(intake.core_features)
+      : input.durableMemory.coreFeatures;
+  const primaryFinishLine =
+    intake?.finish_line ??
+    input.durableMemory.finishLine ??
+    input.durableMemory.qualityBar[0];
   const stackPreferences = unique([
     intake?.framework_hint ?? "",
     intake?.package_manager ?? ""
@@ -1064,7 +1110,7 @@ export const writeSessionPreparationArtifacts = async (
     references
   });
   const unresolvedQuestions = buildUnresolvedQuestions({
-    targetUsers: input.durableMemory.targetUsers,
+    targetUsers,
     references,
     authMode,
     dataMode,
@@ -1074,28 +1120,29 @@ export const writeSessionPreparationArtifacts = async (
   const reviewFeedback = unique(input.reviewFeedback ?? []);
   const externalBlockers = unique(input.externalBlockers ?? []);
   const successDefinition = unique([
-    input.durableMemory.finishLine ?? "",
-    ...(intake?.quality_bar ?? input.durableMemory.qualityBar)
+    primaryFinishLine ?? "",
+    ...(intake?.quality_bar ?? []),
+    ...(!intake?.finish_line ? input.durableMemory.qualityBar : [])
   ]).slice(0, 4);
   const targetRoot = intake?.target_root ?? input.rootDirectory;
   const objective =
     input.currentObjective ??
-    (input.durableMemory.finishLine
-      ? `Ship a reviewable build that reaches: ${input.durableMemory.finishLine}`
-      : `Ship a reviewable build for ${input.durableMemory.title} without leaving the current Codex thread.`);
+    (primaryFinishLine
+      ? `Ship a reviewable build for ${productTitle} that reaches: ${primaryFinishLine}`
+      : `Ship a reviewable build for ${productTitle} without leaving the current Codex thread.`);
 
   const buildBrief: BuildBriefArtifact = {
     brief_id:
       existingBuildBrief?.brief_id ??
-      `brief-${slugify(input.durableMemory.title)}-${slugify(input.runId)}`,
-    source_request: intake?.product_summary ?? input.idea.summary,
+      `brief-${slugify(productTitle)}-${slugify(input.runId)}`,
+    source_request: productSummary,
     created_at: existingBuildBrief?.created_at ?? now,
     updated_at: now,
     product: {
-      title: intake?.product_title ?? input.durableMemory.title,
-      summary: intake?.product_summary ?? input.durableMemory.summary,
-      target_users: input.durableMemory.targetUsers,
-      core_workflows: input.durableMemory.coreFeatures,
+      title: productTitle,
+      summary: productSummary,
+      target_users: targetUsers,
+      core_workflows: coreWorkflows,
       success_definition: successDefinition,
       references
     },
@@ -1252,7 +1299,8 @@ export const writeSessionPreparationArtifacts = async (
     execution_plan_path: "docs/EXECUTION_PLAN.md",
     stop_rule: {
       done_when: unique([
-        input.durableMemory.finishLine ?? "",
+        primaryFinishLine ?? "",
+        ...successDefinition,
         "the latest diff is ready for user review"
       ]),
       stop_on: [
@@ -1262,6 +1310,20 @@ export const writeSessionPreparationArtifacts = async (
       ]
     }
   };
+
+  if (input.discoverySource || intake?.product_title || intake?.target_family) {
+    const integrityErrors = validatePreparedProductSessionIntegrity({
+      buildBrief,
+      runContract
+    });
+    if (integrityErrors.length > 0) {
+      throw new Error(
+        `Prepared product session failed integrity checks:\n${integrityErrors
+          .map((error) => `- ${error}`)
+          .join("\n")}`
+      );
+    }
+  }
 
   await Promise.all([
     writeJson(input.buildBriefPath, buildBrief),

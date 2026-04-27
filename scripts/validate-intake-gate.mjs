@@ -31,7 +31,7 @@ assert.equal(askProductResult.status, "ask_product_questions");
 assert.equal(askProductResult.phase, "product");
 assert.equal(askProductResult.is_product_build_request, true);
 assert.equal(askProductResult.internal_working_hypothesis, "browser-editor");
-assert.ok(askProductResult.questions.length >= 2, JSON.stringify(askProductResult, null, 2));
+assert.ok(askProductResult.questions.length >= 1, JSON.stringify(askProductResult, null, 2));
 assert.ok(askProductResult.questions.length <= 3, JSON.stringify(askProductResult, null, 2));
 assert.ok(
   askProductResult.questions.every((question) => !/[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/u.test(question)),
@@ -40,6 +40,31 @@ assert.ok(
 assert.equal(askProductResult.missing_execution_fields.length, 0);
 assert.equal(askProductResult.extracted_target_score, 0.9);
 assert.equal(askProductResult.extracted_max_rounds, 3);
+
+const koreanBudgetInitial = evaluateIntakeRequest("가계부 앱 만들어줘");
+assert.equal(koreanBudgetInitial.status, "ask_product_questions");
+assert.equal(koreanBudgetInitial.locale, "ko");
+assert.equal(koreanBudgetInitial.extracted_target_root, undefined);
+assert.match(koreanBudgetInitial.extracted_summary ?? "", /가계부 앱/);
+assert.ok(
+  !koreanBudgetInitial.questions.some((question) => /참고/.test(question)),
+  JSON.stringify(koreanBudgetInitial, null, 2)
+);
+
+const koreanSlashWorkflow = evaluateIntakeRequest(
+  "가계부 앱 만들어줘. 주 사용자는 개인 사용자. 핵심 작업: 수입/지출 기록, 카테고리 관리, 월별 통계. 성공 기준: 거래 추가/삭제와 통계 확인 가능."
+);
+assert.equal(koreanSlashWorkflow.extracted_target_root, undefined);
+
+const englishSlashWorkflow = evaluateIntakeRequest(
+  "Build a personal budgeting web app for individuals. Core workflows: add income/expense transactions, categorize them, and view monthly summary. Finish line: users can add/delete transactions and see monthly summary."
+);
+assert.equal(englishSlashWorkflow.extracted_target_root, undefined);
+
+const explicitKoreanTargetRoot = evaluateIntakeRequest(
+  "가계부 앱 만들어줘. 주 사용자는 개인 사용자. 핵심 작업: 수입/지출 기록, 월별 통계. 성공 기준: 통계 확인 가능. 새 프로젝트고 작업 폴더는 ./apps/budget-app."
+);
+assert.equal(explicitKoreanTargetRoot.extracted_target_root, "./apps/budget-app");
 
 for (const request of [
   "Build me a todo app with auth",
@@ -174,7 +199,7 @@ const newProjectOnboardingTitleResult = evaluateIntakeRequest(
 assert.equal(newProjectOnboardingTitleResult.status, "ask_execution_questions");
 assert.equal(
   newProjectOnboardingTitleResult.extracted_summary,
-  "Build a new project onboarding dashboard for PMs."
+  "new project onboarding dashboard for PMs"
 );
 assert.equal(newProjectOnboardingTitleResult.extracted_project_mode, undefined);
 assert.ok(
@@ -189,7 +214,7 @@ const projectRootExplorerTitleResult = evaluateIntakeRequest(
 assert.equal(projectRootExplorerTitleResult.status, "ask_execution_questions");
 assert.equal(
   projectRootExplorerTitleResult.extracted_summary,
-  "Build a project root explorer for monorepos."
+  "project root explorer for monorepos"
 );
 assert.equal(projectRootExplorerTitleResult.extracted_target_root, undefined);
 assert.ok(
@@ -203,7 +228,7 @@ const workingFolderPickerTitleResult = evaluateIntakeRequest(
 assert.equal(workingFolderPickerTitleResult.status, "ask_execution_questions");
 assert.equal(
   workingFolderPickerTitleResult.extracted_summary,
-  "Build a working folder picker for desktop apps."
+  "working folder picker for desktop apps"
 );
 assert.equal(workingFolderPickerTitleResult.extracted_target_root, undefined);
 
@@ -258,7 +283,7 @@ assert.equal(
 );
 const readyGoalLine = readyResult.preparation_summary.find((line) => /^Goal:/i.test(line));
 assert.ok(readyGoalLine, JSON.stringify(readyResult, null, 2));
-assert.match(readyGoalLine, /Goal:\s*Build a storyboard editor for indie animators\./i);
+assert.match(readyGoalLine, /Goal:\s*storyboard editor for indie animators/i);
 assert.ok(!/This is a new project|max rounds|target root/i.test(readyGoalLine), readyGoalLine);
 
 const koreanReadyResult = evaluateIntakeRequest(

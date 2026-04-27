@@ -11,7 +11,8 @@ import {
 } from "./bootstrap.js";
 import {
   ensureDurableMemoryArtifacts,
-  loadDurableMemoryContext
+  loadDurableMemoryContext,
+  type DurableMemoryContext
 } from "./durable-memory.js";
 import {
   appendJsonLine,
@@ -43,6 +44,7 @@ import {
 import { resolveTargetFamilySelection } from "./profile-selection.js";
 import type {
   ControllerMode,
+  IdeaBrief,
   LoopRubric,
   OperatorWorkspaceSurface,
   SessionRunContractArtifact,
@@ -102,6 +104,9 @@ const threadBindingStates = new Set<ThreadBindingState>([
 ]);
 
 const workspaceModes = new Set<OperatorWorkspaceSurface>(["local", "worktree"]);
+
+const unique = (values: readonly string[]): string[] =>
+  [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 
 const readThreadBindingStateFromEnv = (): ThreadBindingState | undefined => {
   const value = process.env.HARNESS_THREAD_BINDING_STATE?.trim();
@@ -169,6 +174,55 @@ const materializeFrontDoorSessionIntake = async (input: {
     writeJson(join(input.rootDirectory, "intake.json"), intake),
     writeJson(join(resolveTargetRootForIntake(intake.target_root!), "intake.json"), intake)
   ]);
+};
+
+const buildSessionIdeaFromIntake = (input: {
+  baseIdea: IdeaBrief;
+  durableMemory: DurableMemoryContext;
+  intake?: SessionIntakeSnapshot;
+}): IdeaBrief => {
+  const title =
+    input.intake?.product_title ??
+    input.intake?.product_summary ??
+    input.durableMemory.title;
+  const summary = input.intake?.product_summary ?? input.durableMemory.summary;
+  const userGoals =
+    input.intake?.core_features && input.intake.core_features.length > 0
+      ? input.intake.core_features
+      : input.durableMemory.coreFeatures.length > 0
+        ? input.durableMemory.coreFeatures
+        : input.baseIdea.user_goals;
+  const qualityBar = unique([
+    input.intake?.finish_line ?? input.durableMemory.finishLine ?? "",
+    ...(input.intake?.quality_bar ?? input.durableMemory.qualityBar)
+  ]);
+  const constraints = unique([
+    ...(input.intake?.constraints ?? input.durableMemory.constraints),
+    ...(input.intake?.target_root ? [`Target root: ${input.intake.target_root}`] : []),
+    ...(input.intake?.project_mode ? [`Project mode: ${input.intake.project_mode}`] : [])
+  ]);
+
+  return {
+    ...input.baseIdea,
+    title,
+    summary,
+    user_goals: userGoals,
+    quality_bar: qualityBar,
+    constraints,
+    raw_markdown: [
+      `# ${title}`,
+      "",
+      summary,
+      "",
+      "## Core workflows",
+      "",
+      ...userGoals.map((goal) => `- ${goal}`),
+      "",
+      "## Quality bar",
+      "",
+      ...qualityBar.map((entry) => `- ${entry}`)
+    ].join("\n")
+  };
 };
 
 const markFrontDoorSessionPrepared = async (input: {
@@ -377,7 +431,7 @@ export const prepareSessionRun = async (
     durableMemory.context
   );
 
-  const intake = await loadJsonIfExists<SessionIntakeSnapshot>(
+  let intake = await loadJsonIfExists<SessionIntakeSnapshot>(
     join(durableMemory.rootDirectory, "intake.json")
   );
   const resolvedTargetFamily = input.targetFamily ?? intake?.target_family;
@@ -466,6 +520,7 @@ export const prepareSessionRun = async (
     const refreshedIntake = await loadJsonIfExists<SessionIntakeSnapshot>(
       join(durableMemory.rootDirectory, "intake.json")
     );
+    intake = refreshedIntake ?? intake;
     if (refreshedIntake?.target_root?.trim()) {
       await writeJson(
         join(resolveTargetRootForIntake(refreshedIntake.target_root), "intake.json"),
@@ -515,12 +570,18 @@ export const prepareSessionRun = async (
     };
   }
 
-  const scenario = buildScenarioFromIdea(idea);
+  const sessionIdea = buildSessionIdeaFromIntake({
+    baseIdea: idea,
+    durableMemory: durableMemory.context,
+    intake
+  });
+  const scenario = buildScenarioFromIdea(sessionIdea);
   const plan = buildLoopPlan({
     scenario,
     rubric,
     maxRounds,
-    idea
+    idea: sessionIdea,
+    planKind: bootstrapTargetFamily ? "product_build" : "harness"
   });
   const runtimePaths = runtimeStatePathsForRun(runDirectory);
   const executionPlanPath = join(runDirectory, "docs", "EXECUTION_PLAN.md");
@@ -553,7 +614,7 @@ export const prepareSessionRun = async (
     threadBindingState: effectiveThreadBindingState,
     threadId: sessionContext.threadId,
     turnId: undefined,
-    idea,
+    idea: sessionIdea,
     durableMemory: durableMemory.context,
     scenario,
     plan,
