@@ -8,7 +8,8 @@
   ],
   "scripts": {
     "build": "node ./scripts/build-workspace.mjs",
-    "release:zip": "node ./scripts/package-release.mjs",
+    "release:package": "node ./scripts/package-release.mjs",
+    "release:zip": "npm run build && node ./scripts/package-release.mjs && npm run validate:release-zip -- --zip .tmp/release/generic-codex-workbench.zip",
     "test": "node ./scripts/run-validation-batch.mjs core",
     "smoke": "node ./scripts/run-validation-batch.mjs smoke",
     "validate:core": "node ./scripts/run-validation-batch.mjs core",
@@ -73,6 +74,7 @@
     "validate:reference-adapter:canonical:chat:recontract": "node ./scripts/validate-reference-adapter.mjs --canonical --template canonical-chat-recontract",
     "validate:security-guards": "node ./scripts/validate-security-guards.mjs",
     "validate:release-zip": "node ./scripts/validate-release-zip.mjs",
+    "validate:browser-preflight": "node ./scripts/validate-browser-preflight.mjs",
     "validate:score-policy": "node ./scripts/validate-score-policy.mjs",
     "validate:adapter-drift": "node ./scripts/validate-adapter-drift.mjs",
     "validate:adapter-migration-generated-runtime": "node ./scripts/validate-adapter-migration-generated-runtime.mjs",

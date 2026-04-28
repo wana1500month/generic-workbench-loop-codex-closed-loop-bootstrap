@@ -22,12 +22,22 @@ npm run build
 npm test
 ```
 
+## Installable ZIP vs Source ZIP
+
+Use the generated release ZIP for Codex app installation:
+
+```bash
+npm run release:zip
+```
+
+Install `.tmp/release/generic-codex-workbench.zip`, not a repository source archive. The release ZIP includes `packages/loop-orchestrator/dist` so product-build front-door commands can run without `npm ci`; it excludes `node_modules`, `.tmp`, and persisted run artifacts.
+
 ## Front Door Commands
 
 ```bash
 npm run loop:intent -- --json "Build a dashboard app for operators"
 npm run loop:intake -- --json "Build a dashboard app for operators"
-npm run loop:discover -- --thread-id thread-123 --message "Build a dashboard app for operators" --json
+npm run loop:discover -- --message "Build a dashboard app for operators" --json
 npm run loop:prepare -- --front-door-session evals/front-door-sessions/session-thread-123.json --json
 npm run loop:start:codex -- --json
 npm run loop:status -- --json

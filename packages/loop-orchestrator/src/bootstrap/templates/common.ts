@@ -6,8 +6,8 @@ export const moduleImportPath = (fromDirectory: string, toFile: string): string 
   })();
 
 export const helperTemplate = (codexRuntimeImportPath: string): string => `import { existsSync, openSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { delimiter, dirname, isAbsolute, join } from "node:path";
 import { spawn } from "node:child_process";
 import {
   readCodexSession,
@@ -146,12 +146,68 @@ const loadChromium = async () => {
 
 const browserExecutableCandidates = () =>
   process.platform === "win32"
-    ? ["msedge", "chrome", "chromium"]
+    ? [
+        "msedge.exe",
+        "chrome.exe",
+        "chromium.exe",
+        "C:\\\\Program Files (x86)\\\\Microsoft\\\\Edge\\\\Application\\\\msedge.exe",
+        "C:\\\\Program Files\\\\Microsoft\\\\Edge\\\\Application\\\\msedge.exe",
+        "C:\\\\Program Files\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe",
+        "C:\\\\Program Files (x86)\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe"
+      ]
     : process.platform === "darwin"
-      ? ["Google Chrome", "Microsoft Edge", "chromium"]
-      : ["google-chrome", "chromium", "chromium-browser", "microsoft-edge"];
+      ? [
+          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+          "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+          "/Applications/Chromium.app/Contents/MacOS/Chromium",
+          "chromium"
+        ]
+      : [
+          "google-chrome",
+          "chromium",
+          "chromium-browser",
+          "microsoft-edge",
+          "/usr/bin/google-chrome",
+          "/usr/bin/chromium",
+          "/usr/bin/chromium-browser",
+          "/usr/bin/microsoft-edge"
+        ];
 
-const resolveBrowserExecutable = (profile) => {
+const canExecute = async (path) => {
+  try {
+    await access(path, process.platform === "win32" ? 0 : 0o111);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const findExecutableOnPath = async (name) => {
+  if (isAbsolute(name)) {
+    return (await canExecute(name)) ? name : undefined;
+  }
+  if (name.includes("\\\\") || name.includes("/")) {
+    return (await canExecute(name)) ? name : undefined;
+  }
+  for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+    if (!directory) {
+      continue;
+    }
+    const candidate = join(directory, name);
+    if (await canExecute(candidate)) {
+      return candidate;
+    }
+    if (process.platform === "win32" && !candidate.toLowerCase().endsWith(".exe")) {
+      const exeCandidate = candidate + ".exe";
+      if (await canExecute(exeCandidate)) {
+        return exeCandidate;
+      }
+    }
+  }
+  return undefined;
+};
+
+const resolveBrowserExecutable = async (profile) => {
   const probeExecutable = (profile.core_probes ?? []).find(
     (probe) =>
       (probe.mode === "browser" || probe.mode === "browser_journey") &&
@@ -159,15 +215,21 @@ const resolveBrowserExecutable = (profile) => {
       probe.browser_executable.trim().length > 0
   )?.browser_executable;
   if (typeof probeExecutable === "string" && probeExecutable.trim().length > 0) {
-    return probeExecutable.trim();
+    return findExecutableOnPath(probeExecutable.trim());
   }
   if (
     typeof process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH === "string" &&
     process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.trim().length > 0
   ) {
-    return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.trim();
+    return findExecutableOnPath(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.trim());
   }
-  return browserExecutableCandidates()[0];
+  for (const candidate of browserExecutableCandidates()) {
+    const resolved = await findExecutableOnPath(candidate);
+    if (resolved) {
+      return resolved;
+    }
+  }
+  return undefined;
 };
 
 const browserSurfaceExpected = (profile) =>
@@ -366,13 +428,21 @@ export const captureBrowserBaselineIfNeeded = async (options = {}) => {
   const timeoutMs = options.timeoutMs ?? baselineProbe?.timeout_ms ?? 30000;
 
   try {
+    const executablePath = await resolveBrowserExecutable(profile);
+    if (!executablePath) {
+      return {
+        status: "blocked",
+        reason: "browser_executable=missing",
+        readiness_url: readinessUrl,
+        ...(existingBaselineSourceSemantics
+          ? { source_semantics: existingBaselineSourceSemantics }
+          : {})
+      };
+    }
     const chromium = await loadChromium();
-    const executablePath = resolveBrowserExecutable(profile);
     browser = await chromium.launch({
       headless: true,
-      ...(typeof executablePath === "string" && executablePath.length > 0
-        ? { executablePath }
-        : {})
+      executablePath
     });
     context = await browser.newContext();
     await context.tracing.start({ screenshots: true, snapshots: true });
@@ -582,4 +652,3 @@ export const runtimePaths = {
   targetRoot
 };
 `;
-

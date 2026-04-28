@@ -56,6 +56,27 @@ export interface AttachedGeneratorTaskArtifact {
   generator_plan_path: string;
   patch_request_path?: string;
   transport_protocol_path?: string;
+  build_brief_snapshot?: {
+    title: string;
+    summary: string;
+    target_users: string[];
+    core_workflows: string[];
+    success_definition: string[];
+  };
+  verification_requirements?: {
+    required_selectors: Array<{
+      probe_id: string;
+      label: string;
+      selector: string;
+      action: string;
+    }>;
+    browser_probe_ids: string[];
+    api_probe_paths: Array<{
+      probe_id: string;
+      path: string;
+      expected_value?: string;
+    }>;
+  };
   summary: string;
   must_deliver: string[];
   must_fix: string[];

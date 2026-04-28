@@ -18,6 +18,7 @@ import type {
   AdapterDriftReport,
   ContractAgreementArtifact,
   ContractReviewArtifact,
+  BuildBriefArtifact,
   EvalReport,
   EvaluatorVerdictArtifact,
   FailureLineage,
@@ -287,7 +288,10 @@ export const buildRoundContractArtifact = (input: {
   rubric: LoopRubric;
   loadedAdapter?: LoadedAdapterContract;
   previousPatchRequest?: PatchRequestArtifact;
+  sessionKind?: "harness" | "product_build";
+  productTargetRoot?: string;
 }): RoundContractArtifact => {
+  const isProductBuild = input.sessionKind === "product_build";
   const requiredLiveVerificationModes = derivedLiveVerificationModes(input.loadedAdapter);
   const browserReleaseGateProbeIds = probeIdsForModes(input.loadedAdapter, ["browser"]);
   const apiReleaseGateProbeIds = probeIdsForModes(input.loadedAdapter, ["api"]);
@@ -355,13 +359,23 @@ export const buildRoundContractArtifact = (input: {
       : input.contract.attempt_kind === "initial_build"
       ? input.rubric.required_artifacts
       : input.rubric.required_artifacts,
-  non_goals: [
-    "Do not embed a bundled adapter back into the harness repository.",
-    "Do not claim end-to-end proof when no external adapter is attached.",
-    input.negotiationMode === "patch_only"
-      ? "Do not reopen planner contract negotiation unless the controller escalates to recontract."
-      : "Do not pre-split the build into fixed feature sprints."
-  ],
+  non_goals: isProductBuild
+    ? [
+        "Do not optimize or rewrite the harness core during this product build.",
+        "Do not edit packages/loop-orchestrator/src unless the user explicitly asks to modify the harness.",
+        "Do not broaden the product scope beyond runtime/build-brief.json.",
+        "Do not claim workflow completion without runtime, browser, API, or command evidence.",
+        input.negotiationMode === "patch_only"
+          ? "Do not reopen product scope unless the controller escalates to recontract."
+          : "Do not split the first build into fixed feature sprints."
+      ]
+    : [
+        "Do not embed a bundled adapter back into the harness repository.",
+        "Do not claim end-to-end proof when no external adapter is attached.",
+        input.negotiationMode === "patch_only"
+          ? "Do not reopen planner contract negotiation unless the controller escalates to recontract."
+          : "Do not pre-split the build into fixed feature sprints."
+      ],
   carry_over_context: [
     `Negotiation mode: ${input.negotiationMode}.`,
     `Continuation authority: ${input.continuationAuthority}.`,
@@ -374,11 +388,19 @@ export const buildRoundContractArtifact = (input: {
   carry_over_patch_ids: input.contract.carry_over_patch_ids ?? [],
   carry_over_check_ids: input.contract.carry_over_check_ids ?? [],
   trajectory: input.trajectory,
-  adapter_expectations: [
-    "External adapters should expose prepare_target, apply_change, run_target, capture_evidence, run_checks, and grade_round capabilities.",
-    "Target-facing adapters should let the harness select a core-owned evaluator profile through the rubric or CLI, rather than shipping target_reached policy inside adapter.json.",
-    "The core harness should remain functional even when no adapter is attached."
-  ]
+  adapter_expectations: isProductBuild
+    ? [
+        "The generated adapter is the execution boundary for this product target.",
+        ...(input.productTargetRoot
+          ? [`Target changes should stay inside ${input.productTargetRoot}.`]
+          : ["Target changes should stay inside the captured target root."]),
+        "The evaluator profile owns target_reached; the generator must satisfy release-gate probes instead of self-declaring success."
+      ]
+    : [
+        "External adapters should expose prepare_target, apply_change, run_target, capture_evidence, run_checks, and grade_round capabilities.",
+        "Target-facing adapters should let the harness select a core-owned evaluator profile through the rubric or CLI, rather than shipping target_reached policy inside adapter.json.",
+        "The core harness should remain functional even when no adapter is attached."
+      ]
   });
 };
 
@@ -388,7 +410,11 @@ export const buildGeneratorPlanArtifact = (input: {
   previousPatchRequest?: PatchRequestArtifact;
   trajectory: GeneratorPlanArtifact["trajectory"];
   adapterAttached: boolean;
+  sessionKind?: "harness" | "product_build";
+  targetRoot?: string;
+  buildBrief?: BuildBriefArtifact;
 }): GeneratorPlanArtifact => {
+  const isProductBuild = input.sessionKind === "product_build";
   const remediationStrategy = input.previousPatchRequest?.remediation_strategy;
   const qualityFocus = unique(
     input.previousPatchRequest?.quality_findings?.map((finding) => finding.expected_change) ?? []
@@ -419,6 +445,8 @@ export const buildGeneratorPlanArtifact = (input: {
             .map((item) => item.expected_change)
             .join(" ")}`
         : `Close carried checks before expanding scope from ${input.trajectory.restart_from}: ${input.contractArtifact.carry_over_check_ids.join(", ")}.`
+      : isProductBuild
+      ? `Build the first product version against runtime/build-brief.json${input.buildBrief?.product.title ? ` for ${input.buildBrief.product.title}` : ""}.`
       : "Take one long build attempt against the planner spec, then let evaluator feedback decide whether remediation is needed.",
   ...(remediationStrategy ? { remediation_strategy: remediationStrategy } : {}),
   trajectory: input.trajectory,
@@ -428,41 +456,64 @@ export const buildGeneratorPlanArtifact = (input: {
   ]),
   ...(qualityFocus.length > 0 ? { quality_focus: qualityFocus } : {}),
   ...(mustPreserve.length > 0 ? { must_preserve: mustPreserve } : {}),
-  files_to_touch: [
-    "IDEA.md",
-    "SPEC.md",
-    "RUNBOOK.md",
-    "AGENT_PROTOCOL.md",
-    "ADAPTER_CONTRACT.md",
-    "packages/loop-orchestrator/src"
-  ],
-  expected_proof: input.contractAgreementArtifact.acceptance_checks,
-  risk_notes: [
-      input.contractArtifact.negotiation_mode === "patch_only"
-        ? "Do not widen scope beyond the latest patch request unless the controller escalates to recontract."
-        : input.contractArtifact.attempt_kind === "remediation"
-        ? `Keep remediation narrow: close carried checks and threshold gaps before expanding scope. Trajectory mode: ${input.trajectory.mode}.`
-        : "Use the initial build attempt to integrate against the planner spec in one long pass.",
-      input.contractArtifact.negotiation_mode === "patch_only"
-        ? "Treat the latest patch request and QA evidence as the load-bearing continuation surface."
-        : "Treat the negotiated contract and agreement as the load-bearing continuation surface.",
-      input.trajectory.mode === "pivot" || input.trajectory.mode === "parallel_pivot"
-        ? `Restart from ${input.trajectory.restart_from}, preserve ${input.trajectory.preserve_signals.join("; ") || "the strongest contract signals"}, and discard ${input.trajectory.discardable_surface.join("; ") || "the stale failing surface"}.`
-        : `Trajectory mode '${input.trajectory.mode}' targets novelty ${input.trajectory.novelty_target.toFixed(2)} while preserving ${input.trajectory.preserve_signals.join("; ") || "the current contract surface"}.`,
-      input.adapterAttached
-        ? "An external adapter is attached, so adapter capability outputs should be treated as first-class evidence under a core-owned evaluator profile."
-        : "No adapter is attached, so only harness-side evidence can be claimed in this attempt.",
-    "Keep the repository generic and adapter-free."
-  ],
-  out_of_scope: input.contractArtifact.non_goals,
-  adapter_actions: input.adapterAttached
+  files_to_touch: isProductBuild
     ? [
-        "Prepare the target through the adapter boundary.",
-        "Apply changes through the adapter boundary.",
-        "Run, capture evidence, and grade through adapter capabilities.",
-        "Keep target-specific correctness criteria in the verification profile rather than adapter-authored status strings."
+        input.targetRoot ?? "target root from runtime/run-contract.json",
+        "runtime/attached-generator-response.json"
       ]
-    : ["Document and preserve the adapter boundary without requiring a bundled target."]
+    : [
+        "IDEA.md",
+        "SPEC.md",
+        "RUNBOOK.md",
+        "AGENT_PROTOCOL.md",
+        "ADAPTER_CONTRACT.md",
+        "packages/loop-orchestrator/src"
+      ],
+  expected_proof: input.contractAgreementArtifact.acceptance_checks,
+  risk_notes: isProductBuild
+    ? [
+        input.contractArtifact.negotiation_mode === "patch_only"
+          ? "Keep remediation narrow and close only the failed workflow/proof gaps."
+          : "Build the first product version against runtime/build-brief.json.",
+        "Do not modify the harness core to make the product pass.",
+        "Do not fake release-gate selectors or API responses without implementing the corresponding user-visible workflow.",
+        "Create run/check scripts that match the configured run_command and check_command.",
+        "Keep target changes inside the target root unless the contract explicitly allows otherwise."
+      ]
+    : [
+        input.contractArtifact.negotiation_mode === "patch_only"
+          ? "Do not widen scope beyond the latest patch request unless the controller escalates to recontract."
+          : input.contractArtifact.attempt_kind === "remediation"
+          ? `Keep remediation narrow: close carried checks and threshold gaps before expanding scope. Trajectory mode: ${input.trajectory.mode}.`
+          : "Use the initial build attempt to integrate against the planner spec in one long pass.",
+        input.contractArtifact.negotiation_mode === "patch_only"
+          ? "Treat the latest patch request and QA evidence as the load-bearing continuation surface."
+          : "Treat the negotiated contract and agreement as the load-bearing continuation surface.",
+        input.trajectory.mode === "pivot" || input.trajectory.mode === "parallel_pivot"
+          ? `Restart from ${input.trajectory.restart_from}, preserve ${input.trajectory.preserve_signals.join("; ") || "the strongest contract signals"}, and discard ${input.trajectory.discardable_surface.join("; ") || "the stale failing surface"}.`
+          : `Trajectory mode '${input.trajectory.mode}' targets novelty ${input.trajectory.novelty_target.toFixed(2)} while preserving ${input.trajectory.preserve_signals.join("; ") || "the current contract surface"}.`,
+        input.adapterAttached
+          ? "An external adapter is attached, so adapter capability outputs should be treated as first-class evidence under a core-owned evaluator profile."
+          : "No adapter is attached, so only harness-side evidence can be claimed in this attempt.",
+        "Keep the repository generic and adapter-free."
+      ],
+  out_of_scope: input.contractArtifact.non_goals,
+  adapter_actions: isProductBuild
+    ? [
+        "Prepare the captured product target root.",
+        "Apply product changes inside the target root.",
+        "Start the configured local runtime.",
+        "Collect browser/API/check evidence against the generated evaluator profile.",
+        "Treat failing release-gate probes as product defects to fix in the next round."
+      ]
+    : input.adapterAttached
+      ? [
+          "Prepare the target through the adapter boundary.",
+          "Apply changes through the adapter boundary.",
+          "Run, capture evidence, and grade through adapter capabilities.",
+          "Keep target-specific correctness criteria in the verification profile rather than adapter-authored status strings."
+        ]
+      : ["Document and preserve the adapter boundary without requiring a bundled target."]
   };
 };
 

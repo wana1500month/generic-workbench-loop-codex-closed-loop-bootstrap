@@ -22,7 +22,7 @@ The closed-loop harness is the core runtime engine, and `product_build` is only 
 - Use `npm run loop:intent -- "<user request>"` as the generic front door. `product_build` is only one routed lane, not the repository identity.
 - `loop:intent` may route requests into `product_build`, `harness_design`, `run_control`, `run_resume`, or `evaluator_tuning`.
 - `npm run loop:intake -- "<user request>"` is the stateless staged parser/helper for product-build classification and questions.
-- `npm run loop:discover -- --thread-id <thread-id> --message "<turn>" --json` is the stateful product-build discovery front door. Use it to accumulate answers per thread and ask only its returned questions.
+- `npm run loop:discover -- --message "<turn>" --json` is the stateful product-build discovery front door. It uses `CODEX_THREAD_ID`, `HARNESS_FRONT_DOOR_THREAD_ID`, or a local fallback when `--thread-id` is omitted. Use it to accumulate answers per thread and ask only its returned questions.
 - If `loop:intent` routes to `product_build`, continue on the same Codex thread with `app-builder-loop`, use `loop:discover` for the thread-bound question session, and keep `loop:intake` as the stateless parser behind that flow.
 - Prefer lane-centric skills such as `intent-router`, `app-builder-loop`, `harness-design`, `loop-control`, `run-resume`, `evaluator-tuning`, `run-attempt`, and `closeout`. Use `product-intake` as the staged gate inside `app-builder-loop` rather than as the operator-facing front door.
 - Compatibility aliases may remain for older automation, but the operator-facing surface should stay centered on that lane-centric set.

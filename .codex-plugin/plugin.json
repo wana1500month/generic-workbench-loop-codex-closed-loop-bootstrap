@@ -13,7 +13,7 @@
       "Interactive",
       "Write"
     ],
-    "defaultPrompt": "Before handling a product-build request, verify packages/loop-orchestrator/dist exists. If it is missing, run bash ./init.sh once before asking product questions. Then route app/product/dashboard/tool/service/agent requests through app-builder-loop. Discovery must ask only missing high-impact questions, prepare runtime artifacts at ready_for_prepare, stop at ready_to_start, and start the closed loop only after the user explicitly says '루프 시작' or 'start loop'. Use loop-control for start/status/resume/stop, and run attached loops from the current Codex thread without nested exec calls.",
+    "defaultPrompt": "For installation, prefer the generated release ZIP from npm run release:zip, not a source archive. Before handling a product-build request, verify packages/loop-orchestrator/dist exists. If it is missing, run bash ./init.sh once before asking product questions. Then route app/product/dashboard/tool/service/agent requests through app-builder-loop. Discovery must ask only missing high-impact questions, prepare runtime artifacts at ready_for_prepare, stop at ready_to_start, and start the closed loop only after the user explicitly says '루프 시작' or 'start loop'. Use loop-control for start/status/resume/stop, and run attached loops from the current Codex thread without nested exec calls.",
     "brandColor": "#0F766E"
   }
 }

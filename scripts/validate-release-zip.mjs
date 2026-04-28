@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { spawn } from "node:child_process";
-import { chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -154,6 +154,22 @@ const main = async () => {
       existsSync(join(releaseRoot, "packages", "loop-orchestrator", "dist", "front-door-session-cli.js")),
       "release image is missing packages/loop-orchestrator/dist/front-door-session-cli.js"
     );
+    assert.ok(
+      !existsSync(join(releaseRoot, "node_modules")),
+      "release image must not include node_modules"
+    );
+    assert.ok(
+      !existsSync(join(releaseRoot, ".tmp")),
+      "release image must not include .tmp"
+    );
+    assert.ok(
+      !existsSync(join(releaseRoot, "evals", "runs", "run-001")),
+      "release image must not include previous run artifacts"
+    );
+    if (process.platform !== "win32") {
+      const initStats = await stat(join(releaseRoot, "init.sh"));
+      assert.ok(initStats.mode & 0o111, "release init.sh must be executable");
+    }
 
     await mkdir(join(releaseRoot, ".tmp"), { recursive: true });
     await writeFile(join(releaseRoot, ".tmp", ".gitkeep"), "", "utf8");
@@ -187,8 +203,6 @@ const main = async () => {
       process.execPath,
       [
         "scripts/loop-discover.mjs",
-        "--thread-id",
-        "release-ko-budget",
         "--message",
         "가계부 앱 만들어줘",
         "--json"

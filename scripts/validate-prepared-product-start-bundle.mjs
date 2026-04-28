@@ -1,4 +1,7 @@
 import { strict as assert } from "node:assert";
+import { existsSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import {
   cleanupTempRoot,
@@ -118,6 +121,65 @@ const main = async () => {
       !summary.evaluator_profile_path.includes("generic-core.profile.json"),
       "Prepared product session should not fall back to generic-core."
     );
+
+    const attachedPromptPath = join(
+      prepared.runDirectory,
+      "round-001",
+      "runtime",
+      "attached-generator-prompt.md"
+    );
+    for (let hop = 0; hop < 8 && !existsSync(attachedPromptPath); hop += 1) {
+      const currentSummary = await readSummary(prepared.runDirectory);
+      assertStopReason(currentSummary, "awaiting_codex_checkpoint");
+      const operatorSurface = await readJsonFile(currentSummary.operator_surface_path);
+      assert.equal(
+        operatorSurface.ui_visibility,
+        "internal_checkpoint",
+        JSON.stringify(operatorSurface, null, 2)
+      );
+      assert.ok(
+        typeof operatorSurface.active_response_path === "string",
+        JSON.stringify(operatorSurface, null, 2)
+      );
+      await writeFile(
+        operatorSurface.active_response_path,
+        `${JSON.stringify({ checkpoint_id: operatorSurface.checkpoint_id }, null, 2)}\n`,
+        "utf8"
+      );
+      const resumeExecution = await runLoop(
+        [
+          "--resume-run",
+          prepared.runDirectory,
+          "--controller-mode",
+          "attached",
+          "--transport",
+          "current-thread",
+          "--single"
+        ],
+        {
+          env: foregroundThreadEnv,
+          silent: true
+        }
+      );
+      if (resumeExecution.code !== 0) {
+        throw new Error(
+          `prepared product resume failed.\nSTDOUT:\n${resumeExecution.stdout}\nSTDERR:\n${resumeExecution.stderr}`
+        );
+      }
+    }
+    assert.ok(existsSync(attachedPromptPath), "attached generator prompt was not written");
+    const attachedPrompt = await readFile(attachedPromptPath, "utf8");
+    assert.match(attachedPrompt, /Prepared Product Bundle Fixture/);
+    assert.match(attachedPrompt, /triage queue/);
+    assert.match(attachedPrompt, /issue detail/);
+    assert.match(attachedPrompt, /reply composer/);
+    assert.match(attachedPrompt, /Required release-gate selectors/);
+    assert.match(attachedPrompt, /\[data-testid='app-shell'\]/);
+    assert.match(attachedPrompt, /\[data-testid='finish-line-ready'\]/);
+    assert.match(attachedPrompt, /\[data-testid='feature-/);
+    assert.doesNotMatch(attachedPrompt, /Keep the repository generic and adapter-free/);
+    assert.doesNotMatch(attachedPrompt, /packages\/loop-orchestrator\/src/);
+    assert.doesNotMatch(attachedPrompt, /ADAPTER_CONTRACT\.md/);
   } finally {
     await cleanupTempRoot(tempRoot);
   }

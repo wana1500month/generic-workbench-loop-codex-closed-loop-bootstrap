@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { access, chmod, cp, mkdir, rm } from "node:fs/promises";
+import { access, chmod, cp, mkdir, readdir, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -33,18 +33,49 @@ const runCommand = async (command, args, options = {}) =>
     });
   });
 
+const ignoredPackagePath = (relativePath) =>
+  relativePath === ".git" ||
+  relativePath.startsWith(".git/") ||
+  relativePath === "node_modules" ||
+  relativePath.startsWith("node_modules/") ||
+  relativePath === ".tmp" ||
+  relativePath.startsWith(".tmp/") ||
+  relativePath.startsWith("evals/runs/");
+
+const walkFiles = async (root, prefix = "") => {
+  const entries = await readdir(join(root, prefix), { withFileTypes: true });
+  const files = [];
+
+  for (const entry of entries) {
+    const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (ignoredPackagePath(relativePath)) {
+      continue;
+    }
+
+    if (entry.isDirectory()) {
+      files.push(...(await walkFiles(root, relativePath)));
+      continue;
+    }
+
+    if (entry.isFile()) {
+      files.push(relativePath);
+    }
+  }
+
+  return files;
+};
+
 const trackedFiles = async () => {
   const result = await runCommand("git", ["ls-files", "-z"]);
-  if (result.code !== 0) {
-    throw new Error(`git ls-files failed:\n${result.stderr}`);
+  if (result.code === 0 && result.stdout.trim().length > 0) {
+    return result.stdout.split("\0").filter(Boolean);
   }
-  return result.stdout.split("\0").filter(Boolean);
+
+  return walkFiles(repoRoot);
 };
 
 const shouldPackageTrackedFile = (relativePath) =>
-  !relativePath.startsWith(".tmp/") &&
-  !relativePath.startsWith("node_modules/") &&
-  !relativePath.startsWith("evals/runs/");
+  !ignoredPackagePath(relativePath);
 
 const copyPath = async (source, destination) => {
   await mkdir(dirname(destination), { recursive: true });

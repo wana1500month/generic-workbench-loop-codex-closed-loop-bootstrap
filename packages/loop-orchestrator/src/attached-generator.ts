@@ -2,13 +2,15 @@ import { loadJsonIfExists, writeJson, writeText } from "./file-system.js";
 import type {
   AttachedGeneratorResponseArtifact,
   AttachedGeneratorTaskArtifact,
+  BuildBriefArtifact,
   ContractAgreementArtifact,
   GeneratorPlanArtifact,
   LoadedAdapterContract,
   PatchRequestArtifact,
   RoundArtifacts,
   RoundContractArtifact,
-  TransportMode
+  TransportMode,
+  VerificationCoreProbe
 } from "./types.js";
 
 export const isBootstrapGeneratedAdapter = (
@@ -34,6 +36,43 @@ export const isAttachedGeneratorTransport = (
   transportMode: TransportMode
 ): transportMode is Extract<TransportMode, "current-thread" | "app-server"> =>
   transportMode === "current-thread" || transportMode === "app-server";
+
+const releaseGateProbes = (
+  probes: readonly VerificationCoreProbe[] | undefined
+): VerificationCoreProbe[] =>
+  (probes ?? []).filter((probe) => (probe.role ?? "supporting") === "release_gate");
+
+const selectorRequirementsFromProbes = (
+  probes: readonly VerificationCoreProbe[] | undefined
+): NonNullable<
+  AttachedGeneratorTaskArtifact["verification_requirements"]
+>["required_selectors"] =>
+  releaseGateProbes(probes)
+    .filter((probe) => probe.mode === "browser_journey")
+    .flatMap((probe) =>
+      (probe.steps ?? [])
+        .filter((step) => typeof step.selector === "string" && step.selector.trim())
+        .map((step) => ({
+          probe_id: probe.probe_id,
+          label: probe.label,
+          selector: step.selector!,
+          action: step.action
+        }))
+    );
+
+const apiRequirementsFromProbes = (
+  probes: readonly VerificationCoreProbe[] | undefined
+): NonNullable<
+  AttachedGeneratorTaskArtifact["verification_requirements"]
+>["api_probe_paths"] =>
+  releaseGateProbes(probes)
+    .filter((probe) => probe.mode === "http_json")
+    .map((probe) => ({
+      probe_id: probe.probe_id,
+      path: probe.target_path ?? "",
+      expected_value: probe.expected_value
+    }))
+    .filter((item) => item.path.length > 0);
 
 const promptText = (input: {
   targetRoot: string;
@@ -63,6 +102,48 @@ const promptText = (input: {
     `ATTACHED_GENERATOR_RESPONSE_PATH: ${input.task.response_path}`,
     `ATTACHED_GENERATOR_TARGET_ROOT: ${input.targetRoot}`,
     "ATTACHED_GENERATOR_RESPONSE_SCHEMA: {\"checkpoint_id\":\"string\",\"status\":\"applied|noop|blocked\",\"summary\":\"string\",\"changed_files\":[\"relative/path\"],\"notes\":[\"string\"],\"generated_at\":\"ISO-8601\"}",
+    "",
+    "## Product build brief",
+    ...(input.task.build_brief_snapshot
+      ? [
+          `- Title: ${input.task.build_brief_snapshot.title}`,
+          `- Summary: ${input.task.build_brief_snapshot.summary}`,
+          `- Target users: ${input.task.build_brief_snapshot.target_users.join(", ") || "none"}`,
+          "- Core workflows:",
+          ...input.task.build_brief_snapshot.core_workflows.map(
+            (workflow) => `  - ${workflow}`
+          ),
+          "- Success definition:",
+          ...input.task.build_brief_snapshot.success_definition.map(
+            (item) => `  - ${item}`
+          )
+        ]
+      : ["- none"]),
+    "",
+    "## Required release-gate selectors",
+    ...(input.task.verification_requirements?.required_selectors.length
+      ? input.task.verification_requirements.required_selectors.map(
+          (item) =>
+            `- ${item.selector} (${item.action}, probe: ${item.probe_id}, ${item.label})`
+        )
+      : ["- none"]),
+    "",
+    "## Required API release-gate paths",
+    ...(input.task.verification_requirements?.api_probe_paths.length
+      ? input.task.verification_requirements.api_probe_paths.map(
+          (item) =>
+            `- ${item.path} => ${item.expected_value ?? "expected value"} (${item.probe_id})`
+        )
+      : ["- none"]),
+    "",
+    "## Product build hard rules",
+    "- Work in the target root, not the harness core.",
+    "- If this is a new project and no package.json exists, create one.",
+    "- Created scripts must match the configured run_command and check_command when present.",
+    "- Prefer dependency-light implementation unless the brief explicitly requires a framework.",
+    "- Do not rely on npm install during the loop unless dependencies are already present.",
+    "- Do not fake the release-gate selectors. They must correspond to visible or interactive product workflows.",
+    "- Every required selector above must exist in the running app before claiming completion.",
     "",
     "## Prototype baseline protocol",
     ...(input.task.prototype_baseline_manifest_path || input.task.prototype_baseline_screenshot_path
@@ -127,6 +208,8 @@ export const writeAttachedGeneratorTask = async (input: {
   agreement: ContractAgreementArtifact;
   generatorPlan: GeneratorPlanArtifact;
   previousPatchRequest?: PatchRequestArtifact;
+  buildBrief?: BuildBriefArtifact;
+  verificationProbes?: VerificationCoreProbe[];
   prototypeBaselineManifestPath?: string;
   prototypeBaselineScreenshotPath?: string;
   prototypeBaselineSourcePhase?: string;
@@ -134,6 +217,11 @@ export const writeAttachedGeneratorTask = async (input: {
   notes?: string[];
 }): Promise<AttachedGeneratorTaskArtifact> => {
   const createdAt = new Date().toISOString();
+  const requiredSelectors = selectorRequirementsFromProbes(input.verificationProbes);
+  const apiProbePaths = apiRequirementsFromProbes(input.verificationProbes);
+  const browserProbeIds = releaseGateProbes(input.verificationProbes)
+    .filter((probe) => probe.mode === "browser_journey" || probe.mode === "browser")
+    .map((probe) => probe.probe_id);
   const checkpointSeq = input.checkpointSeq ?? Date.now();
   const checkpointId =
     input.checkpointId ??
@@ -166,6 +254,22 @@ export const writeAttachedGeneratorTask = async (input: {
     ...(input.transportProtocolPath
       ? { transport_protocol_path: input.transportProtocolPath }
       : {}),
+    ...(input.buildBrief
+      ? {
+          build_brief_snapshot: {
+            title: input.buildBrief.product.title,
+            summary: input.buildBrief.product.summary,
+            target_users: input.buildBrief.product.target_users,
+            core_workflows: input.buildBrief.product.core_workflows,
+            success_definition: input.buildBrief.product.success_definition
+          }
+        }
+      : {}),
+    verification_requirements: {
+      required_selectors: requiredSelectors,
+      browser_probe_ids: browserProbeIds,
+      api_probe_paths: apiProbePaths
+    },
     summary: input.generatorPlan.implementation_intent,
     must_deliver: input.agreement.generator_must_deliver,
     must_fix:

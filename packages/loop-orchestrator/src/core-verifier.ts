@@ -1,8 +1,7 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, stat, access } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { join, resolve } from "node:path";
+import { delimiter, isAbsolute, join, resolve } from "node:path";
 
 import { resolvedAdapterTargetRoot } from "./adapter-paths.js";
 import { loadJsonIfExists, writeJson, writeText } from "./file-system.js";
@@ -470,35 +469,67 @@ const browserExecutableCandidates = (): string[] => {
   }
 };
 
-const resolveBrowserExecutable = (input: {
-  probe: VerificationCoreProbe;
-  loadedAdapter: LoadedAdapterContract;
-}): string => {
-  if (input.probe.browser_executable) {
-    return input.probe.browser_executable.includes("\\") ||
-      input.probe.browser_executable.includes("/")
-      ? resolve(input.loadedAdapter.base_directory, input.probe.browser_executable)
-      : input.probe.browser_executable;
+const canExecute = async (path: string): Promise<boolean> => {
+  try {
+    await access(path, process.platform === "win32" ? 0 : 0o111);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const findExecutableOnPath = async (name: string): Promise<string | undefined> => {
+  if (isAbsolute(name)) {
+    return (await canExecute(name)) ? name : undefined;
   }
 
-  const commandCandidates: string[] = [];
-  for (const candidate of browserExecutableCandidates()) {
-    if (!candidate.includes("\\") && !candidate.includes("/")) {
-      commandCandidates.push(candidate);
+  if (name.includes("\\") || name.includes("/")) {
+    return (await canExecute(name)) ? name : undefined;
+  }
+
+  for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+    if (!directory) {
       continue;
     }
-    if (existsSync(candidate)) {
+    const candidate = join(directory, name);
+    if (await canExecute(candidate)) {
       return candidate;
+    }
+    if (process.platform === "win32" && !candidate.toLowerCase().endsWith(".exe")) {
+      const exeCandidate = `${candidate}.exe`;
+      if (await canExecute(exeCandidate)) {
+        return exeCandidate;
+      }
     }
   }
 
-  if (commandCandidates.length > 0) {
-    return commandCandidates[0];
+  return undefined;
+};
+
+const resolveBrowserExecutable = async (input: {
+  probe: VerificationCoreProbe;
+  loadedAdapter: LoadedAdapterContract;
+}): Promise<string | undefined> => {
+  const explicit =
+    input.probe.browser_executable?.trim() ||
+    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim();
+
+  if (explicit) {
+    const explicitPath =
+      explicit.includes("\\") || explicit.includes("/")
+        ? resolve(input.loadedAdapter.base_directory, explicit)
+        : explicit;
+    return (await findExecutableOnPath(explicitPath)) ?? undefined;
   }
 
-  throw new Error(
-    `Core verification probe '${input.probe.probe_id}' could not find a compatible headless browser executable.`
-  );
+  for (const candidate of browserExecutableCandidates()) {
+    const resolved = await findExecutableOnPath(candidate);
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  return undefined;
 };
 
 const resolvedJourneyTarget = (
@@ -527,10 +558,21 @@ const executeBrowserProbe = async (input: {
     probe: input.probe,
     targetManifest: input.targetManifest
   });
-  const browserExecutable = resolveBrowserExecutable({
+  const browserExecutable = await resolveBrowserExecutable({
     probe: input.probe,
     loadedAdapter: input.loadedAdapter
   });
+  if (!browserExecutable) {
+    return {
+      ok: false,
+      summary:
+        "Browser verification is environment-blocked: no Chrome/Chromium executable was found.",
+      target,
+      observedValue: "browser_executable=missing",
+      evidencePaths: [],
+      failureClassification: "environment_blocked"
+    };
+  }
   const domPath = join(input.probeDirectory, `${input.probe.probe_id}-dom.html`);
   const stderrPath = join(input.probeDirectory, `${input.probe.probe_id}-stderr.log`);
   const command = `${quoted(browserExecutable)} --headless --disable-gpu --dump-dom ${quoted(target)}`;
@@ -582,10 +624,21 @@ const executeBrowserJourneyProbe = async (input: {
     probe: input.probe,
     targetManifest: input.targetManifest
   });
-  const browserExecutable = resolveBrowserExecutable({
+  const browserExecutable = await resolveBrowserExecutable({
     probe: input.probe,
     loadedAdapter: input.loadedAdapter
   });
+  if (!browserExecutable) {
+    return {
+      ok: false,
+      summary:
+        "Browser verification is environment-blocked: no Chrome/Chromium executable was found.",
+      target,
+      observedValue: "browser_executable=missing",
+      evidencePaths: [],
+      failureClassification: "environment_blocked"
+    };
+  }
   const steps = input.probe.steps ?? [];
   if (steps.length === 0) {
     return {

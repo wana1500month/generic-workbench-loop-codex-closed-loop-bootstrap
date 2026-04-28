@@ -13,12 +13,30 @@ import {
   runTargetTemplate
 } from "./templates.js";
 
-const slugify = (value: string): string =>
+const slugifyAscii = (value: string): string =>
   value
+    .normalize("NFKD")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 48) || "generated-app";
+    .slice(0, 48);
+
+const slugify = (value: string): string => slugifyAscii(value) || "generated-app";
+
+const slugForIndexedFeature = (value: string, index: number): string =>
+  slugifyAscii(value) || `feature-${index + 1}`;
+
+const featureProbeMap = (features: readonly string[]) =>
+  features.slice(0, 3).map((feature, index) => {
+    const slug = slugForIndexedFeature(feature, index);
+    return {
+      feature,
+      slug,
+      root_selector: `[data-testid='feature-${slug}']`,
+      action_selector: `[data-testid='feature-${slug}-action']`,
+      result_selector: `[data-testid='feature-${slug}-result']`
+    };
+  });
 
 export const scaffoldAdapterArtifacts = async (
   answers: BootstrapAnswers,
@@ -53,6 +71,12 @@ export const scaffoldAdapterArtifacts = async (
     reference_signals: answers.referenceSignals ?? [],
     non_goals: answers.nonGoals ?? [],
     ...(answers.probeHints ? { probe_hints: answers.probeHints } : {}),
+    verification_contract: {
+      app_shell_selector: "[data-testid='app-shell']",
+      finish_line_selector: "[data-testid='finish-line-ready']",
+      error_selector: "[data-testid='error-banner']",
+      workflow_selectors: featureProbeMap(answers.coreFeatures)
+    },
     ...(answers.customQualityMetrics
       ? {
           custom_quality_metrics: answers.customQualityMetrics.map((metric) => ({

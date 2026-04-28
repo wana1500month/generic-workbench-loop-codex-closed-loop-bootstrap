@@ -2,9 +2,19 @@
 
 This repository is a generic Codex workbench for closed-loop harness runs. It does not bundle a product target or reference app.
 
-## First Run From A Clean ZIP
+## Installable ZIP
 
-Run one bootstrap command before using plugin skills:
+Use the generated release artifact, not the repository source archive, for Codex app installation:
+
+```bash
+npm run release:zip
+```
+
+Install `.tmp/release/generic-codex-workbench.zip`. It includes `packages/loop-orchestrator/dist`, keeps `node_modules` out, and lets `loop:intent` / `loop:discover` run before `npm ci`.
+
+## First Run From A Source ZIP
+
+If you intentionally use a source archive, run one bootstrap command before using plugin skills:
 
 ```bash
 bash ./init.sh
@@ -17,7 +27,15 @@ npm ci
 npm run build
 ```
 
-Skill helpers also attempt `npm run build --silent` when the compiled `packages/loop-orchestrator/dist` entrypoint is missing. If that automatic build fails, the helper prints the recovery command instead of failing with only a missing-dist stack.
+Skill helpers also attempt bootstrap when the compiled `packages/loop-orchestrator/dist` entrypoint is missing. If that automatic bootstrap fails, the helper prints the recovery command instead of failing with only a missing-dist stack.
+
+## Codex App Flow
+
+1. Unzip the release artifact.
+2. Open that folder in the Codex app.
+3. Say `가계부 앱 만들어줘` or another app/product request.
+4. Answer only the returned product and execution questions.
+5. When Codex reports `ready_to_start`, say `루프 시작`.
 
 ## Main Codex App Surfaces
 

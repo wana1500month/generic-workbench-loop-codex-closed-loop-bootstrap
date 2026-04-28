@@ -41,6 +41,7 @@ import {
   type PreparedSessionSeed,
   writeSessionPreparationArtifacts
 } from "./session-artifacts.js";
+import { validatePreparedProductSessionIntegrity } from "./prepared-session-integrity.js";
 import { resolveTargetFamilySelection } from "./profile-selection.js";
 import type {
   ControllerMode,
@@ -51,7 +52,8 @@ import type {
   SessionStatusArtifact,
   TargetFamily,
   ThreadBindingState,
-  TransportMode
+  TransportMode,
+  VerificationProfile
 } from "./types.js";
 
 export interface PrepareSessionResult {
@@ -464,18 +466,30 @@ export const prepareSessionRun = async (
         "Prepared product session is missing intake.target_root. Refusing to scaffold a product adapter bundle without execution target identity."
       );
     }
+    const missingProductFields: string[] = [];
+    if (!intake?.target_users?.length) {
+      missingProductFields.push("target_users");
+    }
+    if (!intake?.core_features?.length) {
+      missingProductFields.push("core_features");
+    }
+    if (!intake?.finish_line?.trim() && !intake?.quality_bar?.length) {
+      missingProductFields.push("finish_line");
+    }
+    if (missingProductFields.length > 0) {
+      throw new Error(
+        `Prepared product session is missing required product intake fields: ${missingProductFields.join(", ")}`
+      );
+    }
 
     const bootstrapResult = await scaffoldBootstrapArtifacts(
       buildBootstrapAnswersFromSeed({
         title: intake?.product_title ?? durableMemory.context.title,
         summary: intake?.product_summary ?? durableMemory.context.summary,
-        targetUsers: intake?.target_users ?? durableMemory.context.targetUsers,
-        coreFeatures: intake?.core_features ?? durableMemory.context.coreFeatures,
+        targetUsers: intake?.target_users ?? [],
+        coreFeatures: intake?.core_features ?? [],
         referenceApps: intake?.reference_apps ?? [],
-        finishLine:
-          intake?.finish_line ??
-          durableMemory.context.finishLine ??
-          durableMemory.context.qualityBar[0],
+        finishLine: intake?.finish_line ?? intake?.quality_bar?.[0] ?? "",
         targetFamily: bootstrapTargetFamily,
         goalLevel: intake?.goal_level,
         targetScore,
@@ -646,6 +660,24 @@ export const prepareSessionRun = async (
       ? { validationBundle: preparedValidationBundle }
       : {})
   });
+
+  if (isProductBuild && preparedValidationBundle?.evaluator_profile_path) {
+    const evaluatorProfile = await loadJson<VerificationProfile>(
+      preparedValidationBundle.evaluator_profile_path
+    );
+    const integrityErrors = validatePreparedProductSessionIntegrity({
+      buildBrief: result.buildBrief,
+      runContract: result.runContract,
+      evaluatorProfile
+    });
+    if (integrityErrors.length > 0) {
+      throw new Error(
+        `Prepared product session failed evaluator profile integrity checks:\n${integrityErrors
+          .map((error) => `- ${error}`)
+          .join("\n")}`
+      );
+    }
+  }
 
   const operatorSurface = buildOperatorSurfaceArtifact({
     runId,

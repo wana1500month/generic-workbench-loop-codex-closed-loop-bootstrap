@@ -11,7 +11,7 @@ intake and execution sessions.
 
 ## Workflow
 
-1. Start with `npm run loop:discover -- --thread-id <thread-id> --message "<turn>" --json`.
+1. Start with `npm run loop:discover -- --message "<turn>" --json`; pass `--thread-id` only when a stable Codex thread id is available.
 2. Ask only the missing high-impact questions returned by `loop:discover`.
 3. Ask at most 1 to 3 short questions per turn.
 4. Prefer reasonable defaults over low-value questions.

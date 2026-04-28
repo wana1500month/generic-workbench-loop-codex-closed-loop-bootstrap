@@ -535,7 +535,7 @@ const main = async () => {
       /workbench|controller|adapter/i
     );
     const koWorkflowProbes = koVerificationProfile.core_probes.filter((probe) =>
-      /^Core workflow remains visible: /.test(probe.label)
+      /^Core workflow remains/.test(probe.label)
     );
     for (const workflow of koBuildBrief.product.core_workflows) {
       assert.ok(
@@ -555,6 +555,17 @@ const main = async () => {
       !koWorkflowSelectors.includes("[data-testid='feature-generated-app']"),
       JSON.stringify(koWorkflowSelectors, null, 2)
     );
+    for (const probe of koWorkflowProbes) {
+      const selectors = probe.steps.map((step) => step.selector).filter(Boolean);
+      assert.ok(
+        selectors.some((selector) => /-action'\]$/.test(selector)),
+        JSON.stringify(probe, null, 2)
+      );
+      assert.ok(
+        selectors.some((selector) => /-result'\]$/.test(selector)),
+        JSON.stringify(probe, null, 2)
+      );
+    }
 
     await runFrontDoorDiscoveryTurn({
       threadId: "thread-correction",

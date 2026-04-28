@@ -6,12 +6,17 @@ import {
 interface DiscoverArgs {
   asJson: boolean;
   statusOnly: boolean;
-  threadId?: string;
+  threadId: string;
   message: string;
 }
 
 const usage =
-  "Usage: node ./packages/loop-orchestrator/dist/front-door-session-cli.js --thread-id <thread-id> [--status] [--json] [--message <message>]";
+  "Usage: node ./packages/loop-orchestrator/dist/front-door-session-cli.js [--thread-id <thread-id>] [--status] [--json] [--message <message>]";
+
+const defaultThreadId = (): string =>
+  process.env.CODEX_THREAD_ID?.trim() ||
+  process.env.HARNESS_FRONT_DOOR_THREAD_ID?.trim() ||
+  "local-codex-thread";
 
 const parseArgs = (argv: readonly string[]): DiscoverArgs => {
   let asJson = false;
@@ -46,20 +51,13 @@ const parseArgs = (argv: readonly string[]): DiscoverArgs => {
   return {
     asJson,
     statusOnly,
-    threadId: threadId?.trim() || process.env.CODEX_THREAD_ID?.trim(),
+    threadId: threadId?.trim() || defaultThreadId(),
     message: message ?? messageParts.join(" ").trim()
   };
 };
 
 const main = async (): Promise<void> => {
   const args = parseArgs(process.argv.slice(2));
-  if (!args.threadId) {
-    console.error("A thread id is required.");
-    console.error(usage);
-    process.exitCode = 1;
-    return;
-  }
-
   if (args.statusOnly) {
     const existing = await getFrontDoorSessionStatus(args.threadId);
     if (!existing) {

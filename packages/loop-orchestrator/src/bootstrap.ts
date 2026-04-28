@@ -397,7 +397,30 @@ const isApiOnlyFamily = (targetFamily: BootstrapTargetFamily): boolean =>
   targetFamily === "crud-api" ||
   targetFamily === "chat-agent";
 
-const defaultFrameworkHintForFamily = (targetFamily: BootstrapTargetFamily): string => {
+const defaultFrameworkHintForFamily = (
+  targetFamily: BootstrapTargetFamily,
+  projectMode: BootstrapAnswers["projectMode"] = "existing"
+): string => {
+  if (projectMode === "new") {
+    if (
+      targetFamily === "browser-app" ||
+      targetFamily === "browser-editor" ||
+      targetFamily === "dashboard"
+    ) {
+      return "dependency-light static HTML/CSS/JS served by a Node.js built-in HTTP server; use external frameworks only if explicitly requested";
+    }
+    if (targetFamily === "fullstack-app") {
+      return "dependency-light Node.js built-in HTTP server with static frontend and JSON API; use external frameworks only if explicitly requested";
+    }
+    if (
+      targetFamily === "api-service" ||
+      targetFamily === "crud-api" ||
+      targetFamily === "chat-agent"
+    ) {
+      return "dependency-light Node.js API using built-in modules";
+    }
+  }
+
   if (targetFamily === "api-service") {
     return "Node.js API";
   }
@@ -473,7 +496,8 @@ export const buildBootstrapAnswersFromSeed = (
     seed.checkCommand?.trim() ||
     (packageManager === "pnpm" ? "pnpm test" : "npm test");
   const frameworkHint =
-    seed.frameworkHint?.trim() || defaultFrameworkHintForFamily(seed.targetFamily);
+    seed.frameworkHint?.trim() ||
+    defaultFrameworkHintForFamily(seed.targetFamily, projectMode);
   const appUrl = seed.appUrl?.trim() || defaultAppUrlForFamily(seed.targetFamily);
   const healthUrl =
     seed.healthUrl?.trim() || defaultHealthUrlForFamily(seed.targetFamily);
@@ -1082,7 +1106,7 @@ const buildGeneratedCoreProbes = (
       ...featureSlugs.map(({ feature, featureSlug, axisId }) =>
         buildBrowserJourneyProbe({
           probeId: `${titleSlug}-${featureSlug}`,
-          label: `Core workflow remains visible: ${feature}`,
+          label: `Core workflow remains interactive: ${feature}`,
           assertionId: `${titleSlug}_${featureSlug}_ready`,
           qualityAxisId: axisId,
           assertionTags: ["browser", "workflow_multi_step"],
@@ -1093,6 +1117,14 @@ const buildGeneratedCoreProbes = (
             {
               action: "assert_visible",
               selector: `[data-testid='feature-${featureSlug}']`
+            },
+            {
+              action: "click",
+              selector: `[data-testid='feature-${featureSlug}-action']`
+            },
+            {
+              action: "assert_visible",
+              selector: `[data-testid='feature-${featureSlug}-result']`
             }
           ]
         })
@@ -1931,7 +1963,7 @@ const collectAnswers = async (): Promise<BootstrapAnswers> => {
       );
       const maxRounds = await askMaxRounds(rl, 3);
 
-      const frameworkHint = defaultFrameworkHintForFamily(targetFamily);
+      const frameworkHint = defaultFrameworkHintForFamily(targetFamily, projectMode);
       const defaultRunCommand = defaultRunCommandForBootstrap(targetFamily, projectMode);
       const runCommand =
         projectMode === "existing"

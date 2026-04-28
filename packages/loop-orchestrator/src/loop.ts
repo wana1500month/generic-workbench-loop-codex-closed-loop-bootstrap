@@ -501,6 +501,12 @@ export const runClosedLoop = async (input: {
     restoredRunContractSeed?.runContract.validation_strategy.validation_bundle;
   const persistedValidationBundle =
     preparedValidationBundle ?? restoredValidationBundle;
+  const activePreparedSeed = preparedSessionSeed ?? restoredRunContractSeed;
+  const sessionKind =
+    activePreparedSeed?.runContract.discovery_source ||
+    activePreparedSeed?.runContract.validation_strategy.validation_bundle?.target_family
+      ? "product_build"
+      : "harness";
   const explicitBundleOverrideRequested =
     input.adapterPath !== undefined ||
     input.rubricPath !== undefined ||
@@ -3431,7 +3437,10 @@ export const runClosedLoop = async (input: {
         contract,
         rubric: hydratedRubric,
         loadedAdapter,
-        previousPatchRequest
+        previousPatchRequest,
+        sessionKind,
+        productTargetRoot:
+          activePreparedSeed?.runContract.execution_controls.target_root
       });
       const baseContractReviewArtifact =
         lifecycleDecision.negotiation_mode === "patch_only" && previousPatchRequest
@@ -3526,7 +3535,10 @@ export const runClosedLoop = async (input: {
         contractAgreementArtifact,
         previousPatchRequest,
         trajectory: lifecycleDecision.trajectory,
-        adapterAttached: Boolean(loadedAdapter)
+        adapterAttached: Boolean(loadedAdapter),
+        sessionKind,
+        targetRoot: activePreparedSeed?.runContract.execution_controls.target_root,
+        buildBrief: activePreparedSeed?.buildBrief
       });
       const currentThreadGeneratorPlanEnhancement =
         transportMode === "current-thread"
@@ -3808,6 +3820,8 @@ export const runClosedLoop = async (input: {
         agreement: contractAgreementArtifact,
         generatorPlan: generatorPlanArtifact,
         previousPatchRequest,
+        buildBrief: activePreparedSeed?.buildBrief,
+        verificationProbes: loadedAdapter?.verification_profile?.profile.core_probes ?? [],
         prototypeBaselineManifestPath: prototypeBaselinePathInfo.manifestPath,
         prototypeBaselineScreenshotPath: prototypeBaselinePathInfo.screenshotPath,
         prototypeBaselineSourcePhase:

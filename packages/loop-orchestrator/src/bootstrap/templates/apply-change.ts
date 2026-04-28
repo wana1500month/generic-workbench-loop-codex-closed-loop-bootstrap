@@ -6,6 +6,7 @@ import {
   readConfig,
   readJsonIfExists,
   readPacket,
+  readVerificationProfile,
   readCodexSession,
   relativeToRound,
   runCodexCommand,
@@ -19,6 +20,30 @@ const main = async () => {
   const config = await readConfig();
   const packet = await readPacket();
   const ideaMarkdown = await readFile(config.idea_path, "utf8");
+  const verificationProfile = await readVerificationProfile();
+  const releaseGateProbes = (verificationProfile.core_probes ?? []).filter(
+    (probe) => (probe.role ?? "supporting") === "release_gate"
+  );
+  const selectorRequirements = releaseGateProbes
+    .filter((probe) => probe.mode === "browser_journey")
+    .flatMap((probe) =>
+      (probe.steps ?? [])
+        .filter((step) => typeof step.selector === "string" && step.selector.trim())
+        .map((step) => ({
+          probe_id: probe.probe_id,
+          label: probe.label,
+          selector: step.selector,
+          action: step.action
+        }))
+    );
+  const apiRequirements = releaseGateProbes
+    .filter((probe) => probe.mode === "http_json")
+    .map((probe) => ({
+      probe_id: probe.probe_id,
+      path: probe.target_path,
+      expected_value: probe.expected_value
+    }))
+    .filter((item) => typeof item.path === "string" && item.path.length > 0);
   const roundContract =
     typeof packet.round_contract_path === "string"
       ? await readJsonIfExists(packet.round_contract_path)
@@ -298,10 +323,16 @@ const main = async () => {
     return;
   }
   const prompt = [
-    "You are the generator for a closed-loop harness.",
+    "You are the product generator for a closed-loop app-build session.",
     "Work only inside the target root.",
-    "Use the intake brief and the current round packet to decide what to build next.",
+    "Do not modify the harness core unless the contract explicitly asks for harness changes.",
+    "Use the intake brief, verification profile, and current round packet to decide what to build next.",
     "Prefer the smallest coherent set of changes that moves the product forward.",
+    "Prefer dependency-light implementation unless the brief explicitly requires a framework.",
+    "If this is a new project and no package.json exists, create one.",
+    "The created scripts must match run_command and check_command when configured.",
+    "Do not rely on npm install during the loop unless dependencies are already present.",
+    "Do not fake release-gate selectors. They must correspond to visible or interactive product workflows.",
     "When remediation artifacts are present, treat them as load-bearing instructions.",
     "When a trajectory decision says pivot or parallel_pivot, do not keep sanding the same head. Re-open from the selected anchor and replace the discardable surface.",
     "Do not widen scope beyond the latest patch request unless the controller explicitly reopened contract scope.",
@@ -311,6 +342,12 @@ const main = async () => {
     "",
     "# Intake summary",
     JSON.stringify(config, null, 2),
+    "",
+    "# Required release-gate selectors",
+    JSON.stringify(selectorRequirements, null, 2),
+    "",
+    "# Required API release-gate paths",
+    JSON.stringify(apiRequirements, null, 2),
     "",
     "# Harness packet",
     JSON.stringify(packet, null, 2),
@@ -448,4 +485,3 @@ main().catch(async (error) => {
   process.exitCode = 1;
 });
 `;
-
