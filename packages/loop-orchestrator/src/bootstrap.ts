@@ -179,6 +179,8 @@ export type BootstrapResult = {
   initScriptPath: string;
   adapterPlanPath: string;
   adapterPlanMarkdownPath: string;
+  adapterReviewTaskPath: string;
+  adapterReviewResponsePath: string;
 };
 
 export type BootstrapArtifactPaths = {
@@ -193,6 +195,8 @@ export type BootstrapArtifactPaths = {
   adapterPath: string;
   adapterPlanPath: string;
   adapterPlanMarkdownPath: string;
+  adapterReviewTaskPath: string;
+  adapterReviewResponsePath: string;
   generatedRubricPath: string;
   generatedVerificationProfilePath: string;
   generatedAdapterRoot: string;
@@ -966,6 +970,16 @@ const defaultSubjectiveMetricsFor = (
       metric_id: "finish_line_coherence",
       label: "Finish-line coherence",
       description: "The requested finish line should feel complete end-to-end.",
+      minimum_score_out_of_ten: floor,
+      quality_axis_id: "primary_flow",
+      required: true,
+      weight: 2
+    },
+    {
+      metric_id: "adapter_contract_fulfillment",
+      label: "Adapter contract fulfillment",
+      description:
+        "The product should satisfy the generated adapter workflow checks through real visible behavior, not superficial markers.",
       minimum_score_out_of_ten: floor,
       quality_axis_id: "primary_flow",
       required: true,
@@ -2120,7 +2134,9 @@ export const scaffoldBootstrapArtifacts = async (
     doneWhenPath: paths.doneWhenPath,
     initScriptPath: paths.initScriptPath,
     adapterPlanPath: paths.adapterPlanPath,
-    adapterPlanMarkdownPath: paths.adapterPlanMarkdownPath
+    adapterPlanMarkdownPath: paths.adapterPlanMarkdownPath,
+    adapterReviewTaskPath: paths.adapterReviewTaskPath,
+    adapterReviewResponsePath: paths.adapterReviewResponsePath
   };
 };
 

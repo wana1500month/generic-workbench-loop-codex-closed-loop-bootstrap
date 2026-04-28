@@ -367,6 +367,10 @@ export interface OperatorSurfaceArtifact {
   active_prompt_path?: string;
   active_response_path?: string;
   dashboard_path?: string;
+  adapter_plan_path?: string;
+  adapter_contract_path?: string;
+  evaluator_profile_path?: string;
+  adapter_review_task_path?: string;
   thread_id?: string;
   thread_name?: string;
   worktree_id?: string;

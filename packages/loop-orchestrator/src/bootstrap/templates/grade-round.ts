@@ -102,6 +102,10 @@ const main = async () => {
   const subjectiveMetrics = Array.isArray(profile.subjective_metrics)
     ? profile.subjective_metrics
     : [];
+  const adapterPlan = config.adapter_plan ?? {
+    verification_surfaces: config.verification_surfaces ?? [],
+    workflow_checks: config.workflow_checks ?? []
+  };
   const releaseGateProbes = coreProbeResults.filter(
     (probe) => (probe.role ?? "supporting") === "release_gate"
   );
@@ -271,12 +275,16 @@ const main = async () => {
         "Open and inspect any screenshot or browser trace paths listed below before scoring visual metrics.",
         "If a baseline screenshot is provided, compare the current UI against the baseline and score prototype_delta conservatively.",
         "Do not score prototype_delta above 6/10 unless the rendered product shows material improvement in layout, hierarchy, workflow visibility, or state expression.",
+        "Do not score adapter_contract_fulfillment above 6/10 if workflow checks are satisfied only by static markers without realistic user behavior.",
         "",
         "# Product brief",
         ideaMarkdown || config.product_summary || config.product_title,
         "",
         "# Quality contract",
         JSON.stringify(profile.quality_contract ?? {}, null, 2),
+        "",
+        "# Adapter verification plan",
+        JSON.stringify(adapterPlan, null, 2),
         "",
         "# Requested subjective metrics",
         JSON.stringify(subjectiveMetrics, null, 2),

@@ -83,6 +83,7 @@ const main = async () => {
     }
 
     const runContract = await readJsonFile(prepared.runContractPath);
+    const preparedOperatorSurface = await readJsonFile(prepared.operatorSurfacePath);
     assert.deepEqual(runContract.validation_strategy.validation_bundle, {
       target_family: "dashboard",
       validation_lane: "environment_integration",
@@ -90,6 +91,16 @@ const main = async () => {
       rubric_path: fixture.paths.generatedRubricPath,
       evaluator_profile_path: fixture.paths.generatedVerificationProfilePath
     });
+    assert.equal(preparedOperatorSurface.adapter_plan_path, fixture.paths.adapterPlanPath);
+    assert.equal(preparedOperatorSurface.adapter_contract_path, fixture.paths.adapterPath);
+    assert.equal(
+      preparedOperatorSurface.evaluator_profile_path,
+      fixture.paths.generatedVerificationProfilePath
+    );
+    assert.equal(
+      preparedOperatorSurface.adapter_review_task_path,
+      fixture.paths.adapterReviewTaskPath
+    );
 
     const startExecution = await runLoop(
       ["--controller-mode", "attached", "--transport", "current-thread", "--single"],

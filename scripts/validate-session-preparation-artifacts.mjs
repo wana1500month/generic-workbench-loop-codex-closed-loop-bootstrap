@@ -87,13 +87,23 @@ const main = async () => {
       nonGoals: ["do not add billing"],
       notes: "session-preparation validator"
     });
-    const [adapterPlan, runtimeConfig] = await Promise.all([
+    const [adapterPlan, runtimeConfig, generatedProfile, adapterReviewTask] = await Promise.all([
       readJsonFile(fixture.paths.adapterPlanPath),
-      readJsonFile(fixture.paths.generatedRuntimeConfigPath)
+      readJsonFile(fixture.paths.generatedRuntimeConfigPath),
+      readJsonFile(fixture.paths.generatedVerificationProfilePath),
+      readFile(fixture.paths.adapterReviewTaskPath, "utf8")
     ]);
     assert.equal(adapterPlan.target_family, "dashboard");
     assert.deepEqual(adapterPlan.verification_surfaces, ["browser"]);
     assert.ok(adapterPlan.workflow_checks.length >= 3);
+    assert.match(adapterReviewTask, /Generated Adapter Review Task/);
+    assert.match(adapterReviewTask, /triage tickets/);
+    assert.ok(
+      generatedProfile.subjective_metrics.some(
+        (metric) => metric.metric_id === "adapter_contract_fulfillment"
+      ),
+      JSON.stringify(generatedProfile.subjective_metrics, null, 2)
+    );
     assert.ok(
       runtimeConfig.verification_contract.workflow_selectors.some((selector) =>
         selector.workflow.includes("triage tickets")

@@ -18,6 +18,11 @@ export const createBootstrapArtifactPaths = (
     adapterPath: join(rootDirectory, "adapter.generated.json"),
     adapterPlanPath: join(rootDirectory, "adapter-plan.generated.json"),
     adapterPlanMarkdownPath: join(rootDirectory, "adapter-plan.generated.md"),
+    adapterReviewTaskPath: join(generatedAdapterRoot, "adapter-review-task.md"),
+    adapterReviewResponsePath: join(
+      generatedAdapterRoot,
+      "adapter-review-response.json"
+    ),
     generatedRubricPath: join(rootDirectory, "rubric.generated.json"),
     generatedVerificationProfilePath: join(
       rootDirectory,

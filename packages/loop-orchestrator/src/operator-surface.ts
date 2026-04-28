@@ -601,6 +601,10 @@ export const buildOperatorSurfaceArtifact = (input: {
   checkpointId?: string;
   checkpointSeq?: number;
   dashboardPath?: string;
+  adapterPlanPath?: string;
+  adapterContractPath?: string;
+  evaluatorProfilePath?: string;
+  adapterReviewTaskPath?: string;
   threadId?: string;
   threadName?: string;
   launchOrigin?: OperatorLaunchOrigin;
@@ -809,6 +813,12 @@ export const buildOperatorSurfaceArtifact = (input: {
     ...(input.activePromptPath ? { active_prompt_path: input.activePromptPath } : {}),
     ...(input.activeResponsePath ? { active_response_path: input.activeResponsePath } : {}),
     ...(input.dashboardPath ? { dashboard_path: input.dashboardPath } : {}),
+    ...(input.adapterPlanPath ? { adapter_plan_path: input.adapterPlanPath } : {}),
+    ...(input.adapterContractPath ? { adapter_contract_path: input.adapterContractPath } : {}),
+    ...(input.evaluatorProfilePath ? { evaluator_profile_path: input.evaluatorProfilePath } : {}),
+    ...(input.adapterReviewTaskPath
+      ? { adapter_review_task_path: input.adapterReviewTaskPath }
+      : {}),
     ...(context.threadId ? { thread_id: context.threadId } : {}),
     ...(context.threadName ? { thread_name: context.threadName } : {}),
     ...(worktreeId ? { worktree_id: worktreeId } : {}),
@@ -865,6 +875,10 @@ export const renderOperatorSurfaceMarkdown = (
 - Session stream contract: ${rel(artifact.session_stream_path)}
 - Active prompt: ${rel(artifact.active_prompt_path)}
 - Active response: ${rel(artifact.active_response_path)}
+- Adapter plan: ${rel(artifact.adapter_plan_path)}
+- Adapter contract: ${rel(artifact.adapter_contract_path)}
+- Evaluator profile: ${rel(artifact.evaluator_profile_path)}
+- Adapter review task: ${rel(artifact.adapter_review_task_path)}
 - Thread id: ${artifact.thread_id ?? "none"}
 - Thread name: ${artifact.thread_name ?? "none"}
 - Worktree id: ${artifact.worktree_id ?? "none"}
@@ -898,6 +912,13 @@ export const renderOperatorSurfaceMarkdown = (
 - Active checkpoint response: ${artifact.session?.active_checkpoint?.response_path ?? "none"}
 - Latest round: ${artifact.session?.latest_round ?? "none"}
 - Latest stop reason: ${artifact.session?.latest_stop_reason ?? "none"}
+
+## Generated Adapter
+
+- Adapter plan: ${rel(artifact.adapter_plan_path)}
+- Adapter contract: ${rel(artifact.adapter_contract_path)}
+- Evaluator profile: ${rel(artifact.evaluator_profile_path)}
+- Adapter review task: ${rel(artifact.adapter_review_task_path)}
 
 ## Notes
 

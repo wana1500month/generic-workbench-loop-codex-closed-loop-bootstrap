@@ -77,6 +77,42 @@ const workflowProbeMap = (input: {
   });
 };
 
+const adapterReviewTask = (answers: BootstrapAnswers, paths: BootstrapArtifactPaths): string =>
+  [
+    "# Generated Adapter Review Task",
+    "",
+    `Product: ${answers.title}`,
+    "",
+    "Review only these files:",
+    "- adapter.generated.json",
+    "- adapter-plan.generated.json",
+    "- verification-profile.generated.json",
+    "- rubric.generated.json",
+    "- .generated/codex-adapter/runtime-config.json",
+    "- .generated/codex-adapter/scripts/*",
+    "",
+    "Do not edit the target product during this review.",
+    "",
+    "Check:",
+    "1. Does the adapter plan match the user intake?",
+    "2. Are workflow checks executable?",
+    "3. Are browser selectors/API paths realistic?",
+    "4. Does apply-change prompt tell the generator how to satisfy the adapter?",
+    "5. Does run-checks report workflow failures clearly?",
+    "6. Does grade-round fail closed when evidence is thin?",
+    "",
+    "If needed, patch only the generated adapter surface.",
+    "",
+    "Adapter plan:",
+    `- ${paths.adapterPlanMarkdownPath}`,
+    "",
+    "Workflow checks:",
+    ...answers.workflowChecks.map(
+      (check, index) =>
+        `${index + 1}. ${check.workflow} -> ${check.expectedResult} (${check.surface})`
+    )
+  ].join("\n");
+
 export const scaffoldAdapterArtifacts = async (
   answers: BootstrapAnswers,
   paths: BootstrapArtifactPaths
@@ -166,6 +202,13 @@ export const scaffoldAdapterArtifacts = async (
   );
   await writeText(join(paths.generatedScriptsRoot, "run-checks.mjs"), runChecksTemplate());
   await writeText(join(paths.generatedScriptsRoot, "grade-round.mjs"), gradeRoundTemplate());
+  await writeText(paths.adapterReviewTaskPath, adapterReviewTask(answers, paths));
+  await writeJson(paths.adapterReviewResponsePath, {
+    status: "not_reviewed",
+    instructions:
+      "Review adapter-review-task.md before loop start if the operator wants an explicit generated-adapter review checkpoint.",
+    generated_at: new Date().toISOString()
+  });
 
   const adapterId = `generated-${slugify(answers.title)}-adapter`;
   await writeJson(paths.adapterPath, {

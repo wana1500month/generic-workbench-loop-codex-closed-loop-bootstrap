@@ -200,7 +200,16 @@ const main = async () => {
   await createZip();
 
   logStep(`Release ZIP ready: ${zipPath}`);
-  process.stdout.write(`${zipPath}\n`);
+  process.stdout.write(
+    [
+      "",
+      "INSTALL THIS ZIP IN CODEX APP:",
+      zipPath,
+      "",
+      "DO NOT INSTALL A SOURCE ZIP.",
+      ""
+    ].join("\n")
+  );
 };
 
 await main();

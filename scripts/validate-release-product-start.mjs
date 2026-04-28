@@ -275,6 +275,14 @@ const main = async () => {
     assertNoBuildAttempt(prepareResult, "release prepare");
     const prepared = parseJsonStdout(prepareResult, "release prepare");
     const preparedRunDirectory = resolveReleasePath(releaseRoot, prepared.run_directory);
+    assert.ok(
+      existsSync(resolveReleasePath(releaseRoot, prepared.adapter_plan_path)),
+      "release prepare did not expose adapter_plan_path"
+    );
+    assert.ok(
+      existsSync(resolveReleasePath(releaseRoot, prepared.adapter_review_task_path)),
+      "release prepare did not expose adapter_review_task_path"
+    );
 
     const readyMarker = await readJsonFile(
       join(releaseRoot, "evals", "runs", "ready-to-start-session.json")

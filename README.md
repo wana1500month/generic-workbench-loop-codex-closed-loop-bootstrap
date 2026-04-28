@@ -47,6 +47,8 @@ npm run loop:status -- --json
 
 `loop:intake` stays a stateless staged gate. `loop:discover` is the file-backed discovery surface that accumulates intake answers per thread under `evals/front-door-sessions/`. Once that session reaches `ready_for_prepare`, `loop:prepare -- --front-door-session <path>` materializes the snapshot into run-owned artifacts and leaves the run at `ready_to_start`.
 
+Product-build discovery collects product, execution, and adapter-design intake. The prepare step generates `adapter-plan.generated.json`, `adapter-plan.generated.md`, `.generated/codex-adapter/runtime-config.json`, `.generated/codex-adapter/scripts/*`, and `.generated/codex-adapter/adapter-review-task.md` so the operator can inspect the generated adapter before saying `루프 시작`.
+
 `loop:intent`, `loop:intake`, `loop:discover`, `loop:prepare`, and the `loop-runner` start/resume/phase surfaces use bundled dist first. Use `HARNESS_FORCE_BUILD=1` only for intentional developer rebuilds.
 
 ## Validation Suites

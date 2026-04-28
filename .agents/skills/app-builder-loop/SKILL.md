@@ -29,10 +29,13 @@ intake and execution sessions.
    - `runtime/session-status-events.jsonl`
    - `runtime/session-stream.json`
    - `docs/EXECUTION_PLAN.md`
-7. After prepare mode, stop at `ready_to_start` on the same thread.
-8. Start running only when the operator explicitly says `루프 시작` or `start loop`.
-9. After start, continue in running mode on the same thread.
-10. Use review boundaries and steering turns instead of resetting the session.
+   - `adapter-plan.generated.json`
+   - `adapter-plan.generated.md`
+   - `.generated/codex-adapter/adapter-review-task.md`
+8. After prepare mode, show the generated adapter plan/review task and stop at `ready_to_start` on the same thread.
+9. Start running only when the operator explicitly says `루프 시작` or `start loop`.
+10. After start, continue in running mode on the same thread.
+11. Use review boundaries and steering turns instead of resetting the session.
 
 ## Hard rules
 

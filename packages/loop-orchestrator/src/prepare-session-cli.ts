@@ -193,6 +193,12 @@ const main = async (): Promise<void> => {
             ? { front_door_session_path: resolve(repoRoot, args.frontDoorSessionPath) }
             : {}),
           ...(result.adapterPath ? { adapter_path: result.adapterPath } : {}),
+          ...(result.adapterPlanPath
+            ? { adapter_plan_path: result.adapterPlanPath }
+            : {}),
+          ...(result.adapterReviewTaskPath
+            ? { adapter_review_task_path: result.adapterReviewTaskPath }
+            : {}),
           ...(result.rubricPath ? { rubric_path: result.rubricPath } : {}),
           ...(result.evaluatorProfilePath
             ? { evaluator_profile_path: result.evaluatorProfilePath }
@@ -216,6 +222,12 @@ const main = async (): Promise<void> => {
   }
   if (result.adapterPath) {
     console.log(`Prepared adapter: ${result.adapterPath}`);
+  }
+  if (result.adapterPlanPath) {
+    console.log(`Adapter plan: ${result.adapterPlanPath}`);
+  }
+  if (result.adapterReviewTaskPath) {
+    console.log(`Adapter review task: ${result.adapterReviewTaskPath}`);
   }
   if (result.rubricPath) {
     console.log(`Prepared rubric: ${result.rubricPath}`);

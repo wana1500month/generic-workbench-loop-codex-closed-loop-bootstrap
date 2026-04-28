@@ -34,8 +34,9 @@ Do not expect the first product-build turn from a source archive to be zero-touc
 1. Unzip the release artifact.
 2. Open that folder in the Codex app.
 3. Say `가계부 앱 만들어줘` or another app/product request.
-4. Answer only the returned product and execution questions.
-5. When Codex reports `ready_to_start`, say `루프 시작`.
+4. Answer only the returned product, execution, and adapter-design questions.
+5. Confirm the generated adapter plan and adapter review task that prepare exposes.
+6. When Codex reports `ready_to_start`, say `루프 시작`.
 
 ## Main Codex App Surfaces
 

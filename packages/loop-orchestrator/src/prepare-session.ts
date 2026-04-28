@@ -70,6 +70,7 @@ export interface PrepareSessionResult {
   executionPlanPath: string;
   adapterPath?: string;
   adapterPlanPath?: string;
+  adapterReviewTaskPath?: string;
   rubricPath?: string;
   evaluatorProfilePath?: string;
 }
@@ -772,9 +773,21 @@ export const prepareSessionRun = async (
     appVisibility: sessionContext.appVisibility,
     recommendedSkill: "loop-control",
     recommendedCommand: "npm run loop:start:codex -- --json",
+    ...(bootstrapTargetFamily
+      ? {
+          adapterPlanPath: resolve(bootstrapPaths.adapterPlanPath),
+          adapterReviewTaskPath: resolve(bootstrapPaths.adapterReviewTaskPath)
+        }
+      : {}),
+    ...(preparedValidationBundle?.adapter_contract_path
+      ? { adapterContractPath: preparedValidationBundle.adapter_contract_path }
+      : {}),
+    ...(preparedValidationBundle?.evaluator_profile_path
+      ? { evaluatorProfilePath: preparedValidationBundle.evaluator_profile_path }
+      : {}),
     session: buildOperatorSurfaceSessionProjection(result.sessionStatus),
     nextAction:
-      "Preparation is complete. The session is waiting at ready_to_start. Say \"루프 시작\" or \"start loop\" to begin running on the same Codex session."
+      "Preparation is complete. The generated adapter plan is available for review. The session is waiting at ready_to_start. Say \"루프 시작\" or \"start loop\" to begin running on the same Codex session."
   });
   await writeOperatorSurfaceArtifacts({
     jsonPath: runtimePaths.operatorSurfacePath,
@@ -812,6 +825,9 @@ export const prepareSessionRun = async (
       ? { adapterPath: preparedValidationBundle.adapter_contract_path }
       : {}),
     ...(bootstrapTargetFamily ? { adapterPlanPath: resolve(bootstrapPaths.adapterPlanPath) } : {}),
+    ...(bootstrapTargetFamily
+      ? { adapterReviewTaskPath: resolve(bootstrapPaths.adapterReviewTaskPath) }
+      : {}),
     ...(preparedValidationBundle?.rubric_path
       ? { rubricPath: preparedValidationBundle.rubric_path }
       : {}),

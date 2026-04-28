@@ -24,6 +24,24 @@ const main = async () => {
   const releaseGateProbes = coreProbeResults.filter(
     (probe) => (probe.role ?? "supporting") === "release_gate"
   );
+  const workflowChecks =
+    Array.isArray(config.workflow_checks) && config.workflow_checks.length > 0
+      ? config.workflow_checks
+      : Array.isArray(config.adapter_plan?.workflow_checks)
+        ? config.adapter_plan.workflow_checks
+        : [];
+  const workflowCheckForProbe = (probe) =>
+    workflowChecks.find(
+      (check) =>
+        typeof check.workflow === "string" &&
+        typeof probe.label === "string" &&
+        probe.label.includes(check.workflow)
+    );
+  const workflowCheckForCriterion = (criterion) => {
+    const assertionId = criterion.assertion_id ?? criterion.criterion_id;
+    const probe = probeByAssertionId.get(assertionId);
+    return probe ? workflowCheckForProbe(probe) : undefined;
+  };
   const probeByAssertionId = new Map(
     coreProbeResults
       .filter((probe) => typeof probe.assertion_id === "string" && probe.assertion_id)
@@ -80,6 +98,7 @@ const main = async () => {
       ok: probe.ok,
       summary: probe.summary,
       observed_value: probe.observed_value,
+      workflow_check: workflowCheckForProbe(probe) ?? null,
       evidence_paths: Array.isArray(probe.evidence_paths)
         ? probe.evidence_paths.map((path) => normalizeRoundPath(path))
         : []
@@ -157,12 +176,19 @@ const main = async () => {
     }
 
     const probe = probeByAssertionId.get(criterion.assertion_id ?? criterion.criterion_id);
+    const workflowCheck = workflowCheckForCriterion(criterion);
     return {
       criterion_id: criterion.criterion_id,
       status: probe?.ok ? "pass" : "fail",
-      summary:
-        probe?.summary ??
-        "No core-owned probe result matched this generated criterion.",
+      summary: workflowCheck
+        ? probe?.ok
+          ? "Workflow passed: " + workflowCheck.workflow + "."
+          : "Workflow failed: " +
+            workflowCheck.workflow +
+            ". Expected: " +
+            workflowCheck.expected_result
+        : probe?.summary ??
+          "No core-owned probe result matched this generated criterion.",
       hard: criterion.hard ?? true,
       threshold: criterion.summary,
       observed_value:
@@ -196,9 +222,16 @@ const main = async () => {
       ...hardFailures.map(
         (criterion) => "Blocking criterion failed: " + criterion.criterion_id + "."
       ),
-      ...failedReleaseGateProbes.map(
-        (probe) => "Release-gate probe failed: " + probe.probe_id + "."
-      )
+      ...failedReleaseGateProbes.map((probe) => {
+        const workflowCheck = workflowCheckForProbe(probe);
+        return workflowCheck
+          ? "Workflow failed: " +
+              workflowCheck.workflow +
+              ". Expected " +
+              workflowCheck.expected_result +
+              "."
+          : "Release-gate probe failed: " + probe.probe_id + ".";
+      })
     ],
     evidence_paths: evidencePaths,
     evidence_items: [
@@ -263,4 +296,3 @@ main().catch(async (error) => {
   process.exitCode = 1;
 });
 `;
-

@@ -139,7 +139,7 @@ export const readJsonIfExists = async (path) => {
   }
 };
 
-const loadChromium = async () => {
+export const loadChromium = async () => {
   const playwright = await import("playwright-core");
   return playwright.chromium;
 };
@@ -207,7 +207,7 @@ const findExecutableOnPath = async (name) => {
   return undefined;
 };
 
-const resolveBrowserExecutable = async (profile) => {
+export const resolveBrowserExecutable = async (profile) => {
   const probeExecutable = (profile.core_probes ?? []).find(
     (probe) =>
       (probe.mode === "browser" || probe.mode === "browser_journey") &&

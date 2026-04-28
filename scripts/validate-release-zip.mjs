@@ -157,6 +157,10 @@ const main = async () => {
       "release image is missing packages/loop-orchestrator/dist/front-door-session-cli.js"
     );
     assert.ok(
+      existsSync(join(releaseRoot, "packages", "loop-orchestrator", "dist", "bootstrap", "generated-adapter.js")),
+      "release image is missing packages/loop-orchestrator/dist/bootstrap/generated-adapter.js"
+    );
+    assert.ok(
       existsSync(join(releaseRoot, "scripts", "validate-release-product-start.mjs")),
       "release image is missing scripts/validate-release-product-start.mjs"
     );
