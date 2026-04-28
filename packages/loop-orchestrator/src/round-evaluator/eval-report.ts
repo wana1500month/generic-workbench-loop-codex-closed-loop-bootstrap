@@ -450,6 +450,87 @@ export const buildEvalReport = (input: {
         : `Adapter capability failures remain: ${failedAdapterResults.map((result) => result.check_id).join(", ")}.`
       : "Adapter execution health is not applicable without an attached adapter."
   );
+  const adapterCheckPassed = (checkId: string): boolean =>
+    adapterResults.some((result) => result.check_id === checkId && result.status === "pass");
+  const releaseGateProbes =
+    input.loadedAdapter?.verification_profile?.profile.core_probes?.filter(
+      (probe) => (probe.role ?? "supporting") === "release_gate" && probe.required !== false
+    ) ?? [];
+  const browserReleaseGateProbeIds = new Set(
+    releaseGateProbes
+      .filter((probe) => probe.mode === "browser_journey")
+      .map((probe) => probe.probe_id)
+  );
+  const passedBrowserReleaseGateProbes = input.coreProbeResults.filter(
+    (probe) =>
+      probe.mode === "browser_journey" &&
+      (probe.role ?? "supporting") === "release_gate" &&
+      probe.ok &&
+      probe.evidence_paths.length > 0
+  );
+  const targetManifestPublishesRuntime = Boolean(
+    input.targetManifest?.app_url ||
+      input.targetManifest?.api_base_url ||
+      input.targetManifest?.health_url
+  );
+  lookup.build_brief_matches_user_intake = checkResult(
+    "build_brief_matches_user_intake",
+    /runtime\/build-brief\.json/i.test(input.contractArtifact.objective) ||
+      input.contractArtifact.non_goals.some((note) => /runtime\/build-brief\.json/i.test(note))
+      ? "pass"
+      : "fail",
+    "The product round contract must keep runtime/build-brief.json as the source of truth."
+  );
+  lookup.target_root_created_or_updated = checkResult(
+    "target_root_created_or_updated",
+    adapterCheckPassed("adapter_prepare_target") ? "pass" : "fail",
+    adapterCheckPassed("adapter_prepare_target")
+      ? "The adapter prepared the captured target root."
+      : "The captured target root was not successfully prepared in this round."
+  );
+  lookup.core_workflows_have_user_visible_paths = checkResult(
+    "core_workflows_have_user_visible_paths",
+    releaseGateProbes.length > 0 &&
+      releaseGateProbes.every((probe) =>
+        input.coreProbeResults.some(
+          (result) =>
+            result.probe_id === probe.probe_id &&
+            result.ok &&
+            result.evidence_paths.length > 0
+        )
+      )
+      ? "pass"
+      : "fail",
+    releaseGateProbes.length > 0
+      ? "Release-gate probes stand in for user-visible workflow paths."
+      : "No release-gate workflow probes are configured for the product."
+  );
+  lookup.local_runtime_starts = checkResult(
+    "local_runtime_starts",
+    adapterCheckPassed("adapter_run_target") || targetManifestPublishesRuntime ? "pass" : "fail",
+    adapterCheckPassed("adapter_run_target") || targetManifestPublishesRuntime
+      ? "The product runtime started or published a target manifest URL."
+      : "The product runtime did not start successfully in this round."
+  );
+  lookup.browser_journey_evidence_present = checkResult(
+    "browser_journey_evidence_present",
+    browserReleaseGateProbeIds.size > 0 &&
+      passedBrowserReleaseGateProbes.some((probe) => browserReleaseGateProbeIds.has(probe.probe_id))
+      ? "pass"
+      : "fail",
+    browserReleaseGateProbeIds.size > 0
+      ? "At least one required browser release-gate journey must pass with evidence."
+      : "No required browser release-gate journeys are configured."
+  );
+  lookup.no_scope_drift_from_build_brief = checkResult(
+    "no_scope_drift_from_build_brief",
+    input.contractArtifact.non_goals.some((note) => /build-brief\.json/i.test(note)) ||
+      input.contractArtifact.proof_plan.some((note) => /build-brief\.json/i.test(note)) ||
+      /runtime\/build-brief\.json/i.test(input.contractArtifact.objective)
+      ? "pass"
+      : "fail",
+    "The round contract should keep product scope anchored to runtime/build-brief.json."
+  );
   const gradeRoundExecution = successfulGradeRoundExecutionFor(input.adapterExecutions);
   const browserSurfaceExpected = expectedTargetSurfacesFor(input.loadedAdapter).has("browser");
   const subjectiveMetricResults = gradeRoundExecution?.result.subjective_metric_results ?? [];

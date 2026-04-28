@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   latestModifiedTimeMs,
+  prepareFrontDoorDist,
   runCommand,
   runPinnedTypeScriptBuild
 } from "./lib/front-door-build.mjs";
@@ -11,6 +12,7 @@ import {
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npmExecutable = "npm";
 const cliDistDirectory = resolve(repoRoot, "packages", "loop-orchestrator", "dist");
+const cliEntryPath = resolve(cliDistDirectory, "cli.js");
 const readOnlyCliWatchPaths = [
   resolve(repoRoot, "packages", "loop-orchestrator", "src"),
   resolve(repoRoot, "packages", "loop-orchestrator", "tsconfig.json"),
@@ -86,17 +88,26 @@ const runBuild = async () => {
 };
 
 const readOnlyFrontDoorNeedsBuild = () => {
-  if (!existsSync(cliDistDirectory)) {
+  if (!existsSync(cliEntryPath)) {
     return true;
   }
 
-  const distMtimeMs = latestModifiedTimeMs(cliDistDirectory);
+  const distMtimeMs = latestModifiedTimeMs(cliEntryPath);
   const latestWatchMtimeMs = readOnlyCliWatchPaths.reduce(
     (latest, targetPath) => Math.max(latest, latestModifiedTimeMs(targetPath)),
     0
   );
   return latestWatchMtimeMs > distMtimeMs;
 };
+
+const shouldForceBuild = () =>
+  process.env.HARNESS_FORCE_BUILD === "1" ||
+  process.env.HARNESS_DEV_REBUILD === "1";
+
+const prepareRuntimeDist = async () =>
+  shouldForceBuild()
+    ? runBuild()
+    : prepareFrontDoorDist(repoRoot, cliEntryPath, readOnlyCliWatchPaths);
 
 const rawArgs = process.argv.slice(2);
 const readOnlyCliFrontDoorCommands = new Set([
@@ -125,7 +136,7 @@ if (
   const buildExitCode =
     readOnlyCliFrontDoorCommands.has(rawArgs[0]) && !readOnlyFrontDoorNeedsBuild()
       ? 0
-      : await runBuild();
+      : await prepareRuntimeDist();
   if (buildExitCode !== 0) {
     process.exitCode = buildExitCode;
   } else {
@@ -347,7 +358,7 @@ const normalizedCliArgs = [
   ...positionalArgs
 ];
 
-const buildExitCode = await runBuild();
+const buildExitCode = await prepareRuntimeDist();
 if (buildExitCode !== 0) {
   process.exitCode = buildExitCode;
 } else {

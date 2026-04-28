@@ -30,7 +30,7 @@ Use the generated release ZIP for Codex app installation:
 npm run release:zip
 ```
 
-Install `.tmp/release/generic-codex-workbench.zip`, not a repository source archive. The release ZIP includes `packages/loop-orchestrator/dist` so product-build front-door commands can run without `npm ci`; it excludes `node_modules`, `.tmp`, and persisted run artifacts.
+Install `.tmp/release/generic-codex-workbench.zip`, not a repository source archive. The release ZIP includes `packages/loop-orchestrator/dist` so product-build front-door and `loop:start:codex` commands can run without `npm ci`; it excludes `node_modules`, `.tmp`, and persisted run artifacts.
 
 ## Front Door Commands
 
@@ -45,7 +45,7 @@ npm run loop:status -- --json
 
 `loop:intake` stays a stateless staged gate. `loop:discover` is the file-backed discovery surface that accumulates intake answers per thread under `evals/front-door-sessions/`. Once that session reaches `ready_for_prepare`, `loop:prepare -- --front-door-session <path>` materializes the snapshot into run-owned artifacts and leaves the run at `ready_to_start`.
 
-`loop:intent`, `loop:intake`, `loop:discover`, and `loop:prepare` rebuild only when the compiled front-door dist is missing or stale.
+`loop:intent`, `loop:intake`, `loop:discover`, `loop:prepare`, and the `loop-runner` start/resume/phase surfaces use bundled dist first. Use `HARNESS_FORCE_BUILD=1` only for intentional developer rebuilds.
 
 ## Validation Suites
 

@@ -10,7 +10,7 @@ Use the generated release artifact, not the repository source archive, for Codex
 npm run release:zip
 ```
 
-Install `.tmp/release/generic-codex-workbench.zip`. It includes `packages/loop-orchestrator/dist`, keeps `node_modules` out, and lets `loop:intent` / `loop:discover` run before `npm ci`.
+Install `.tmp/release/generic-codex-workbench.zip`. It includes `packages/loop-orchestrator/dist`, keeps `node_modules` out, and lets `loop:intent`, `loop:discover`, `loop:prepare`, and `loop:start:codex` run before `npm ci`.
 
 ## First Run From A Source ZIP
 

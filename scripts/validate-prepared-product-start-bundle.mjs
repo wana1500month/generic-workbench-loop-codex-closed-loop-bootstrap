@@ -122,6 +122,16 @@ const main = async () => {
       "Prepared product session should not fall back to generic-core."
     );
 
+    const startedPlan = await readJsonFile(join(prepared.runDirectory, "plan.json"));
+    assert.equal(startedPlan.plan_kind, "product_build");
+    assert.equal(startedPlan.product_title, "Prepared Product Bundle Fixture");
+    assert.match(startedPlan.north_star, /Prepared Product Bundle Fixture/);
+    assert.doesNotMatch(
+      startedPlan.north_star,
+      /generic harness mechanics/i,
+      JSON.stringify(startedPlan, null, 2)
+    );
+
     const attachedPromptPath = join(
       prepared.runDirectory,
       "round-001",
@@ -177,9 +187,24 @@ const main = async () => {
     assert.match(attachedPrompt, /\[data-testid='app-shell'\]/);
     assert.match(attachedPrompt, /\[data-testid='finish-line-ready'\]/);
     assert.match(attachedPrompt, /\[data-testid='feature-/);
+    assert.doesNotMatch(attachedPrompt, /planner_context_surface_reserved/);
+    assert.doesNotMatch(attachedPrompt, /generator_brief_surface_reserved/);
     assert.doesNotMatch(attachedPrompt, /Keep the repository generic and adapter-free/);
     assert.doesNotMatch(attachedPrompt, /packages\/loop-orchestrator\/src/);
     assert.doesNotMatch(attachedPrompt, /ADAPTER_CONTRACT\.md/);
+
+    const roundContract = await readJsonFile(
+      join(prepared.runDirectory, "round-001", "round-contract.json")
+    );
+    assert.match(
+      roundContract.objective,
+      /Prepared Product Bundle Fixture|runtime\/build-brief\.json/
+    );
+    assert.doesNotMatch(
+      roundContract.objective,
+      /Build against the planner spec/i,
+      JSON.stringify(roundContract, null, 2)
+    );
   } finally {
     await cleanupTempRoot(tempRoot);
   }

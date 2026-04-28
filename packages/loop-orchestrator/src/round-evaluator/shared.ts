@@ -86,6 +86,12 @@ export const knownCheckIds = new Set<string>([
   "prototype_baseline_present",
   "prototype_baseline_valid",
   "prototype_delta_present",
+  "build_brief_matches_user_intake",
+  "target_root_created_or_updated",
+  "core_workflows_have_user_visible_paths",
+  "local_runtime_starts",
+  "browser_journey_evidence_present",
+  "no_scope_drift_from_build_brief",
   "target_signal_thresholds_met"
 ]);
 

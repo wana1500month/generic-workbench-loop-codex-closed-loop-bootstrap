@@ -22,6 +22,7 @@ export interface LoopScenario {
 }
 
 export interface LoopPlan {
+  plan_kind?: "harness" | "product_build";
   scenario_id: string;
   rubric_id: string;
   target_total_score: number;
@@ -38,6 +39,8 @@ export interface LoopPlan {
   planner_acceptance_checks: string[];
   remediation_policy: string[];
   planner_notes: string[];
+  product_title?: string;
+  session_objective?: string;
   idea_title?: string;
   idea_source_path?: string;
 }

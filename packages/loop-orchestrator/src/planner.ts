@@ -190,6 +190,16 @@ export const buildAttemptDirective = (input: {
     carryOverCheckIds.length > 0 &&
     carryOverCheckIds.every((checkId) => checkId === "target_signal_thresholds_met");
   const remediationAttempt = input.round > 1 || carryOverCheckIds.length > 0;
+  const isProductBuild = input.plan.plan_kind === "product_build";
+  const productTitle = input.plan.product_title ?? input.scenario.title;
+  const initialObjective = isProductBuild
+    ? `Build the first version of ${productTitle} against runtime/build-brief.json, run the local product surface, and satisfy the release-gate workflow probes.`
+    : "Build against the planner spec in one long pass, then let the evaluator decide whether remediation is needed.";
+  const remediationObjective = thresholdOnly
+    ? isProductBuild
+      ? "Strengthen product runtime proof, browser workflow evidence, and release quality until product thresholds pass."
+      : "Strengthen target proof, live verification, and release quality until target thresholds pass."
+    : `Resolve evaluator feedback from the previous attempt: ${carryOverCheckIds.join(", ")}.`;
 
   return {
     round_id: `${input.scenario.scenario_id}-attempt-${String(input.round).padStart(2, "0")}`,
@@ -197,10 +207,8 @@ export const buildAttemptDirective = (input: {
     label: remediationAttempt ? `remediation attempt ${input.round - 1}` : "initial build attempt",
     objective:
       carryOverCheckIds.length > 0
-        ? thresholdOnly
-          ? "Strengthen target proof, live verification, and release quality until target thresholds pass."
-          : `Resolve evaluator feedback from the previous attempt: ${carryOverCheckIds.join(", ")}.`
-        : "Build against the planner spec in one long pass, then let the evaluator decide whether remediation is needed.",
+        ? remediationObjective
+        : initialObjective,
     focus_areas: input.plan.planner_focus_areas,
     rewrite_scope: remediationAttempt ? "incremental" : "integration",
     acceptance_checks:
@@ -230,6 +238,7 @@ export const buildLoopPlan = (input: {
     : checksForFocusAreas(focusAreas);
 
   return {
+    plan_kind: isProductBuild ? "product_build" : "harness",
     scenario_id: input.scenario.scenario_id,
     rubric_id: input.rubric.rubric_id,
     target_total_score: input.rubric.target_total_score,
@@ -267,6 +276,12 @@ export const buildLoopPlan = (input: {
           "Keep patch requests authoritative enough to drive the next build attempt.",
           "Treat external adapters as capability providers, not as source code to absorb into this repo."
         ]).slice(0, 10),
+    ...(isProductBuild
+      ? {
+          product_title: input.idea.title,
+          session_objective: `Ship ${input.idea.title} with runtime evidence for the captured workflows.`
+        }
+      : {}),
     idea_title: input.idea.title,
     idea_source_path: input.idea.source_path
   };

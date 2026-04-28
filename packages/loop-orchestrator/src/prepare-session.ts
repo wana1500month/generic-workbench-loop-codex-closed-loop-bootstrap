@@ -77,6 +77,7 @@ export interface ReadyToStartSessionMarker {
   run_directory: string;
   updated_at: string;
   thread_id?: string;
+  binding_state?: ThreadBindingState;
 }
 
 export interface PrepareSessionRunInput {
@@ -166,6 +167,11 @@ const loadReadyFrontDoorSession = async (
     }
   };
 };
+
+const fallbackFrontDoorThreadId = "local-codex-thread";
+
+const isFallbackThreadId = (threadId: string | undefined): boolean =>
+  threadId === fallbackFrontDoorThreadId;
 
 const materializeFrontDoorSessionIntake = async (input: {
   rootDirectory: string;
@@ -291,15 +297,31 @@ export const loadPreparedSessionSeedForRun = async (
 };
 
 const markerMatchesPreparedThread = (
-  markerThreadId: string | undefined,
+  marker: ReadyToStartSessionMarker,
   currentThreadId: string | undefined
-): boolean => (currentThreadId ? markerThreadId === currentThreadId : !markerThreadId);
+): boolean => {
+  if (marker.binding_state === "unbound" || !marker.thread_id) {
+    return true;
+  }
+  if (isFallbackThreadId(marker.thread_id)) {
+    return true;
+  }
+  return currentThreadId
+    ? marker.thread_id === currentThreadId
+    : marker.binding_state !== "bound";
+};
 
 const matchesPreparedThread = (
   sessionStatus: SessionStatusArtifact,
   currentThreadId: string | undefined
 ): boolean => {
   const preparedThreadId = sessionStatus.session_binding.thread_id;
+  if (sessionStatus.session_binding.binding_state === "unbound") {
+    return true;
+  }
+  if (!preparedThreadId || isFallbackThreadId(preparedThreadId)) {
+    return true;
+  }
   if (currentThreadId) {
     return preparedThreadId === currentThreadId;
   }
@@ -333,7 +355,7 @@ export const findLatestPreparedRunAwaitingStart = async (
 ): Promise<{ runId: string; runDirectory: string } | undefined> => {
   try {
     const marker = await loadReadyToStartSessionMarker(runsDirectory);
-    if (marker && markerMatchesPreparedThread(marker.thread_id, currentThreadId)) {
+    if (marker && markerMatchesPreparedThread(marker, currentThreadId)) {
       const markerSessionStatus = await loadJsonIfExists<SessionStatusArtifact>(
         runtimeStatePathsForRun(marker.run_directory).sessionStatusPath
       );
@@ -417,15 +439,24 @@ export const prepareSessionRun = async (
   const envThreadId = process.env.CODEX_THREAD_ID?.trim() || undefined;
   const discoveryThreadId =
     frontDoorSession?.artifact.thread_id?.trim() || undefined;
-  if (envThreadId && discoveryThreadId && envThreadId !== discoveryThreadId) {
+  if (
+    envThreadId &&
+    discoveryThreadId &&
+    !isFallbackThreadId(discoveryThreadId) &&
+    envThreadId !== discoveryThreadId
+  ) {
     throw new Error(
       `Front-door session belongs to thread ${discoveryThreadId}, but current CODEX_THREAD_ID is ${envThreadId}.`
     );
   }
-  const effectiveThreadId = envThreadId ?? discoveryThreadId;
+  const effectiveThreadId = envThreadId ?? (
+    isFallbackThreadId(discoveryThreadId) ? undefined : discoveryThreadId
+  );
   const effectiveThreadBindingState: ThreadBindingState =
-    effectiveThreadId
+    envThreadId
       ? "bound"
+      : discoveryThreadId && !isFallbackThreadId(discoveryThreadId)
+        ? "bound"
       : readThreadBindingStateFromEnv() ?? "unbound";
   await mkdir(runDirectory, { recursive: true });
   const idea = await readIdeaBrief(input.ideaPath ?? defaultIdeaPath);
@@ -712,6 +743,7 @@ export const prepareSessionRun = async (
     run_id: runId,
     run_directory: runDirectory,
     updated_at: new Date().toISOString(),
+    binding_state: effectiveThreadBindingState,
     ...(sessionContext.threadId ? { thread_id: sessionContext.threadId } : {})
   } satisfies ReadyToStartSessionMarker);
   if (frontDoorSession) {

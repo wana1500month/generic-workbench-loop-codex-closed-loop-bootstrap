@@ -1121,7 +1121,8 @@ export const runClosedLoop = async (input: {
         scenario: baseScenario,
         rubric: hydratedRubric,
         maxRounds: attemptBudget,
-        idea
+        idea,
+        planKind: sessionKind === "product_build" ? "product_build" : "harness"
       });
       if (transportMode === "app-server" && appServerTransport) {
         const plannerEnhancement = await enhancePlanWithAppServer({

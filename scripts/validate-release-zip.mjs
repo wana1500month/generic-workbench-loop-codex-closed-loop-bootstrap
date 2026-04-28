@@ -94,8 +94,10 @@ const requiredReleasePaths = [
   "scripts/loop-discover.mjs",
   "scripts/loop-intake.mjs",
   "scripts/loop-prepare.mjs",
+  "scripts/loop-runner.mjs",
   "scripts/lib/front-door-build.mjs",
   "scripts/package-release.mjs",
+  "scripts/validate-release-product-start.mjs",
   "init.sh",
   "packages/loop-orchestrator/dist",
   ".agents",
@@ -153,6 +155,10 @@ const main = async () => {
     assert.ok(
       existsSync(join(releaseRoot, "packages", "loop-orchestrator", "dist", "front-door-session-cli.js")),
       "release image is missing packages/loop-orchestrator/dist/front-door-session-cli.js"
+    );
+    assert.ok(
+      existsSync(join(releaseRoot, "scripts", "validate-release-product-start.mjs")),
+      "release image is missing scripts/validate-release-product-start.mjs"
     );
     assert.ok(
       !existsSync(join(releaseRoot, "node_modules")),
@@ -229,6 +235,28 @@ const main = async () => {
     const discoverJson = JSON.parse(discoverResult.stdout);
     assert.equal(discoverJson.status, "ask_product_questions");
     assert.equal(discoverJson.intake.product_title, "가계부 앱");
+
+    const startHelpResult = await runCommand(
+      process.execPath,
+      ["scripts/loop-runner.mjs", "--help"],
+      {
+        cwd: releaseRoot,
+        env: {
+          ...process.env,
+          npm_config_ignore_scripts: "true"
+        },
+        shell: false
+      }
+    );
+    assert.equal(
+      startHelpResult.code,
+      0,
+      `release loop-runner help failed.\nSTDOUT:\n${startHelpResult.stdout}\nSTDERR:\n${startHelpResult.stderr}`
+    );
+    assert.doesNotMatch(
+      startHelpResult.stderr,
+      /TypeScript is not installed|npm ci|npx -p typescript|npm run build/i
+    );
 
     const packageJson = JSON.parse(
       await readFile(join(releaseRoot, "package.json"), "utf8")

@@ -8,6 +8,9 @@ const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const releaseRoot = join(repoRoot, ".tmp", "release");
 const stageRoot = join(releaseRoot, "generic-codex-workbench");
 const zipPath = join(releaseRoot, "generic-codex-workbench.zip");
+const requiredPackageFiles = [
+  "scripts/validate-release-product-start.mjs"
+];
 
 const runCommand = async (command, args, options = {}) =>
   new Promise((resolvePromise) => {
@@ -143,6 +146,13 @@ const main = async () => {
     if (!shouldPackageTrackedFile(relativePath)) {
       continue;
     }
+    await copyPath(join(repoRoot, relativePath), join(stageRoot, relativePath));
+  }
+  for (const relativePath of requiredPackageFiles) {
+    await assertExists(
+      join(repoRoot, relativePath),
+      `required release file is missing: ${relativePath}`
+    );
     await copyPath(join(repoRoot, relativePath), join(stageRoot, relativePath));
   }
 

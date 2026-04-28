@@ -74,6 +74,20 @@ const apiRequirementsFromProbes = (
     }))
     .filter((item) => item.path.length > 0);
 
+const generatorDeliverablesForPrompt = (input: {
+  task: AttachedGeneratorTaskArtifact;
+  agreement: ContractAgreementArtifact;
+}): string[] =>
+  input.task.build_brief_snapshot
+    ? [
+        "Implement the captured core workflows inside the target root.",
+        "Create or update run/check scripts to match the session contract.",
+        "Make every required release-gate selector real, user-visible, and backed by behavior.",
+        "Run or prepare the local product surface before claiming completion.",
+        "Do not modify the harness core."
+      ]
+    : input.agreement.generator_must_deliver;
+
 const promptText = (input: {
   targetRoot: string;
   task: AttachedGeneratorTaskArtifact;
@@ -163,8 +177,14 @@ const promptText = (input: {
     input.contract.objective,
     "",
     "## Agreement must deliver",
-    ...(input.agreement.generator_must_deliver.length > 0
-      ? input.agreement.generator_must_deliver.map((item) => `- ${item}`)
+    ...(generatorDeliverablesForPrompt({
+      task: input.task,
+      agreement: input.agreement
+    }).length > 0
+      ? generatorDeliverablesForPrompt({
+          task: input.task,
+          agreement: input.agreement
+        }).map((item) => `- ${item}`)
       : ["- none"]),
     "",
     "## Generator intent",
