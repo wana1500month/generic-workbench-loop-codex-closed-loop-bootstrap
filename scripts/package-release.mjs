@@ -67,6 +67,7 @@ const ignoredPackagePath = (relativePath) =>
   relativePath.startsWith("node_modules/") ||
   relativePath === ".tmp" ||
   relativePath.startsWith(".tmp/") ||
+  relativePath === "VALIDATION_STATUS.md" ||
   relativePath.startsWith("evals/runs/");
 
 const walkFiles = async (root, prefix = "") => {

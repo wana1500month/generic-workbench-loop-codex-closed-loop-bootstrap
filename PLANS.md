@@ -77,6 +77,7 @@ Acceptance:
 - The repo should expose phase-oriented foreground entrypoints such as `loop:status`, `loop:resume`, and `loop:phase`, so Codex app operators can inspect or re-enter a persisted run without memorizing raw `--resume-run` and `--resume-phase` flag combinations.
 - Foreground entrypoints such as `loop:start:codex`, `loop:resume`, `loop:phase`, `loop:status`, and `--help` should reuse a bundled `dist/` build in installable ZIPs instead of forcing `npm ci` or TypeScript rebuilds before start, resume, phase re-entry, or inspection.
 - Installable release ZIPs should be the documented Codex app artifact, with source archives treated as bootstrap-required developer inputs rather than zero-touch installs.
+- Dist-missing source archives should not trigger local npm bootstrap from skill helpers or front-door wrappers unless the operator explicitly opts in.
 - Product-build attached generator task artifacts should expose product-facing deliverables and release-gate selector requirements, not internal harness control-plane checks.
 - Outer-timeout prevention should live in a separate supervisor surface that can restart the controller from `--resume-run` state, survive launcher-shell death when detached, and discover the owned run through an explicit supervisor marker instead of newest-run guessing.
 - The repo should expose a lightweight runtime dashboard for attached monitoring through `loop:ui`.

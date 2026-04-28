@@ -27,7 +27,7 @@ npm ci
 npm run build
 ```
 
-Do not expect the first product-build turn from a source archive to be zero-touch: bootstrap may need network access for `npm ci`. The installable release ZIP is the no-`npm ci` path for Codex app use.
+Do not expect the first product-build turn from a source archive to be zero-touch: bootstrap may need network access for `npm ci`. The installable release ZIP is the no-`npm ci` path for Codex app use. Skill helpers and npm front-door wrappers now fail closed when `dist/` is missing unless local TypeScript is already installed, `HARNESS_ALLOW_NPX_INSTALL=1` is set for build fallback, or `HARNESS_ALLOW_SOURCE_BOOTSTRAP=1` is set for intentional `init.sh` bootstrap.
 
 ## Codex App Flow
 

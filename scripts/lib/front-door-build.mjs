@@ -58,7 +58,26 @@ const hasLocalTypeScript = (cwd) =>
   existsSync(join(cwd, "node_modules", ".bin", process.platform === "win32" ? "tsc.cmd" : "tsc")) ||
   existsSync(join(cwd, "node_modules", "typescript", "bin", "tsc"));
 
+const sourceBootstrapAllowed = () =>
+  process.env.HARNESS_ALLOW_SOURCE_BOOTSTRAP === "1";
+
+const printSourceArchiveMissingDistMessage = () => {
+  process.stderr.write(
+    [
+      "packages/loop-orchestrator/dist is missing.",
+      "This folder looks like a source archive, not the installable release ZIP.",
+      "Install .tmp/release/generic-codex-workbench.zip for Codex app use.",
+      "If you intentionally want local source bootstrap, run bash ./init.sh yourself or set HARNESS_ALLOW_SOURCE_BOOTSTRAP=1 before retrying."
+    ].join(" ") + "\n"
+  );
+};
+
 export const runBootstrap = async (cwd) => {
+  if (!sourceBootstrapAllowed()) {
+    printSourceArchiveMissingDistMessage();
+    return 1;
+  }
+
   const initPath = join(cwd, "init.sh");
   if (existsSync(initPath)) {
     const initExitCode = await runCommand(cwd, "bash", [initPath], {
@@ -76,6 +95,12 @@ export const runBootstrap = async (cwd) => {
 
 export const prepareFrontDoorDist = async (cwd, distEntryPath, watchPaths) => {
   if (!existsSync(distEntryPath)) {
+    if (hasLocalTypeScript(cwd) || process.env.HARNESS_ALLOW_NPX_INSTALL === "1") {
+      return runCommand(cwd, "npm", ["run", "build", "--silent"], {
+        shell: process.platform === "win32"
+      });
+    }
+
     return runBootstrap(cwd);
   }
 

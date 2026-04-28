@@ -75,6 +75,7 @@
     "validate:security-guards": "node ./scripts/validate-security-guards.mjs",
     "validate:release-zip": "node ./scripts/validate-release-zip.mjs",
     "validate:release-product-start": "node ./scripts/validate-release-product-start.mjs",
+    "validate:source-bootstrap-guard": "node ./scripts/validate-source-bootstrap-guard.mjs",
     "validate:browser-preflight": "node ./scripts/validate-browser-preflight.mjs",
     "validate:score-policy": "node ./scripts/validate-score-policy.mjs",
     "validate:adapter-drift": "node ./scripts/validate-adapter-drift.mjs",
