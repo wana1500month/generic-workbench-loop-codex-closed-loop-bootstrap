@@ -14,7 +14,7 @@ Install `.tmp/release/generic-codex-workbench.zip`. It includes `packages/loop-o
 
 ## First Run From A Source ZIP
 
-If you intentionally use a source archive, run one bootstrap command before using plugin skills:
+If `packages/loop-orchestrator/dist` is missing, the folder is a source archive, not the installable Codex app artifact. Prefer installing `.tmp/release/generic-codex-workbench.zip`. If you intentionally use a source archive and accept local npm bootstrap, run one bootstrap command before using plugin skills:
 
 ```bash
 bash ./init.sh
@@ -27,7 +27,7 @@ npm ci
 npm run build
 ```
 
-Skill helpers also attempt bootstrap when the compiled `packages/loop-orchestrator/dist` entrypoint is missing. If that automatic bootstrap fails, the helper prints the recovery command instead of failing with only a missing-dist stack.
+Do not expect the first product-build turn from a source archive to be zero-touch: bootstrap may need network access for `npm ci`. The installable release ZIP is the no-`npm ci` path for Codex app use.
 
 ## Codex App Flow
 

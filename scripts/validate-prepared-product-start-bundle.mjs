@@ -193,6 +193,26 @@ const main = async () => {
     assert.doesNotMatch(attachedPrompt, /packages\/loop-orchestrator\/src/);
     assert.doesNotMatch(attachedPrompt, /ADAPTER_CONTRACT\.md/);
 
+    const attachedTask = await readJsonFile(
+      join(
+        prepared.runDirectory,
+        "round-001",
+        "runtime",
+        "attached-generator-task.json"
+      )
+    );
+    assert.deepEqual(attachedTask.must_deliver, [
+      "Implement the captured core workflows inside the target root.",
+      "Create or update run/check scripts to match the session contract.",
+      "Make every required release-gate selector real, user-visible, and backed by behavior.",
+      "Run or prepare the local product surface before claiming completion.",
+      "Do not modify the harness core."
+    ]);
+    assert.doesNotMatch(
+      JSON.stringify(attachedTask.must_deliver),
+      /planner_context_surface_reserved|generator_brief_surface_reserved/
+    );
+
     const roundContract = await readJsonFile(
       join(prepared.runDirectory, "round-001", "round-contract.json")
     );
@@ -203,6 +223,21 @@ const main = async () => {
     assert.doesNotMatch(
       roundContract.objective,
       /Build against the planner spec/i,
+      JSON.stringify(roundContract, null, 2)
+    );
+    assert.match(
+      JSON.stringify(roundContract.carry_over_context),
+      /runtime\/build-brief\.json/,
+      JSON.stringify(roundContract, null, 2)
+    );
+    assert.match(
+      JSON.stringify(roundContract.carry_over_context),
+      /captured target root/,
+      JSON.stringify(roundContract, null, 2)
+    );
+    assert.doesNotMatch(
+      JSON.stringify(roundContract.carry_over_context),
+      /planner-owned contract|fixed feature sprints/,
       JSON.stringify(roundContract, null, 2)
     );
   } finally {

@@ -32,6 +32,8 @@ npm run release:zip
 
 Install `.tmp/release/generic-codex-workbench.zip`, not a repository source archive. The release ZIP includes `packages/loop-orchestrator/dist` so product-build front-door and `loop:start:codex` commands can run without `npm ci`; it excludes `node_modules`, `.tmp`, and persisted run artifacts.
 
+If `packages/loop-orchestrator/dist` is missing after unzip, you are not using the installable release ZIP. Prefer installing the generated release ZIP. Run `bash ./init.sh` from a source archive only when the operator explicitly accepts a local `npm ci`/build bootstrap.
+
 ## Front Door Commands
 
 ```bash

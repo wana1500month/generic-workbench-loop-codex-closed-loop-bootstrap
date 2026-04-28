@@ -297,6 +297,25 @@ export const buildRoundContract = (input: {
   const carryOverCheckIds = unique(
     input.previousPatchRequest?.must_fix.flatMap((item) => item.target_check_ids) ?? []
   );
+  const productBuild = /runtime\/build-brief\.json|release-gate workflow probes/i.test(
+    input.directive.objective
+  );
+  const briefNote =
+    input.directive.attempt_kind === "remediation"
+      ? "Use the previous patch request and latest QA feedback as the primary remediation brief."
+      : productBuild
+        ? "Use runtime/build-brief.json and runtime/run-contract.json as the product source of truth."
+        : "Use the planner-owned contract as the primary brief for the long initial build attempt.";
+  const scopeNotes = productBuild
+    ? [
+        "Keep changes inside the captured target root.",
+        "Satisfy release-gate workflow probes before claiming completion.",
+        "Do not optimize the harness core during this product build."
+      ]
+    : [
+        "Contract should remain executable from files alone.",
+        "Do not decompose this run into fixed feature sprints."
+      ];
 
   return {
     contract_id: `${input.scenario.scenario_id}-contract-round-${String(input.round).padStart(2, "0")}`,
@@ -313,11 +332,8 @@ export const buildRoundContract = (input: {
       carryOverPatchIds.length > 0
         ? `Inherited patch request ids: ${carryOverPatchIds.join(", ")}.`
         : "No previous patch request was available.",
-      input.directive.attempt_kind === "remediation"
-        ? "Use the previous patch request and latest QA feedback as the primary remediation brief."
-        : "Use the planner-owned contract as the primary brief for the long initial build attempt.",
-      "Contract should remain executable from files alone.",
-      "Do not decompose this run into fixed feature sprints."
+      briefNote,
+      ...scopeNotes
     ]).slice(0, 8),
     carry_over_patch_ids: carryOverPatchIds,
     carry_over_check_ids: carryOverCheckIds

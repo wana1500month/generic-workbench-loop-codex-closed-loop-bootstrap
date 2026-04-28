@@ -19,7 +19,7 @@ const zipPath =
       ? resolve(repoRoot, zipEqualsArg.slice("--zip=".length))
       : positionalZipArg
         ? resolve(repoRoot, positionalZipArg)
-        : undefined;
+        : join(repoRoot, ".tmp", "release", "generic-codex-workbench.zip");
 
 const buildToolPattern =
   /TypeScript is not installed|npm ci|npx -p typescript|npm run build/i;
@@ -129,7 +129,6 @@ const runReleaseNode = async (releaseRoot, commandArgs, env) =>
   });
 
 const main = async () => {
-  assert.ok(zipPath, "Usage: node scripts/validate-release-product-start.mjs --zip <release.zip>");
   assert.ok(existsSync(zipPath), `release zip not found: ${zipPath}`);
 
   await mkdir(join(repoRoot, ".tmp"), { recursive: true });

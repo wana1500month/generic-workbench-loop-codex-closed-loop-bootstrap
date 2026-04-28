@@ -27,7 +27,9 @@ export const runCommand = async (command, args, options = {}) =>
   });
 
 export const ensureBuild = async () => {
-  const result = await runCommand("npm", ["run", "build", "--silent"]);
+  const result = await runCommand(process.execPath, [
+    "./scripts/build-workspace.mjs"
+  ]);
   if (result.code !== 0) {
     throw new Error(`build failed:\n${result.stdout}\n${result.stderr}`);
   }

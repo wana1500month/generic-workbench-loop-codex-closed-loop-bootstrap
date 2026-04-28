@@ -74,18 +74,20 @@ const apiRequirementsFromProbes = (
     }))
     .filter((item) => item.path.length > 0);
 
+const productBuildDeliverables = [
+  "Implement the captured core workflows inside the target root.",
+  "Create or update run/check scripts to match the session contract.",
+  "Make every required release-gate selector real, user-visible, and backed by behavior.",
+  "Run or prepare the local product surface before claiming completion.",
+  "Do not modify the harness core."
+];
+
 const generatorDeliverablesForPrompt = (input: {
   task: AttachedGeneratorTaskArtifact;
   agreement: ContractAgreementArtifact;
 }): string[] =>
   input.task.build_brief_snapshot
-    ? [
-        "Implement the captured core workflows inside the target root.",
-        "Create or update run/check scripts to match the session contract.",
-        "Make every required release-gate selector real, user-visible, and backed by behavior.",
-        "Run or prepare the local product surface before claiming completion.",
-        "Do not modify the harness core."
-      ]
+    ? productBuildDeliverables
     : input.agreement.generator_must_deliver;
 
 const promptText = (input: {
@@ -242,6 +244,18 @@ export const writeAttachedGeneratorTask = async (input: {
   const browserProbeIds = releaseGateProbes(input.verificationProbes)
     .filter((probe) => probe.mode === "browser_journey" || probe.mode === "browser")
     .map((probe) => probe.probe_id);
+  const buildBriefSnapshot = input.buildBrief
+    ? {
+        title: input.buildBrief.product.title,
+        summary: input.buildBrief.product.summary,
+        target_users: input.buildBrief.product.target_users,
+        core_workflows: input.buildBrief.product.core_workflows,
+        success_definition: input.buildBrief.product.success_definition
+      }
+    : undefined;
+  const mustDeliver = buildBriefSnapshot
+    ? productBuildDeliverables
+    : input.agreement.generator_must_deliver;
   const checkpointSeq = input.checkpointSeq ?? Date.now();
   const checkpointId =
     input.checkpointId ??
@@ -274,15 +288,9 @@ export const writeAttachedGeneratorTask = async (input: {
     ...(input.transportProtocolPath
       ? { transport_protocol_path: input.transportProtocolPath }
       : {}),
-    ...(input.buildBrief
+    ...(buildBriefSnapshot
       ? {
-          build_brief_snapshot: {
-            title: input.buildBrief.product.title,
-            summary: input.buildBrief.product.summary,
-            target_users: input.buildBrief.product.target_users,
-            core_workflows: input.buildBrief.product.core_workflows,
-            success_definition: input.buildBrief.product.success_definition
-          }
+          build_brief_snapshot: buildBriefSnapshot
         }
       : {}),
     verification_requirements: {
@@ -291,7 +299,7 @@ export const writeAttachedGeneratorTask = async (input: {
       api_probe_paths: apiProbePaths
     },
     summary: input.generatorPlan.implementation_intent,
-    must_deliver: input.agreement.generator_must_deliver,
+    must_deliver: mustDeliver,
     must_fix:
       input.previousPatchRequest?.must_fix.map((item) => item.expected_change) ?? [],
     must_preserve: input.generatorPlan.must_preserve ?? [],

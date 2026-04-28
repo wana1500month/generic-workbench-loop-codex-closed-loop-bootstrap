@@ -11,9 +11,19 @@ const zipPath = join(releaseRoot, "generic-codex-workbench.zip");
 const requiredPackageFiles = [
   "scripts/validate-release-product-start.mjs"
 ];
+const commandTimeoutMs = Number.parseInt(
+  process.env.HARNESS_RELEASE_COMMAND_TIMEOUT_MS ?? "300000",
+  10
+);
+
+const logStep = (message) => {
+  process.stderr.write(`[release:zip] ${message}\n`);
+};
 
 const runCommand = async (command, args, options = {}) =>
   new Promise((resolvePromise) => {
+    const timeoutMs = options.timeoutMs ?? commandTimeoutMs;
+    let timedOut = false;
     const child = spawn(command, args, {
       cwd: options.cwd ?? repoRoot,
       env: options.env ?? process.env,
@@ -22,6 +32,14 @@ const runCommand = async (command, args, options = {}) =>
     });
     let stdout = "";
     let stderr = "";
+    const timer =
+      Number.isFinite(timeoutMs) && timeoutMs > 0
+        ? setTimeout(() => {
+            timedOut = true;
+            stderr += `\nCommand timed out after ${timeoutMs}ms: ${command} ${args.join(" ")}\n`;
+            child.kill();
+          }, timeoutMs)
+        : undefined;
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
     });
@@ -29,10 +47,16 @@ const runCommand = async (command, args, options = {}) =>
       stderr += chunk.toString();
     });
     child.on("error", (error) => {
+      if (timer) {
+        clearTimeout(timer);
+      }
       resolvePromise({ code: 1, stdout, stderr: `${stderr}${error.message}` });
     });
     child.on("close", (code) => {
-      resolvePromise({ code: code ?? 1, stdout, stderr });
+      if (timer) {
+        clearTimeout(timer);
+      }
+      resolvePromise({ code: timedOut ? 1 : code ?? 1, stdout, stderr });
     });
   });
 
@@ -69,12 +93,17 @@ const walkFiles = async (root, prefix = "") => {
 };
 
 const trackedFiles = async () => {
+  logStep("Collecting package file list.");
   const result = await runCommand("git", ["ls-files", "-z"]);
   if (result.code === 0 && result.stdout.trim().length > 0) {
-    return result.stdout.split("\0").filter(Boolean);
+    const files = result.stdout.split("\0").filter(Boolean);
+    logStep(`Using git tracked file list (${files.length} files).`);
+    return files;
   }
 
-  return walkFiles(repoRoot);
+  const files = await walkFiles(repoRoot);
+  logStep(`git ls-files unavailable; using filesystem walk (${files.length} files).`);
+  return files;
 };
 
 const shouldPackageTrackedFile = (relativePath) =>
@@ -100,7 +129,8 @@ const assertExists = async (path, message) => {
 const createZip = async () => {
   const zipResult = await runCommand("zip", ["-qr", zipPath, "."], {
     cwd: stageRoot,
-    shell: process.platform === "win32"
+    shell: process.platform === "win32",
+    timeoutMs: commandTimeoutMs
   });
   if (zipResult.code === 0) {
     return;
@@ -117,7 +147,8 @@ const createZip = async () => {
       {
         cwd: stageRoot,
         env: { ...process.env, HARNESS_RELEASE_ZIP: zipPath },
-        shell: false
+        shell: false,
+        timeoutMs: commandTimeoutMs
       }
     );
     if (psResult.code === 0) {
@@ -133,21 +164,26 @@ const createZip = async () => {
 
 const main = async () => {
   const distRoot = join(repoRoot, "packages", "loop-orchestrator", "dist");
+  logStep("Checking compiled dist.");
   await assertExists(
     join(distRoot, "intent-gate-cli.js"),
     "packages/loop-orchestrator/dist is missing. Run npm run build before packaging."
   );
 
+  logStep("Preparing release stage.");
   await rm(stageRoot, { recursive: true, force: true });
   await rm(zipPath, { force: true });
   await mkdir(stageRoot, { recursive: true });
 
-  for (const relativePath of await trackedFiles()) {
+  const files = await trackedFiles();
+  logStep(`Copying package files into stage (${files.length} candidates).`);
+  for (const relativePath of files) {
     if (!shouldPackageTrackedFile(relativePath)) {
       continue;
     }
     await copyPath(join(repoRoot, relativePath), join(stageRoot, relativePath));
   }
+  logStep("Copying required release-only files.");
   for (const relativePath of requiredPackageFiles) {
     await assertExists(
       join(repoRoot, relativePath),
@@ -156,10 +192,13 @@ const main = async () => {
     await copyPath(join(repoRoot, relativePath), join(stageRoot, relativePath));
   }
 
+  logStep("Copying compiled loop-orchestrator dist.");
   await copyPath(distRoot, join(stageRoot, "packages", "loop-orchestrator", "dist"));
   await chmod(join(stageRoot, "init.sh"), 0o755);
+  logStep("Creating release ZIP.");
   await createZip();
 
+  logStep(`Release ZIP ready: ${zipPath}`);
   process.stdout.write(`${zipPath}\n`);
 };
 
