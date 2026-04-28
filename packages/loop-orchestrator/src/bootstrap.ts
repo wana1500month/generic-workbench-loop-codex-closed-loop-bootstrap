@@ -5,11 +5,22 @@ import { createInterface } from "node:readline/promises";
 import { scaffoldAdapterArtifacts } from "./bootstrap/generated-adapter.js";
 import { createBootstrapArtifactPaths } from "./bootstrap/paths.js";
 import {
+  adapterPlanMarkdown,
+  buildAdapterPlanFromIntake,
+  defaultVerificationSurfacesForFamily,
+  defaultWorkflowChecksFromCoreFeatures
+} from "./adapter-plan.js";
+import {
   scaffoldDurableMemoryArtifacts,
   type DurableMemoryContext
 } from "./durable-memory.js";
 import { loadJson, repoRoot, writeJson, writeText } from "./file-system.js";
 import { inferProductTargetFamily } from "./intake-gate.js";
+import type {
+  SessionAdapterPlan,
+  SessionWorkflowCheck,
+  VerificationSurface
+} from "./intake-schema.js";
 import { resolveTargetFamilySelection } from "./profile-selection.js";
 import type {
   LoopRubric,
@@ -55,6 +66,31 @@ export type BootstrapProbeHints = {
   apiPersistencePath?: string;
 };
 
+export type BootstrapVerificationSurface = VerificationSurface;
+
+export type BootstrapWorkflowCheck = {
+  workflow: string;
+  surface: BootstrapVerificationSurface;
+  trigger?: string;
+  expectedResult: string;
+  selectorHints?: {
+    root?: string;
+    action?: string;
+    result?: string;
+  };
+  apiHint?: {
+    method?: string;
+    path?: string;
+    expectedStatus?: number;
+    expectedJsonPath?: string;
+    expectedValue?: string;
+  };
+  commandHint?: {
+    command?: string;
+    expectedOutput?: string;
+  };
+};
+
 export type BootstrapAnswers = {
   title: string;
   summary: string;
@@ -86,6 +122,9 @@ export type BootstrapAnswers = {
   nonGoals?: string[];
   probeHints?: BootstrapProbeHints;
   customQualityMetrics?: BootstrapCustomQualityMetric[];
+  verificationSurfaces: BootstrapVerificationSurface[];
+  workflowChecks: BootstrapWorkflowCheck[];
+  adapterPlan: SessionAdapterPlan;
 };
 
 export type BootstrapSeed = {
@@ -119,6 +158,9 @@ export type BootstrapSeed = {
   nonGoals?: string[];
   probeHints?: BootstrapProbeHints;
   customQualityMetrics?: BootstrapCustomQualityMetric[];
+  verificationSurfaces?: BootstrapVerificationSurface[];
+  workflowChecks?: BootstrapWorkflowCheck[];
+  adapterPlan?: SessionAdapterPlan;
 };
 
 export type BootstrapResult = {
@@ -135,6 +177,8 @@ export type BootstrapResult = {
   progressLogPath: string;
   doneWhenPath: string;
   initScriptPath: string;
+  adapterPlanPath: string;
+  adapterPlanMarkdownPath: string;
 };
 
 export type BootstrapArtifactPaths = {
@@ -147,6 +191,8 @@ export type BootstrapArtifactPaths = {
   doneWhenPath: string;
   initScriptPath: string;
   adapterPath: string;
+  adapterPlanPath: string;
+  adapterPlanMarkdownPath: string;
   generatedRubricPath: string;
   generatedVerificationProfilePath: string;
   generatedAdapterRoot: string;
@@ -475,6 +521,87 @@ const defaultApiBaseUrlForFamily = (
     ? "http://127.0.0.1:3000/api"
     : undefined;
 
+const toSessionWorkflowCheck = (
+  check: BootstrapWorkflowCheck
+): SessionWorkflowCheck => ({
+  workflow: check.workflow,
+  surface: check.surface,
+  ...(check.trigger ? { trigger: check.trigger } : {}),
+  expected_result: check.expectedResult,
+  ...(check.selectorHints ? { selector_hints: check.selectorHints } : {}),
+  ...(check.apiHint
+    ? {
+        api_hint: {
+          ...(check.apiHint.method
+            ? {
+                method:
+                  check.apiHint.method as NonNullable<
+                    SessionWorkflowCheck["api_hint"]
+                  >["method"]
+              }
+            : {}),
+          ...(check.apiHint.path ? { path: check.apiHint.path } : {}),
+          ...(check.apiHint.expectedStatus !== undefined
+            ? { expected_status: check.apiHint.expectedStatus }
+            : {}),
+          ...(check.apiHint.expectedJsonPath
+            ? { expected_json_path: check.apiHint.expectedJsonPath }
+            : {}),
+          ...(check.apiHint.expectedValue
+            ? { expected_value: check.apiHint.expectedValue }
+            : {})
+        }
+      }
+    : {}),
+  ...(check.commandHint
+    ? {
+        command_hint: {
+          ...(check.commandHint.command ? { command: check.commandHint.command } : {}),
+          ...(check.commandHint.expectedOutput
+            ? { expected_output: check.commandHint.expectedOutput }
+            : {})
+        }
+      }
+    : {})
+});
+
+const toBootstrapWorkflowCheck = (
+  check: SessionWorkflowCheck
+): BootstrapWorkflowCheck => ({
+  workflow: check.workflow,
+  surface: check.surface,
+  ...(check.trigger ? { trigger: check.trigger } : {}),
+  expectedResult: check.expected_result,
+  ...(check.selector_hints ? { selectorHints: check.selector_hints } : {}),
+  ...(check.api_hint
+    ? {
+        apiHint: {
+          ...(check.api_hint.method ? { method: check.api_hint.method } : {}),
+          ...(check.api_hint.path ? { path: check.api_hint.path } : {}),
+          ...(check.api_hint.expected_status !== undefined
+            ? { expectedStatus: check.api_hint.expected_status }
+            : {}),
+          ...(check.api_hint.expected_json_path
+            ? { expectedJsonPath: check.api_hint.expected_json_path }
+            : {}),
+          ...(check.api_hint.expected_value
+            ? { expectedValue: check.api_hint.expected_value }
+            : {})
+        }
+      }
+    : {}),
+  ...(check.command_hint
+    ? {
+        commandHint: {
+          ...(check.command_hint.command ? { command: check.command_hint.command } : {}),
+          ...(check.command_hint.expected_output
+            ? { expectedOutput: check.command_hint.expected_output }
+            : {})
+        }
+      }
+    : {})
+});
+
 export const buildBootstrapAnswersFromSeed = (
   seed: BootstrapSeed
 ): BootstrapAnswers => {
@@ -516,6 +643,43 @@ export const buildBootstrapAnswersFromSeed = (
     qualityBar[0] ||
     `${normalizedTitle} meets the requested finish line.`;
   const probeHints = nonEmptyProbeHints(seed.probeHints);
+  const verificationSurfaces =
+    seed.verificationSurfaces?.length
+      ? ([...new Set(seed.verificationSurfaces)] as BootstrapVerificationSurface[])
+      : defaultVerificationSurfacesForFamily(seed.targetFamily);
+  const workflowChecks =
+    seed.workflowChecks?.length
+      ? seed.workflowChecks
+      : defaultWorkflowChecksFromCoreFeatures(
+          uniqueList(seed.coreFeatures ?? []),
+          verificationSurfaces
+        ).map(toBootstrapWorkflowCheck);
+  const adapterPlan =
+    seed.adapterPlan ??
+    buildAdapterPlanFromIntake({
+      targetFamily: seed.targetFamily,
+      intake: {
+        product_title: normalizedTitle,
+        product_summary: seed.summary.trim() || finishLine,
+        target_users: uniqueList(seed.targetUsers ?? []),
+        core_features: uniqueList(seed.coreFeatures ?? []),
+        reference_apps: uniqueList(seed.referenceApps ?? []),
+        finish_line: finishLine,
+        target_family: seed.targetFamily,
+        target_root: targetRoot,
+        project_mode: projectMode,
+        framework_hint: frameworkHint,
+        package_manager: packageManager,
+        run_command: runCommand,
+        check_command: checkCommand,
+        ready_url: readyUrl,
+        ...(appUrl ? { app_url: appUrl } : {}),
+        ...(healthUrl ? { health_url: healthUrl } : {}),
+        ...(apiBaseUrl ? { api_base_url: apiBaseUrl } : {}),
+        verification_surfaces: verificationSurfaces,
+        workflow_checks: workflowChecks.map(toSessionWorkflowCheck)
+      }
+    });
 
   return {
     title: normalizedTitle,
@@ -564,7 +728,57 @@ export const buildBootstrapAnswersFromSeed = (
             ...(metric.weight !== undefined ? { weight: metric.weight } : {})
           }))
         }
-      : {})
+      : {}),
+    verificationSurfaces,
+    workflowChecks,
+    adapterPlan
+  };
+};
+
+const completeBootstrapAnswers = (answers: BootstrapAnswers): BootstrapAnswers => {
+  const verificationSurfaces =
+    answers.verificationSurfaces?.length
+      ? answers.verificationSurfaces
+      : defaultVerificationSurfacesForFamily(answers.targetFamily);
+  const workflowChecks =
+    answers.workflowChecks?.length
+      ? answers.workflowChecks
+      : defaultWorkflowChecksFromCoreFeatures(
+          answers.coreFeatures,
+          verificationSurfaces
+        ).map(toBootstrapWorkflowCheck);
+  const adapterPlan =
+    answers.adapterPlan ??
+    buildAdapterPlanFromIntake({
+      targetFamily: answers.targetFamily,
+      intake: {
+        product_title: answers.title,
+        product_summary: answers.summary,
+        target_users: answers.targetUsers,
+        core_features: answers.coreFeatures,
+        reference_apps: answers.referenceApps,
+        finish_line: answers.finishLine,
+        target_family: answers.targetFamily,
+        target_root: answers.targetRoot,
+        project_mode: answers.projectMode,
+        framework_hint: answers.frameworkHint,
+        package_manager: answers.packageManager,
+        run_command: answers.runCommand,
+        check_command: answers.checkCommand,
+        ready_url: answers.readyUrl,
+        ...(answers.appUrl ? { app_url: answers.appUrl } : {}),
+        ...(answers.healthUrl ? { health_url: answers.healthUrl } : {}),
+        ...(answers.apiBaseUrl ? { api_base_url: answers.apiBaseUrl } : {}),
+        verification_surfaces: verificationSurfaces,
+        workflow_checks: workflowChecks.map(toSessionWorkflowCheck)
+      }
+    });
+
+  return {
+    ...answers,
+    verificationSurfaces,
+    workflowChecks,
+    adapterPlan
   };
 };
 
@@ -616,7 +830,11 @@ const liveVerificationModesForFamily = (targetFamily: BootstrapTargetFamily) =>
 const buildGeneratedQualityAxes = (
   answers: BootstrapAnswers
 ): NonNullable<VerificationProfile["quality_contract"]>["quality_axes"] => {
-  const featureAxes = answers.coreFeatures.slice(0, 3).map((feature, index) => {
+  const workflowNames =
+    (answers.workflowChecks ?? []).length > 0
+      ? answers.workflowChecks.map((check) => check.workflow).slice(0, 5)
+      : answers.coreFeatures.slice(0, 3);
+  const featureAxes = workflowNames.map((feature, index) => {
     const featureSlug = slugForIndexedFeature(feature, index);
     return {
       axis_id: `feature_${featureSlug}`,
@@ -1012,13 +1230,22 @@ const buildGeneratedCoreProbes = (
     continuityBoundaries.has("reload") ||
     continuityBoundaries.has("refresh") ||
     continuityBoundaries.has("reopen");
-  const featureSlugs = answers.coreFeatures
-    .slice(0, 3)
-    .map((feature, index) => {
-      const featureSlug = slugForIndexedFeature(feature, index);
+  const workflowChecks =
+    (answers.workflowChecks ?? []).length > 0
+      ? answers.workflowChecks
+      : defaultWorkflowChecksFromCoreFeatures(
+          answers.coreFeatures,
+          answers.verificationSurfaces ??
+            defaultVerificationSurfacesForFamily(answers.targetFamily)
+        ).map(toBootstrapWorkflowCheck);
+  const featureSlugs = workflowChecks
+    .slice(0, 5)
+    .map((check, index) => {
+      const featureSlug = slugForIndexedFeature(check.workflow, index);
       const axisId = `feature_${featureSlug}`;
       return {
-        feature,
+        feature: check.workflow,
+        check,
         featureSlug,
         axisId:
           qualityContract.quality_axes.find((axis) => axis.axis_id === axisId)
@@ -1103,10 +1330,12 @@ const buildGeneratedCoreProbes = (
             })
           ]
         : []),
-      ...featureSlugs.map(({ feature, featureSlug, axisId }) =>
+      ...featureSlugs
+        .filter(({ check }) => check.surface === "browser")
+        .map(({ feature, featureSlug, axisId, check }) =>
         buildBrowserJourneyProbe({
           probeId: `${titleSlug}-${featureSlug}`,
-          label: `Core workflow remains interactive: ${feature}`,
+          label: `Workflow works: ${feature}`,
           assertionId: `${titleSlug}_${featureSlug}_ready`,
           qualityAxisId: axisId,
           assertionTags: ["browser", "workflow_multi_step"],
@@ -1116,15 +1345,20 @@ const buildGeneratedCoreProbes = (
             { action: "assert_visible", selector: selectors.appShell },
             {
               action: "assert_visible",
-              selector: `[data-testid='feature-${featureSlug}']`
+              selector:
+                check.selectorHints?.root ?? `[data-testid='feature-${featureSlug}']`
             },
             {
               action: "click",
-              selector: `[data-testid='feature-${featureSlug}-action']`
+              selector:
+                check.selectorHints?.action ??
+                `[data-testid='feature-${featureSlug}-action']`
             },
             {
               action: "assert_visible",
-              selector: `[data-testid='feature-${featureSlug}-result']`
+              selector:
+                check.selectorHints?.result ??
+                `[data-testid='feature-${featureSlug}-result']`
             }
           ]
         })
@@ -1166,15 +1400,19 @@ const buildGeneratedCoreProbes = (
             })
           ]
         : []),
-      ...featureSlugs.map(({ feature, featureSlug, axisId }) =>
+      ...featureSlugs
+        .filter(({ check }) => check.surface === "api")
+        .map(({ feature, featureSlug, axisId, check }) =>
         buildApiJsonProbe({
           probeId: `${titleSlug}-${featureSlug}-api`,
-          label: `Core workflow remains coherent through the API: ${feature}`,
+          label: `Workflow API works: ${feature}`,
           assertionId: `${titleSlug}_${featureSlug}_api_ready`,
           qualityAxisId: axisId,
           assertionTags: ["api", "workflow_multi_step"],
-          targetPath: `quality/features/${featureSlug}`,
-          expectedValue: "ready"
+          targetPath: check.apiHint?.path ?? `quality/features/${featureSlug}`,
+          expectedValue: check.apiHint?.expectedValue ?? "ready",
+          expectedStatus: check.apiHint?.expectedStatus ?? 200,
+          jsonPath: check.apiHint?.expectedJsonPath ?? "status"
         })
       )
     );
@@ -1804,6 +2042,7 @@ export const scaffoldBootstrapArtifacts = async (
   answers: BootstrapAnswers,
   paths: BootstrapArtifactPaths = defaultBootstrapPaths
 ): Promise<BootstrapResult> => {
+  answers = completeBootstrapAnswers(answers);
   const [generatedProfile, generatedRubric] = await Promise.all([
     buildGeneratedVerificationProfile(answers),
     buildGeneratedRubric(answers)
@@ -1839,6 +2078,9 @@ export const scaffoldBootstrapArtifacts = async (
     reference_signals: answers.referenceSignals ?? [],
     non_goals: answers.nonGoals ?? [],
     ...(answers.probeHints ? { probe_hints: answers.probeHints } : {}),
+    verification_surfaces: answers.verificationSurfaces,
+    workflow_checks: answers.workflowChecks.map(toSessionWorkflowCheck),
+    adapter_plan: answers.adapterPlan,
     ...(answers.customQualityMetrics
       ? {
           custom_quality_metrics: answers.customQualityMetrics.map((metric) => ({
@@ -1853,6 +2095,8 @@ export const scaffoldBootstrapArtifacts = async (
       : {}),
     ...(answers.notes ? { notes: answers.notes } : {})
   });
+  await writeJson(paths.adapterPlanPath, answers.adapterPlan);
+  await writeText(paths.adapterPlanMarkdownPath, adapterPlanMarkdown(answers.adapterPlan));
   await writeJson(paths.generatedVerificationProfilePath, generatedProfile);
   await writeJson(paths.generatedRubricPath, generatedRubric);
   await scaffoldDurableMemoryArtifacts(
@@ -1874,7 +2118,9 @@ export const scaffoldBootstrapArtifacts = async (
     progressPath: paths.progressPath,
     progressLogPath: paths.progressLogPath,
     doneWhenPath: paths.doneWhenPath,
-    initScriptPath: paths.initScriptPath
+    initScriptPath: paths.initScriptPath,
+    adapterPlanPath: paths.adapterPlanPath,
+    adapterPlanMarkdownPath: paths.adapterPlanMarkdownPath
   };
 };
 
@@ -2031,6 +2277,36 @@ const collectAnswers = async (): Promise<BootstrapAnswers> => {
         ...referenceSignals,
         ...customMetricBar
       ]);
+      const verificationSurfaces =
+        defaultVerificationSurfacesForFamily(targetFamily);
+      const workflowChecks = defaultWorkflowChecksFromCoreFeatures(
+        coreFeatures,
+        verificationSurfaces
+      ).map(toBootstrapWorkflowCheck);
+      const adapterPlan = buildAdapterPlanFromIntake({
+        targetFamily,
+        intake: {
+          product_title: title,
+          product_summary: summary,
+          target_users: targetUsers,
+          core_features: coreFeatures,
+          reference_apps: referenceApps,
+          finish_line: finishLine,
+          target_family: targetFamily,
+          target_root: targetRoot,
+          project_mode: projectMode,
+          framework_hint: frameworkHint,
+          package_manager: packageManager,
+          run_command: runCommand,
+          check_command: checkCommand,
+          ready_url: readyUrl,
+          ...(appUrl ? { app_url: appUrl } : {}),
+          ...(healthUrl ? { health_url: healthUrl } : {}),
+          ...(apiBaseUrl ? { api_base_url: apiBaseUrl } : {}),
+          verification_surfaces: verificationSurfaces,
+          workflow_checks: workflowChecks.map(toSessionWorkflowCheck)
+        }
+      });
 
       const answers: BootstrapAnswers = {
         title,
@@ -2062,6 +2338,9 @@ const collectAnswers = async (): Promise<BootstrapAnswers> => {
         ...(nonGoals.length > 0 ? { nonGoals } : {}),
         ...(probeHints ? { probeHints } : {}),
         ...(customQualityMetrics.length > 0 ? { customQualityMetrics } : {}),
+        verificationSurfaces,
+        workflowChecks,
+        adapterPlan,
         ...(notes ? { notes } : {})
       };
 

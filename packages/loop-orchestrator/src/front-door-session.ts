@@ -1,4 +1,5 @@
 import { evaluateIntakeRequest } from "./intake-gate.js";
+import { adapterPlanPreviewLines, buildAdapterPlanFromIntake } from "./adapter-plan.js";
 import {
   buildDiscoveryAggregateRequest,
   mergeFrontDoorSessionTurn,
@@ -14,6 +15,7 @@ import type {
   DiscoveryPhase,
   FrontDoorSessionArtifact,
   FrontDoorSessionStatus,
+  AdapterIntakeFieldId,
   ProductIntakeFieldId,
   ExecutionIntakeFieldId,
   SessionIntakeFieldId,
@@ -30,12 +32,15 @@ export interface FrontDoorSessionTurnResult {
   questions: string[];
   missing_product_fields: ProductIntakeFieldId[];
   missing_execution_fields: ExecutionIntakeFieldId[];
+  missing_adapter_fields: AdapterIntakeFieldId[];
   asked_question_ids: SessionIntakeFieldId[];
   last_question_ids: SessionIntakeFieldId[];
   intake: SessionIntakeSnapshot;
   defaults_accepted: string[];
   unresolved_conflicts: FrontDoorSessionArtifact["unresolved_conflicts"];
   turn_count: number;
+  preparation_summary?: string[];
+  adapter_plan_preview?: string[];
 }
 
 const statusForPhase = (
@@ -46,6 +51,9 @@ const statusForPhase = (
   }
   if (phase === "execution") {
     return "ask_execution_questions";
+  }
+  if (phase === "adapter") {
+    return "ask_adapter_questions";
   }
   if (phase === "ready_for_prepare") {
     return "ready_for_prepare";
@@ -66,6 +74,9 @@ const toDiscoveryPhase = (
   if (status === "ask_execution_questions") {
     return "execution";
   }
+  if (status === "ask_adapter_questions") {
+    return "adapter";
+  }
   if (status === "ready_for_prepare") {
     return "ready_for_prepare";
   }
@@ -80,23 +91,38 @@ const buildArtifactResult = (
   sessionPath: string,
   eventsPath: string,
   status: FrontDoorSessionTurnResult["status"]
-): FrontDoorSessionTurnResult => ({
-  status,
-  phase: artifact.phase,
-  session_id: artifact.session_id,
-  thread_id: artifact.thread_id,
-  front_door_session_path: sessionPath,
-  front_door_session_events_path: eventsPath,
-  questions: artifact.last_question_batch,
-  missing_product_fields: artifact.missing_product_fields,
-  missing_execution_fields: artifact.missing_execution_fields,
-  asked_question_ids: artifact.asked_question_ids,
-  last_question_ids: artifact.last_question_ids ?? [],
-  intake: artifact.intake,
-  defaults_accepted: artifact.defaults_accepted,
-  unresolved_conflicts: artifact.unresolved_conflicts,
-  turn_count: artifact.turn_count
-});
+): FrontDoorSessionTurnResult => {
+  const adapterPlan =
+    artifact.intake.adapter_plan ??
+    (artifact.intake.target_family
+      ? buildAdapterPlanFromIntake({
+          intake: artifact.intake,
+          targetFamily: artifact.intake.target_family
+        })
+      : undefined);
+
+  return {
+    status,
+    phase: artifact.phase,
+    session_id: artifact.session_id,
+    thread_id: artifact.thread_id,
+    front_door_session_path: sessionPath,
+    front_door_session_events_path: eventsPath,
+    questions: artifact.last_question_batch,
+    missing_product_fields: artifact.missing_product_fields,
+    missing_execution_fields: artifact.missing_execution_fields,
+    missing_adapter_fields: artifact.missing_adapter_fields ?? [],
+    asked_question_ids: artifact.asked_question_ids,
+    last_question_ids: artifact.last_question_ids ?? [],
+    intake: artifact.intake,
+    defaults_accepted: artifact.defaults_accepted,
+    unresolved_conflicts: artifact.unresolved_conflicts,
+    turn_count: artifact.turn_count,
+    ...(adapterPlan && (status === "ready_for_prepare" || status === "prepared")
+      ? { adapter_plan_preview: adapterPlanPreviewLines(adapterPlan) }
+      : {})
+  };
+};
 
 export const getFrontDoorSessionStatus = async (
   threadId: string
@@ -154,6 +180,7 @@ export const runFrontDoorDiscoveryTurn = async (input: {
       questions: [],
       missing_product_fields: [],
       missing_execution_fields: [],
+      missing_adapter_fields: [],
       asked_question_ids: [],
       last_question_ids: [],
       intake: {},
@@ -192,6 +219,7 @@ export const runFrontDoorDiscoveryTurn = async (input: {
     intake: mergeResult.intake,
     missing_product_fields: resolvedResult.missing_product_fields,
     missing_execution_fields: resolvedResult.missing_execution_fields,
+    missing_adapter_fields: resolvedResult.missing_adapter_fields,
     asked_question_ids: uniqueFieldIds([
       ...(existingSession?.asked_question_ids ?? []),
       ...questionIds

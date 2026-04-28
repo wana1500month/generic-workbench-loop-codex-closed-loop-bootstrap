@@ -104,21 +104,41 @@ const main = async () => {
       threadId: "thread-123",
       message: `This is a new project and the target root is ${targetRootRelative}.`
     });
-    assert.equal(fourthTurn.status, "ready_for_prepare");
-    assert.equal(fourthTurn.phase, "ready_for_prepare");
+    assert.equal(fourthTurn.status, "ask_adapter_questions");
+    assert.equal(fourthTurn.phase, "adapter");
     assert.equal(fourthTurn.intake.project_mode, "new");
     assert.equal(fourthTurn.intake.target_root, targetRootRelative);
+    assert.ok(
+      fourthTurn.missing_adapter_fields.includes("verification_surface"),
+      JSON.stringify(fourthTurn, null, 2)
+    );
+    assert.equal(fourthTurn.turn_count, 4);
+
+    const fifthTurn = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-123",
+      message: [
+        "Verify with browser.",
+        "create tasks -> task appears in the list.",
+        "assign priorities -> priority is visible.",
+        "archive completed tasks -> archived state is visible."
+      ].join("\n")
+    });
+    const readyTurn = fifthTurn;
+    assert.equal(readyTurn.status, "ready_for_prepare");
+    assert.equal(readyTurn.phase, "ready_for_prepare");
+    assert.deepEqual(readyTurn.intake.verification_surfaces, ["browser"]);
+    assert.ok((readyTurn.intake.workflow_checks ?? []).length >= 3);
     assert.deepEqual(fourthTurn.defaults_accepted, [
       "max_rounds",
       "target_root",
       "target_score"
     ]);
-    assert.equal(fourthTurn.turn_count, 4);
+    assert.equal(readyTurn.turn_count, 5);
 
     const restored = await getFrontDoorSessionStatus("thread-123");
     assert.ok(restored);
     assert.equal(restored?.status, "ready_for_prepare");
-    assert.equal(restored?.turn_count, 4);
+    assert.equal(restored?.turn_count, 5);
     assert.equal(restored?.intake.target_root, targetRootRelative);
 
     process.env.CODEX_THREAD_ID = "different-thread";
@@ -127,7 +147,7 @@ const main = async () => {
         prepareSessionRun({
           runDirectory: join(tempRoot, "mismatch-run"),
           ideaPath,
-          frontDoorSessionPath: fourthTurn.front_door_session_path,
+          frontDoorSessionPath: readyTurn.front_door_session_path,
           transportMode: "current-thread",
           controllerMode: "attached"
         }),
@@ -137,7 +157,7 @@ const main = async () => {
 
     const prepared = await prepareSessionRun({
       ideaPath,
-      frontDoorSessionPath: fourthTurn.front_door_session_path,
+      frontDoorSessionPath: readyTurn.front_door_session_path,
       transportMode: "current-thread",
       controllerMode: "attached"
     });
@@ -153,14 +173,14 @@ const main = async () => {
         readJsonFile(join(workspaceRoot, "intake.json")),
         readJsonFile(join(targetRoot, "intake.json")),
         readJsonFile(prepared.runContractPath),
-        readJsonFile(fourthTurn.front_door_session_path),
+        readJsonFile(readyTurn.front_door_session_path),
         readJsonFile(prepared.sessionStatusPath),
         readJsonFile(prepared.operatorSurfacePath)
       ]);
     assert.equal(workspaceIntake.target_root, targetRoot);
     assert.equal(targetIntake.target_root, targetRoot);
     assert.equal(runContract.execution_controls.target_root, targetRoot);
-    assert.equal(runContract.discovery_source.turn_count, 4);
+    assert.equal(runContract.discovery_source.turn_count, 5);
     assert.ok(
       runContract.discovery_source.front_door_session_path.endsWith(
         "session-thread-123.json"
@@ -413,6 +433,29 @@ const main = async () => {
     );
 
     await runFrontDoorDiscoveryTurn({
+      threadId: "thread-posix-absolute-path",
+      message: "Build me a todo app with auth"
+    });
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-posix-absolute-path",
+      message: [
+        "1. Solo founders",
+        "2. create tasks and archive them",
+        "3. users can manage tasks end to end"
+      ].join("\n")
+    });
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-posix-absolute-path",
+      message: "Users can manage tasks end to end."
+    });
+    const posixAbsoluteExecution = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-posix-absolute-path",
+      message: "new, /mnt/data/budget-app"
+    });
+    assert.equal(posixAbsoluteExecution.intake.project_mode, "new");
+    assert.equal(posixAbsoluteExecution.intake.target_root, "/mnt/data/budget-app");
+
+    await runFrontDoorDiscoveryTurn({
       threadId: "thread-existing-runtime",
       message: "Build me a todo app with auth"
     });
@@ -461,7 +504,7 @@ const main = async () => {
     assert.equal(secondThread.turn_count, 1);
     assert.notEqual(
       secondThread.front_door_session_path,
-      fourthTurn.front_door_session_path
+      readyTurn.front_door_session_path
     );
     assert.equal(secondThread.intake.target_root, undefined);
 
@@ -494,7 +537,7 @@ const main = async () => {
       threadId: "thread-ko-budget",
       message: "새 프로젝트로 진행해."
     });
-    assert.equal(koThird.status, "ready_for_prepare");
+    assert.equal(koThird.status, "ask_adapter_questions");
     assert.equal(koThird.intake.project_mode, "new");
     assert.deepEqual(
       koThird.unresolved_conflicts.filter(
@@ -504,9 +547,22 @@ const main = async () => {
     );
     assert.match(koThird.intake.target_root ?? "", /^\.\/apps\/가계부-앱/);
 
+    const koFourth = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-budget",
+      message: [
+        "화면으로 검증.",
+        "수입/지출 기록 -> 거래를 추가하면 목록과 월별 합계가 바뀐다.",
+        "카테고리 관리 -> 카테고리를 만들고 거래에 지정할 수 있다.",
+        "월별 통계 -> 월별 수입/지출/잔액이 표시된다."
+      ].join("\n")
+    });
+    assert.equal(koFourth.status, "ready_for_prepare");
+    assert.deepEqual(koFourth.intake.verification_surfaces, ["browser"]);
+    assert.ok((koFourth.intake.workflow_checks ?? []).length >= 3);
+
     const koPrepared = await prepareSessionRun({
       ideaPath: genericIdeaPath,
-      frontDoorSessionPath: koThird.front_door_session_path,
+      frontDoorSessionPath: koFourth.front_door_session_path,
       transportMode: "current-thread",
       controllerMode: "attached"
     });
@@ -535,7 +591,7 @@ const main = async () => {
       /workbench|controller|adapter/i
     );
     const koWorkflowProbes = koVerificationProfile.core_probes.filter((probe) =>
-      /^Core workflow remains/.test(probe.label)
+      /^Workflow works:/.test(probe.label)
     );
     for (const workflow of koBuildBrief.product.core_workflows) {
       assert.ok(

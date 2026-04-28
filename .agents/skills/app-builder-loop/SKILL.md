@@ -15,8 +15,11 @@ intake and execution sessions.
 2. Ask only the missing high-impact questions returned by `loop:discover`.
 3. Ask at most 1 to 3 short questions per turn.
 4. Prefer reasonable defaults over low-value questions.
-5. When `loop:discover` returns `ready_for_prepare`, switch to prepare mode.
-6. Before heavy implementation, create or update:
+5. When `loop:discover` returns `ask_adapter_questions`, ask only those
+   adapter-design questions. Do not start prepare until the verification
+   surface and workflow checks are captured or defaulted by discovery.
+6. When `loop:discover` returns `ready_for_prepare`, switch to prepare mode.
+7. Before heavy implementation, create or update:
    - Prefer `npm run loop:prepare -- --front-door-session <path> --json` after `loop:discover` reaches `ready_for_prepare`; same-thread skill flows may call the same prepare writer internally.
    - `runtime/build-brief.json`
    - `runtime/run-contract.json`
@@ -38,6 +41,8 @@ intake and execution sessions.
 - Once a discovery session is prepared, treat it as immutable; use `loop:start:codex` rather than reopening discovery.
 - Keep the first phase product-first. Do not jump straight into layout, stack,
   adapter, or validation plans until the product is concrete enough.
+- The adapter-design phase is explicit but narrow: capture verification surface
+  and workflow checks, then show the generated adapter plan preview.
 - Do not ask the user to pick a target family unless they explicitly want to
   override the inferred family.
 - Do not treat automation as the front door for this flow. The front door is a
@@ -60,6 +65,7 @@ End discovery as soon as the following are concrete enough:
 - delivery level
 - critical integrations or data constraints
 - enough execution control to prepare the run
+- enough adapter-design detail to generate release-gate workflow probes
 
 If the remaining uncertainty is non-blocking, move it into
 `runtime/open-questions.json` instead of stalling the session, and keep

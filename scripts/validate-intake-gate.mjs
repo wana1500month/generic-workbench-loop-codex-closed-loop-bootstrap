@@ -124,6 +124,9 @@ for (const request of [
 
 const productFilledRequest =
   "Build a storyboard editor for indie animators. The target users are solo creators. The core workflows are arranging boards, dragging panels, and writing notes. References can be Linear and Figma. Good enough means those workflows run end to end.";
+const browserAdapterClause =
+  "Verify with browser. arranging boards -> board arrangement is visible. dragging panels -> panel movement result is visible. writing notes -> note result is visible.";
+const productFilledWithAdapterRequest = `${productFilledRequest} ${browserAdapterClause}`;
 
 const askExecutionResult = evaluateIntakeRequest(productFilledRequest);
 assert.equal(askExecutionResult.status, "ask_execution_questions");
@@ -164,31 +167,31 @@ assert.equal(punctuationPathResult.status, "ask_execution_questions");
 assert.equal(punctuationPathResult.extracted_target_root, "./apps/loop");
 
 const absolutePosixPathResult = evaluateIntakeRequest(
-  `${productFilledRequest} This is a new project and the target root is /tmp/loop-dashboard.`
+  `${productFilledWithAdapterRequest} This is a new project and the target root is /tmp/loop-dashboard.`
 );
 assert.equal(absolutePosixPathResult.status, "ready_for_prepare");
 assert.equal(absolutePosixPathResult.extracted_target_root, "/tmp/loop-dashboard");
 
 const koreanSentenceEndingPathResult = evaluateIntakeRequest(
-  `${productFilledRequest} \uC0C8 \uD504\uB85C\uC81D\uD2B8\uACE0 \uC791\uC5C5 \uD3F4\uB354\uB294 /tmp/crm-dashboard\uB2E4.`
+  `${productFilledWithAdapterRequest} \uC0C8 \uD504\uB85C\uC81D\uD2B8\uACE0 \uC791\uC5C5 \uD3F4\uB354\uB294 /tmp/crm-dashboard\uB2E4.`
 );
 assert.equal(koreanSentenceEndingPathResult.status, "ready_for_prepare");
 assert.equal(koreanSentenceEndingPathResult.extracted_target_root, "/tmp/crm-dashboard");
 
 const koreanCasualPathResult = evaluateIntakeRequest(
-  `${productFilledRequest} \uACBD\uB85C\uB294 /tmp/crm-dashboard\uC57C.`
+  `${productFilledWithAdapterRequest} \uACBD\uB85C\uB294 /tmp/crm-dashboard\uC57C.`
 );
 assert.equal(koreanCasualPathResult.extracted_target_root, "/tmp/crm-dashboard");
 
 const normalizedTargetScoreResult = evaluateIntakeRequest(
-  `${productFilledRequest} This is a new project and the target root is ./apps/storyboard. target score 82.`
+  `${productFilledWithAdapterRequest} This is a new project and the target root is ./apps/storyboard. target score 82.`
 );
 assert.equal(normalizedTargetScoreResult.status, "ready_for_prepare");
 assert.equal(normalizedTargetScoreResult.extracted_target_score, 0.82);
 assert.equal(normalizedTargetScoreResult.extracted_max_rounds, 3);
 
 const invalidTargetScoreResult = evaluateIntakeRequest(
-  `${productFilledRequest} This is a new project and the target root is ./apps/storyboard. target score 120.`
+  `${productFilledWithAdapterRequest} This is a new project and the target root is ./apps/storyboard. target score 120.`
 );
 assert.equal(invalidTargetScoreResult.status, "ready_for_prepare");
 assert.equal(invalidTargetScoreResult.extracted_target_score, 0.9);
@@ -257,7 +260,7 @@ assert.equal(koreanExecutionHintsResult.extracted_target_score, 0.8);
 assert.equal(koreanExecutionHintsResult.extracted_max_rounds, 4);
 
 const readyResult = evaluateIntakeRequest(
-  "Build a storyboard editor for indie animators. The target users are solo creators. The core workflows are arranging boards, dragging panels, and writing notes. References can be Linear and Figma. Good enough means those workflows run end to end. This is a new project and the target root is C:\\Users\\SUNGMOK\\Desktop\\harness\\storyboard-app. target score 0.9 and max rounds 4."
+  `${productFilledWithAdapterRequest} This is a new project and the target root is C:\\Users\\SUNGMOK\\Desktop\\harness\\storyboard-app. target score 0.9 and max rounds 4.`
 );
 assert.equal(readyResult.status, "ready_for_prepare");
 assert.equal(readyResult.phase, "prepare");
@@ -287,7 +290,7 @@ assert.match(readyGoalLine, /Goal:\s*storyboard editor for indie animators/i);
 assert.ok(!/This is a new project|max rounds|target root/i.test(readyGoalLine), readyGoalLine);
 
 const koreanReadyResult = evaluateIntakeRequest(
-  productFilledRequest + " \uC0C8 \uD504\uB85C\uC81D\uD2B8\uACE0 \uC791\uC5C5\uD3F4\uB354 /tmp/loop-dashboard \uBAA9\uD45C\uC810\uC218 82 \uCD5C\uB300 4\uB77C\uC6B4\uB4DC."
+  productFilledWithAdapterRequest + " \uC0C8 \uD504\uB85C\uC81D\uD2B8\uACE0 \uC791\uC5C5\uD3F4\uB354 /tmp/loop-dashboard \uBAA9\uD45C\uC810\uC218 82 \uCD5C\uB300 4\uB77C\uC6B4\uB4DC."
 );
 assert.equal(koreanReadyResult.status, "ready_for_prepare");
 assert.equal(koreanReadyResult.locale, "ko");

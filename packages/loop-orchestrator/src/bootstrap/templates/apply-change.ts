@@ -44,6 +44,11 @@ const main = async () => {
       expected_value: probe.expected_value
     }))
     .filter((item) => typeof item.path === "string" && item.path.length > 0);
+  const adapterPlan = config.adapter_plan ?? {
+    verification_surfaces: config.verification_surfaces,
+    workflow_checks: config.workflow_checks,
+    verification_contract: config.verification_contract
+  };
   const roundContract =
     typeof packet.round_contract_path === "string"
       ? await readJsonIfExists(packet.round_contract_path)
@@ -348,6 +353,13 @@ const main = async () => {
     "",
     "# Required API release-gate paths",
     JSON.stringify(apiRequirements, null, 2),
+    "",
+    "# Adapter verification plan",
+    JSON.stringify(adapterPlan, null, 2),
+    "",
+    "Implementation must satisfy the adapter verification plan with real user-visible behavior.",
+    "Do not add data-testid markers that are disconnected from visible product workflows.",
+    "Every workflow_check must have a real trigger and a real expected result in the product.",
     "",
     "# Harness packet",
     JSON.stringify(packet, null, 2),

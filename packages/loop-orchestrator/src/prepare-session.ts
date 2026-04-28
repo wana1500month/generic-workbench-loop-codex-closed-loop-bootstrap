@@ -7,7 +7,8 @@ import {
   normalizeBootstrapTargetFamily,
   scaffoldBootstrapArtifacts,
   type BootstrapCustomQualityMetric,
-  type BootstrapProbeHints
+  type BootstrapProbeHints,
+  type BootstrapWorkflowCheck
 } from "./bootstrap.js";
 import {
   ensureDurableMemoryArtifacts,
@@ -68,6 +69,7 @@ export interface PrepareSessionResult {
   operatorSurfacePath: string;
   executionPlanPath: string;
   adapterPath?: string;
+  adapterPlanPath?: string;
   rubricPath?: string;
   evaluatorProfilePath?: string;
 }
@@ -562,7 +564,47 @@ export const prepareSessionRun = async (
             ...(metric.required !== undefined ? { required: metric.required } : {}),
             ...(metric.weight !== undefined ? { weight: metric.weight } : {})
           })
-        )
+        ),
+        verificationSurfaces: intake?.verification_surfaces,
+        workflowChecks: intake?.workflow_checks?.map(
+          (check): BootstrapWorkflowCheck => ({
+            workflow: check.workflow,
+            surface: check.surface,
+            ...(check.trigger ? { trigger: check.trigger } : {}),
+            expectedResult: check.expected_result,
+            ...(check.selector_hints ? { selectorHints: check.selector_hints } : {}),
+            ...(check.api_hint
+              ? {
+                  apiHint: {
+                    ...(check.api_hint.method ? { method: check.api_hint.method } : {}),
+                    ...(check.api_hint.path ? { path: check.api_hint.path } : {}),
+                    ...(check.api_hint.expected_status !== undefined
+                      ? { expectedStatus: check.api_hint.expected_status }
+                      : {}),
+                    ...(check.api_hint.expected_json_path
+                      ? { expectedJsonPath: check.api_hint.expected_json_path }
+                      : {}),
+                    ...(check.api_hint.expected_value
+                      ? { expectedValue: check.api_hint.expected_value }
+                      : {})
+                  }
+                }
+              : {}),
+            ...(check.command_hint
+              ? {
+                  commandHint: {
+                    ...(check.command_hint.command
+                      ? { command: check.command_hint.command }
+                      : {}),
+                    ...(check.command_hint.expected_output
+                      ? { expectedOutput: check.command_hint.expected_output }
+                      : {})
+                  }
+                }
+              : {})
+          })
+        ),
+        adapterPlan: intake?.adapter_plan
       }),
       bootstrapPaths
     );
@@ -769,6 +811,7 @@ export const prepareSessionRun = async (
     ...(preparedValidationBundle?.adapter_contract_path
       ? { adapterPath: preparedValidationBundle.adapter_contract_path }
       : {}),
+    ...(bootstrapTargetFamily ? { adapterPlanPath: resolve(bootstrapPaths.adapterPlanPath) } : {}),
     ...(preparedValidationBundle?.rubric_path
       ? { rubricPath: preparedValidationBundle.rubric_path }
       : {}),

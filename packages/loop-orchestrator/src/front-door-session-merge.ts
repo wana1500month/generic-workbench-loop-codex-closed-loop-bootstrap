@@ -1,9 +1,16 @@
+import {
+  buildAdapterPlanFromIntake,
+  parseVerificationSurfacesAnswer,
+  parseWorkflowChecksAnswer
+} from "./adapter-plan.js";
 import type { IntakeGateResult } from "./intake-gate.js";
 import type {
   FrontDoorSessionArtifact,
   FrontDoorSessionConflict,
   SessionIntakeFieldId,
-  SessionIntakeSnapshot
+  SessionIntakeSnapshot,
+  SessionWorkflowCheck,
+  VerificationSurface
 } from "./intake-schema.js";
 
 type ScalarFieldKey = Exclude<
@@ -20,6 +27,9 @@ type ScalarFieldKey = Exclude<
   | "non_goals"
   | "probe_hints"
   | "custom_quality_metrics"
+  | "verification_surfaces"
+  | "workflow_checks"
+  | "adapter_plan"
 >;
 
 const listJoinPattern = /\s*(?:,|;|\band\b|\bor\b)\s*|\s+\/\s+/i;
@@ -330,15 +340,22 @@ const isExecutionQuestionPair = (
     ].includes(fieldId)
   );
 
+const isAdapterQuestionPair = (
+  questionIds: readonly SessionIntakeFieldId[]
+): boolean =>
+  questionIds.some((fieldId) =>
+    ["verification_surface", "workflow_checks", "quality_metrics"].includes(fieldId)
+  );
+
 const answerForField = (
   lines: readonly string[],
   index: number,
-  isExecutionPair: boolean
+  isGroupedPair: boolean
 ): string | undefined => {
   if (lines[index]) {
     return lines[index];
   }
-  if (lines.length === 1 && isExecutionPair) {
+  if (lines.length === 1 && isGroupedPair) {
     return lines[0];
   }
   return undefined;
@@ -350,8 +367,8 @@ const stripTrailingPunctuation = (value: string): string =>
 const parsePathAnswer = (value: string): string | undefined => {
   const candidate =
     value.match(/[A-Za-z]:\\[^\r\n,;!?]+/)?.[0] ??
-    value.match(/[A-Za-z0-9._-]+(?:[\\/][^\s,;.!?]+)+/)?.[0] ??
-    value.match(/(?:\/|\.\/|\.\.\/)[^\s,;.!?]+/)?.[0];
+    value.match(/(?:^|[\s,;:=])((?:\/|\.\/|\.\.\/)[^\s,;.!?]+)/)?.[1] ??
+    value.match(/(?<!\/)[A-Za-z0-9._-]+(?:[\\/][^\s,;.!?]+)+/)?.[0];
   return candidate ? stripTrailingPunctuation(candidate).trim() : undefined;
 };
 
@@ -370,20 +387,23 @@ const parseRunCommandAnswer = (value: string): string | undefined => {
 
 const extractCandidatesFromQuestionOrder = (
   message: string,
-  questionIds: readonly SessionIntakeFieldId[]
+  questionIds: readonly SessionIntakeFieldId[],
+  existingIntake?: SessionIntakeSnapshot
 ): Partial<SessionIntakeSnapshot> => {
   const lines = splitAnswerLines(message);
   if (lines.length === 0 || questionIds.length === 0) {
     return {};
   }
   const isExecutionPair = isExecutionQuestionPair(questionIds);
-  if (questionIds.length > 1 && lines.length < 2 && !isExecutionPair) {
+  const isAdapterPair = isAdapterQuestionPair(questionIds);
+  const isGroupedPair = isExecutionPair || isAdapterPair;
+  if (questionIds.length > 1 && lines.length < 2 && !isGroupedPair) {
     return {};
   }
 
   const result: Partial<SessionIntakeSnapshot> = {};
   questionIds.forEach((fieldId, index) => {
-    const answer = answerForField(lines, index, isExecutionPair);
+    const answer = answerForField(lines, index, isGroupedPair);
     if (!answer) {
       return;
     }
@@ -436,6 +456,27 @@ const extractCandidatesFromQuestionOrder = (
       case "ready_url":
         result.ready_url = parseUrlAnswer(answer) ?? normalizeInlineValue(answer);
         break;
+      case "verification_surface": {
+        const surfaces = parseVerificationSurfacesAnswer(answer);
+        if (surfaces.length > 0) {
+          result.verification_surfaces = surfaces;
+        }
+        break;
+      }
+      case "workflow_checks": {
+        const surface =
+          result.verification_surfaces?.[0] ??
+          existingIntake?.verification_surfaces?.[0] ??
+          "browser";
+        const checks = parseWorkflowChecksAnswer(
+          isAdapterPair ? message : answer,
+          surface
+        );
+        if (checks.length > 0) {
+          result.workflow_checks = checks;
+        }
+        break;
+      }
       default:
         break;
     }
@@ -454,6 +495,7 @@ const extractCandidates = (input: {
   sourceRequest: string;
   intakeResult: IntakeGateResult;
   previousQuestionIds?: readonly SessionIntakeFieldId[];
+  existingIntake?: SessionIntakeSnapshot;
 }): Partial<SessionIntakeSnapshot> => {
   const { message, sourceRequest, intakeResult } = input;
   const previousQuestionIds = input.previousQuestionIds ?? [];
@@ -542,12 +584,22 @@ const extractCandidates = (input: {
     ...(readyUrl ? { ready_url: readyUrl } : {}),
     ...(appUrl ? { app_url: appUrl } : {}),
     ...(healthUrl ? { health_url: healthUrl } : {}),
-    ...(apiBaseUrl ? { api_base_url: apiBaseUrl } : {})
+    ...(apiBaseUrl ? { api_base_url: apiBaseUrl } : {}),
+    ...(intakeResult.extracted_verification_surfaces?.length
+      ? { verification_surfaces: intakeResult.extracted_verification_surfaces }
+      : {}),
+    ...(intakeResult.extracted_workflow_checks?.length
+      ? { workflow_checks: intakeResult.extracted_workflow_checks }
+      : {})
   };
 
   return {
     ...regexCandidates,
-    ...extractCandidatesFromQuestionOrder(message, previousQuestionIds)
+    ...extractCandidatesFromQuestionOrder(
+      message,
+      previousQuestionIds,
+      input.existingIntake
+    )
   };
 };
 
@@ -648,6 +700,51 @@ const applyArrayField = (
   }
 };
 
+const applyVerificationSurfaces = (
+  target: SessionIntakeSnapshot,
+  candidate: VerificationSurface[] | undefined,
+  conflicts: FrontDoorSessionConflict[],
+  options: { replace?: boolean } = {}
+): void => {
+  if (!candidate) {
+    return;
+  }
+  const normalizedCandidate = [...new Set(candidate)];
+  if (normalizedCandidate.length === 0) {
+    return;
+  }
+  if (!target.verification_surfaces || options.replace) {
+    target.verification_surfaces = normalizedCandidate;
+    removeConflictsForField(conflicts, "verification_surfaces");
+    return;
+  }
+  target.verification_surfaces = [...new Set([...target.verification_surfaces, ...normalizedCandidate])];
+};
+
+const applyWorkflowChecks = (
+  target: SessionIntakeSnapshot,
+  candidate: SessionWorkflowCheck[] | undefined,
+  conflicts: FrontDoorSessionConflict[],
+  options: { replace?: boolean } = {}
+): void => {
+  if (!candidate || candidate.length === 0) {
+    return;
+  }
+  if (!target.workflow_checks || options.replace) {
+    target.workflow_checks = candidate;
+    removeConflictsForField(conflicts, "workflow_checks");
+    return;
+  }
+
+  const byWorkflow = new Map(
+    target.workflow_checks.map((check) => [check.workflow.toLowerCase(), check])
+  );
+  for (const check of candidate) {
+    byWorkflow.set(check.workflow.toLowerCase(), check);
+  }
+  target.workflow_checks = [...byWorkflow.values()];
+};
+
 const messageLooksLikeCorrection = (message: string): boolean =>
   /\b(?:actually|change|replace|set|correct)\b|(?:정정|수정|변경|바꿔|교체|실제로는)/iu.test(
     message
@@ -697,6 +794,12 @@ const replaceFieldsForTurn = (
         break;
       case "target_root":
         replace.add("target_root");
+        break;
+      case "verification_surface":
+        replace.add("verification_surfaces");
+        break;
+      case "workflow_checks":
+        replace.add("workflow_checks");
         break;
       default:
         break;
@@ -847,6 +950,18 @@ export const buildDiscoveryAggregateRequest = (input: {
   if (intake.api_base_url) {
     lines.push(`api base url is ${intake.api_base_url}.`);
   }
+  if (intake.verification_surfaces?.length) {
+    lines.push(
+      `Verification surfaces: ${intake.verification_surfaces.join(", ")}.`
+    );
+  }
+  if (intake.workflow_checks?.length) {
+    lines.push(
+      ...intake.workflow_checks.map(
+        (check) => `${check.workflow} -> ${check.expected_result}.`
+      )
+    );
+  }
   if (input.latestMessage?.trim()) {
     lines.push(input.latestMessage.trim());
   }
@@ -875,7 +990,8 @@ export const mergeFrontDoorSessionTurn = (input: {
     message: input.message,
     sourceRequest: input.sourceRequest,
     intakeResult: input.intakeResult,
-    previousQuestionIds: input.existingSession?.last_question_ids ?? []
+    previousQuestionIds: input.existingSession?.last_question_ids ?? [],
+    existingIntake: input.existingSession?.intake
   });
   const previousQuestionIds = input.existingSession?.last_question_ids ?? [];
   const replaceFields = replaceFieldsForTurn(input.message, previousQuestionIds);
@@ -918,6 +1034,12 @@ export const mergeFrontDoorSessionTurn = (input: {
   applyArrayField(nextIntake, "reference_apps", candidates.reference_apps, input.turnCount, conflicts, {
     replace: replaceFields.has("reference_apps")
   });
+  applyVerificationSurfaces(nextIntake, candidates.verification_surfaces, conflicts, {
+    replace: replaceFields.has("verification_surfaces")
+  });
+  applyWorkflowChecks(nextIntake, candidates.workflow_checks, conflicts, {
+    replace: replaceFields.has("workflow_checks")
+  });
 
   if (!nextIntake.reference_apps) {
     nextIntake.reference_apps = [];
@@ -927,6 +1049,12 @@ export const mergeFrontDoorSessionTurn = (input: {
   if (defaultTargetRoot && !nextIntake.target_root) {
     nextIntake.target_root = defaultTargetRoot;
     removeConflictsForField(conflicts, "target_root");
+  }
+  if (nextIntake.target_family) {
+    nextIntake.adapter_plan = buildAdapterPlanFromIntake({
+      intake: nextIntake,
+      targetFamily: nextIntake.target_family
+    });
   }
 
   return {
@@ -949,6 +1077,9 @@ export const questionIdsForIntakeResult = (
   }
   if (intakeResult.status === "ask_execution_questions") {
     return [...intakeResult.missing_execution_fields].slice(0, intakeResult.questions.length);
+  }
+  if (intakeResult.status === "ask_adapter_questions") {
+    return [...intakeResult.missing_adapter_fields].slice(0, intakeResult.questions.length);
   }
   return [];
 };

@@ -93,7 +93,13 @@ const main = async (): Promise<void> => {
     return;
   }
 
-  process.stdout.write(`${result.status}\n`);
+  process.stdout.write(
+    [
+      result.status,
+      ...(result.preparation_summary ?? []),
+      ...(result.adapter_plan_preview ?? [])
+    ].join("\n") + "\n"
+  );
 };
 
 main().catch((error: unknown) => {

@@ -1,6 +1,10 @@
 import { join } from "node:path";
 
-import type { BootstrapAnswers, BootstrapArtifactPaths } from "../bootstrap.js";
+import type {
+  BootstrapAnswers,
+  BootstrapArtifactPaths,
+  BootstrapWorkflowCheck
+} from "../bootstrap.js";
 import { repoRoot, writeJson, writeText } from "../file-system.js";
 import {
   applyChangeTemplate,
@@ -38,6 +42,41 @@ const featureProbeMap = (features: readonly string[]) =>
     };
   });
 
+const workflowProbeMap = (input: {
+  coreFeatures: readonly string[];
+  workflowChecks: readonly BootstrapWorkflowCheck[];
+}) => {
+  const checks: readonly BootstrapWorkflowCheck[] =
+    input.workflowChecks.length > 0
+      ? input.workflowChecks
+      : input.coreFeatures.slice(0, 3).map((feature, index) => ({
+          workflow: feature,
+          surface: "browser" as const,
+          expectedResult: `${feature} succeeds visibly.`,
+          selectorHints: {
+            root: `[data-testid='feature-${index + 1}']`,
+            action: `[data-testid='feature-${index + 1}-action']`,
+            result: `[data-testid='feature-${index + 1}-result']`
+          }
+        }));
+
+  return checks.slice(0, 5).map((check, index) => {
+    const slug = slugForIndexedFeature(check.workflow, index);
+    return {
+      workflow: check.workflow,
+      surface: check.surface,
+      slug,
+      expected_result: check.expectedResult,
+      root_selector: check.selectorHints?.root ?? `[data-testid='feature-${slug}']`,
+      action_selector:
+        check.selectorHints?.action ?? `[data-testid='feature-${slug}-action']`,
+      result_selector:
+        check.selectorHints?.result ?? `[data-testid='feature-${slug}-result']`,
+      api_path: check.apiHint?.path ?? `quality/features/${slug}`
+    };
+  });
+};
+
 export const scaffoldAdapterArtifacts = async (
   answers: BootstrapAnswers,
   paths: BootstrapArtifactPaths
@@ -71,11 +110,26 @@ export const scaffoldAdapterArtifacts = async (
     reference_signals: answers.referenceSignals ?? [],
     non_goals: answers.nonGoals ?? [],
     ...(answers.probeHints ? { probe_hints: answers.probeHints } : {}),
+    verification_surfaces: answers.verificationSurfaces,
+    workflow_checks: answers.workflowChecks.map((check) => ({
+      workflow: check.workflow,
+      surface: check.surface,
+      ...(check.trigger ? { trigger: check.trigger } : {}),
+      expected_result: check.expectedResult,
+      ...(check.selectorHints ? { selector_hints: check.selectorHints } : {}),
+      ...(check.apiHint ? { api_hint: check.apiHint } : {}),
+      ...(check.commandHint ? { command_hint: check.commandHint } : {})
+    })),
+    adapter_plan: answers.adapterPlan,
     verification_contract: {
       app_shell_selector: "[data-testid='app-shell']",
       finish_line_selector: "[data-testid='finish-line-ready']",
       error_selector: "[data-testid='error-banner']",
-      workflow_selectors: featureProbeMap(answers.coreFeatures)
+      legacy_feature_selectors: featureProbeMap(answers.coreFeatures),
+      workflow_selectors: workflowProbeMap({
+        coreFeatures: answers.coreFeatures,
+        workflowChecks: answers.workflowChecks
+      })
     },
     ...(answers.customQualityMetrics
       ? {

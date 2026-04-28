@@ -1,10 +1,10 @@
 # Validation Status
 
-Generated at: 2026-04-28T20:33:40+09:00
+Generated at: 2026-04-29T04:49:55+09:00
 
-Validation scope: current working tree after source-bootstrap guard changes, before commit.
+Validation scope: current working tree after adapter-design intake and generated adapter plan changes, before commit.
 
-Git SHA at validation start: `43f3d1b4b174694f54a43d8a8202e4cb915e3915`
+Git SHA at validation start: `cccb53ec5c57a0c4bbb39959ef75d846a09b6c50`
 
 Runtime:
 
@@ -16,8 +16,8 @@ Runtime:
 Release artifact:
 
 - Path: `.tmp/release/generic-codex-workbench.zip`
-- Size: `1316149` bytes
-- SHA-256: `3D4DFD574C4B8507616AEA934C17C140F3DD4DDF354ABAFF400AD44EFB46C474`
+- Size: `1337143` bytes
+- SHA-256: `5287D9DCCFC58A4FA04A77DFA0A9D7331852FB7D32D617E3A1B7F78847643FAD`
 
 Release ZIP contents checked:
 
@@ -45,3 +45,4 @@ Release proof:
 - `release:zip` rebuilt the workspace, packaged `.tmp/release/generic-codex-workbench.zip`, validated the installable ZIP, and validated product discovery -> prepare -> prepared `loop:start:codex` consumption without `node_modules`.
 - `validate:release-product-start` also passed as a standalone command using the default `.tmp/release/generic-codex-workbench.zip` path.
 - `validate:source-bootstrap-guard` proved dist-missing source archives fail closed instead of invoking local npm bootstrap unless explicitly allowed.
+- Front-door discovery now includes an adapter-design checkpoint before `ready_for_prepare`; release validation covers the additional adapter answer turn and verifies workflow selectors in the attached generator prompt.

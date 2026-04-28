@@ -16,6 +16,8 @@ export const createBootstrapArtifactPaths = (
     doneWhenPath: join(rootDirectory, "done_when.md"),
     initScriptPath: join(rootDirectory, "init.sh"),
     adapterPath: join(rootDirectory, "adapter.generated.json"),
+    adapterPlanPath: join(rootDirectory, "adapter-plan.generated.json"),
+    adapterPlanMarkdownPath: join(rootDirectory, "adapter-plan.generated.md"),
     generatedRubricPath: join(rootDirectory, "rubric.generated.json"),
     generatedVerificationProfilePath: join(
       rootDirectory,

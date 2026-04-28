@@ -224,7 +224,31 @@ const main = async () => {
       `release third discovery failed.\nSTDOUT:\n${thirdDiscovery.stdout}\nSTDERR:\n${thirdDiscovery.stderr}`
     );
     assertNoBuildAttempt(thirdDiscovery, "release third discovery");
-    const readyDiscovery = parseJsonStdout(thirdDiscovery, "release third discovery");
+    const adapterDiscovery = parseJsonStdout(thirdDiscovery, "release third discovery");
+    assert.equal(adapterDiscovery.status, "ask_adapter_questions");
+
+    const fourthDiscovery = await runReleaseNode(
+      releaseRoot,
+      [
+        "scripts/loop-discover.mjs",
+        "--message",
+        [
+          "Verify with browser.",
+          "수입/지출 기록 -> 거래를 추가하면 목록과 월별 합계가 바뀐다.",
+          "카테고리 관리 -> 카테고리를 만들고 거래에 지정할 수 있다.",
+          "월별 통계 -> 월별 수입/지출/잔액이 표시된다."
+        ].join("\n"),
+        "--json"
+      ],
+      releaseEnv
+    );
+    assert.equal(
+      fourthDiscovery.code,
+      0,
+      `release fourth discovery failed.\nSTDOUT:\n${fourthDiscovery.stdout}\nSTDERR:\n${fourthDiscovery.stderr}`
+    );
+    assertNoBuildAttempt(fourthDiscovery, "release fourth discovery");
+    const readyDiscovery = parseJsonStdout(fourthDiscovery, "release fourth discovery");
     assert.equal(readyDiscovery.status, "ready_for_prepare");
     assert.equal(readyDiscovery.intake.product_title, "가계부 앱");
     assert.equal(readyDiscovery.intake.target_root, "./apps/가계부-앱");
@@ -377,7 +401,7 @@ const main = async () => {
     assert.match(attachedPrompt, /가계부 앱/);
     assert.match(attachedPrompt, /수입\/지출 기록/);
     assert.match(attachedPrompt, /Required release-gate selectors/);
-    assert.match(attachedPrompt, /\[data-testid='feature-feature-1-action'\]/);
+    assert.match(attachedPrompt, /\[data-testid='feature-1-action'\]/);
     assert.doesNotMatch(attachedPrompt, /planner_context_surface_reserved/);
     assert.doesNotMatch(attachedPrompt, /packages\/loop-orchestrator\/src/);
   } finally {

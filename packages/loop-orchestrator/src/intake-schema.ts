@@ -17,11 +17,67 @@ export type ExecutionIntakeFieldId =
   | "run_command"
   | "ready_url";
 
-export type SessionIntakeFieldId = ProductIntakeFieldId | ExecutionIntakeFieldId;
+export type VerificationSurface =
+  | "browser"
+  | "api"
+  | "cli"
+  | "test"
+  | "file"
+  | "db";
+
+export interface SessionWorkflowCheck {
+  workflow: string;
+  surface: VerificationSurface;
+  trigger?: string;
+  expected_result: string;
+  selector_hints?: {
+    root?: string;
+    action?: string;
+    result?: string;
+  };
+  api_hint?: {
+    method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+    path?: string;
+    expected_status?: number;
+    expected_json_path?: string;
+    expected_value?: string;
+  };
+  command_hint?: {
+    command?: string;
+    expected_output?: string;
+  };
+}
+
+export interface SessionAdapterPlan {
+  target_family: TargetFamily;
+  verification_surfaces: VerificationSurface[];
+  runtime_strategy: {
+    run_command?: string;
+    check_command?: string;
+    ready_url?: string;
+    app_url?: string;
+    api_base_url?: string;
+    health_url?: string;
+  };
+  workflow_checks: SessionWorkflowCheck[];
+  generated_files: string[];
+  notes?: string[];
+}
+
+export type AdapterIntakeFieldId =
+  | "verification_surface"
+  | "workflow_checks"
+  | "quality_metrics";
+
+export type SessionIntakeFieldId =
+  | ProductIntakeFieldId
+  | ExecutionIntakeFieldId
+  | AdapterIntakeFieldId;
 
 export type DiscoveryPhase =
   | "product"
   | "execution"
+  | "adapter"
   | "ready_for_prepare"
   | "prepared";
 
@@ -29,6 +85,7 @@ export type FrontDoorSessionStatus =
   | "not_product_build_request"
   | "ask_product_questions"
   | "ask_execution_questions"
+  | "ask_adapter_questions"
   | "ready_for_prepare"
   | "prepared";
 
@@ -77,6 +134,9 @@ export interface SessionIntakeSnapshot {
   non_goals?: string[];
   probe_hints?: Record<string, string>;
   custom_quality_metrics?: SessionCustomQualityMetric[];
+  verification_surfaces?: VerificationSurface[];
+  workflow_checks?: SessionWorkflowCheck[];
+  adapter_plan?: SessionAdapterPlan;
   notes?: string;
 }
 
@@ -96,6 +156,7 @@ export interface FrontDoorSessionArtifact {
   intake: SessionIntakeSnapshot;
   missing_product_fields: ProductIntakeFieldId[];
   missing_execution_fields: ExecutionIntakeFieldId[];
+  missing_adapter_fields: AdapterIntakeFieldId[];
   asked_question_ids: SessionIntakeFieldId[];
   last_question_ids: SessionIntakeFieldId[];
   last_question_batch: string[];

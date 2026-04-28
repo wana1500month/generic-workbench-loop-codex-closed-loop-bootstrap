@@ -87,6 +87,19 @@ const main = async () => {
       nonGoals: ["do not add billing"],
       notes: "session-preparation validator"
     });
+    const [adapterPlan, runtimeConfig] = await Promise.all([
+      readJsonFile(fixture.paths.adapterPlanPath),
+      readJsonFile(fixture.paths.generatedRuntimeConfigPath)
+    ]);
+    assert.equal(adapterPlan.target_family, "dashboard");
+    assert.deepEqual(adapterPlan.verification_surfaces, ["browser"]);
+    assert.ok(adapterPlan.workflow_checks.length >= 3);
+    assert.ok(
+      runtimeConfig.verification_contract.workflow_selectors.some((selector) =>
+        selector.workflow.includes("triage tickets")
+      ),
+      JSON.stringify(runtimeConfig.verification_contract, null, 2)
+    );
 
     const [
       { runtimeStatePathsForRun },

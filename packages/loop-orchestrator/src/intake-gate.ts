@@ -1,33 +1,34 @@
 import {
+  adapterPlanPreviewLines,
+  buildAdapterPlanFromIntake,
+  defaultVerificationSurfacesForFamily,
+  parseVerificationSurfacesAnswer,
+  parseWorkflowChecksAnswer
+} from "./adapter-plan.js";
+import type {
+  AdapterIntakeFieldId,
+  ExecutionIntakeFieldId as ExecutionFieldId,
+  ProductIntakeFieldId as ProductFieldId,
+  SessionIntakeSnapshot,
+  SessionWorkflowCheck,
+  VerificationSurface
+} from "./intake-schema.js";
+import {
   detectProductBuildIntent,
   type ProductBuildDetection
 } from "./product-build-signals.js";
 import type { TargetFamily } from "./types.js";
 
-type ProductFieldId =
-  | "product_summary"
-  | "target_users"
-  | "core_workflows"
-  | "references"
-  | "finish_line";
-
-type ExecutionFieldId =
-  | "project_mode"
-  | "target_root"
-  | "target_score"
-  | "max_rounds"
-  | "run_command"
-  | "ready_url";
-
-type IntakeFieldId = ProductFieldId | ExecutionFieldId;
+type IntakeFieldId = ProductFieldId | ExecutionFieldId | AdapterIntakeFieldId;
 
 type IntakeGateStatus =
   | "not_product_build_request"
   | "ask_product_questions"
   | "ask_execution_questions"
+  | "ask_adapter_questions"
   | "ready_for_prepare";
 
-type IntakePhase = "none" | "product" | "execution" | "prepare";
+type IntakePhase = "none" | "product" | "execution" | "adapter" | "prepare";
 
 interface IntakeFieldState<TFieldId extends IntakeFieldId = IntakeFieldId> {
   id: TFieldId;
@@ -44,6 +45,7 @@ export interface IntakeGateResult {
   missing_fields: IntakeFieldId[];
   missing_product_fields: ProductFieldId[];
   missing_execution_fields: ExecutionFieldId[];
+  missing_adapter_fields: AdapterIntakeFieldId[];
   satisfied_fields: IntakeFieldId[];
   questions: string[];
   internal_working_hypothesis?: Exclude<TargetFamily, "generic-core" | "editor-app">;
@@ -52,7 +54,10 @@ export interface IntakeGateResult {
   extracted_target_root?: string;
   extracted_target_score?: number;
   extracted_max_rounds?: number;
+  extracted_verification_surfaces?: VerificationSurface[];
+  extracted_workflow_checks?: SessionWorkflowCheck[];
   preparation_summary?: string[];
+  adapter_plan_preview?: string[];
   auto_prepare?: boolean;
   next_step?: "prepare";
 }
@@ -309,6 +314,24 @@ const limitQuestions = <TFieldId extends IntakeFieldId>(
             locale,
             "\uAE30\uC874 \uD504\uB85C\uC81D\uD2B8\uBA74 \uC900\uBE44 \uC644\uB8CC\uB97C \uD655\uC778\uD560 URL\uC744 \uC801\uC5B4\uC918. \uC608: http://127.0.0.1:3000/",
             "If this is an existing project, what ready URL should the loop check? Example: http://127.0.0.1:3000/"
+          );
+        case "verification_surface":
+          return localizedQuestion(
+            locale,
+            "\uC774 \uACB0\uACFC\uB97C \uBB34\uC5C7\uC73C\uB85C \uAC80\uC99D\uD558\uBA74 \uB418\uB098\uC694? \uD654\uBA74, API, \uD14C\uC2A4\uD2B8 \uBA85\uB839, \uD30C\uC77C/DB \uACB0\uACFC \uC911 \uACE8\uB77C\uC918.",
+            "How should the loop verify this result: browser screen, API, test command, file, or DB evidence?"
+          );
+        case "workflow_checks":
+          return localizedQuestion(
+            locale,
+            "\uD575\uC2EC \uC791\uC5C5\uBCC4\uB85C \uC5B4\uB5A4 \uC2E4\uC81C \uB3D9\uC791\uC744 \uD558\uBA74 \uC131\uACF5\uC778\uC9C0 \uC801\uC5B4\uC918. \uC608: \uAC70\uB798 \uCD94\uAC00 -> \uBAA9\uB85D\uACFC \uC6D4\uBCC4 \uD569\uACC4\uAC00 \uBC14\uB00C\uB2E4.",
+            "For each core workflow, what action and result prove success? Example: add transaction -> list and monthly total update."
+          );
+        case "quality_metrics":
+          return localizedQuestion(
+            locale,
+            "\uCD94\uAC00\uB85C \uC810\uC218\uD654\uD560 \uD488\uC9C8 \uAE30\uC900\uC774 \uC788\uB098\uC694? \uC5C6\uC73C\uBA74 \uC5C6\uB2E4\uACE0 \uC801\uC5B4\uC918.",
+            "Any extra quality metric the evaluator should score? If not, say none."
           );
         default:
           return field.question;
@@ -755,6 +778,51 @@ const buildExecutionFieldStates = (
   ];
 };
 
+const buildAdapterFieldStates = (
+  request: string,
+  targetFamily: Exclude<TargetFamily, "generic-core" | "editor-app">
+): IntakeFieldState<AdapterIntakeFieldId>[] => {
+  const verificationSurfaces = parseVerificationSurfacesAnswer(request);
+  const defaultSurface =
+    verificationSurfaces[0] ??
+    defaultVerificationSurfacesForFamily(targetFamily)[0] ??
+    "browser";
+  const workflowChecks = parseWorkflowChecksAnswer(request, defaultSurface);
+
+  return [
+    {
+      id: "verification_surface",
+      satisfied: verificationSurfaces.length > 0,
+      question:
+        "How should the loop verify this result: browser, API, test command, file, or DB?"
+    },
+    {
+      id: "workflow_checks",
+      satisfied: workflowChecks.length > 0 || verificationSurfaces.length > 0,
+      question:
+        "For each core workflow, what action and result prove success? Example: add transaction -> list and monthly total update."
+    },
+    {
+      id: "quality_metrics",
+      satisfied: true,
+      question: "Any additional scored quality metric?"
+    }
+  ];
+};
+
+const extractCoreFeaturesForAdapterPreview = (request: string): string[] => {
+  const match = request.match(
+    /\b(?:core workflows?|core features?)\s*(?:are|:)?\s*(.+?)(?:\.\s|$)/i
+  )?.[1];
+  if (!match) {
+    return [];
+  }
+  return match
+    .split(/\s*,\s*|\s+and\s+/i)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+};
+
 const formatPreparationProjectMode = (
   projectMode: "new" | "existing" | undefined,
   locale: "en" | "ko"
@@ -823,6 +891,7 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
       missing_fields: [],
       missing_product_fields: [],
       missing_execution_fields: [],
+      missing_adapter_fields: [],
       satisfied_fields: [],
       questions: []
     };
@@ -854,6 +923,7 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
       missing_fields: missingProductFields,
       missing_product_fields: missingProductFields,
       missing_execution_fields: [],
+      missing_adapter_fields: [],
       satisfied_fields: satisfiedProductFields,
       questions: limitQuestions(productFields, locale),
       internal_working_hypothesis: internalWorkingHypothesis,
@@ -883,6 +953,7 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
       missing_fields: [...missingProductFields, ...missingExecutionFields],
       missing_product_fields: [],
       missing_execution_fields: missingExecutionFields,
+      missing_adapter_fields: [],
       satisfied_fields: [...satisfiedProductFields, ...satisfiedExecutionFields],
       questions: limitQuestions(executionFields, locale),
       internal_working_hypothesis: internalWorkingHypothesis,
@@ -894,6 +965,73 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
     };
   }
 
+  const adapterFields = buildAdapterFieldStates(request, internalWorkingHypothesis);
+  const missingAdapterFields = adapterFields
+    .filter((field) => !field.satisfied)
+    .map((field) => field.id);
+  const satisfiedAdapterFields = adapterFields
+    .filter((field) => field.satisfied)
+    .map((field) => field.id);
+  const extractedVerificationSurfaces = parseVerificationSurfacesAnswer(request);
+  const defaultVerificationSurfaces =
+    extractedVerificationSurfaces.length > 0
+      ? extractedVerificationSurfaces
+      : defaultVerificationSurfacesForFamily(internalWorkingHypothesis);
+  const extractedWorkflowChecks = parseWorkflowChecksAnswer(
+    request,
+    defaultVerificationSurfaces[0] ?? "browser"
+  );
+
+  if (missingAdapterFields.length > 0) {
+    return {
+      status: "ask_adapter_questions",
+      phase: "adapter",
+      locale,
+      is_product_build_request: true,
+      product_build_detection: productBuildDetection,
+      missing_fields: [
+        ...missingProductFields,
+        ...missingExecutionFields,
+        ...missingAdapterFields
+      ],
+      missing_product_fields: [],
+      missing_execution_fields: [],
+      missing_adapter_fields: missingAdapterFields,
+      satisfied_fields: [
+        ...satisfiedProductFields,
+        ...satisfiedExecutionFields,
+        ...satisfiedAdapterFields
+      ],
+      questions: limitQuestions(adapterFields, locale),
+      internal_working_hypothesis: internalWorkingHypothesis,
+      extracted_summary: extractedSummary,
+      extracted_project_mode: extractedProjectMode,
+      extracted_target_root: extractedTargetRoot,
+      extracted_target_score: resolvedTargetScore,
+      extracted_max_rounds: resolvedMaxRounds,
+      ...(extractedVerificationSurfaces.length
+        ? { extracted_verification_surfaces: extractedVerificationSurfaces }
+        : {}),
+      ...(extractedWorkflowChecks.length
+        ? { extracted_workflow_checks: extractedWorkflowChecks }
+        : {})
+    };
+  }
+
+  const adapterPlan = buildAdapterPlanFromIntake({
+    targetFamily: internalWorkingHypothesis,
+    intake: {
+      product_summary: extractedSummary,
+      core_features: extractCoreFeaturesForAdapterPreview(request),
+      run_command: extractRunCommand(request),
+      ready_url: extractReadyUrl(request),
+      project_mode: extractedProjectMode,
+      target_root: extractedTargetRoot,
+      verification_surfaces: defaultVerificationSurfaces,
+      workflow_checks: extractedWorkflowChecks
+    } satisfies SessionIntakeSnapshot
+  });
+
   return {
     status: "ready_for_prepare",
     phase: "prepare",
@@ -903,7 +1041,12 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
     missing_fields: [],
     missing_product_fields: [],
     missing_execution_fields: [],
-    satisfied_fields: [...satisfiedProductFields, ...satisfiedExecutionFields],
+    missing_adapter_fields: [],
+    satisfied_fields: [
+      ...satisfiedProductFields,
+      ...satisfiedExecutionFields,
+      ...satisfiedAdapterFields
+    ],
     questions: [],
     internal_working_hypothesis: internalWorkingHypothesis,
     extracted_summary: extractedSummary,
@@ -911,6 +1054,8 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
     extracted_target_root: extractedTargetRoot,
     extracted_target_score: resolvedTargetScore,
     extracted_max_rounds: resolvedMaxRounds,
+    extracted_verification_surfaces: defaultVerificationSurfaces,
+    extracted_workflow_checks: adapterPlan.workflow_checks,
     auto_prepare: true,
     next_step: "prepare",
     preparation_summary: buildPreparationSummary({
@@ -920,14 +1065,16 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
       targetScore: resolvedTargetScore,
       maxRounds: resolvedMaxRounds,
       locale
-    })
+    }),
+    adapter_plan_preview: adapterPlanPreviewLines(adapterPlan, locale)
   };
 };
 
 export const renderIntakeGateResponse = (result: IntakeGateResult): string => {
   if (
     result.status === "ask_product_questions" ||
-    result.status === "ask_execution_questions"
+    result.status === "ask_execution_questions" ||
+    result.status === "ask_adapter_questions"
   ) {
     return result.questions.map((question, index) => `${index + 1}. ${question}`).join("\n");
   }
@@ -937,12 +1084,14 @@ export const renderIntakeGateResponse = (result: IntakeGateResult): string => {
       ? [
           "준비 완료.",
           ...(result.preparation_summary ?? []),
+          ...(result.adapter_plan_preview ?? []),
           "세션 상태는 ready_to_start입니다.",
           "루프를 시작하려면 '루프 시작'이라고 말하세요."
         ].join("\n")
       : [
           "Preparation is complete.",
           ...(result.preparation_summary ?? []),
+          ...(result.adapter_plan_preview ?? []),
           "Session status: ready_to_start.",
           "Say '루프 시작' or 'start loop' to begin the same-thread loop."
         ].join("\n");

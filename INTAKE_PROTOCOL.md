@@ -19,8 +19,9 @@ Only enter this protocol after the request has been classified as
 `product_build`, or when the request is obviously a product-build prompt.
 
 Use `loop:discover` for the real same-thread UX. If it returns
-`ask_product_questions` or `ask_execution_questions`, the next assistant reply
-should contain those questions only. If it returns `ready_for_prepare`, run
+`ask_product_questions`, `ask_execution_questions`, or `ask_adapter_questions`,
+the next assistant reply should contain those questions only. If it returns
+`ready_for_prepare`, run
 `loop:prepare -- --front-door-session <path> --json`, then stop at
 `ready_to_start`.
 
@@ -38,10 +39,13 @@ the model jump directly into design or implementation advice.
 4. Product ambiguity is a hard block. Keep asking product questions until the
    product is concrete enough.
 5. Once the product is clear, ask execution-control questions only.
-6. Keep target family inference internal through prepare unless the user
+6. Once execution controls are clear, ask only the lightweight adapter-design
+   questions needed to decide verification surface and workflow checks.
+7. Keep target family inference internal through prepare unless the user
    explicitly asks to choose or override it.
-7. Only after the intake is sufficiently filled may the agent:
+8. Only after the intake is sufficiently filled may the agent:
    - write a short preparation summary if useful
+   - show the generated adapter plan preview
    - enter prepare mode on the same thread
    - write the session preparation artifacts, preferably through `npm run loop:prepare -- --front-door-session <path> --json` on shell/operator surfaces
    - stop at `ready_to_start`
@@ -65,6 +69,12 @@ Once the product is clear, gather the execution-control fields:
 - target score
 - max rounds
 - if needed for an existing target: run command, check command, ready URL, and app/health/api URLs
+
+Once execution controls are clear, gather the adapter-design fields:
+
+- verification surface (`browser`, `api`, `test`, `cli`, `file`, or `db`)
+- workflow checks in action/result form, for example `add transaction -> list and monthly total update`
+- optional extra quality metrics
 
 Target family should stay internal and be inferred during prepare mode unless the
 user explicitly wants to override it.
@@ -100,6 +110,12 @@ normal second phase is:
 3. What target score should we aim for?
 4. What should max rounds be?
 5. If this is an existing project, what run/check commands and URLs should the harness use?
+
+After execution fields are clear, switch to adapter-design questions only. The
+normal third phase is:
+
+1. How should the loop verify the result: browser screen, API, test command, file, or DB evidence?
+2. For each core workflow, what action and result prove success?
 
 ## Explicitly wrong behavior
 
