@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { ensureDistModule } from "../.agents/skills/lib/ensure-dist.mjs";
@@ -34,6 +34,7 @@ const withoutBootstrapEnv = async (fn) => {
 };
 
 const main = async () => {
+  await mkdir(join(repoRoot, ".tmp"), { recursive: true });
   const tempRoot = await mkdtemp(join(repoRoot, ".tmp", "source-bootstrap-guard-"));
 
   try {
