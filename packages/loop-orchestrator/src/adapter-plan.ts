@@ -280,12 +280,14 @@ export const adapterPlanPreviewLines = (
   locale: "en" | "ko" = "en"
 ): string[] => {
   const heading =
-    locale === "ko" ? "Closed-loop adapter plan:" : "Closed-loop adapter plan:";
+    locale === "ko"
+      ? "\uB2EB\uD78C \uB8E8\uD504 adapter \uC124\uACC4:"
+      : "Closed-loop adapter plan:";
   const workflowHeading =
-    locale === "ko" ? "- Workflow probes:" : "- Workflow probes:";
+    locale === "ko" ? "- workflow probes:" : "- Workflow probes:";
   const generatedHeading =
     locale === "ko"
-      ? "- Generated adapter files:"
+      ? "- \uC0DD\uC131 \uC608\uC815 adapter \uD30C\uC77C:"
       : "- Generated adapter files:";
 
   return [

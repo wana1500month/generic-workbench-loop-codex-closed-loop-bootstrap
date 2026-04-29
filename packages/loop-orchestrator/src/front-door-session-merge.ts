@@ -385,6 +385,52 @@ const parseRunCommandAnswer = (value: string): string | undefined => {
   return candidate?.trim();
 };
 
+const stripKoreanSentenceEnding = (value: string): string =>
+  value
+    .replace(/[.!?\u3002]+$/u, "")
+    .trim()
+    .replace(
+      /(?:\uC774\uC57C|\uC57C|\uC785\uB2C8\uB2E4|\uC608\uC694|\uC774\uC5D0\uC694|\uC774\uACE0|\uC774\uB2E4|\uC784)$/u,
+      ""
+    )
+    .trim();
+
+const normalizeKoreanUserValue = (value: string): string => {
+  const cleaned = stripKoreanSentenceEnding(
+    normalizeInlineValue(value)
+      .replace(
+        /^(?:\uB300\uC0C1|\uC0AC\uC6A9\uC790|\uC720\uC800|\uACE0\uAC1D)(?:\uC740|\uB294|:)?\s*/u,
+        ""
+      )
+      .replace(/(?:\uAC00|\uC774|\uC744|\uB97C|\uC5D0\uAC8C|\uC6A9)$/u, "")
+      .trim()
+  );
+
+  return cleaned === "\uAC1C\uC778" ? "\uAC1C\uC778 \uC0AC\uC6A9\uC790" : cleaned;
+};
+
+const normalizeKoreanCoreWorkflowText = (value: string): string =>
+  stripKoreanSentenceEnding(
+    normalizeInlineValue(value)
+      .replace(
+        /^(?:\uD575\uC2EC|\uC8FC\uC694\s*\uAE30\uB2A5|\uC8FC\uC694|\uAE30\uB2A5|\uC791\uC5C5|\uD574\uC57C\s*\uD558\uB294\s*(?:\uAC83|\uC791\uC5C5)?)(?:\uC740|\uB294|:)?\s*/u,
+        ""
+      )
+      .trim()
+  );
+
+const normalizeKoreanFinishLineValue = (value: string): string =>
+  stripKoreanSentenceEnding(
+    normalizeInlineValue(value)
+      .replace(
+        /^(?:\uC131\uACF5\s*\uAE30\uC900|\uC131\uACF5|\uC644\uB8CC\s*\uAE30\uC900)(?:\uC740|\uB294|:)?\s*/u,
+        ""
+      )
+      .trim()
+  )
+    .replace(/(?:\uD558\uB294\s*)?\uAC70$/u, "")
+    .trim();
+
 const extractKoreanNaturalProductAnswers = (
   message: string,
   questionIds: readonly SessionIntakeFieldId[]
@@ -404,6 +450,9 @@ const extractKoreanNaturalProductAnswers = (
     .filter(Boolean);
 
   if (asksTargetUsers) {
+    const explicitUserMatch = message.match(
+      /(?:^|[.!?\n\u3002]\s*)(?:\uB300\uC0C1|\uC0AC\uC6A9\uC790|\uC720\uC800|\uACE0\uAC1D)(?:\uC740|\uB294|:)\s*([^.!?\n\u3002,]+?)(?:\uC774\uC57C|\uC57C|\uC785\uB2C8\uB2E4|\uC608\uC694|\uC774\uACE0|,|$)/u
+    );
     const userSentence = sentences.find(
       (sentence) =>
         /(?:\uC0AC\uC6A9\uC790|\uC720\uC800|\uACE0\uAC1D|\uAC1C\uC778|\uD300|\uAD00\uB9AC\uC790|\uD559\uC0DD|\uC9C1\uC6D0)/u.test(
@@ -416,36 +465,40 @@ const extractKoreanNaturalProductAnswers = (
     const userMatch = userSentence?.match(
       /([\p{Letter}\p{Number}\s]+?(?:\uC0AC\uC6A9\uC790|\uC720\uC800|\uACE0\uAC1D|\uAC1C\uC778|\uD300|\uAD00\uB9AC\uC790|\uD559\uC0DD|\uC9C1\uC6D0))/u
     );
-    const userValue = userMatch?.[1]
-      ?.replace(/(?:\uAC00|\uC774|\uC744|\uB97C|\uC5D0\uAC8C|\uC6A9)$/u, "")
-      .trim();
+    const userValue = normalizeKoreanUserValue(
+      explicitUserMatch?.[1] ?? userMatch?.[1] ?? ""
+    );
     if (userValue) {
-      result.target_users = [
-        userValue === "\uAC1C\uC778" ? "\uAC1C\uC778 \uC0AC\uC6A9\uC790" : userValue
-      ];
+      result.target_users = [userValue];
     }
   }
 
   if (asksCoreWorkflows) {
+    const coreAfterKeywordMatch = message.match(
+      /(?:\uD575\uC2EC|\uC8FC\uC694\s*\uAE30\uB2A5|\uC8FC\uC694|\uAE30\uB2A5|\uC791\uC5C5|\uD574\uC57C\s*\uD558\uB294\s*(?:\uAC83|\uC791\uC5C5)?)(?:\uC740|\uB294|:)\s*([^.!?\n\u3002]+?)(?:\uC774\uC57C|\uC57C|\uC785\uB2C8\uB2E4|\uC608\uC694|\uC774\uACE0|$)/u
+    );
     const coreMatch =
+      coreAfterKeywordMatch ??
       message.match(
         /(?:^|[,.;\n])\s*([^.!?\n\u3002]+?)(?:\uAC00|\uC774)?\s*(?:\uD575\uC2EC|\uC8FC\uC694|\uBC18\uB4DC\uC2DC|\uAE30\uB2A5|\uC791\uC5C5)/u
       ) ??
       message.match(
         /([^.!?\n\u3002]+?(?:\uAE30\uB85D|\uAD00\uB9AC|\uD1B5\uACC4|\uCD94\uAC00|\uC0AD\uC81C|\uC870\uD68C|\uBCF4\uAE30)[^.!?\n\u3002]*)/u
       );
-    const coreText = coreMatch?.[1]
-      ?.replace(
-        /^.*(?:\uC4F8|\uC0AC\uC6A9|\uC774\uC6A9).*?(?:,|\uADF8\uB9AC\uACE0|\uBC0F)\s*/u,
-        ""
-      )
-      .trim();
+    const coreText = normalizeKoreanCoreWorkflowText(
+      coreMatch?.[1]
+        ?.replace(
+          /^.*(?:\uC4F8|\uC0AC\uC6A9|\uC774\uC6A9).*?(?:,|\uADF8\uB9AC\uACE0|\uBC0F)\s*/u,
+          ""
+        )
+        .trim() ?? ""
+    );
     const features = coreText
       ? splitInlineList(coreText)
           .map((entry) =>
-            entry
-              .replace(/(?:\uAC00|\uC774)?\s*(?:\uD575\uC2EC|\uC8FC\uC694).*$/u, "")
-              .trim()
+            normalizeKoreanCoreWorkflowText(
+              entry.replace(/(?:\uAC00|\uC774)?\s*(?:\uD575\uC2EC|\uC8FC\uC694).*$/u, "")
+            )
           )
           .filter(
             (entry) =>
@@ -461,12 +514,16 @@ const extractKoreanNaturalProductAnswers = (
   }
 
   if (asksFinishLine) {
-    const finishMatch = message.match(
-      /([^.!?\n\u3002]*(?:\uC131\uACF5|\uB418\uBA74|\uC644\uB8CC|\uCDA9\uBD84|good enough|\uD655\uC778)[^.!?\n\u3002]*)/iu
-    );
-    const finishLine = finishMatch?.[1]?.trim();
+    const explicitFinishMatch =
+      message.match(
+        /(?:\uC131\uACF5\s*\uAE30\uC900|\uC131\uACF5|\uC644\uB8CC\s*\uAE30\uC900)(?:\uC740|\uB294|:)?\s*([^.!?\n\u3002]+?)(?:\uC774\uC57C|\uC57C|\uC785\uB2C8\uB2E4|\uC608\uC694|\uC774\uACE0|$)/u
+      ) ??
+      message.match(
+        /([^.!?\n\u3002]*(?:\uC131\uACF5|\uB418\uBA74|\uC644\uB8CC|\uCDA9\uBD84|good enough|\uD655\uC778)[^.!?\n\u3002]*)/iu
+      );
+    const finishLine = explicitFinishMatch?.[1]?.trim();
     if (finishLine) {
-      result.finish_line = normalizeInlineValue(finishLine);
+      result.finish_line = normalizeKoreanFinishLineValue(finishLine);
     }
   }
 
@@ -505,16 +562,30 @@ const extractCandidatesFromQuestionOrder = (
 
     switch (fieldId) {
       case "target_users":
-        result.target_users = splitInlineList(answer);
+        result.target_users = splitInlineList(
+          /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/u.test(answer)
+            ? normalizeKoreanUserValue(answer)
+            : answer
+        );
         break;
       case "core_workflows":
-        result.core_features = splitInlineList(answer);
+        result.core_features = splitInlineList(
+          /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/u.test(answer)
+            ? normalizeKoreanCoreWorkflowText(answer)
+            : answer
+        ).map((entry) =>
+          /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/u.test(entry)
+            ? normalizeKoreanCoreWorkflowText(entry)
+            : entry
+        );
         break;
       case "references":
         result.reference_apps = isNoneAnswer(answer) ? [] : splitInlineList(answer);
         break;
       case "finish_line":
-        result.finish_line = normalizeInlineValue(answer);
+        result.finish_line = /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/u.test(answer)
+          ? normalizeKoreanFinishLineValue(answer)
+          : normalizeInlineValue(answer);
         break;
       case "project_mode":
         if (/\bnew\b|\bfrom scratch\b|\bnew project\b|새\s*프로젝트|처음부터|새로/u.test(answer)) {

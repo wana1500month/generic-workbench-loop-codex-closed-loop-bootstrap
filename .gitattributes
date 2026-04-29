@@ -1,0 +1,4 @@
+.tmp/ export-ignore
+node_modules/ export-ignore
+evals/runs/ export-ignore
+packages/loop-orchestrator/dist/ export-ignore

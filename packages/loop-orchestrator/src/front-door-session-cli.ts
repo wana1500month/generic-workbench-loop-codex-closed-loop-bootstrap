@@ -95,15 +95,25 @@ const main = async (): Promise<void> => {
 
   const nextActionLines =
     result.status === "ready_for_prepare"
-      ? [
-          "Next: run loop:prepare to generate the adapter bundle.",
-          "Prepare stops at ready_to_start. After prepare, say '루프 시작' or 'start loop' to run."
-        ]
-      : result.status === "prepared"
+      ? result.locale === "ko"
         ? [
-            "Session status is ready_to_start.",
-            "Say '루프 시작' or 'start loop' to run."
+            "\uB2E4\uC74C \uB2E8\uACC4: loop:prepare\uB97C \uC2E4\uD589\uD558\uBA74 generated adapter bundle\uC774 \uC0DD\uC131\uB429\uB2C8\uB2E4.",
+            "prepare \uD6C4 \uC138\uC158\uC740 ready_to_start\uC5D0\uC11C \uBA48\uCD89\uB2C8\uB2E4. \uB8E8\uD504\uB97C \uC2DC\uC791\uD558\uB824\uBA74 '\uB8E8\uD504 \uC2DC\uC791' \uB610\uB294 'start loop'\uC774\uB77C\uACE0 \uB9D0\uD558\uC138\uC694."
           ]
+        : [
+            "Next: run loop:prepare to generate the adapter bundle.",
+            "Prepare stops at ready_to_start. After prepare, say '루프 시작' or 'start loop' to run."
+          ]
+      : result.status === "prepared"
+        ? result.locale === "ko"
+          ? [
+              "\uC138\uC158 \uC0C1\uD0DC\uB294 ready_to_start\uC785\uB2C8\uB2E4.",
+              "\uB8E8\uD504\uB97C \uC2DC\uC791\uD558\uB824\uBA74 '\uB8E8\uD504 \uC2DC\uC791' \uB610\uB294 'start loop'\uC774\uB77C\uACE0 \uB9D0\uD558\uC138\uC694."
+            ]
+          : [
+              "Session status is ready_to_start.",
+              "Say '루프 시작' or 'start loop' to run."
+            ]
         : [];
 
   process.stdout.write(

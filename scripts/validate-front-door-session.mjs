@@ -455,6 +455,47 @@ const main = async () => {
     assert.equal(posixAbsoluteExecution.intake.project_mode, "new");
     assert.equal(posixAbsoluteExecution.intake.target_root, "/mnt/data/budget-app");
 
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-labeled-natural-product-answer",
+      message: "\uAC00\uACC4\uBD80 \uC571 \uB9CC\uB4E4\uC5B4\uC918"
+    });
+    const koLabeledNaturalProduct = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-labeled-natural-product-answer",
+      message: [
+        "\uB300\uC0C1\uC740 \uAC1C\uC778 \uC0AC\uC6A9\uC790\uC57C.",
+        "\uD575\uC2EC\uC740 \uC218\uC785/\uC9C0\uCD9C \uAE30\uB85D, \uCE74\uD14C\uACE0\uB9AC \uAD00\uB9AC, \uC6D4\uBCC4 \uD1B5\uACC4 \uBCF4\uAE30\uC57C.",
+        "\uC131\uACF5 \uAE30\uC900\uC740 \uAC70\uB798 \uCD94\uAC00/\uC0AD\uC81C\uC640 \uC6D4\uBCC4 \uD1B5\uACC4\uB97C \uD655\uC778\uD558\uB294 \uAC70\uC57C."
+      ].join("\n")
+    });
+    assert.equal(koLabeledNaturalProduct.status, "ask_execution_questions");
+    assert.deepEqual(koLabeledNaturalProduct.intake.target_users, [
+      "\uAC1C\uC778 \uC0AC\uC6A9\uC790"
+    ]);
+    assert.deepEqual(koLabeledNaturalProduct.intake.core_features, [
+      "\uC218\uC785/\uC9C0\uCD9C \uAE30\uB85D",
+      "\uCE74\uD14C\uACE0\uB9AC \uAD00\uB9AC",
+      "\uC6D4\uBCC4 \uD1B5\uACC4 \uBCF4\uAE30"
+    ]);
+    assert.equal(
+      koLabeledNaturalProduct.intake.finish_line,
+      "\uAC70\uB798 \uCD94\uAC00/\uC0AD\uC81C\uC640 \uC6D4\uBCC4 \uD1B5\uACC4\uB97C \uD655\uC778"
+    );
+
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-incomplete-product-snapshot",
+      message: "\uAC00\uACC4\uBD80 \uC571 \uB9CC\uB4E4\uC5B4\uC918"
+    });
+    const koIncompleteProduct = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-incomplete-product-snapshot",
+      message:
+        "\uB300\uC0C1\uC740 \uAC1C\uC778 \uC0AC\uC6A9\uC790\uC57C. \uC131\uACF5 \uAE30\uC900\uC740 \uCCAB \uD654\uBA74\uC774 \uCDA9\uBD84\uD788 \uC644\uC131\uB418\uB294 \uAC70\uC57C."
+    });
+    assert.equal(koIncompleteProduct.status, "ask_product_questions");
+    assert.ok(
+      koIncompleteProduct.missing_product_fields.includes("core_workflows"),
+      JSON.stringify(koIncompleteProduct, null, 2)
+    );
+
     const koNaturalTargetRootRelative = `tmp-targets/${basename(tempRoot)}-ko-natural-budget`;
     const koNaturalTargetRoot = resolve(repoRoot, koNaturalTargetRootRelative);
     await runFrontDoorDiscoveryTurn({
@@ -495,6 +536,15 @@ const main = async () => {
       ].join("\n")
     });
     assert.equal(koNaturalReady.status, "ready_for_prepare");
+    assert.equal(koNaturalReady.locale, "ko");
+    assert.equal(
+      koNaturalReady.preparation_summary[0],
+      "\uC900\uBE44\uB41C \uBA85\uC138:"
+    );
+    assert.equal(
+      koNaturalReady.adapter_plan_preview[0],
+      "\uB2EB\uD78C \uB8E8\uD504 adapter \uC124\uACC4:"
+    );
     assert.ok(
       koNaturalReady.preparation_summary.some((line) =>
         line.includes(koNaturalTargetRootRelative)

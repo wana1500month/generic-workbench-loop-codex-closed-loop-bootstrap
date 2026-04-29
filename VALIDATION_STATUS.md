@@ -1,10 +1,10 @@
 # Validation Status
 
-Generated at: 2026-04-29T18:35:58+09:00
+Generated at: 2026-04-29T20:57:04+09:00
 
-Validation scope: current working tree after natural-language intake parsing, workflow-check alignment, completed adapter runtime strategy, and ready output changes, before commit.
+Validation scope: current working tree after snapshot-based intake fail-closed checks, expanded Korean natural-language parsing, localized ready output, source archive export-ignore rules, and release ZIP regeneration, before commit.
 
-Git SHA at validation start: `a14687f`
+Git SHA at validation start: `fc7d6c5`
 
 Runtime:
 
@@ -16,8 +16,8 @@ Runtime:
 Release artifact:
 
 - Path: `.tmp/release/generic-codex-workbench.zip`
-- Size: `1353940` bytes
-- SHA-256: `54618FE4B815289D167A43662A1343BF701F2062D89A2DBDB704FD7BCE2EA597`
+- Size: `1359070` bytes
+- SHA-256: `E2AABA5F504C12742B125D8F0F852F59AD867CDF8A358D2557494E92C2347682`
 
 Release ZIP contents checked:
 
@@ -48,5 +48,9 @@ Release proof:
 - Operator surfaces expose adapter plan, adapter contract, evaluator profile, and adapter review task paths before `ready_to_start`.
 - Front-door discovery includes an adapter-design checkpoint before `ready_for_prepare`; release validation covers the additional adapter answer turn and verifies workflow selectors in the attached generator prompt.
 - Natural Korean product answers can fill target users, core workflows, and finish line from one paragraph.
+- Korean labeled natural answers such as "대상은 ...", "핵심은 ...", and "성공 기준은 ..." are normalized into snapshot fields.
+- Front-door discovery now rechecks the saved intake snapshot before allowing `ready_for_prepare`; missing core product fields force product questions instead of failing later in prepare.
+- Korean ready output uses localized summary and next-step labels.
 - Workflow checks are aligned back to core workflow names before prepare, so aliases such as "monthly stats" vs. "view monthly stats" do not block integrity validation.
 - Adapter plan previews and generated markdown include completed run command and ready URL defaults.
+- `.gitattributes` marks `.tmp/`, `node_modules/`, `evals/runs/`, and bundled dist as `export-ignore` for source archives generated through `git archive`.
