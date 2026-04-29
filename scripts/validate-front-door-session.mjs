@@ -455,6 +455,88 @@ const main = async () => {
     assert.equal(posixAbsoluteExecution.intake.project_mode, "new");
     assert.equal(posixAbsoluteExecution.intake.target_root, "/mnt/data/budget-app");
 
+    const koNaturalTargetRootRelative = `tmp-targets/${basename(tempRoot)}-ko-natural-budget`;
+    const koNaturalTargetRoot = resolve(repoRoot, koNaturalTargetRootRelative);
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-natural-product-answer",
+      message: "\uAC00\uACC4\uBD80 \uC571 \uB9CC\uB4E4\uC5B4\uC918"
+    });
+    const koNaturalProduct = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-natural-product-answer",
+      message:
+        "\uAC1C\uC778 \uC0AC\uC6A9\uC790\uAC00 \uC4F8 \uAC70\uACE0, \uC218\uC785/\uC9C0\uCD9C \uAE30\uB85D, \uCE74\uD14C\uACE0\uB9AC \uAD00\uB9AC, \uC6D4\uBCC4 \uD1B5\uACC4 \uBCF4\uAE30\uAC00 \uD575\uC2EC\uC774\uC57C. \uAC70\uB798 \uCD94\uAC00/\uC0AD\uC81C\uC640 \uC6D4\uBCC4 \uD1B5\uACC4 \uD655\uC778\uC774 \uB418\uBA74 \uC131\uACF5."
+    });
+    assert.equal(koNaturalProduct.status, "ask_execution_questions");
+    assert.deepEqual(koNaturalProduct.intake.target_users, [
+      "\uAC1C\uC778 \uC0AC\uC6A9\uC790"
+    ]);
+    assert.ok(
+      koNaturalProduct.intake.core_features.includes(
+        "\uC218\uC785/\uC9C0\uCD9C \uAE30\uB85D"
+      ),
+      JSON.stringify(koNaturalProduct, null, 2)
+    );
+    assert.match(
+      koNaturalProduct.intake.finish_line ?? "",
+      /\uAC70\uB798 \uCD94\uAC00/u
+    );
+    const koNaturalExecution = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-natural-product-answer",
+      message: `new, ${koNaturalTargetRootRelative}`
+    });
+    assert.equal(koNaturalExecution.status, "ask_adapter_questions");
+    const koNaturalReady = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-natural-product-answer",
+      message: [
+        "\uD654\uBA74\uC73C\uB85C \uAC80\uC99D.",
+        "\uC218\uC785/\uC9C0\uCD9C \uAE30\uB85D -> \uAC70\uB798\uB97C \uCD94\uAC00\uD558\uBA74 \uBAA9\uB85D\uACFC \uC6D4\uBCC4 \uD569\uACC4\uAC00 \uBC14\uB00C\uB2E4.",
+        "\uCE74\uD14C\uACE0\uB9AC \uAD00\uB9AC -> \uCE74\uD14C\uACE0\uB9AC\uB97C \uB9CC\uB4E4\uACE0 \uAC70\uB798\uC5D0 \uC9C0\uC815\uD560 \uC218 \uC788\uB2E4.",
+        "\uC6D4\uBCC4 \uD1B5\uACC4 -> \uC6D4\uBCC4 \uC218\uC785/\uC9C0\uCD9C/\uC794\uC561\uC774 \uD45C\uC2DC\uB41C\uB2E4."
+      ].join("\n")
+    });
+    assert.equal(koNaturalReady.status, "ready_for_prepare");
+    assert.ok(
+      koNaturalReady.preparation_summary.some((line) =>
+        line.includes(koNaturalTargetRootRelative)
+      ),
+      JSON.stringify(koNaturalReady, null, 2)
+    );
+    assert.ok(
+      koNaturalReady.adapter_plan_preview.some((line) =>
+        /run command:/i.test(line)
+      ),
+      JSON.stringify(koNaturalReady, null, 2)
+    );
+    const koNaturalPrepared = await prepareSessionRun({
+      ideaPath: genericIdeaPath,
+      frontDoorSessionPath: koNaturalReady.front_door_session_path,
+      transportMode: "current-thread",
+      controllerMode: "attached"
+    });
+    const [koNaturalAdapterPlan, koNaturalVerificationProfile] =
+      await Promise.all([
+        readJsonFile(koNaturalPrepared.adapterPlanPath),
+        readJsonFile(koNaturalPrepared.evaluatorProfilePath)
+      ]);
+    assert.equal(
+      koNaturalAdapterPlan.runtime_strategy.run_command,
+      "npm run dev -- --host 127.0.0.1 --port 3000 --strictPort"
+    );
+    assert.equal(koNaturalAdapterPlan.runtime_strategy.ready_url, "http://127.0.0.1:3000/");
+    assert.ok(
+      koNaturalAdapterPlan.workflow_checks.some(
+        (check) => check.workflow === "\uC6D4\uBCC4 \uD1B5\uACC4 \uBCF4\uAE30"
+      ),
+      JSON.stringify(koNaturalAdapterPlan.workflow_checks, null, 2)
+    );
+    assert.ok(
+      koNaturalVerificationProfile.core_probes.some((probe) =>
+        probe.label.includes("\uC6D4\uBCC4 \uD1B5\uACC4 \uBCF4\uAE30")
+      ),
+      JSON.stringify(koNaturalVerificationProfile.core_probes, null, 2)
+    );
+    await cleanupTempRoot(koNaturalTargetRoot);
+
     await runFrontDoorDiscoveryTurn({
       threadId: "thread-existing-runtime",
       message: "Build me a todo app with auth"

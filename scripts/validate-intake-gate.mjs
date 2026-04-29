@@ -127,6 +127,14 @@ const productFilledRequest =
 const browserAdapterClause =
   "Verify with browser. arranging boards -> board arrangement is visible. dragging panels -> panel movement result is visible. writing notes -> note result is visible.";
 const productFilledWithAdapterRequest = `${productFilledRequest} ${browserAdapterClause}`;
+const adapterSurfaceOnlyResult = evaluateIntakeRequest(
+  `${productFilledRequest} This is a new project and the target root is ./apps/storyboard. Verify with browser.`
+);
+assert.equal(adapterSurfaceOnlyResult.status, "ask_adapter_questions");
+assert.ok(
+  adapterSurfaceOnlyResult.missing_adapter_fields.includes("workflow_checks"),
+  JSON.stringify(adapterSurfaceOnlyResult, null, 2)
+);
 
 const askExecutionResult = evaluateIntakeRequest(productFilledRequest);
 assert.equal(askExecutionResult.status, "ask_execution_questions");

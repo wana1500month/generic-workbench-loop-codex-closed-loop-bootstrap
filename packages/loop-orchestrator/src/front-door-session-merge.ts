@@ -385,6 +385,94 @@ const parseRunCommandAnswer = (value: string): string | undefined => {
   return candidate?.trim();
 };
 
+const extractKoreanNaturalProductAnswers = (
+  message: string,
+  questionIds: readonly SessionIntakeFieldId[]
+): Partial<SessionIntakeSnapshot> => {
+  const result: Partial<SessionIntakeSnapshot> = {};
+  const asksTargetUsers = questionIds.includes("target_users");
+  const asksCoreWorkflows = questionIds.includes("core_workflows");
+  const asksFinishLine = questionIds.includes("finish_line");
+
+  if (!asksTargetUsers && !asksCoreWorkflows && !asksFinishLine) {
+    return result;
+  }
+
+  const sentences = message
+    .split(/[.!?\n\u3002]+/u)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+
+  if (asksTargetUsers) {
+    const userSentence = sentences.find(
+      (sentence) =>
+        /(?:\uC0AC\uC6A9\uC790|\uC720\uC800|\uACE0\uAC1D|\uAC1C\uC778|\uD300|\uAD00\uB9AC\uC790|\uD559\uC0DD|\uC9C1\uC6D0)/u.test(
+          sentence
+        ) &&
+        /(?:\uC4F8|\uC0AC\uC6A9|\uC774\uC6A9|\uB300\uC0C1|\uC704\uD55C|\uC6A9)/u.test(
+          sentence
+        )
+    );
+    const userMatch = userSentence?.match(
+      /([\p{Letter}\p{Number}\s]+?(?:\uC0AC\uC6A9\uC790|\uC720\uC800|\uACE0\uAC1D|\uAC1C\uC778|\uD300|\uAD00\uB9AC\uC790|\uD559\uC0DD|\uC9C1\uC6D0))/u
+    );
+    const userValue = userMatch?.[1]
+      ?.replace(/(?:\uAC00|\uC774|\uC744|\uB97C|\uC5D0\uAC8C|\uC6A9)$/u, "")
+      .trim();
+    if (userValue) {
+      result.target_users = [
+        userValue === "\uAC1C\uC778" ? "\uAC1C\uC778 \uC0AC\uC6A9\uC790" : userValue
+      ];
+    }
+  }
+
+  if (asksCoreWorkflows) {
+    const coreMatch =
+      message.match(
+        /(?:^|[,.;\n])\s*([^.!?\n\u3002]+?)(?:\uAC00|\uC774)?\s*(?:\uD575\uC2EC|\uC8FC\uC694|\uBC18\uB4DC\uC2DC|\uAE30\uB2A5|\uC791\uC5C5)/u
+      ) ??
+      message.match(
+        /([^.!?\n\u3002]+?(?:\uAE30\uB85D|\uAD00\uB9AC|\uD1B5\uACC4|\uCD94\uAC00|\uC0AD\uC81C|\uC870\uD68C|\uBCF4\uAE30)[^.!?\n\u3002]*)/u
+      );
+    const coreText = coreMatch?.[1]
+      ?.replace(
+        /^.*(?:\uC4F8|\uC0AC\uC6A9|\uC774\uC6A9).*?(?:,|\uADF8\uB9AC\uACE0|\uBC0F)\s*/u,
+        ""
+      )
+      .trim();
+    const features = coreText
+      ? splitInlineList(coreText)
+          .map((entry) =>
+            entry
+              .replace(/(?:\uAC00|\uC774)?\s*(?:\uD575\uC2EC|\uC8FC\uC694).*$/u, "")
+              .trim()
+          )
+          .filter(
+            (entry) =>
+              entry.length > 0 &&
+              !/(?:\uC131\uACF5|\uB418\uBA74|\uD655\uC778\s*\uAC00\uB2A5)/u.test(
+                entry
+              )
+          )
+      : [];
+    if (features.length > 0) {
+      result.core_features = features;
+    }
+  }
+
+  if (asksFinishLine) {
+    const finishMatch = message.match(
+      /([^.!?\n\u3002]*(?:\uC131\uACF5|\uB418\uBA74|\uC644\uB8CC|\uCDA9\uBD84|good enough|\uD655\uC778)[^.!?\n\u3002]*)/iu
+    );
+    const finishLine = finishMatch?.[1]?.trim();
+    if (finishLine) {
+      result.finish_line = normalizeInlineValue(finishLine);
+    }
+  }
+
+  return result;
+};
+
 const extractCandidatesFromQuestionOrder = (
   message: string,
   questionIds: readonly SessionIntakeFieldId[],
@@ -398,6 +486,13 @@ const extractCandidatesFromQuestionOrder = (
   const isAdapterPair = isAdapterQuestionPair(questionIds);
   const isGroupedPair = isExecutionPair || isAdapterPair;
   if (questionIds.length > 1 && lines.length < 2 && !isGroupedPair) {
+    const naturalProductAnswers = extractKoreanNaturalProductAnswers(
+      message,
+      questionIds
+    );
+    if (Object.keys(naturalProductAnswers).length > 0) {
+      return naturalProductAnswers;
+    }
     return {};
   }
 
@@ -966,7 +1061,11 @@ export const buildDiscoveryAggregateRequest = (input: {
     lines.push(input.latestMessage.trim());
   }
 
-  return lines.join(" ").replace(/\s+/g, " ").trim();
+  return lines
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n")
+    .trim();
 };
 
 export interface MergeFrontDoorSessionTurnResult {

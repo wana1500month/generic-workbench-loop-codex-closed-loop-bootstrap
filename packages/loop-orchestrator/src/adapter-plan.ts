@@ -31,6 +31,29 @@ export const defaultVerificationSurfacesForFamily = (
   return ["browser"];
 };
 
+const defaultRuntimeStrategyForFamily = (
+  targetFamily: TargetFamily
+): SessionAdapterPlan["runtime_strategy"] => {
+  if (
+    targetFamily === "api-service" ||
+    targetFamily === "crud-api" ||
+    targetFamily === "chat-agent"
+  ) {
+    return {
+      run_command: "npm run dev",
+      check_command: "npm test",
+      ready_url: "http://127.0.0.1:3000/health",
+      api_base_url: "http://127.0.0.1:3000"
+    };
+  }
+
+  return {
+    run_command: "npm run dev -- --host 127.0.0.1 --port 3000 --strictPort",
+    check_command: "npm test",
+    ready_url: "http://127.0.0.1:3000/"
+  };
+};
+
 export const selectorHintsForWorkflow = (
   index: number
 ): NonNullable<SessionWorkflowCheck["selector_hints"]> => ({
@@ -38,6 +61,28 @@ export const selectorHintsForWorkflow = (
   action: `[data-testid='feature-${index + 1}-action']`,
   result: `[data-testid='feature-${index + 1}-result']`
 });
+
+export const normalizeWorkflowName = (value: string): string =>
+  value
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[^\p{Letter}\p{Number}]/gu, "")
+    .replace(
+      /(?:\uBCF4\uAE30|\uD655\uC778|\uAD00\uB9AC|\uAE30\uB2A5|\uC791\uC5C5|\uD750\uB984)/g,
+      ""
+    );
+
+export const workflowNameMatches = (left: string, right: string): boolean => {
+  const normalizedLeft = normalizeWorkflowName(left);
+  const normalizedRight = normalizeWorkflowName(right);
+  return (
+    normalizedLeft.length > 0 &&
+    normalizedRight.length > 0 &&
+    (normalizedLeft.includes(normalizedRight) ||
+      normalizedRight.includes(normalizedLeft))
+  );
+};
 
 export const defaultWorkflowChecksFromCoreFeatures = (
   coreFeatures: readonly string[],
@@ -64,28 +109,80 @@ export const defaultWorkflowChecksFromCoreFeatures = (
   }));
 };
 
+export const alignWorkflowChecksToCoreFeatures = (
+  coreFeatures: readonly string[],
+  checks: readonly SessionWorkflowCheck[],
+  surfaces: readonly VerificationSurface[]
+): SessionWorkflowCheck[] => {
+  const fallbackSurface = surfaces[0] ?? "browser";
+  const fallbackChecks = defaultWorkflowChecksFromCoreFeatures(
+    coreFeatures,
+    surfaces
+  );
+
+  return coreFeatures.slice(0, 5).map((feature, index) => {
+    const matched =
+      checks.find((check) => workflowNameMatches(check.workflow, feature)) ??
+      checks[index];
+    const fallback = fallbackChecks[index] ?? {
+      workflow: feature,
+      surface: fallbackSurface,
+      trigger: `${feature} action`,
+      expected_result: `${feature} succeeds visibly.`,
+      selector_hints: selectorHintsForWorkflow(index)
+    };
+
+    if (!matched) {
+      return fallback;
+    }
+
+    return {
+      ...matched,
+      workflow: feature,
+      trigger: matched.trigger ?? feature,
+      selector_hints: matched.selector_hints ?? selectorHintsForWorkflow(index)
+    };
+  });
+};
+
 export const parseVerificationSurfacesAnswer = (
   value: string
 ): VerificationSurface[] => {
   const normalized = value.toLowerCase();
   const surfaces: VerificationSurface[] = [];
 
-  if (/화면|브라우저|browser|screen/.test(normalized)) {
+  if (
+    /(?:browser|screen|\bui\b|\uD654\uBA74|\uBE0C\uB77C\uC6B0\uC800)/.test(
+      normalized
+    )
+  ) {
     surfaces.push("browser");
   }
-  if (/api|http|endpoint|엔드포인트|응답|json/.test(normalized)) {
+  if (
+    /(?:api|http|endpoint|\uC5D4\uB4DC\uD3EC\uC778\uD2B8|\uC751\uB2F5|json)/.test(
+      normalized
+    )
+  ) {
     surfaces.push("api");
   }
-  if (/테스트|test|npm test|pnpm test|check command/.test(normalized)) {
+  if (
+    /(?:\uD14C\uC2A4\uD2B8|test|npm test|pnpm test|check command)/.test(
+      normalized
+    )
+  ) {
     surfaces.push("test");
   }
-  if (/cli|명령|command|터미널/.test(normalized)) {
+  if (/(?:cli|command|\uBA85\uB839|\uCEE4\uB9E8\uB4DC)/.test(normalized)) {
     surfaces.push("cli");
   }
-  if (/파일|file/.test(normalized)) {
+  if (/(?:\uD30C\uC77C|file)/.test(normalized)) {
     surfaces.push("file");
   }
-  if (/db|database|데이터베이스|sqlite|postgres|mysql/.test(normalized)) {
+  if (
+    /(?:db|database|\uB370\uC774\uD130\uBCA0\uC774\uC2A4|sqlite|postgres|mysql)/.test(
+      normalized
+    )
+  ) {
     surfaces.push("db");
   }
 
@@ -96,19 +193,32 @@ export const parseWorkflowChecksAnswer = (
   value: string,
   defaultSurface: VerificationSurface = "browser"
 ): SessionWorkflowCheck[] => {
+  const workflowDelimiter = /\s*(?:->|=>|\u2192|:|\uFF1A)\s*/;
+  const metadataLabelPattern =
+    /\b(?:product title|product summary|target users?|primary users?|core workflows?|core features?|references?|good enough|finish line|target root|target score|max rounds?|run command|check command|ready url|app url|health url|api base url|verification surfaces?)\b/i;
   const lines = value
-    .split(/\r?\n/)
+    .split(/\r?\n|\\n/)
+    .flatMap((line) =>
+      line.split(
+        /(?<=[.!?])\s+(?=[^.!?\n]+(?:->|=>|\u2192|:|\uFF1A))/u
+      )
+    )
     .map((line) => line.replace(/^\s*(?:[-*]|\d+[.)])\s*/, "").trim())
     .filter(Boolean);
 
   return lines
-    .filter((line) => /\s*(?:->|→|=>)\s*/.test(line))
+    .filter((line) => workflowDelimiter.test(line))
     .map((line, index): SessionWorkflowCheck | undefined => {
-      const parts = line.split(/\s*(?:->|→|=>)\s*/);
-
+      const parts = line.split(workflowDelimiter);
       const workflow = parts[0]?.trim();
       const expectedResult = parts.slice(1).join(" -> ").trim();
       if (!workflow || !expectedResult) {
+        return undefined;
+      }
+      if (
+        metadataLabelPattern.test(workflow) ||
+        metadataLabelPattern.test(line.slice(0, 120))
+      ) {
         return undefined;
       }
 
@@ -133,25 +243,35 @@ export const buildAdapterPlanFromIntake = (input: {
       : defaultVerificationSurfacesForFamily(input.targetFamily);
   const workflowChecks =
     input.intake.workflow_checks?.length
-      ? input.intake.workflow_checks
+      ? input.intake.core_features?.length
+        ? alignWorkflowChecksToCoreFeatures(
+            input.intake.core_features,
+            input.intake.workflow_checks,
+            verificationSurfaces
+          )
+        : input.intake.workflow_checks
       : defaultWorkflowChecksFromCoreFeatures(
           input.intake.core_features ?? [],
           verificationSurfaces
         );
+  const defaultRuntime = defaultRuntimeStrategyForFamily(input.targetFamily);
 
   return {
     target_family: input.targetFamily,
     verification_surfaces: verificationSurfaces,
     runtime_strategy: {
-      ...(input.intake.run_command ? { run_command: input.intake.run_command } : {}),
-      ...(input.intake.check_command ? { check_command: input.intake.check_command } : {}),
-      ...(input.intake.ready_url ? { ready_url: input.intake.ready_url } : {}),
-      ...(input.intake.app_url ? { app_url: input.intake.app_url } : {}),
-      ...(input.intake.api_base_url ? { api_base_url: input.intake.api_base_url } : {}),
-      ...(input.intake.health_url ? { health_url: input.intake.health_url } : {})
+      run_command: input.intake.run_command ?? defaultRuntime.run_command,
+      check_command: input.intake.check_command ?? defaultRuntime.check_command,
+      ready_url: input.intake.ready_url ?? defaultRuntime.ready_url,
+      app_url: input.intake.app_url ?? defaultRuntime.app_url,
+      api_base_url: input.intake.api_base_url ?? defaultRuntime.api_base_url,
+      health_url: input.intake.health_url ?? defaultRuntime.health_url
     },
     workflow_checks: workflowChecks,
-    generated_files: [...generatedAdapterFiles]
+    generated_files: [...generatedAdapterFiles],
+    ...(input.intake.adapter_plan?.notes?.length
+      ? { notes: input.intake.adapter_plan.notes }
+      : {})
   };
 };
 
@@ -161,9 +281,12 @@ export const adapterPlanPreviewLines = (
 ): string[] => {
   const heading =
     locale === "ko" ? "Closed-loop adapter plan:" : "Closed-loop adapter plan:";
-  const workflowHeading = locale === "ko" ? "- Workflow probes:" : "- Workflow probes:";
+  const workflowHeading =
+    locale === "ko" ? "- Workflow probes:" : "- Workflow probes:";
   const generatedHeading =
-    locale === "ko" ? "- Generated adapter files:" : "- Generated adapter files:";
+    locale === "ko"
+      ? "- Generated adapter files:"
+      : "- Generated adapter files:";
 
   return [
     heading,
@@ -194,29 +317,28 @@ export const adapterPlanMarkdown = (plan: SessionAdapterPlan): string =>
     "",
     "## Runtime Strategy",
     "",
-    ...Object.entries(plan.runtime_strategy).map(
-      ([key, value]) => `- ${key}: ${value}`
-    ),
+    ...Object.entries(plan.runtime_strategy)
+      .filter(([, value]) => value !== undefined && value !== "")
+      .map(([key, value]) => `- ${key}: ${value}`),
     "",
     "## Workflow Checks",
     "",
-    ...plan.workflow_checks.map(
-      (check, index) =>
-        [
-          `${index + 1}. ${check.workflow}`,
-          `   - surface: ${check.surface}`,
-          ...(check.trigger ? [`   - trigger: ${check.trigger}`] : []),
-          `   - expected result: ${check.expected_result}`,
-          ...(check.selector_hints?.root
-            ? [`   - root selector: ${check.selector_hints.root}`]
-            : []),
-          ...(check.selector_hints?.action
-            ? [`   - action selector: ${check.selector_hints.action}`]
-            : []),
-          ...(check.selector_hints?.result
-            ? [`   - result selector: ${check.selector_hints.result}`]
-            : [])
-        ].join("\n")
+    ...plan.workflow_checks.map((check, index) =>
+      [
+        `${index + 1}. ${check.workflow}`,
+        `   - surface: ${check.surface}`,
+        ...(check.trigger ? [`   - trigger: ${check.trigger}`] : []),
+        `   - expected result: ${check.expected_result}`,
+        ...(check.selector_hints?.root
+          ? [`   - root selector: ${check.selector_hints.root}`]
+          : []),
+        ...(check.selector_hints?.action
+          ? [`   - action selector: ${check.selector_hints.action}`]
+          : []),
+        ...(check.selector_hints?.result
+          ? [`   - result selector: ${check.selector_hints.result}`]
+          : [])
+      ].join("\n")
     ),
     "",
     "## Generated Files",

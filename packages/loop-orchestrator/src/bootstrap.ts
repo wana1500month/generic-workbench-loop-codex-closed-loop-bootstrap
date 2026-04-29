@@ -5,6 +5,7 @@ import { createInterface } from "node:readline/promises";
 import { scaffoldAdapterArtifacts } from "./bootstrap/generated-adapter.js";
 import { createBootstrapArtifactPaths } from "./bootstrap/paths.js";
 import {
+  alignWorkflowChecksToCoreFeatures,
   adapterPlanMarkdown,
   buildAdapterPlanFromIntake,
   defaultVerificationSurfacesForFamily,
@@ -651,45 +652,53 @@ export const buildBootstrapAnswersFromSeed = (
     seed.verificationSurfaces?.length
       ? ([...new Set(seed.verificationSurfaces)] as BootstrapVerificationSurface[])
       : defaultVerificationSurfacesForFamily(seed.targetFamily);
-  const workflowChecks =
+  const coreFeatures = uniqueList(seed.coreFeatures ?? []);
+  const rawWorkflowChecks =
     seed.workflowChecks?.length
       ? seed.workflowChecks
       : defaultWorkflowChecksFromCoreFeatures(
-          uniqueList(seed.coreFeatures ?? []),
+          coreFeatures,
           verificationSurfaces
         ).map(toBootstrapWorkflowCheck);
-  const adapterPlan =
-    seed.adapterPlan ??
-    buildAdapterPlanFromIntake({
-      targetFamily: seed.targetFamily,
-      intake: {
-        product_title: normalizedTitle,
-        product_summary: seed.summary.trim() || finishLine,
-        target_users: uniqueList(seed.targetUsers ?? []),
-        core_features: uniqueList(seed.coreFeatures ?? []),
-        reference_apps: uniqueList(seed.referenceApps ?? []),
-        finish_line: finishLine,
-        target_family: seed.targetFamily,
-        target_root: targetRoot,
-        project_mode: projectMode,
-        framework_hint: frameworkHint,
-        package_manager: packageManager,
-        run_command: runCommand,
-        check_command: checkCommand,
-        ready_url: readyUrl,
-        ...(appUrl ? { app_url: appUrl } : {}),
-        ...(healthUrl ? { health_url: healthUrl } : {}),
-        ...(apiBaseUrl ? { api_base_url: apiBaseUrl } : {}),
-        verification_surfaces: verificationSurfaces,
-        workflow_checks: workflowChecks.map(toSessionWorkflowCheck)
-      }
-    });
+  const workflowChecks =
+    coreFeatures.length > 0
+      ? alignWorkflowChecksToCoreFeatures(
+          coreFeatures,
+          rawWorkflowChecks.map(toSessionWorkflowCheck),
+          verificationSurfaces
+        ).map(toBootstrapWorkflowCheck)
+      : rawWorkflowChecks;
+  const adapterPlan = buildAdapterPlanFromIntake({
+    targetFamily: seed.targetFamily,
+    intake: {
+      product_title: normalizedTitle,
+      product_summary: seed.summary.trim() || finishLine,
+      target_users: uniqueList(seed.targetUsers ?? []),
+      core_features: coreFeatures,
+      reference_apps: uniqueList(seed.referenceApps ?? []),
+      finish_line: finishLine,
+      target_family: seed.targetFamily,
+      target_root: targetRoot,
+      project_mode: projectMode,
+      framework_hint: frameworkHint,
+      package_manager: packageManager,
+      run_command: runCommand,
+      check_command: checkCommand,
+      ready_url: readyUrl,
+      ...(appUrl ? { app_url: appUrl } : {}),
+      ...(healthUrl ? { health_url: healthUrl } : {}),
+      ...(apiBaseUrl ? { api_base_url: apiBaseUrl } : {}),
+      verification_surfaces: verificationSurfaces,
+      workflow_checks: workflowChecks.map(toSessionWorkflowCheck),
+      ...(seed.adapterPlan ? { adapter_plan: seed.adapterPlan } : {})
+    }
+  });
 
   return {
     title: normalizedTitle,
     summary: seed.summary.trim() || finishLine,
     targetUsers: uniqueList(seed.targetUsers ?? []),
-    coreFeatures: uniqueList(seed.coreFeatures ?? []),
+    coreFeatures,
     referenceApps: uniqueList(seed.referenceApps ?? []),
     finishLine,
     targetFamily: seed.targetFamily,
@@ -744,39 +753,48 @@ const completeBootstrapAnswers = (answers: BootstrapAnswers): BootstrapAnswers =
     answers.verificationSurfaces?.length
       ? answers.verificationSurfaces
       : defaultVerificationSurfacesForFamily(answers.targetFamily);
-  const workflowChecks =
+  const rawWorkflowChecks =
     answers.workflowChecks?.length
       ? answers.workflowChecks
       : defaultWorkflowChecksFromCoreFeatures(
           answers.coreFeatures,
           verificationSurfaces
         ).map(toBootstrapWorkflowCheck);
-  const adapterPlan =
-    answers.adapterPlan ??
-    buildAdapterPlanFromIntake({
-      targetFamily: answers.targetFamily,
-      intake: {
-        product_title: answers.title,
-        product_summary: answers.summary,
-        target_users: answers.targetUsers,
-        core_features: answers.coreFeatures,
-        reference_apps: answers.referenceApps,
-        finish_line: answers.finishLine,
-        target_family: answers.targetFamily,
-        target_root: answers.targetRoot,
-        project_mode: answers.projectMode,
-        framework_hint: answers.frameworkHint,
-        package_manager: answers.packageManager,
-        run_command: answers.runCommand,
-        check_command: answers.checkCommand,
-        ready_url: answers.readyUrl,
-        ...(answers.appUrl ? { app_url: answers.appUrl } : {}),
-        ...(answers.healthUrl ? { health_url: answers.healthUrl } : {}),
-        ...(answers.apiBaseUrl ? { api_base_url: answers.apiBaseUrl } : {}),
-        verification_surfaces: verificationSurfaces,
-        workflow_checks: workflowChecks.map(toSessionWorkflowCheck)
-      }
-    });
+  const workflowChecks =
+    answers.coreFeatures.length > 0
+      ? alignWorkflowChecksToCoreFeatures(
+          answers.coreFeatures,
+          rawWorkflowChecks.map(toSessionWorkflowCheck),
+          verificationSurfaces
+        ).map(toBootstrapWorkflowCheck)
+      : rawWorkflowChecks;
+  const adapterPlan = buildAdapterPlanFromIntake({
+    targetFamily: answers.targetFamily,
+    intake: {
+      product_title: answers.title,
+      product_summary: answers.summary,
+      target_users: answers.targetUsers,
+      core_features: answers.coreFeatures,
+      reference_apps: answers.referenceApps,
+      finish_line: answers.finishLine,
+      target_family: answers.targetFamily,
+      target_root: answers.targetRoot,
+      project_mode: answers.projectMode,
+      framework_hint: answers.frameworkHint,
+      package_manager: answers.packageManager,
+      run_command: answers.runCommand,
+      check_command: answers.checkCommand,
+      ready_url: answers.readyUrl,
+      ...(answers.appUrl ? { app_url: answers.appUrl } : {}),
+      ...(answers.healthUrl ? { health_url: answers.healthUrl } : {}),
+      ...(answers.apiBaseUrl ? { api_base_url: answers.apiBaseUrl } : {}),
+      verification_surfaces: verificationSurfaces,
+      workflow_checks: workflowChecks.map(toSessionWorkflowCheck),
+      ...(answers.adapterPlan?.notes?.length
+        ? { adapter_plan: { ...answers.adapterPlan, notes: answers.adapterPlan.notes } }
+        : {})
+    }
+  });
 
   return {
     ...answers,

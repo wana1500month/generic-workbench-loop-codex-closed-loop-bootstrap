@@ -93,12 +93,31 @@ const main = async (): Promise<void> => {
     return;
   }
 
+  const nextActionLines =
+    result.status === "ready_for_prepare"
+      ? [
+          "Next: run loop:prepare to generate the adapter bundle.",
+          "Prepare stops at ready_to_start. After prepare, say '루프 시작' or 'start loop' to run."
+        ]
+      : result.status === "prepared"
+        ? [
+            "Session status is ready_to_start.",
+            "Say '루프 시작' or 'start loop' to run."
+          ]
+        : [];
+
   process.stdout.write(
     [
       result.status,
+      "",
       ...(result.preparation_summary ?? []),
-      ...(result.adapter_plan_preview ?? [])
-    ].join("\n") + "\n"
+      ...(result.preparation_summary?.length ? [""] : []),
+      ...(result.adapter_plan_preview ?? []),
+      ...(result.adapter_plan_preview?.length ? [""] : []),
+      ...nextActionLines
+    ]
+      .filter((line, index, lines) => line !== "" || lines[index - 1] !== "")
+      .join("\n") + "\n"
   );
 };
 

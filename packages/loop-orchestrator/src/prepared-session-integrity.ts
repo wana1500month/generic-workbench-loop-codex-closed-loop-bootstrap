@@ -3,6 +3,7 @@ import type {
   SessionRunContractArtifact,
   VerificationProfile
 } from "./types.js";
+import { workflowNameMatches } from "./adapter-plan.js";
 
 export const validatePreparedProductSessionIntegrity = (input: {
   buildBrief: BuildBriefArtifact;
@@ -82,7 +83,7 @@ export const validatePreparedProductSessionIntegrity = (input: {
       )
       .map((probe) => probe.label);
     for (const workflow of input.buildBrief.product.core_workflows) {
-      if (!workflowProbeLabels.some((label) => label.includes(workflow))) {
+      if (!workflowProbeLabels.some((label) => workflowNameMatches(label, workflow))) {
         errors.push(`Missing workflow-specific probe for '${workflow}'.`);
       }
     }

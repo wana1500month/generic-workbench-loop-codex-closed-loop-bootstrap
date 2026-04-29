@@ -798,7 +798,7 @@ const buildAdapterFieldStates = (
     },
     {
       id: "workflow_checks",
-      satisfied: workflowChecks.length > 0 || verificationSurfaces.length > 0,
+      satisfied: workflowChecks.length > 0,
       question:
         "For each core workflow, what action and result prove success? Example: add transaction -> list and monthly total update."
     },

@@ -86,6 +86,26 @@ const toDiscoveryPhase = (
   return "none";
 };
 
+const preparationSummaryLinesFromIntake = (
+  intake: SessionIntakeSnapshot
+): string[] => [
+  "Prepared brief:",
+  `- product: ${intake.product_title ?? intake.product_summary ?? "unknown"}`,
+  ...(intake.target_users?.length
+    ? [`- users: ${intake.target_users.join(", ")}`]
+    : []),
+  ...(intake.core_features?.length
+    ? [`- core workflows: ${intake.core_features.join(", ")}`]
+    : []),
+  ...(intake.finish_line ? [`- finish line: ${intake.finish_line}`] : []),
+  ...(intake.project_mode ? [`- project mode: ${intake.project_mode}`] : []),
+  ...(intake.target_root ? [`- target root: ${intake.target_root}`] : []),
+  `- target score: ${intake.target_score ?? 0.9}`,
+  `- max rounds: ${intake.max_rounds ?? 3}`,
+  ...(intake.run_command ? [`- run command: ${intake.run_command}`] : []),
+  ...(intake.ready_url ? [`- ready URL: ${intake.ready_url}`] : [])
+];
+
 const buildArtifactResult = (
   artifact: FrontDoorSessionArtifact,
   sessionPath: string,
@@ -118,6 +138,9 @@ const buildArtifactResult = (
     defaults_accepted: artifact.defaults_accepted,
     unresolved_conflicts: artifact.unresolved_conflicts,
     turn_count: artifact.turn_count,
+    ...(status === "ready_for_prepare" || status === "prepared"
+      ? { preparation_summary: preparationSummaryLinesFromIntake(artifact.intake) }
+      : {}),
     ...(adapterPlan && (status === "ready_for_prepare" || status === "prepared")
       ? { adapter_plan_preview: adapterPlanPreviewLines(adapterPlan) }
       : {})
