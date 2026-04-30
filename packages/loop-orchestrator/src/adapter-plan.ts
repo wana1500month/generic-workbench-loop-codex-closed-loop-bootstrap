@@ -31,6 +31,47 @@ export const defaultVerificationSurfacesForFamily = (
   return ["browser"];
 };
 
+const apiPrimaryTargetFamilies = new Set<TargetFamily>([
+  "api-service",
+  "crud-api",
+  "chat-agent"
+]);
+
+const browserPrimaryTargetFamilies = new Set<TargetFamily>([
+  "browser-app",
+  "browser-editor",
+  "editor-app",
+  "fullstack-app",
+  "dashboard"
+]);
+
+export const normalizeVerificationSurfacesForFamily = (
+  targetFamily: TargetFamily,
+  surfaces: readonly VerificationSurface[] | undefined
+): VerificationSurface[] => {
+  const uniqueSurfaces = [
+    ...new Set(
+      surfaces && surfaces.length > 0
+        ? surfaces
+        : defaultVerificationSurfacesForFamily(targetFamily)
+    )
+  ];
+  const primarySurface = apiPrimaryTargetFamilies.has(targetFamily)
+    ? "api"
+    : browserPrimaryTargetFamilies.has(targetFamily)
+      ? "browser"
+      : undefined;
+
+  if (!primarySurface) {
+    return uniqueSurfaces;
+  }
+
+  return [
+    primarySurface,
+    ...uniqueSurfaces.filter((surface) => surface !== primarySurface)
+  ];
+};
+
 const defaultRuntimeStrategyForFamily = (
   targetFamily: TargetFamily
 ): SessionAdapterPlan["runtime_strategy"] => {
@@ -139,16 +180,22 @@ export const alignWorkflowChecksToCoreFeatures = (
     return {
       ...matched,
       workflow: feature,
+      surface: fallbackSurface,
       trigger: matched.trigger ?? feature,
       selector_hints: matched.selector_hints ?? selectorHintsForWorkflow(index)
     };
   });
 };
 
+const stripPathLikeTokens = (value: string): string =>
+  value
+    .replace(/(?:^|[\s:=])https?:\/\/[^\s,;]+/gi, " ")
+    .replace(/(?:^|[\s:=])(?:\/|\.\/|\.\.\/|[A-Za-z]:\\)[^\s,;]+/g, " ");
+
 export const parseVerificationSurfacesAnswer = (
   value: string
 ): VerificationSurface[] => {
-  const normalized = value.toLowerCase();
+  const normalized = stripPathLikeTokens(value).toLowerCase();
   const surfaces: VerificationSurface[] = [];
 
   if (
@@ -166,7 +213,7 @@ export const parseVerificationSurfacesAnswer = (
     surfaces.push("api");
   }
   if (
-    /(?:\uD14C\uC2A4\uD2B8|test|npm test|pnpm test|check command)/.test(
+    /(?:\uD14C\uC2A4\uD2B8|\btests?\b|npm\s+test|pnpm\s+test|yarn\s+test|check\s+command)/.test(
       normalized
     )
   ) {
@@ -237,10 +284,10 @@ export const buildAdapterPlanFromIntake = (input: {
   intake: SessionIntakeSnapshot;
   targetFamily: TargetFamily;
 }): SessionAdapterPlan => {
-  const verificationSurfaces =
-    input.intake.verification_surfaces?.length
-      ? input.intake.verification_surfaces
-      : defaultVerificationSurfacesForFamily(input.targetFamily);
+  const verificationSurfaces = normalizeVerificationSurfacesForFamily(
+    input.targetFamily,
+    input.intake.verification_surfaces
+  );
   const workflowChecks =
     input.intake.workflow_checks?.length
       ? input.intake.core_features?.length

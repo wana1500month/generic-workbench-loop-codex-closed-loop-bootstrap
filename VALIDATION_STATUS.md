@@ -1,10 +1,10 @@
 # Validation Status
 
-Generated at: 2026-04-30T03:58:50+09:00
+Generated at: 2026-04-30T23:12:31+09:00
 
-Validation scope: current working tree after the clean-source bootstrap guard fix, release ZIP regeneration, snapshot-based intake fail-closed checks, expanded Korean natural-language parsing, localized ready output, and source archive export-ignore rules, before commit.
+Validation scope: current working tree after verification-surface parsing was hardened against path token false positives, browser/API primary workflow surfaces were normalized by target family, release ZIP regeneration, clean-source bootstrap guard, snapshot-based intake fail-closed checks, expanded Korean natural-language parsing, localized ready output, and source archive export-ignore rules, before commit.
 
-Git SHA at validation start: `cf18bdb`
+Git SHA at validation start: `af17fab`
 
 Runtime:
 
@@ -16,8 +16,8 @@ Runtime:
 Release artifact:
 
 - Path: `.tmp/release/generic-codex-workbench.zip`
-- Size: `1359269` bytes
-- SHA-256: `C4779CE5DCE74AC7649CA75F435D6DDEECA34992ACD562FA587E7AE5160298B7`
+- Size: `1361129` bytes
+- SHA-256: `2B6D3E58AD9B590F77A92742ED6245604899AA12A1DF9076496449838BA4F257`
 
 Release ZIP contents checked:
 
@@ -34,7 +34,6 @@ Passed commands:
 - `npm run build`
 - `npm run validate:intake-gate`
 - `npm run validate:front-door-session`
-- `npm run validate:session-preparation-artifacts`
 - `npm run validate:prepared-product-start-bundle`
 - `npm run validate:prepared-session-consumption-boundary`
 - `npm run validate:loop-prepare`
@@ -45,6 +44,8 @@ Release proof:
 
 - `release:zip` rebuilt the workspace, packaged `.tmp/release/generic-codex-workbench.zip`, validated the installable ZIP, and validated product discovery -> prepare -> prepared `loop:start:codex` consumption without `node_modules`.
 - `release:zip` ran `validate:release-zip` and `validate:release-product-start` against `.tmp/release/generic-codex-workbench.zip`.
+- Verification surface parsing strips path-like tokens before detecting surfaces, so paths such as `/tmp/harness_latest/review-budget-app` no longer mark the session as `test`.
+- Browser-like target families normalize workflow verification to browser-primary surfaces even when users mention test or CLI checks, preserving workflow release-gate probes through prepare.
 - `validate:source-bootstrap-guard` now creates `.tmp` before `mkdtemp`, so the clean source archive path no longer fails before checking source-bootstrap policy.
 - Generated adapters now persist an adapter review task, adapter-plan-aware evidence, workflow-level check findings, and an `adapter_contract_fulfillment` subjective metric.
 - Operator surfaces expose adapter plan, adapter contract, evaluator profile, and adapter review task paths before `ready_to_start`.

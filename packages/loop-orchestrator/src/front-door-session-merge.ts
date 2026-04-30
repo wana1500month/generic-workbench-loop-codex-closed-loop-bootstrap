@@ -1,5 +1,6 @@
 import {
   buildAdapterPlanFromIntake,
+  normalizeVerificationSurfacesForFamily,
   parseVerificationSurfacesAnswer,
   parseWorkflowChecksAnswer
 } from "./adapter-plan.js";
@@ -347,6 +348,11 @@ const isAdapterQuestionPair = (
     ["verification_surface", "workflow_checks", "quality_metrics"].includes(fieldId)
   );
 
+const messageExplicitlyAnswersAdapterDesign = (message: string): boolean =>
+  /(?:\uAC80\uC99D\s*(?:\uBC29\uC2DD|\uC218\uB2E8|\uBC29\uBC95)|verification\s*surface|verify\s+with|browser\s+verification|screen\s+verification|\uD654\uBA74\uC73C\uB85C\s*\uAC80\uC99D|API\uB85C\s*\uAC80\uC99D|\uD14C\uC2A4\uD2B8\s*\uBA85\uB839\uC73C\uB85C\s*\uAC80\uC99D)/iu.test(
+    message
+  );
+
 const answerForField = (
   lines: readonly string[],
   index: number,
@@ -625,14 +631,25 @@ const extractCandidatesFromQuestionOrder = (
       case "verification_surface": {
         const surfaces = parseVerificationSurfacesAnswer(answer);
         if (surfaces.length > 0) {
-          result.verification_surfaces = surfaces;
+          result.verification_surfaces = existingIntake?.target_family
+            ? normalizeVerificationSurfacesForFamily(
+                existingIntake.target_family,
+                surfaces
+              )
+            : surfaces;
         }
         break;
       }
       case "workflow_checks": {
+        const existingSurfaces = existingIntake?.target_family
+          ? normalizeVerificationSurfacesForFamily(
+              existingIntake.target_family,
+              existingIntake.verification_surfaces
+            )
+          : existingIntake?.verification_surfaces;
         const surface =
           result.verification_surfaces?.[0] ??
-          existingIntake?.verification_surfaces?.[0] ??
+          existingSurfaces?.[0] ??
           "browser";
         const checks = parseWorkflowChecksAnswer(
           isAdapterPair ? message : answer,
@@ -667,6 +684,9 @@ const extractCandidates = (input: {
   const previousQuestionIds = input.previousQuestionIds ?? [];
   const hasQuestionContext = previousQuestionIds.length > 0;
   const previousQuestionSet = new Set(previousQuestionIds);
+  const acceptsAdapterAnswer =
+    isAdapterQuestionPair(previousQuestionIds) ||
+    messageExplicitlyAnswersAdapterDesign(message);
   const shouldImplicitlyParse = (field: SessionIntakeFieldId): boolean =>
     !hasQuestionContext || previousQuestionSet.has(field);
   const explicit = explicitFieldMentions(message);
@@ -751,10 +771,10 @@ const extractCandidates = (input: {
     ...(appUrl ? { app_url: appUrl } : {}),
     ...(healthUrl ? { health_url: healthUrl } : {}),
     ...(apiBaseUrl ? { api_base_url: apiBaseUrl } : {}),
-    ...(intakeResult.extracted_verification_surfaces?.length
+    ...(acceptsAdapterAnswer && intakeResult.extracted_verification_surfaces?.length
       ? { verification_surfaces: intakeResult.extracted_verification_surfaces }
       : {}),
-    ...(intakeResult.extracted_workflow_checks?.length
+    ...(acceptsAdapterAnswer && intakeResult.extracted_workflow_checks?.length
       ? { workflow_checks: intakeResult.extracted_workflow_checks }
       : {})
   };

@@ -456,6 +456,34 @@ const main = async () => {
     assert.equal(posixAbsoluteExecution.intake.target_root, "/mnt/data/budget-app");
 
     await runFrontDoorDiscoveryTurn({
+      threadId: "thread-latest-path-surface-guard",
+      message: "\uAC00\uACC4\uBD80 \uC571 \uB9CC\uB4E4\uC5B4\uC918"
+    });
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-latest-path-surface-guard",
+      message: [
+        "\uB300\uC0C1\uC740 \uAC1C\uC778 \uC0AC\uC6A9\uC790\uC57C.",
+        "\uD575\uC2EC\uC740 \uC218\uC785/\uC9C0\uCD9C \uAE30\uB85D, \uCE74\uD14C\uACE0\uB9AC \uAD00\uB9AC, \uC6D4\uBCC4 \uD1B5\uACC4 \uBCF4\uAE30\uC57C.",
+        "\uC131\uACF5 \uAE30\uC900\uC740 \uAC70\uB798 \uCD94\uAC00/\uC0AD\uC81C\uC640 \uC6D4\uBCC4 \uD1B5\uACC4\uB97C \uD655\uC778\uD558\uB294 \uAC70\uC57C."
+      ].join("\n")
+    });
+    const latestPathExecution = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-latest-path-surface-guard",
+      message:
+        "\uC0C8 \uD504\uB85C\uC81D\uD2B8\uACE0 \uC791\uC5C5 \uD3F4\uB354\uB294 /tmp/harness_latest/review-budget-app \uC785\uB2C8\uB2E4."
+    });
+    assert.equal(latestPathExecution.status, "ask_adapter_questions");
+    assert.equal(
+      latestPathExecution.intake.target_root,
+      "/tmp/harness_latest/review-budget-app"
+    );
+    assert.deepEqual(latestPathExecution.intake.verification_surfaces ?? [], []);
+    assert.ok(
+      latestPathExecution.missing_adapter_fields.includes("verification_surface"),
+      JSON.stringify(latestPathExecution, null, 2)
+    );
+
+    await runFrontDoorDiscoveryTurn({
       threadId: "thread-ko-labeled-natural-product-answer",
       message: "\uAC00\uACC4\uBD80 \uC571 \uB9CC\uB4E4\uC5B4\uC918"
     });
@@ -586,6 +614,54 @@ const main = async () => {
       JSON.stringify(koNaturalVerificationProfile.core_probes, null, 2)
     );
     await cleanupTempRoot(koNaturalTargetRoot);
+
+    const koTestSurfaceTargetRootRelative = `tmp-targets/${basename(tempRoot)}-ko-test-surface-budget`;
+    const koTestSurfaceTargetRoot = resolve(repoRoot, koTestSurfaceTargetRootRelative);
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-test-surface-budget",
+      message: "\uAC00\uACC4\uBD80 \uC571 \uB9CC\uB4E4\uC5B4\uC918"
+    });
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-test-surface-budget",
+      message: [
+        "\uB300\uC0C1\uC740 \uAC1C\uC778 \uC0AC\uC6A9\uC790\uC57C.",
+        "\uD575\uC2EC\uC740 \uC218\uC785/\uC9C0\uCD9C \uAE30\uB85D, \uCE74\uD14C\uACE0\uB9AC \uAD00\uB9AC, \uC6D4\uBCC4 \uD1B5\uACC4 \uBCF4\uAE30\uC57C.",
+        "\uC131\uACF5 \uAE30\uC900\uC740 \uAC70\uB798 \uCD94\uAC00/\uC0AD\uC81C\uC640 \uC6D4\uBCC4 \uD1B5\uACC4\uB97C \uD655\uC778\uD558\uB294 \uAC70\uC57C."
+      ].join("\n")
+    });
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-test-surface-budget",
+      message: `new, ${koTestSurfaceTargetRootRelative}`
+    });
+    const koTestSurfaceReady = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-test-surface-budget",
+      message: [
+        "\uD14C\uC2A4\uD2B8 \uBA85\uB839\uC73C\uB85C \uAC80\uC99D.",
+        "\uC218\uC785/\uC9C0\uCD9C \uAE30\uB85D -> \uAC70\uB798\uB97C \uCD94\uAC00\uD558\uBA74 \uBAA9\uB85D\uACFC \uC6D4\uBCC4 \uD569\uACC4\uAC00 \uBC14\uB00C\uB2E4.",
+        "\uCE74\uD14C\uACE0\uB9AC \uAD00\uB9AC -> \uCE74\uD14C\uACE0\uB9AC\uB97C \uB9CC\uB4E4\uACE0 \uAC70\uB798\uC5D0 \uC9C0\uC815\uD560 \uC218 \uC788\uB2E4.",
+        "\uC6D4\uBCC4 \uD1B5\uACC4 \uBCF4\uAE30 -> \uC6D4\uBCC4 \uC218\uC785/\uC9C0\uCD9C/\uC794\uC561\uC774 \uD45C\uC2DC\uB41C\uB2E4."
+      ].join("\n")
+    });
+    assert.equal(koTestSurfaceReady.status, "ready_for_prepare");
+    assert.equal(koTestSurfaceReady.intake.verification_surfaces?.[0], "browser");
+    assert.ok(koTestSurfaceReady.intake.verification_surfaces?.includes("test"));
+    assert.equal(koTestSurfaceReady.intake.workflow_checks?.[0]?.surface, "browser");
+    const koTestSurfacePrepared = await prepareSessionRun({
+      ideaPath: genericIdeaPath,
+      frontDoorSessionPath: koTestSurfaceReady.front_door_session_path,
+      transportMode: "current-thread",
+      controllerMode: "attached"
+    });
+    const koTestSurfaceProfile = await readJsonFile(
+      koTestSurfacePrepared.evaluatorProfilePath
+    );
+    assert.ok(
+      koTestSurfaceProfile.core_probes.some((probe) =>
+        probe.label.includes("\uC218\uC785/\uC9C0\uCD9C \uAE30\uB85D")
+      ),
+      JSON.stringify(koTestSurfaceProfile.core_probes, null, 2)
+    );
+    await cleanupTempRoot(koTestSurfaceTargetRoot);
 
     await runFrontDoorDiscoveryTurn({
       threadId: "thread-existing-runtime",

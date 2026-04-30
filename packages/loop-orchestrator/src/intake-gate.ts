@@ -1,7 +1,7 @@
 import {
   adapterPlanPreviewLines,
   buildAdapterPlanFromIntake,
-  defaultVerificationSurfacesForFamily,
+  normalizeVerificationSurfacesForFamily,
   parseVerificationSurfacesAnswer,
   parseWorkflowChecksAnswer
 } from "./adapter-plan.js";
@@ -782,17 +782,18 @@ const buildAdapterFieldStates = (
   request: string,
   targetFamily: Exclude<TargetFamily, "generic-core" | "editor-app">
 ): IntakeFieldState<AdapterIntakeFieldId>[] => {
-  const verificationSurfaces = parseVerificationSurfacesAnswer(request);
-  const defaultSurface =
-    verificationSurfaces[0] ??
-    defaultVerificationSurfacesForFamily(targetFamily)[0] ??
-    "browser";
+  const extractedVerificationSurfaces = parseVerificationSurfacesAnswer(request);
+  const verificationSurfaces = normalizeVerificationSurfacesForFamily(
+    targetFamily,
+    extractedVerificationSurfaces
+  );
+  const defaultSurface = verificationSurfaces[0] ?? "browser";
   const workflowChecks = parseWorkflowChecksAnswer(request, defaultSurface);
 
   return [
     {
       id: "verification_surface",
-      satisfied: verificationSurfaces.length > 0,
+      satisfied: extractedVerificationSurfaces.length > 0,
       question:
         "How should the loop verify this result: browser, API, test command, file, or DB?"
     },
@@ -973,10 +974,10 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
     .filter((field) => field.satisfied)
     .map((field) => field.id);
   const extractedVerificationSurfaces = parseVerificationSurfacesAnswer(request);
-  const defaultVerificationSurfaces =
-    extractedVerificationSurfaces.length > 0
-      ? extractedVerificationSurfaces
-      : defaultVerificationSurfacesForFamily(internalWorkingHypothesis);
+  const defaultVerificationSurfaces = normalizeVerificationSurfacesForFamily(
+    internalWorkingHypothesis,
+    extractedVerificationSurfaces
+  );
   const extractedWorkflowChecks = parseWorkflowChecksAnswer(
     request,
     defaultVerificationSurfaces[0] ?? "browser"

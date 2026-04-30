@@ -9,7 +9,8 @@ import {
   adapterPlanMarkdown,
   buildAdapterPlanFromIntake,
   defaultVerificationSurfacesForFamily,
-  defaultWorkflowChecksFromCoreFeatures
+  defaultWorkflowChecksFromCoreFeatures,
+  normalizeVerificationSurfacesForFamily
 } from "./adapter-plan.js";
 import {
   scaffoldDurableMemoryArtifacts,
@@ -648,10 +649,10 @@ export const buildBootstrapAnswersFromSeed = (
     qualityBar[0] ||
     `${normalizedTitle} meets the requested finish line.`;
   const probeHints = nonEmptyProbeHints(seed.probeHints);
-  const verificationSurfaces =
-    seed.verificationSurfaces?.length
-      ? ([...new Set(seed.verificationSurfaces)] as BootstrapVerificationSurface[])
-      : defaultVerificationSurfacesForFamily(seed.targetFamily);
+  const verificationSurfaces = normalizeVerificationSurfacesForFamily(
+    seed.targetFamily,
+    seed.verificationSurfaces
+  ) as BootstrapVerificationSurface[];
   const coreFeatures = uniqueList(seed.coreFeatures ?? []);
   const rawWorkflowChecks =
     seed.workflowChecks?.length
@@ -749,10 +750,10 @@ export const buildBootstrapAnswersFromSeed = (
 };
 
 const completeBootstrapAnswers = (answers: BootstrapAnswers): BootstrapAnswers => {
-  const verificationSurfaces =
-    answers.verificationSurfaces?.length
-      ? answers.verificationSurfaces
-      : defaultVerificationSurfacesForFamily(answers.targetFamily);
+  const verificationSurfaces = normalizeVerificationSurfacesForFamily(
+    answers.targetFamily,
+    answers.verificationSurfaces
+  ) as BootstrapVerificationSurface[];
   const rawWorkflowChecks =
     answers.workflowChecks?.length
       ? answers.workflowChecks
