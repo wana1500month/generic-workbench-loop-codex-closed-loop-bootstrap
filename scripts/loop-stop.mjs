@@ -1,7 +1,8 @@
-import { spawn } from "node:child_process";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { stopProcessTree } from "./process-tree.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const runsRoot = join(repoRoot, "evals", "runs");
@@ -16,36 +17,6 @@ const readJsonIfExists = async (path) => {
 
 const writeJson = async (path, value) =>
   writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-
-const stopProcessTree = async (pid) => {
-  if (typeof pid !== "number" || !Number.isFinite(pid) || pid <= 0) {
-    return false;
-  }
-
-  if (process.platform === "win32") {
-    return new Promise((resolvePromise) => {
-      const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
-        shell: false,
-        windowsHide: true,
-        stdio: "ignore"
-      });
-      killer.on("close", () => resolvePromise(true));
-      killer.on("error", () => resolvePromise(false));
-    });
-  }
-
-  try {
-    process.kill(-pid, "SIGTERM");
-    return true;
-  } catch {
-    try {
-      process.kill(pid, "SIGTERM");
-      return true;
-    } catch {
-      return false;
-    }
-  }
-};
 
 const usage = () => {
   console.error("Usage: node ./scripts/loop-stop.mjs --run-dir <run-dir> [--json]");

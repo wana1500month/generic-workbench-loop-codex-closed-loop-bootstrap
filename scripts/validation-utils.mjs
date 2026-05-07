@@ -1,38 +1,11 @@
 import { spawn } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { stopProcessTree } from "./process-tree.mjs";
+
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-const stopProcessTree = async (pid) => {
-  if (typeof pid !== "number" || pid <= 0) {
-    return;
-  }
-
-  if (process.platform === "win32") {
-    await new Promise((resolvePromise) => {
-      const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
-        shell: false,
-        windowsHide: true,
-        stdio: "ignore"
-      });
-      killer.on("close", () => resolvePromise(undefined));
-      killer.on("error", () => resolvePromise(undefined));
-    });
-    return;
-  }
-
-  try {
-    process.kill(-pid, "SIGTERM");
-  } catch {
-    try {
-      process.kill(pid, "SIGTERM");
-    } catch {
-      // Best-effort cleanup for validation helpers that already exited.
-    }
-  }
-};
 
 const validationLoopTimeoutMs = () => {
   const parsed = Number(process.env.HARNESS_VALIDATION_LOOP_TIMEOUT_MS);
@@ -88,6 +61,92 @@ export const runLoop = async (args, options = {}) =>
       });
     });
   });
+
+const walkFiles = async (root, predicate) => {
+  const matches = [];
+  const visit = async (directory) => {
+    let entries;
+    try {
+      entries = await readdir(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await visit(path);
+        continue;
+      }
+      if (entry.isFile() && predicate(path)) {
+        matches.push(path);
+      }
+    }
+  };
+  await visit(resolve(root));
+  return matches;
+};
+
+const numericPid = (value) =>
+  typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.trunc(value)
+    : undefined;
+
+const targetServerPidCandidates = async (execution) => {
+  const pids = [
+    numericPid(execution?.result?.metadata?.target_server_pid),
+    numericPid(execution?.result?.metadata?.target_server_manifest_pid)
+  ].filter(Boolean);
+  const evidencePaths = [
+    ...(execution?.result?.evidence_paths ?? []),
+    ...(execution?.verified_evidence_paths ?? [])
+  ].filter((path) => typeof path === "string");
+  for (const evidencePath of evidencePaths) {
+    if (!evidencePath.endsWith("run_target.log")) {
+      continue;
+    }
+    try {
+      const manifestPath = join(dirname(resolve(evidencePath)), "target-manifest.json");
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      const pid = numericPid(manifest.target_server_pid);
+      if (pid) {
+        pids.push(pid);
+      }
+    } catch {
+      // Missing legacy manifests are expected for older fixtures.
+    }
+  }
+  return [...new Set(pids)];
+};
+
+export const cleanupReferenceTargetServers = async (runDirectory) => {
+  const executionFiles = await walkFiles(
+    runDirectory,
+    (path) => path.endsWith("pre-verification-executions.json")
+  );
+  const stoppedPids = [];
+  for (const executionFile of executionFiles) {
+    let executions;
+    try {
+      executions = JSON.parse(await readFile(executionFile, "utf8"));
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(executions)) {
+      continue;
+    }
+    for (const execution of executions) {
+      if (execution?.capability !== "run_target") {
+        continue;
+      }
+      for (const pid of await targetServerPidCandidates(execution)) {
+        if (await stopProcessTree(pid)) {
+          stoppedPids.push(pid);
+        }
+      }
+    }
+  }
+  return [...new Set(stoppedPids)];
+};
 
 export const extractRunDirectory = (stdout) => {
   const match = stdout.match(/Run created:\s+(.+)/);

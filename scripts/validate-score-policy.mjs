@@ -3,6 +3,7 @@ import {
   assertSuccessfulRoundHasNoFailureClassification,
   assertTargetFamily,
   assertValidationLane,
+  cleanupReferenceTargetServers,
   assertStopReason,
   extractRunDirectory,
   readSummary,
@@ -198,6 +199,7 @@ await assertControllerDecisionBundleSemantics(
 if (strictSummary.threshold_results?.contract_completed !== true) {
   throw new Error("Strict score-policy run should still complete the negotiated contract.");
 }
+await cleanupReferenceTargetServers(strictRunDirectory);
 
 console.log("[validate-score-policy] lenient profile should allow target_reached");
 const lenientResult = await runLoop([
@@ -230,5 +232,6 @@ await assertSuccessfulRoundHasNoFailureClassification(
   lenientRound,
   "lenient score-policy round"
 );
+await cleanupReferenceTargetServers(lenientRunDirectory);
 
 console.log("[validate-score-policy] complete");

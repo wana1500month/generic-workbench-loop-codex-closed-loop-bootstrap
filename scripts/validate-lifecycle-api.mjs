@@ -7,6 +7,7 @@ import {
   assertRoundCount,
   assertSuccessfulRoundHasNoFailureClassification,
   assertStopReason,
+  cleanupReferenceTargetServers,
   assertTargetFamily,
   assertValidationLane,
   extractRunDirectory,
@@ -131,6 +132,7 @@ for (const testCase of cases) {
       "api recontract round"
     );
   }
+  await cleanupReferenceTargetServers(runDirectory);
 }
 
 console.log("\n[validate-lifecycle-api] complete");

@@ -1,5 +1,30 @@
 import { spawn } from "node:child_process";
 
+const processTreeKillGraceMs = (): number => {
+  const parsed = Number(process.env.HARNESS_PROCESS_TREE_KILL_GRACE_MS);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : 1000;
+};
+
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
+
+const signalProcessTree = (
+  pid: number,
+  signal: NodeJS.Signals
+): boolean => {
+  try {
+    process.kill(-pid, signal);
+    return true;
+  } catch {
+    try {
+      process.kill(pid, signal);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+};
+
 export const stopProcessTree = async (pid: number): Promise<void> => {
   if (typeof pid !== "number" || pid <= 0) {
     return;
@@ -18,13 +43,7 @@ export const stopProcessTree = async (pid: number): Promise<void> => {
     return;
   }
 
-  try {
-    process.kill(-pid, "SIGTERM");
-  } catch {
-    try {
-      process.kill(pid, "SIGTERM");
-    } catch {
-      // Ignore missing processes during best-effort cleanup.
-    }
-  }
+  signalProcessTree(pid, "SIGTERM");
+  await delay(processTreeKillGraceMs());
+  signalProcessTree(pid, "SIGKILL");
 };

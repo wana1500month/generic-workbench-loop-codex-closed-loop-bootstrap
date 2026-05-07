@@ -109,6 +109,11 @@ const main = async () => {
       "runtime helpers should stop Windows process trees with taskkill"
     );
     assert(
+      runtimeHelpers.includes('signalProcessTree("SIGTERM");') &&
+        runtimeHelpers.includes('signalProcessTree("SIGKILL");'),
+      "runtime helpers should escalate Unix process tree cleanup from SIGTERM to SIGKILL"
+    );
+    assert(
       !runtimeHelpers.includes("createWriteStream"),
       "runtime helpers should no longer keep detached logs alive through parent-side streams"
     );

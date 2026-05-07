@@ -8,6 +8,7 @@ import {
   repoRoot,
   runLoop
 } from "./validation-utils.mjs";
+import { stopProcessTree } from "./process-tree.mjs";
 
 const foregroundThreadEnv = {
   ...process.env,
@@ -19,33 +20,69 @@ const foregroundThreadEnv = {
   HARNESS_APP_VISIBILITY: "visible-in-stock-app"
 };
 
+const validationHelperTimeoutMs = () => {
+  const parsed = Number(process.env.HARNESS_VALIDATION_HELPER_TIMEOUT_MS);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 300000;
+};
+
+const npmInvocationFor = (scriptName, scriptArgs) => {
+  const args = [
+    "run",
+    scriptName,
+    "--silent",
+    ...(scriptArgs.length > 0 ? ["--", ...scriptArgs] : [])
+  ];
+  if (process.env.npm_execpath) {
+    return {
+      command: process.execPath,
+      args: [process.env.npm_execpath, ...args],
+      shell: false
+    };
+  }
+  return {
+    command: "npm",
+    args,
+    shell: process.platform === "win32"
+  };
+};
+
 const runPackageScript = async (scriptName, scriptArgs = [], env = process.env) =>
   new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(
-      "npm",
-      ["run", scriptName, "--silent", ...(scriptArgs.length > 0 ? ["--", ...scriptArgs] : [])],
-      {
-        cwd: repoRoot,
-        env,
-        shell: process.platform === "win32",
-        windowsHide: true
-      }
-    );
+    const timeoutMs = validationHelperTimeoutMs();
+    const invocation = npmInvocationFor(scriptName, scriptArgs);
+    const child = spawn(invocation.command, invocation.args, {
+      cwd: repoRoot,
+      env,
+      shell: invocation.shell,
+      detached: process.platform !== "win32",
+      windowsHide: true
+    });
 
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      void stopProcessTree(child.pid ?? -1);
+    }, timeoutMs);
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
     });
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
     });
-    child.on("error", rejectPromise);
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      rejectPromise(error);
+    });
     child.on("close", (code) => {
+      clearTimeout(timer);
       resolvePromise({
-        code: code ?? 1,
+        code: timedOut ? 124 : code ?? 1,
         stdout,
-        stderr
+        stderr: timedOut
+          ? `${stderr}\nPackage script '${scriptName}' timed out after ${timeoutMs} ms.\n`
+          : stderr
       });
     });
   });

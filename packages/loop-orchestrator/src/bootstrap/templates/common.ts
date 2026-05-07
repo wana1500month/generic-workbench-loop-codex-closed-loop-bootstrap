@@ -611,13 +611,22 @@ export const stopProcessTree = async (pid) => {
     return;
   }
 
-  try {
-    process.kill(-pid, "SIGTERM");
-  } catch {
+  const signalProcessTree = (signal) => {
     try {
-      process.kill(pid, "SIGTERM");
-    } catch {}
-  }
+      process.kill(-pid, signal);
+      return;
+    } catch {
+      try {
+        process.kill(pid, signal);
+      } catch {}
+    }
+  };
+
+  signalProcessTree("SIGTERM");
+  const parsedGraceMs = Number(process.env.HARNESS_PROCESS_TREE_KILL_GRACE_MS);
+  const graceMs = Number.isInteger(parsedGraceMs) && parsedGraceMs >= 0 ? parsedGraceMs : 1000;
+  await new Promise((resolvePromise) => setTimeout(resolvePromise, graceMs));
+  signalProcessTree("SIGKILL");
 };
 
 export const waitForUrl = async (url, timeoutMs = 60000) => {

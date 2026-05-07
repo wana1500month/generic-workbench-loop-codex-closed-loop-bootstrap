@@ -112,12 +112,17 @@ switch (capability) {
     });
     child.unref();
     const targetManifest = await waitForFile(manifestPath, 5000);
+    const targetServerPid =
+      Number.isInteger(targetManifest.target_server_pid)
+        ? targetManifest.target_server_pid
+        : child.pid ?? -1;
     await writeFile(
       runLogPath,
       [
         "run_target",
         \`health_url=\${targetManifest.health_url}\`,
         \`api_base_url=\${targetManifest.api_base_url}\`,
+        \`target_server_pid=\${targetServerPid}\`,
         "started canonical API companion target"
       ].join("\\n"),
       "utf8"
@@ -128,7 +133,10 @@ switch (capability) {
       summary: "Started the canonical API companion target.",
       findings: [],
       evidence_paths: [runLogPath],
-      target_manifest: targetManifest
+      target_manifest: targetManifest,
+      metadata: {
+        target_server_pid: targetServerPid
+      }
     });
     break;
   }
@@ -227,7 +235,8 @@ server.listen(0, "127.0.0.1", async () => {
     JSON.stringify(
       {
         health_url: \`http://127.0.0.1:\${address.port}/healthz\`,
-        api_base_url: \`http://127.0.0.1:\${address.port}/api/\`
+        api_base_url: \`http://127.0.0.1:\${address.port}/api/\`,
+        target_server_pid: process.pid
       },
       null,
       2
@@ -922,12 +931,17 @@ switch (capability) {
     });
     child.unref();
     const targetManifest = await waitForFile(manifestPath, 5000);
+    const targetServerPid =
+      Number.isInteger(targetManifest.target_server_pid)
+        ? targetManifest.target_server_pid
+        : child.pid ?? -1;
     await writeFile(
       runLogPath,
       [
         "run_target",
         \`health_url=\${targetManifest.health_url}\`,
         \`api_base_url=\${targetManifest.api_base_url}\`,
+        \`target_server_pid=\${targetServerPid}\`,
         "started canonical chat companion target"
       ].join("\\n"),
       "utf8"
@@ -938,7 +952,10 @@ switch (capability) {
       summary: "Started the canonical chat companion target.",
       findings: [],
       evidence_paths: [runLogPath],
-      target_manifest: targetManifest
+      target_manifest: targetManifest,
+      metadata: {
+        target_server_pid: targetServerPid
+      }
     });
     break;
   }
@@ -1031,7 +1048,8 @@ server.listen(0, "127.0.0.1", async () => {
     JSON.stringify(
       {
         health_url: \`http://127.0.0.1:\${address.port}/healthz\`,
-        api_base_url: \`http://127.0.0.1:\${address.port}/api/\`
+        api_base_url: \`http://127.0.0.1:\${address.port}/api/\`,
+        target_server_pid: process.pid
       },
       null,
       2
