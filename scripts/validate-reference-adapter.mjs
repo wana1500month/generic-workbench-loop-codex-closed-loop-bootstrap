@@ -318,7 +318,8 @@ const seedArgs = [
 ];
 const seedResult = await runLoop(seedArgs, {
   env: {
-    REFERENCE_ADAPTER_CONTRACT: adapterPath
+    REFERENCE_ADAPTER_CONTRACT: adapterPath,
+    HARNESS_ALLOW_EXTERNAL_TARGET_ROOT: "1"
   }
 });
 if (seedResult.code !== 0) {
@@ -339,7 +340,8 @@ const resumeArgs = [
 ];
 const resumeResult = await runLoop(resumeArgs, {
   env: {
-    REFERENCE_ADAPTER_CONTRACT: adapterPath
+    REFERENCE_ADAPTER_CONTRACT: adapterPath,
+    HARNESS_ALLOW_EXTERNAL_TARGET_ROOT: "1"
   }
 });
 if (resumeResult.code !== 0) {

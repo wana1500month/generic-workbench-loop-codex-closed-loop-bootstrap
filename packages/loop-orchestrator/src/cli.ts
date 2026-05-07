@@ -43,6 +43,7 @@ type RunCommandArgs = {
   allowResumeMigration?: boolean;
   allowManualProtocolSeed?: boolean;
   allowShellResumeDowngrade?: boolean;
+  allowExternalTargetRoot?: boolean;
   forceReopenTerminal?: boolean;
   controllerMode?: "attached" | "detached";
   transportMode?: "codex-exec" | "current-thread" | "app-server";
@@ -150,6 +151,7 @@ interface StatusReport {
 const helpTokens = new Set(["help", "--help", "-h"]);
 const manualProtocolSeedFlag = "--allow-manual-protocol-seed";
 const shellResumeDowngradeFlag = "--allow-shell-resume-downgrade";
+const externalTargetRootFlag = "--allow-external-target-root";
 const phaseAliasMap = new Map<string, ControllerRoundPhase>([
   ["planning", "planning"],
   ["open", "planning"],
@@ -206,6 +208,7 @@ const usageLines = [
   "  loop:start:codex is the Codex-owned current-thread start. loop:start:bg is the detached supervisor surface. loop:start:manual is the intentional shell-owned manual-protocol start.",
   "  Deprecated aliases remain available: loop:run -> loop:start:bg, loop:single:codex -> loop:start:codex, loop:single:manual -> loop:start:manual, loop:single -> detached single-attempt seed.",
   `  shell-launched attached/current-thread seeds require a bound Codex thread id unless you intentionally pass ${manualProtocolSeedFlag}.`,
+  `  adapter target_root values outside this repository require ${externalTargetRootFlag} or HARNESS_ALLOW_EXTERNAL_TARGET_ROOT=1.`,
   "  resume/phase preserve the existing run controller and transport unless you override them explicitly.",
   `  app-visible current-thread runs must continue from the same Codex thread unless you intentionally pass ${shellResumeDowngradeFlag}.`,
   "  phase re-enters from the named phase and runs until the next persisted checkpoint or terminal stop.",
@@ -264,6 +267,7 @@ const parseRunArgs = (argv: readonly string[]): RunCommandArgs => {
   let allowResumeMigration = false;
   let allowManualProtocolSeed = false;
   let allowShellResumeDowngrade = false;
+  let allowExternalTargetRoot = false;
   let forceReopenTerminal = false;
   let controllerMode: "attached" | "detached" | undefined;
   let transportMode: "codex-exec" | "current-thread" | "app-server" | undefined;
@@ -341,6 +345,11 @@ const parseRunArgs = (argv: readonly string[]): RunCommandArgs => {
 
     if (value === shellResumeDowngradeFlag) {
       allowShellResumeDowngrade = true;
+      continue;
+    }
+
+    if (value === externalTargetRootFlag) {
+      allowExternalTargetRoot = true;
       continue;
     }
 
@@ -486,6 +495,7 @@ const parseRunArgs = (argv: readonly string[]): RunCommandArgs => {
     allowResumeMigration,
     allowManualProtocolSeed,
     allowShellResumeDowngrade,
+    allowExternalTargetRoot,
     forceReopenTerminal,
     controllerMode,
     transportMode,
@@ -1320,6 +1330,9 @@ const main = async (): Promise<void> => {
   let targetFamily = args.targetFamily;
   let targetScore = args.targetScore;
   let maxRounds = args.maxRounds;
+  if (args.allowExternalTargetRoot) {
+    process.env.HARNESS_ALLOW_EXTERNAL_TARGET_ROOT = "1";
+  }
   const envControllerMode = isControllerMode(process.env.HARNESS_CONTROLLER_MODE)
     ? process.env.HARNESS_CONTROLLER_MODE
     : undefined;

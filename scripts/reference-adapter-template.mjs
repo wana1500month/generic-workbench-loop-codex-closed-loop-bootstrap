@@ -289,6 +289,10 @@ const activeRoundFailures = new Set(
     ? roundBehavior.failing_criteria ?? []
     : []
 );
+const configuredGradeScore =
+  typeof roundBehavior.grade_score === "number" && Number.isFinite(roundBehavior.grade_score)
+    ? Math.max(0, Math.min(1, roundBehavior.grade_score))
+    : undefined;
 const criterionStatus = (criterionId, condition) =>
   activeRoundFailures.has(criterionId) ? "fail" : condition ? "pass" : "fail";
 const criterionObservedValue = (
@@ -298,7 +302,7 @@ const criterionObservedValue = (
   failValue = "missing"
 ) =>
   activeRoundFailures.has(criterionId) ? failValue : condition ? passValue : failValue;
-const gradeScore = activeRoundFailures.size > 0 ? 0.1 : 0.98;
+const gradeScore = configuredGradeScore ?? (activeRoundFailures.size > 0 ? 0.1 : 0.98);
 const gradeOverallVerdict = activeRoundFailures.size > 0 ? "revise" : "advance";
 const gradeThresholdVerdict = activeRoundFailures.size > 0 ? "fail" : "pass";
 const gradeBlockingCriterionIds = Array.from(activeRoundFailures);
@@ -1129,6 +1133,10 @@ const activeRoundFailures = new Set(
     ? roundBehavior.failing_criteria ?? []
     : []
 );
+const configuredGradeScore =
+  typeof roundBehavior.grade_score === "number" && Number.isFinite(roundBehavior.grade_score)
+    ? Math.max(0, Math.min(1, roundBehavior.grade_score))
+    : undefined;
 const criterionStatus = (criterionId, condition) =>
   activeRoundFailures.has(criterionId) ? "fail" : condition ? "pass" : "fail";
 const criterionObservedValue = (
@@ -1138,7 +1146,7 @@ const criterionObservedValue = (
   failValue = "missing"
 ) =>
   activeRoundFailures.has(criterionId) ? failValue : condition ? passValue : failValue;
-const gradeScore = activeRoundFailures.size > 0 ? 0.1 : 0.98;
+const gradeScore = configuredGradeScore ?? (activeRoundFailures.size > 0 ? 0.1 : 0.98);
 const gradeOverallVerdict = activeRoundFailures.size > 0 ? "revise" : "advance";
 const gradeThresholdVerdict = activeRoundFailures.size > 0 ? "fail" : "pass";
 const gradeBlockingCriterionIds = Array.from(activeRoundFailures);
@@ -1769,6 +1777,7 @@ const canonicalChatFiles = (input = {}) => ({
 export const scaffoldReferenceAdapter = async (input) => {
   const template = input.template ?? "canonical-api";
   const root = resolve(input.outputDirectory);
+  const templateOptions = input.templateOptions ?? {};
   await mkdir(root, { recursive: true });
 
   if (!supportedTemplates.includes(template)) {
@@ -1832,7 +1841,7 @@ export const scaffoldReferenceAdapter = async (input) => {
                   readme: canonicalChatRecontractReadme,
                   roundBehavior: recontractRoundBehavior("grounded_reply")
                 })
-              : canonicalApiFiles();
+              : canonicalApiFiles(templateOptions);
 
   await Promise.all(
     Object.entries(files).map(async ([relativePath, value]) => {

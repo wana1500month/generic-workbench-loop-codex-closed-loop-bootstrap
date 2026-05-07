@@ -7,10 +7,17 @@ export const repoRoot = resolve(fileURLToPath(new URL("../..", import.meta.url))
 
 export const runCommand = async (command, args, options = {}) =>
   new Promise((resolvePromise, rejectPromise) => {
+    const commandText = String(command).toLowerCase();
+    const defaultShell =
+      process.platform === "win32" &&
+      (commandText === "npm" ||
+        commandText.endsWith(".cmd") ||
+        commandText.endsWith(".bat"));
     const child = spawn(command, args, {
       cwd: options.cwd ?? repoRoot,
       env: options.env ?? process.env,
-      shell: options.shell ?? process.platform === "win32"
+      shell: options.shell ?? defaultShell,
+      windowsHide: true
     });
     let stdout = "";
     let stderr = "";

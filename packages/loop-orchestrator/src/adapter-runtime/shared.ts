@@ -1919,8 +1919,8 @@ export const validateAdapterCapabilityResult = async (input: {
 };
 
 export const shellExecutableFor = (
-  shell: "powershell" | "sh" | "bash" | "cmd" | undefined
-): string | true => {
+  shell: "powershell" | "sh" | "bash" | "cmd"
+): string => {
   switch (shell) {
     case "powershell":
       return "powershell.exe";
@@ -1930,9 +1930,8 @@ export const shellExecutableFor = (
       return "bash";
     case "cmd":
       return "cmd.exe";
-    default:
-      return true;
   }
+  throw new Error(`Unsupported shell: ${shell}`);
 };
 
 interface BufferedOutput {
@@ -1991,22 +1990,35 @@ export const execCommand = async (input: {
 }> =>
   new Promise((resolvePromise, rejectPromise) => {
     const startedAtDate = new Date();
-    const useDirectSpawn = Array.isArray(input.args);
-    const child = useDirectSpawn
-      ? spawn(input.command, input.args, {
-          cwd: input.cwd,
-          env: input.env,
-          shell: false,
-          detached: process.platform !== "win32",
-          windowsHide: true
-        })
-      : spawn(input.command, {
+    const child = (() => {
+      if (input.shell) {
+        return spawn(input.command, {
           cwd: input.cwd,
           env: input.env,
           shell: shellExecutableFor(input.shell),
           detached: process.platform !== "win32",
           windowsHide: true
         });
+      }
+
+      const [command, ...args] = Array.isArray(input.args)
+        ? [input.command, ...input.args]
+        : commandTokens(input.command);
+      if (!command) {
+        rejectPromise(new Error("Adapter command cannot be empty."));
+        return undefined;
+      }
+      return spawn(command, args, {
+        cwd: input.cwd,
+        env: input.env,
+        shell: false,
+        detached: process.platform !== "win32",
+        windowsHide: true
+      });
+    })();
+    if (!child) {
+      return;
+    }
 
     const stdout: BufferedOutput = { text: "", bytes: 0, truncated: false };
     const stderr: BufferedOutput = { text: "", bytes: 0, truncated: false };

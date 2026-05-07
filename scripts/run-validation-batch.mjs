@@ -1,5 +1,55 @@
 import { spawn } from "node:child_process";
 
+const stopProcessTree = async (pid) => {
+  if (typeof pid !== "number" || pid <= 0) {
+    return;
+  }
+
+  if (process.platform === "win32") {
+    await new Promise((resolvePromise) => {
+      const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+        shell: false,
+        windowsHide: true,
+        stdio: "ignore"
+      });
+      killer.on("close", () => resolvePromise(undefined));
+      killer.on("error", () => resolvePromise(undefined));
+    });
+    return;
+  }
+
+  try {
+    process.kill(-pid, "SIGTERM");
+  } catch {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      // Best-effort cleanup for validators that already exited.
+    }
+  }
+};
+
+const validationTimeoutMs = () => {
+  const parsed = Number(process.env.HARNESS_VALIDATION_TIMEOUT_MS);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 300000;
+};
+
+const npmInvocationFor = (scriptName) => {
+  if (process.env.npm_execpath) {
+    return {
+      command: process.execPath,
+      args: [process.env.npm_execpath, "run", scriptName, "--silent"],
+      shell: false
+    };
+  }
+
+  return {
+    command: "npm",
+    args: ["run", scriptName, "--silent"],
+    shell: process.platform === "win32"
+  };
+};
+
 const suites = {
   "product-front-door": [
     "validate:intent-gate",
@@ -48,13 +98,31 @@ if (!suite) {
 
 const runScript = async (scriptName) =>
   new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn("npm", ["run", scriptName, "--silent"], {
+    const timeoutMs = validationTimeoutMs();
+    let timedOut = false;
+    const invocation = npmInvocationFor(scriptName);
+    const child = spawn(invocation.command, invocation.args, {
       stdio: "inherit",
-      shell: process.platform === "win32",
+      shell: invocation.shell,
       windowsHide: true
     });
-    child.on("error", rejectPromise);
+    const timer = setTimeout(() => {
+      timedOut = true;
+      void stopProcessTree(child.pid ?? -1);
+    }, timeoutMs);
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      rejectPromise(error);
+    });
     child.on("close", (code) => {
+      clearTimeout(timer);
+      if (timedOut) {
+        console.error(
+          `Validation script '${scriptName}' timed out after ${timeoutMs} ms.`
+        );
+        resolvePromise(124);
+        return;
+      }
       resolvePromise(code ?? 1);
     });
   });

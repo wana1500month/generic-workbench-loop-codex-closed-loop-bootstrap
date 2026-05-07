@@ -13,6 +13,10 @@ import {
   readSummary,
   runLoop
 } from "./validation-utils.mjs";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { scaffoldReferenceAdapter } from "./reference-adapter-template.mjs";
 
 const expectedProbeIds = [
   "item-persists",
@@ -34,48 +38,48 @@ const expectedCriterionIds = [
 const cases = [
   {
     label: "patch-only-success",
-    args: [
-      "--adapter",
-      "./.tmp/semantic-validation/patch-only-success/adapter.json",
-      "--target-family",
-      "api-service",
-      "--max-rounds",
-      "3"
-    ],
+    template: "canonical-api-patch-only",
     stopReason: "target_reached",
     roundCount: 2
   },
   {
     label: "patch-recontract",
-    args: [
-      "--adapter",
-      "./.tmp/semantic-validation/patch-recontract/adapter.json",
-      "--target-family",
-      "api-service",
-      "--max-rounds",
-      "3"
-    ],
+    template: "canonical-api-recontract",
     stopReason: "target_reached",
     roundCount: 3
   },
   {
     label: "api-only-witness",
-    args: [
-      "--adapter",
-      "./.tmp/semantic-validation/api-only-witness/adapter.json",
-      "--target-family",
-      "api-service",
-      "--max-rounds",
-      "1"
-    ],
+    template: "canonical-api",
     stopReason: "target_reached",
     roundCount: 1
   }
 ];
 
+const fixtureRoot = await mkdtemp(join(tmpdir(), "codex-lifecycle-api-"));
+
 for (const testCase of cases) {
   console.log(`\n[validate-lifecycle-api] ${testCase.label}`);
-  const result = await runLoop(testCase.args);
+  const adapterDirectory = join(fixtureRoot, testCase.label);
+  await scaffoldReferenceAdapter({
+    outputDirectory: adapterDirectory,
+    template: testCase.template
+  });
+  const result = await runLoop(
+    [
+      "--adapter",
+      join(adapterDirectory, "adapter.json"),
+      "--target-family",
+      "api-service",
+      "--max-rounds",
+      "3"
+    ],
+    {
+      env: {
+        HARNESS_ALLOW_EXTERNAL_TARGET_ROOT: "1"
+      }
+    }
+  );
   if (result.code !== 0) {
     throw new Error(`Loop command failed for '${testCase.label}'.`);
   }

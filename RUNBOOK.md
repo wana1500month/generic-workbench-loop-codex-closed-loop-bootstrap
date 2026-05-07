@@ -62,11 +62,14 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 ## Security guards
 
 - Evidence path resolution now fail-closes to allowlisted runtime roots: `roundDirectory`, `runDirectory`, `targetRoot`, and adapter `baseDirectory`. The core may resolve relative candidates from capability `cwd`, but the final real path must still land inside the allowlist before evidence is accepted.
+- Adapter `target_root` values resolve inside the harness repository by default. External companion roots require explicit opt-in with `--allow-external-target-root` or `HARNESS_ALLOW_EXTERNAL_TARGET_ROOT=1`.
 - Credential-looking evidence paths are rejected before content inspection, including `.codex` paths, `.env` files, auth or credentials files, private keys, token files, and secret files.
 - Evidence files must be regular files and stay under `HARNESS_EVIDENCE_MAX_BYTES`, which defaults to `10485760`.
 - Core HTTP, HTTP JSON, browser, and browser journey probes accept only localhost or loopback target URLs by default. External target probes require `HARNESS_ALLOW_NONLOCAL_TARGET_URLS=1`, while private, link-local, loopback, broadcast, and metadata hosts remain blocked in nonlocal mode.
 - Core fetch probes use manual redirects and cap response body capture with `HARNESS_HTTP_BODY_MAX_BYTES`, which defaults to `1048576`.
+- Adapter capability commands run without a shell by default. A string command such as `node ./executor.mjs prepare_target` is tokenized and direct-spawned; shell execution only occurs when the adapter capability explicitly sets `shell`.
 - Adapter capability commands and core shell/browser probe commands cap stdout and stderr with `HARNESS_COMMAND_OUTPUT_MAX_BYTES`, which defaults to `1048576`; adapter capabilities fail when the cap is exceeded.
+- Validation batch entries are killed after `HARNESS_VALIDATION_TIMEOUT_MS`, which defaults to `300000`.
 - Run `npm run validate:security-guards` after `npm run build` to check evidence containment, URL policy, and command output caps.
 
 ## Round contract and dimension floors
