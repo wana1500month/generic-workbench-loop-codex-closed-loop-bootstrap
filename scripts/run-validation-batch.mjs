@@ -104,6 +104,7 @@ const runScript = async (scriptName) =>
     const child = spawn(invocation.command, invocation.args, {
       stdio: "inherit",
       shell: invocation.shell,
+      detached: process.platform !== "win32",
       windowsHide: true
     });
     const timer = setTimeout(() => {

@@ -68,8 +68,10 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Core HTTP, HTTP JSON, browser, and browser journey probes accept only localhost or loopback target URLs by default. External target probes require `HARNESS_ALLOW_NONLOCAL_TARGET_URLS=1`, while private, link-local, loopback, broadcast, and metadata hosts remain blocked in nonlocal mode.
 - Core fetch probes use manual redirects and cap response body capture with `HARNESS_HTTP_BODY_MAX_BYTES`, which defaults to `1048576`.
 - Adapter capability commands run without a shell by default. A string command such as `node ./executor.mjs prepare_target` is tokenized and direct-spawned; shell execution only occurs when the adapter capability explicitly sets `shell`.
+- Core shell/browser probe commands also run without a shell by default and kill the full process tree on timeout or output-cap breach. Use `args` for commands such as `python -c ...`; shell execution only occurs when a core probe explicitly sets `shell`.
 - Adapter capability commands and core shell/browser probe commands cap stdout and stderr with `HARNESS_COMMAND_OUTPUT_MAX_BYTES`, which defaults to `1048576`; adapter capabilities fail when the cap is exceeded.
 - Validation batch entries are killed after `HARNESS_VALIDATION_TIMEOUT_MS`, which defaults to `300000`.
+- Validation helper loop invocations are killed after `HARNESS_VALIDATION_LOOP_TIMEOUT_MS`, which defaults to `300000`.
 - Run `npm run validate:security-guards` after `npm run build` to check evidence containment, URL policy, and command output caps.
 
 ## Round contract and dimension floors

@@ -5,6 +5,40 @@ import { fileURLToPath } from "node:url";
 
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
+const stopProcessTree = async (pid) => {
+  if (typeof pid !== "number" || pid <= 0) {
+    return;
+  }
+
+  if (process.platform === "win32") {
+    await new Promise((resolvePromise) => {
+      const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+        shell: false,
+        windowsHide: true,
+        stdio: "ignore"
+      });
+      killer.on("close", () => resolvePromise(undefined));
+      killer.on("error", () => resolvePromise(undefined));
+    });
+    return;
+  }
+
+  try {
+    process.kill(-pid, "SIGTERM");
+  } catch {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      // Best-effort cleanup for validation helpers that already exited.
+    }
+  }
+};
+
+const validationLoopTimeoutMs = () => {
+  const parsed = Number(process.env.HARNESS_VALIDATION_LOOP_TIMEOUT_MS);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 300000;
+};
+
 export const runLoop = async (args, options = {}) =>
   new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(process.execPath, ["./scripts/testing/run-validation-loop.mjs", ...args], {
@@ -12,11 +46,19 @@ export const runLoop = async (args, options = {}) =>
       env: {
         ...process.env,
         ...(options.env ?? {})
-      }
+      },
+      detached: process.platform !== "win32",
+      windowsHide: true
     });
 
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    const timeoutMs = validationLoopTimeoutMs();
+    const timer = setTimeout(() => {
+      timedOut = true;
+      void stopProcessTree(child.pid ?? -1);
+    }, timeoutMs);
     child.stdout.on("data", (chunk) => {
       const text = chunk.toString();
       stdout += text;
@@ -31,12 +73,18 @@ export const runLoop = async (args, options = {}) =>
         process.stderr.write(text);
       }
     });
-    child.on("error", rejectPromise);
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      rejectPromise(error);
+    });
     child.on("close", (code) => {
+      clearTimeout(timer);
       resolvePromise({
-        code: code ?? 1,
+        code: timedOut ? 124 : code ?? 1,
         stdout,
-        stderr
+        stderr: timedOut
+          ? `${stderr}\nValidation loop timed out after ${timeoutMs} ms.\n`
+          : stderr
       });
     });
   });

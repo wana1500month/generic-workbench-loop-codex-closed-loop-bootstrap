@@ -89,6 +89,7 @@ export interface VerificationCoreProbe {
   json_path?: string;
   steps?: BrowserJourneyStep[];
   cwd?: string;
+  args?: string[];
   shell?: AdapterCommandSpec["shell"];
   browser_executable?: string;
   expected_exit_code?: number;

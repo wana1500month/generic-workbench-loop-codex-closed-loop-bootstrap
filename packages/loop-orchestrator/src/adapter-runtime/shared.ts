@@ -2582,6 +2582,18 @@ export const normalizeVerificationProfile = (
                       );
                     })();
 
+            const args =
+              rawProbe.args === undefined
+                ? undefined
+                : Array.isArray(rawProbe.args) &&
+                    rawProbe.args.every((entry) => typeof entry === "string")
+                  ? rawProbe.args
+                  : (() => {
+                      throw new Error(
+                        `Verification profile '${profilePath}' core probe '${probeId}' must use a string array for 'args'.`
+                      );
+                    })();
+
             const shell =
               rawProbe.shell === undefined
                 ? undefined
@@ -2762,6 +2774,7 @@ export const normalizeVerificationProfile = (
               ...(jsonPath ? { json_path: jsonPath } : {}),
               ...(steps && steps.length > 0 ? { steps } : {}),
               ...(cwd ? { cwd } : {}),
+              ...(args ? { args } : {}),
               ...(shell ? { shell } : {}),
               ...(browserExecutable ? { browser_executable: browserExecutable } : {}),
               ...(expectedExitCode !== undefined

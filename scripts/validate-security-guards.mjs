@@ -8,8 +8,12 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const {
   execCommand,
+  normalizeVerificationProfile,
   validateAdapterCapabilityResult
 } = await import("../packages/loop-orchestrator/dist/adapter-runtime/shared.js");
+const { executeCoreVerificationProbes } = await import(
+  "../packages/loop-orchestrator/dist/core-verifier.js"
+);
 const { validateTargetUrlPolicy } = await import(
   "../packages/loop-orchestrator/dist/target-url-policy.js"
 );
@@ -200,6 +204,56 @@ const explicitShell = await execCommand({
 });
 assert.equal(explicitShell.code, 0);
 assert.equal((await readFile(shellMarkerPath, "utf8")).trim(), "shell-ok");
+
+const coreShellMarkerPath = join(workspace, "core-shell-redirection-marker.txt");
+const coreProbeProfile = normalizeVerificationProfile(
+  {
+    profile_id: "core-probe-direct-spawn-guard",
+    label: "Core Probe Direct Spawn Guard",
+    criteria: [],
+    target_reached_requires_core_probes: false,
+    core_probes: [
+      {
+        probe_id: "core-direct-args",
+        label: "Core direct args",
+        mode: "shell_command",
+        role: "supporting",
+        target: process.execPath,
+        args: [
+          "-e",
+          "process.stdout.write('core-ok')",
+          ">",
+          coreShellMarkerPath
+        ],
+        expected_value: "core-ok",
+        timeout_ms: 5000
+      }
+    ]
+  },
+  "core-probe-direct-spawn-guard.profile.json"
+);
+const coreProbeExecutions = await executeCoreVerificationProbes({
+  loadedAdapter: {
+    base_directory: adapterRoot,
+    contract_path: join(adapterRoot, "adapter.json"),
+    contract: {
+      adapter_id: "core-probe-direct-spawn-guard",
+      label: "Core Probe Direct Spawn Guard",
+      contract_version: "1",
+      target_root: ".",
+      capabilities: {}
+    },
+    verification_profile: {
+      profile_path: "core-probe-direct-spawn-guard.profile.json",
+      profile: coreProbeProfile
+    }
+  },
+  runDirectory,
+  roundDirectory
+});
+assert.equal(coreProbeExecutions.length, 1);
+assert.equal(coreProbeExecutions[0].ok, true);
+await assert.rejects(access(coreShellMarkerPath));
 
 const previousOutputCap = process.env.HARNESS_COMMAND_OUTPUT_MAX_BYTES;
 process.env.HARNESS_COMMAND_OUTPUT_MAX_BYTES = "16";

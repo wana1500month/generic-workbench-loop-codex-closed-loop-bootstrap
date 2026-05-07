@@ -5,6 +5,7 @@ import { delimiter, isAbsolute, join, resolve } from "node:path";
 
 import { resolvedAdapterTargetRoot } from "./adapter-paths.js";
 import { loadJsonIfExists, writeJson, writeText } from "./file-system.js";
+import { stopProcessTree } from "./process-runtime.js";
 import { assertAllowedTargetUrl } from "./target-url-policy.js";
 import type {
   CoreProbeAttestation,
@@ -85,9 +86,12 @@ const resolvedLiveProbeTarget = (input: {
 
 const quoted = (value: string): string => `"${value.replace(/"/g, '\\"')}"`;
 
+const commandTokens = (command: string): string[] =>
+  command.match(/"[^"]+"|'[^']+'|\S+/g)?.map((token) => token.replace(/^['"]|['"]$/g, "")) ?? [];
+
 const shellExecutableFor = (
-  shell: "powershell" | "sh" | "bash" | "cmd" | undefined
-): string | true => {
+  shell: "powershell" | "sh" | "bash" | "cmd"
+): string => {
   switch (shell) {
     case "powershell":
       return "powershell.exe";
@@ -97,9 +101,8 @@ const shellExecutableFor = (
       return "bash";
     case "cmd":
       return "cmd.exe";
-    default:
-      return true;
   }
+  throw new Error(`Unsupported shell: ${shell}`);
 };
 
 const blockedEnvironmentPattern =
@@ -368,6 +371,7 @@ const executeHttpJsonProbe = async (input: {
 
 const execCommand = async (input: {
   command: string;
+  args?: string[];
   cwd: string;
   timeoutMs: number;
   env: NodeJS.ProcessEnv;
@@ -378,12 +382,35 @@ const execCommand = async (input: {
   stderr: string;
 }> =>
   new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(input.command, {
-      cwd: input.cwd,
-      env: input.env,
-      shell: shellExecutableFor(input.shell),
-      windowsHide: true
-    });
+    const child = (() => {
+      if (input.shell) {
+        return spawn(input.command, {
+          cwd: input.cwd,
+          env: input.env,
+          shell: shellExecutableFor(input.shell),
+          detached: process.platform !== "win32",
+          windowsHide: true
+        });
+      }
+
+      const [command, ...args] = Array.isArray(input.args)
+        ? [input.command, ...input.args]
+        : commandTokens(input.command);
+      if (!command) {
+        rejectPromise(new Error("Core verification probe command cannot be empty."));
+        return undefined;
+      }
+      return spawn(command, args, {
+        cwd: input.cwd,
+        env: input.env,
+        shell: false,
+        detached: process.platform !== "win32",
+        windowsHide: true
+      });
+    })();
+    if (!child) {
+      return;
+    }
 
     let stdout = "";
     let stderr = "";
@@ -392,7 +419,7 @@ const execCommand = async (input: {
     const outputLimitBytes = commandOutputMaxBytes();
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill();
+      void stopProcessTree(child.pid ?? -1);
     }, input.timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer | string) => {
@@ -402,7 +429,7 @@ const execCommand = async (input: {
         stdout += Buffer.from(text).subarray(0, remaining).toString();
         stdout += `\n[output truncated after ${outputLimitBytes} bytes]\n`;
         outputLimitExceeded = true;
-        child.kill();
+        void stopProcessTree(child.pid ?? -1);
         return;
       }
       stdout += text;
@@ -414,7 +441,7 @@ const execCommand = async (input: {
         stderr += Buffer.from(text).subarray(0, remaining).toString();
         stderr += `\n[output truncated after ${outputLimitBytes} bytes]\n`;
         outputLimitExceeded = true;
-        child.kill();
+        void stopProcessTree(child.pid ?? -1);
         return;
       }
       stderr += text;
@@ -859,6 +886,7 @@ const executeShellCommandProbe = async (input: {
   const stderrPath = join(input.probeDirectory, `${input.probe.probe_id}-stderr.log`);
   const result = await execCommand({
     command: input.probe.target,
+    args: input.probe.args,
     cwd,
     timeoutMs,
     env: {
