@@ -3,8 +3,8 @@
 ## Current State
 
 - Status: control_plane_prototype
-- Latest decision: product-build requests now route toward app-builder-loop, while loop:intake remains the staged gate and bootstrap generator resume is wired to the stored Codex session when target_root matches.
-- Rounds executed: control-plane validations only (live Codex smoke still environment-blocked here)
+- Latest decision: P0 operational hardening is now centered on clean smoke runtime-state cleanup, bounded Codex child execution, deterministic validation defaults, and a distinct Codex app install ZIP marker.
+- Rounds executed: control-plane validations only; `build`, `validate:codex-timeout`, `validate:resume-smoke`, `validate:attached-resume-smoke`, `validate:smoke-clean`, `release:zip`, and `validate:core` are green with pinned Node/npm.
 
 ## Recent Decisions
 
@@ -19,7 +19,8 @@
 - Keep `done_when.md` aligned with the actual stop condition before closeout.
 - Keep the workbench identity sentence stable across `AGENTS.md`, `IDEA.md`, `SPEC.md`, and the durable memory files.
 - Use `init.sh` to rehydrate the workbench before assuming the environment drifted.
+- Use `npm run validate:release-gate` for local pre-release validation and `npm run validate:codex-strict-gate` only on a trusted Codex runner.
 
 ## Latest Blocker
 
-- Live Codex and App Server smoke are still environment-blocked in this workspace because the `codex` binary is not available on PATH.
+- Live Codex and App Server strict smoke remain trusted-runner gates; deterministic validation now stays green without depending on live Codex CLI execution.

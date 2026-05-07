@@ -19,7 +19,7 @@ const zipPath =
       ? resolve(repoRoot, zipEqualsArg.slice("--zip=".length))
       : positionalZipArg
         ? resolve(repoRoot, positionalZipArg)
-        : join(repoRoot, ".tmp", "release", "generic-codex-workbench.zip");
+        : join(repoRoot, ".tmp", "release", "generic-codex-workbench-CODEX-APP-INSTALL.zip");
 
 const buildToolPattern =
   /TypeScript is not installed|npm ci|npx -p typescript|npm run build/i;

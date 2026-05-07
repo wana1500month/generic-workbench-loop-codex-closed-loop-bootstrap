@@ -225,6 +225,24 @@ assert.match(resumeRunControlOutput, /^Autocontinue:\s+same-thread foreground/m)
 assert.match(resumeRunControlOutput, /^Recovery skill:\s+\$attached-loop/m);
 assert.doesNotMatch(resumeRunControlOutput, /^Next skill:\s+\$attached-loop/m);
 
+for (const request of [
+  "resume current loop",
+  "resume previous loop",
+  "continue last run",
+  "pick up where we left off",
+  "continue the active loop",
+  "resume the latest run"
+]) {
+  const shortResumeResult = evaluateLoopIntent(request);
+  assert.equal(shortResumeResult.intent, "run_control", request);
+  assert.equal(shortResumeResult.run_control_action, "resume", request);
+  assert.equal(
+    shortResumeResult.run_control_primary_command,
+    "npm run loop:resume -- --json",
+    request
+  );
+}
+
 const koreanResumeRunControlOutput = renderLoopIntentResponse(
   evaluateLoopIntent("run-179 이어가")
 );

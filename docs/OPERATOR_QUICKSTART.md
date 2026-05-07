@@ -10,11 +10,11 @@ Use the generated release artifact, not the repository source archive, for Codex
 npm run release:zip
 ```
 
-Install `.tmp/release/generic-codex-workbench.zip`. It includes `packages/loop-orchestrator/dist`, keeps `node_modules` out, and lets `loop:intent`, `loop:discover`, `loop:prepare`, and `loop:start:codex` run before `npm ci`.
+Install `.tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip`. It includes `packages/loop-orchestrator/dist`, keeps `node_modules` out, includes `CODEX_APP_INSTALL.md` plus `release-manifest.json`, and lets `loop:intent`, `loop:discover`, `loop:prepare`, and `loop:start:codex` run before `npm ci`.
 
 ## First Run From A Source ZIP
 
-If `packages/loop-orchestrator/dist` is missing, the folder is a source archive, not the installable Codex app artifact. Prefer installing `.tmp/release/generic-codex-workbench.zip`. If you intentionally use a source archive and accept local npm bootstrap, run one bootstrap command before using plugin skills:
+If `packages/loop-orchestrator/dist` is missing or `SOURCE_ARCHIVE_NOT_CODEX_APP_INSTALL.md` is present, the folder is a source archive, not the installable Codex app artifact. Prefer installing `.tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip`. If you intentionally use a source archive and accept local npm bootstrap, run one bootstrap command before using plugin skills:
 
 ```bash
 bash ./init.sh

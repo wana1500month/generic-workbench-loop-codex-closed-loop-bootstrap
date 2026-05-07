@@ -307,6 +307,11 @@ const runControlSignals: IntentSignal[] = [
   { label: "start run", pattern: /\bstart\s+run\b/i },
   { label: "show status", pattern: /\bshow\s+status\b/i },
   { label: "loop status", pattern: /\bloop\s+status\b/i },
+  { label: "resume loop", pattern: /\bresume\s+(?:the\s+)?(?:current\s+|active\s+|latest\s+|previous\s+|last\s+)?loop\b/i },
+  { label: "continue loop", pattern: /\bcontinue\s+(?:the\s+)?(?:current\s+|active\s+|latest\s+|previous\s+|last\s+)?loop\b/i },
+  { label: "continue last run", pattern: /\bcontinue\s+(?:the\s+)?(?:last|previous)\s+run\b/i },
+  { label: "resume latest run", pattern: /\bresume\s+(?:the\s+)?(?:current|active|latest|previous|last)\s+run\b/i },
+  { label: "pick up where left off", pattern: /\bpick\s+up\s+(?:from\s+)?(?:where\s+we\s+left\s+off|last\s+run|previous\s+loop)\b/i },
   { label: "monitor", pattern: /\bmonitor(?:ing)?\b/i },
   { label: "status", pattern: /\bstatus\b/i },
   { label: "loop:status", pattern: /\bloop:status\b/i },
@@ -452,7 +457,10 @@ const parseRunControlRequest = (request: string): ParsedRunControlRequest => {
     /\uBAA8\uB4E0\s*\uB8E8\uD504\s*\uC815\uC9C0/u.test(request) ||
     /\uB8E8\uD504\s*(?:\uC815\uC9C0|\uBA48\uCDB0)/u.test(request);
   const resumeRequested =
-    /\b(resume|continue)\s+(?:the\s+)?(?:run|loop)\b/i.test(normalized) ||
+    /\b(resume|continue)\s+(?:the\s+)?(?:(?:current|active|latest|previous|last)\s+)?(?:run|loop)\b/i.test(normalized) ||
+    /\b(?:pick\s+up|resume|continue)\s+(?:from\s+)?(?:where\s+we\s+left\s+off|last\s+run|previous\s+loop)\b/i.test(
+      normalized
+    ) ||
     (runReference !== undefined && /\b(resume|continue)\b/i.test(normalized)) ||
     (runReference !== undefined &&
       /\uC774\uC5B4\uAC00|\uACC4\uC18D|\uC7AC\uAC1C/u.test(request)) ||
@@ -1033,6 +1041,11 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
         "start run",
         "show status",
         "loop status",
+        "resume loop",
+        "continue loop",
+        "continue last run",
+        "resume latest run",
+        "pick up where left off",
         "monitor",
         "status",
         "loop:status",

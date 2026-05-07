@@ -78,7 +78,7 @@ const sourceArchiveMessage = (relativeModulePath) =>
   [
     `Missing ${relativeModulePath}.`,
     "This folder looks like a source archive, not the installable release ZIP.",
-    "Install .tmp/release/generic-codex-workbench.zip for Codex app use.",
+    "Install .tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip for Codex app use.",
     "If you intentionally want local source bootstrap, run bash ./init.sh yourself or set HARNESS_ALLOW_SOURCE_BOOTSTRAP=1 before retrying."
   ].join(" ");
 
@@ -102,7 +102,7 @@ export const ensureDistModule = async (repoRoot, relativeModulePath) => {
         ok: false,
         distModulePath,
         message:
-          `Missing ${relativeModulePath} and build/bootstrap failed. Install .tmp/release/generic-codex-workbench.zip, or run bash ./init.sh once for an intentional source checkout, then retry.`
+          `Missing ${relativeModulePath} and build/bootstrap failed. Install .tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip, or run bash ./init.sh once for an intentional source checkout, then retry.`
       };
     }
   }

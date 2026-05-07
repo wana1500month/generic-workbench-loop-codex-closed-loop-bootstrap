@@ -14,6 +14,9 @@ import {
   readSummary,
   runLoop
 } from "./validation-utils.mjs";
+import { ensureSemanticValidationFixtures } from "./testing/semantic-fixtures.mjs";
+
+await ensureSemanticValidationFixtures();
 
 const readJson = async (path) => JSON.parse(await readFile(path, "utf8"));
 const writeJson = async (path, value) =>

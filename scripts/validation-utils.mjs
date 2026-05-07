@@ -18,6 +18,8 @@ export const runLoop = async (args, options = {}) =>
       cwd: repoRoot,
       env: {
         ...process.env,
+        HARNESS_DISABLE_CODEX_AGENTS:
+          process.env.HARNESS_DISABLE_CODEX_AGENTS ?? "1",
         ...(options.env ?? {})
       },
       detached: process.platform !== "win32",
@@ -26,15 +28,23 @@ export const runLoop = async (args, options = {}) =>
 
     let stdout = "";
     let stderr = "";
+    let runDirectory;
     let timedOut = false;
     const timeoutMs = validationLoopTimeoutMs();
     const timer = setTimeout(() => {
       timedOut = true;
       void stopProcessTree(child.pid ?? -1);
     }, timeoutMs);
+    const captureRunDirectory = (text) => {
+      const match = text.match(/Run created:\s+(.+)/);
+      if (match) {
+        runDirectory = resolve(repoRoot, match[1].trim());
+      }
+    };
     child.stdout.on("data", (chunk) => {
       const text = chunk.toString();
       stdout += text;
+      captureRunDirectory(text);
       if (options.silent !== true) {
         process.stdout.write(text);
       }
@@ -50,8 +60,11 @@ export const runLoop = async (args, options = {}) =>
       clearTimeout(timer);
       rejectPromise(error);
     });
-    child.on("close", (code) => {
+    child.on("close", async (code) => {
       clearTimeout(timer);
+      if (timedOut && runDirectory) {
+        await cleanupReferenceTargetServers(runDirectory).catch(() => []);
+      }
       resolvePromise({
         code: timedOut ? 124 : code ?? 1,
         stdout,

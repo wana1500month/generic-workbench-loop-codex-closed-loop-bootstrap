@@ -10,6 +10,7 @@ const responseText = process.env.FAKE_CODEX_RESPONSE ?? "{\"ok\":true}";
 const threadId = process.env.FAKE_CODEX_THREAD_ID ?? "thread_fake_123";
 const authMode = process.env.FAKE_CODEX_AUTH_MODE ?? "chatgpt";
 const loginStatusMode = process.env.FAKE_CODEX_LOGIN_STATUS ?? "ok";
+const hangMs = Number.parseInt(process.env.FAKE_CODEX_HANG_MS ?? "600000", 10);
 
 const argValue = (flag) => {
   const index = argv.indexOf(flag);
@@ -71,6 +72,10 @@ if (loginStatus) {
     process.exit();
   }
 
+  if (mode === "hang-login") {
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, hangMs));
+  }
+
   process.stdout.write(`Logged in with ${authMode} auth\n`);
   process.exitCode = 0;
   process.exit();
@@ -119,6 +124,17 @@ if (recordPath) {
   }
   existing.push(record);
   await writeFile(recordPath, JSON.stringify(existing, null, 2) + "\n", "utf8");
+}
+
+if (mode === "hang") {
+  await new Promise((resolvePromise) => setTimeout(resolvePromise, hangMs));
+}
+
+if (mode === "stale-after-start") {
+  process.stdout.write(
+    `${JSON.stringify({ type: "thread.started", thread_id: threadId })}\n`
+  );
+  await new Promise((resolvePromise) => setTimeout(resolvePromise, hangMs));
 }
 
 if (mode === "fail") {

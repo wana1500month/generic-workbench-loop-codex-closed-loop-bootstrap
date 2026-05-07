@@ -30,7 +30,7 @@ Use the generated release ZIP for Codex app installation:
 npm run release:zip
 ```
 
-Install `.tmp/release/generic-codex-workbench.zip`, not a repository source archive. The release ZIP includes `packages/loop-orchestrator/dist` so product-build front-door and `loop:start:codex` commands can run without `npm ci`; it excludes `node_modules`, `.tmp`, and persisted run artifacts.
+Install `.tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip`, not a repository source archive. The release ZIP includes `packages/loop-orchestrator/dist` so product-build front-door and `loop:start:codex` commands can run without `npm ci`; it excludes `node_modules`, `.tmp`, persisted run artifacts, and `SOURCE_ARCHIVE_NOT_CODEX_APP_INSTALL.md`.
 
 If `packages/loop-orchestrator/dist` is missing after unzip, you are not using the installable release ZIP. Prefer installing the generated release ZIP. Run `bash ./init.sh` from a source archive only when the operator explicitly accepts a local `npm ci`/build bootstrap. Skill and npm front-door helpers fail closed by default in this state; set `HARNESS_ALLOW_SOURCE_BOOTSTRAP=1` only when you intentionally want them to invoke bootstrap.
 
@@ -53,10 +53,10 @@ Product-build discovery collects product, execution, and adapter-design intake. 
 
 ## Validation Suites
 
-- `npm test`: adapter-free core checks
-- `npm run smoke`: short smoke checks
-- `npm run validate:product-front-door`: front-door routing and preparation checks
-- `npm run validate:external`: requires an external adapter contract and environment
+- `npm run validate:core`: adapter-free deterministic core gate
+- `npm run validate:smoke-clean`: clears semantic fixture runtime state and proves smoke is self-contained against tracked fixtures
+- `npm run release:zip`: builds the installable Codex app ZIP and validates release startup
+- `npm run validate:codex:real-smoke:strict`: trusted-runner-only live Codex gate
 
 `validate:reference-adapter:check` expects `REFERENCE_ADAPTER_CONTRACT` to be set. Without an attached adapter, external validation should fail closed.
 

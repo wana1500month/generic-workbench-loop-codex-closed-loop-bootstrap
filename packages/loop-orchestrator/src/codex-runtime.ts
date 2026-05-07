@@ -1,11 +1,12 @@
 import { mkdir, readFile } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { resolveCodexCliLaunch } from "./codex-cli.js";
 import { isControllerMode } from "./controller-mode.js";
 import { writeJson, writeText } from "./file-system.js";
+import { stopProcessTree } from "./process-runtime.js";
 import {
   defaultTransportModeForControllerMode,
   isCurrentThreadTransport,
@@ -41,6 +42,9 @@ export type CodexCommandInput = {
   sessionId?: string;
   metadata?: Record<string, string | number | boolean | null>;
   allowCurrentThreadReadOnlyJudge?: boolean;
+  timeoutMs?: number;
+  staleOutputTimeoutMs?: number;
+  outputLimitBytes?: number;
 };
 
 export type CodexCommandResult = {
@@ -62,6 +66,9 @@ export type CodexCommandResult = {
   responseWritten: boolean;
   usedResume: boolean;
   disabled: boolean;
+  timedOut?: boolean;
+  timeoutReason?: "wall_clock_timeout" | "stale_output_timeout" | "output_limit_exceeded";
+  durationMs?: number;
 };
 
 export type CodexAuthPreflight = {
@@ -76,11 +83,26 @@ export type CodexAuthPreflight = {
   error?: string;
   statusStdout: string;
   statusStderr: string;
+  timedOut?: boolean;
 };
 
 const unique = <T>(values: readonly T[]): T[] => [...new Set(values)];
 const currentThreadTransportBlockedReason =
   "Current-thread transports forbid nested Codex command execution. Use the active Codex thread or App Server turn as the operator surface instead of spawning codex exec.";
+
+const positiveIntegerEnv = (key: string, fallback: number): number => {
+  const parsed = Number(process.env[key]);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const codexCommandTimeoutMs = (): number =>
+  positiveIntegerEnv("HARNESS_CODEX_COMMAND_TIMEOUT_MS", 600000);
+
+const codexStaleOutputTimeoutMs = (): number =>
+  positiveIntegerEnv("HARNESS_CODEX_STALE_OUTPUT_TIMEOUT_MS", 120000);
+
+const codexOutputLimitBytes = (): number =>
+  positiveIntegerEnv("HARNESS_CODEX_OUTPUT_LIMIT_BYTES", 10 * 1024 * 1024);
 
 const isCurrentThreadReadOnlyJudge = (input: CodexCommandInput): boolean =>
   input.allowCurrentThreadReadOnlyJudge === true &&
@@ -121,10 +143,40 @@ const resolvedHarnessTransportMode = () => {
 const spawnProcess = async (
   command: string,
   args: string[],
-  cwd: string
-): Promise<{ code: number; stdout: string; stderr: string; error?: string }> =>
+  cwd: string,
+  timeoutMs = codexCommandTimeoutMs()
+): Promise<{
+  code: number;
+  stdout: string;
+  stderr: string;
+  error?: string;
+  timedOut?: boolean;
+}> =>
   new Promise((resolvePromise) => {
-    let child;
+    const startedAt = Date.now();
+    let settled = false;
+    let child: ChildProcessWithoutNullStreams | undefined;
+    let timer: NodeJS.Timeout | undefined;
+    let stdout = "";
+    let stderr = "";
+
+    const finish = (result: {
+      code: number;
+      stdout: string;
+      stderr: string;
+      error?: string;
+      timedOut?: boolean;
+    }) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timer) {
+        clearTimeout(timer);
+      }
+      resolvePromise(result);
+    };
+
     try {
       child = spawn(command, args, {
         cwd,
@@ -133,7 +185,7 @@ const spawnProcess = async (
         windowsHide: true
       });
     } catch (error: unknown) {
-      resolvePromise({
+      finish({
         code: -1,
         stdout: "",
         stderr: "",
@@ -142,8 +194,19 @@ const spawnProcess = async (
       return;
     }
 
-    let stdout = "";
-    let stderr = "";
+    timer = setTimeout(() => {
+      const message = `Codex auth command timed out after ${timeoutMs} ms.`;
+      void stopProcessTree(child.pid ?? -1).finally(() => {
+        finish({
+          code: 124,
+          stdout,
+          stderr,
+          error: message,
+          timedOut: true
+        });
+      });
+    }, timeoutMs);
+
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
     });
@@ -151,7 +214,7 @@ const spawnProcess = async (
       stderr += chunk.toString();
     });
     child.on("error", (error) => {
-      resolvePromise({
+      finish({
         code: -1,
         stdout,
         stderr,
@@ -159,10 +222,11 @@ const spawnProcess = async (
       });
     });
     child.on("close", (code) => {
-      resolvePromise({
+      finish({
         code: code ?? 1,
         stdout,
-        stderr
+        stderr,
+        ...(Date.now() - startedAt >= timeoutMs ? { timedOut: true } : {})
       });
     });
   });
@@ -319,6 +383,7 @@ export const checkCodexAuth = async (options: {
     statusCode: status.code,
     ...(blockedReason ? { blockedReason } : {}),
     ...(status.error ? { error: status.error } : {}),
+    ...(status.timedOut ? { timedOut: true } : {}),
     statusStdout: status.stdout,
     statusStderr: status.stderr
   };
@@ -484,8 +549,105 @@ export const runCodexCommand = async (
     stdout: string;
     stderr: string;
     error?: string;
+    timedOut?: boolean;
+    timeoutReason?: CodexCommandResult["timeoutReason"];
+    durationMs: number;
   }>((resolvePromise) => {
-    let child;
+    const startedAt = Date.now();
+    const timeoutMs = input.timeoutMs ?? codexCommandTimeoutMs();
+    const staleOutputTimeoutMs =
+      input.staleOutputTimeoutMs ?? codexStaleOutputTimeoutMs();
+    const outputLimitBytes = input.outputLimitBytes ?? codexOutputLimitBytes();
+    let wallTimer: NodeJS.Timeout | undefined;
+    let staleTimer: NodeJS.Timeout | undefined;
+    let settled = false;
+    let child: ChildProcessWithoutNullStreams | undefined;
+    let stdout = "";
+    let stderr = "";
+
+    const finish = (result: {
+      code: number;
+      stdout: string;
+      stderr: string;
+      error?: string;
+      timedOut?: boolean;
+      timeoutReason?: CodexCommandResult["timeoutReason"];
+    }) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (wallTimer) {
+        clearTimeout(wallTimer);
+      }
+      if (staleTimer) {
+        clearTimeout(staleTimer);
+      }
+      resolvePromise({
+        ...result,
+        durationMs: Date.now() - startedAt
+      });
+    };
+
+    const killForTimeout = async (
+      reason: NonNullable<CodexCommandResult["timeoutReason"]>,
+      message: string
+    ) => {
+      if (settled) {
+        return;
+      }
+      await stopProcessTree(child?.pid ?? -1);
+      finish({
+        code: 124,
+        stdout,
+        stderr,
+        error: message,
+        timedOut: true,
+        timeoutReason: reason
+      });
+    };
+
+    const refreshStaleTimer = () => {
+      if (staleTimer) {
+        clearTimeout(staleTimer);
+      }
+      staleTimer = setTimeout(() => {
+        void killForTimeout(
+          "stale_output_timeout",
+          `Codex command produced no output for ${staleOutputTimeoutMs} ms.`
+        );
+      }, staleOutputTimeoutMs);
+    };
+
+    const appendOutput = (stream: "stdout" | "stderr", chunk: unknown) => {
+      const text = chunk instanceof Buffer ? chunk.toString() : String(chunk);
+      const current = stream === "stdout" ? stdout : stderr;
+      const currentBytes = Buffer.byteLength(current);
+      const textBytes = Buffer.byteLength(text);
+
+      if (currentBytes + textBytes > outputLimitBytes) {
+        const remaining = Math.max(0, outputLimitBytes - currentBytes);
+        const clipped = remaining > 0 ? text.slice(0, remaining) : "";
+        if (stream === "stdout") {
+          stdout += clipped;
+        } else {
+          stderr += clipped;
+        }
+        void killForTimeout(
+          "output_limit_exceeded",
+          `Codex command output exceeded ${outputLimitBytes} bytes.`
+        );
+        return;
+      }
+
+      if (stream === "stdout") {
+        stdout += text;
+      } else {
+        stderr += text;
+      }
+      refreshStaleTimer();
+    };
+
     try {
       child = spawn(command, args, {
         cwd: input.cwd,
@@ -494,7 +656,7 @@ export const runCodexCommand = async (
         windowsHide: true
       });
     } catch (error: unknown) {
-      resolvePromise({
+      finish({
         code: -1,
         stdout: "",
         stderr: "",
@@ -503,16 +665,22 @@ export const runCodexCommand = async (
       return;
     }
 
-    let stdout = "";
-    let stderr = "";
+    wallTimer = setTimeout(() => {
+      void killForTimeout(
+        "wall_clock_timeout",
+        `Codex command timed out after ${timeoutMs} ms.`
+      );
+    }, timeoutMs);
+    refreshStaleTimer();
+
     child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
+      appendOutput("stdout", chunk);
     });
     child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
+      appendOutput("stderr", chunk);
     });
     child.on("error", (error) => {
-      resolvePromise({
+      finish({
         code: -1,
         stdout,
         stderr,
@@ -520,7 +688,7 @@ export const runCodexCommand = async (
       });
     });
     child.on("close", (code) => {
-      resolvePromise({
+      finish({
         code: code ?? 1,
         stdout,
         stderr
@@ -560,6 +728,9 @@ export const runCodexCommand = async (
     ...(responseText ? { responseText } : {}),
     ...(execution.error ? { error: execution.error } : {}),
     ...(responseError ? { error: responseError } : {}),
+    ...(execution.timedOut ? { timedOut: true } : {}),
+    ...(execution.timeoutReason ? { timeoutReason: execution.timeoutReason } : {}),
+    durationMs: execution.durationMs,
     promptPath,
     responsePath,
     stdoutPath,
@@ -589,6 +760,13 @@ export const runCodexCommand = async (
     events_path: eventsPath,
     response_written: responseWritten,
     codex_command: command,
+    duration_ms: execution.durationMs,
+    timed_out: execution.timedOut === true,
+    timeout_reason: execution.timeoutReason ?? null,
+    timeout_ms: input.timeoutMs ?? codexCommandTimeoutMs(),
+    stale_output_timeout_ms:
+      input.staleOutputTimeoutMs ?? codexStaleOutputTimeoutMs(),
+    output_limit_bytes: input.outputLimitBytes ?? codexOutputLimitBytes(),
     ...(schemaPath ? { schema_path: schemaPath } : {}),
     ...(input.profile ? { profile: input.profile } : {}),
     ...(input.configOverrides ? { config_overrides: input.configOverrides } : {}),

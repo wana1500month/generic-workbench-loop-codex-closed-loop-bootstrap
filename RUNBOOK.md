@@ -29,8 +29,8 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `init.sh`: fast session bootstrap for workbench setup, `evals/runs` storage creation, and canonical front-door commands
 - `docs/OPERATOR_QUICKSTART.md`: short Codex app operator entrypoint for clean ZIP setup, lane-centric skills, validation, and security defaults
 - `.agents/skills/*/SKILL.md`: repo-local Codex app operator surfaces, with lane-centric entry skills such as `intent-router`, `app-builder-loop`, `harness-design`, `run-resume`, `evaluator-tuning`, `run-attempt`, and `closeout`; `product-intake` remains the staged intake gate inside `app-builder-loop`; compatibility aliases such as `harness-intake`, `harness-run-attempt`, and `harness-closeout` remain only for older automation
-- `.agents/skills/*/scripts/*.mjs`: plugin-facing guidance treats missing `packages/loop-orchestrator/dist` as a source archive signal first. Prefer installing `.tmp/release/generic-codex-workbench.zip`; helpers fail closed by default in this state and only build with an existing local TypeScript install, `HARNESS_ALLOW_NPX_INSTALL=1`, or intentional `HARNESS_ALLOW_SOURCE_BOOTSTRAP=1` for `bash ./init.sh`.
-- `npm run release:zip`: builds the workspace, packages `.tmp/release/generic-codex-workbench.zip`, validates that the installable ZIP includes `packages/loop-orchestrator/dist` while excluding `node_modules`, `.tmp`, and persisted run artifacts, then proves release-root product discovery -> prepare -> `loop:start:codex` can consume the prepared run without `npm ci`
+- `.agents/skills/*/scripts/*.mjs`: plugin-facing guidance treats missing `packages/loop-orchestrator/dist` or a present `SOURCE_ARCHIVE_NOT_CODEX_APP_INSTALL.md` as a source archive signal first. Prefer installing `.tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip`; helpers fail closed by default in this state and only build with an existing local TypeScript install, `HARNESS_ALLOW_NPX_INSTALL=1`, or intentional `HARNESS_ALLOW_SOURCE_BOOTSTRAP=1` for `bash ./init.sh`.
+- `npm run release:zip`: builds the workspace, packages `.tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip`, validates that the installable ZIP includes `packages/loop-orchestrator/dist`, `CODEX_APP_INSTALL.md`, and `release-manifest.json` while excluding `node_modules`, `.tmp`, `SOURCE_ARCHIVE_NOT_CODEX_APP_INSTALL.md`, and persisted run artifacts, then proves release-root product discovery -> prepare -> `loop:start:codex` can consume the prepared run without `npm ci`
 - `.agents/skills/app-builder-loop/SKILL.md`: session-supervised product-build skill for discovery -> prepare -> `ready_to_start` -> running on one Codex foreground thread
 - `.agents/skills/*/agents/openai.yaml`: UI-facing Codex app metadata for the key lane-centric skills
 - `.codex-plugin/plugin.json` and `.agents/plugins/marketplace.json`: repo-root local plugin metadata for Codex app discovery
@@ -59,6 +59,15 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Browser-backed `target_reached` now also depends on subjective release quality and prototype delta: rendered screenshots or traces must exist, a baseline screenshot must persist beyond the first browser round, and release scoring can be capped when browser subjective evidence or visible product lift is missing.
 - `same-thread transport`: keeps the active operator surface on the same thread or turn, forbids nested `codex exec` calls from shared runtime paths, routes bootstrap `apply_change` through attached generator task/response artifacts, and lets attached App Server runs refine planner/generator-plan through same-thread skill turns plus contract/eval through inline review turns
 
+## Validation gates
+
+- `npm run validate:core`: deterministic adapter-free core gate.
+- `npm run validate:smoke-clean`: verifies tracked semantic fixtures, clears only fixture runtime state, and proves smoke is self-contained.
+- `npm run release:zip`: builds and validates the installable Codex app ZIP.
+- `npm run validate:codex:real-smoke:strict`: live Codex gate for trusted runners only; it writes `.tmp/codex-real-smoke/latest-result.json`.
+- `npm run validate:release-gate`: local pre-release gate combining core, clean smoke, and release ZIP validation.
+- `npm run validate:codex-strict-gate`: trusted-runner Codex gate combining auth preflight and strict real smoke.
+
 ## Security guards
 
 - Evidence path resolution now fail-closes to allowlisted runtime roots: `roundDirectory`, `runDirectory`, `targetRoot`, and adapter `baseDirectory`. The core may resolve relative candidates from capability `cwd`, but the final real path must still land inside the allowlist before evidence is accepted.
@@ -72,6 +81,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Adapter capability commands and core shell/browser probe commands cap stdout and stderr with `HARNESS_COMMAND_OUTPUT_MAX_BYTES`, which defaults to `1048576`; adapter capabilities fail when the cap is exceeded.
 - Process-tree cleanup sends `SIGTERM`, waits `HARNESS_PROCESS_TREE_KILL_GRACE_MS` milliseconds, then sends `SIGKILL` on Unix-like hosts; Windows cleanup uses `taskkill /T /F`.
 - Validation batch entries are killed after `HARNESS_VALIDATION_TIMEOUT_MS`, which defaults to `300000`.
+- Codex child commands are killed after `HARNESS_CODEX_COMMAND_TIMEOUT_MS`, which defaults to `600000`, after `HARNESS_CODEX_STALE_OUTPUT_TIMEOUT_MS` without output, which defaults to `120000`, or after `HARNESS_CODEX_OUTPUT_LIMIT_BYTES`, which defaults to `10485760`.
 - Validation helper loop invocations are killed after `HARNESS_VALIDATION_LOOP_TIMEOUT_MS`, which defaults to `300000`.
 - Validation package-script helpers such as `validate-loop-continue` are killed after `HARNESS_VALIDATION_HELPER_TIMEOUT_MS`, which defaults to `300000`.
 - Reference adapter validators clean up target server PIDs published by `run_target` metadata before the validation process exits.

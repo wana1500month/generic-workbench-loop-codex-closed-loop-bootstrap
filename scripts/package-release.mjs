@@ -1,13 +1,15 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { access, chmod, cp, mkdir, readdir, rm } from "node:fs/promises";
+import { access, chmod, cp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const releaseRoot = join(repoRoot, ".tmp", "release");
 const stageRoot = join(releaseRoot, "generic-codex-workbench");
-const zipPath = join(releaseRoot, "generic-codex-workbench.zip");
+const installZipName = "generic-codex-workbench-CODEX-APP-INSTALL.zip";
+const zipPath = join(releaseRoot, installZipName);
+const legacyZipPath = join(releaseRoot, "generic-codex-workbench.zip");
 const requiredPackageFiles = [
   "scripts/validate-release-product-start.mjs"
 ];
@@ -67,6 +69,7 @@ const ignoredPackagePath = (relativePath) =>
   relativePath.startsWith("node_modules/") ||
   relativePath === ".tmp" ||
   relativePath.startsWith(".tmp/") ||
+  relativePath === "SOURCE_ARCHIVE_NOT_CODEX_APP_INSTALL.md" ||
   relativePath === "VALIDATION_STATUS.md" ||
   relativePath.startsWith("evals/runs/");
 
@@ -174,6 +177,7 @@ const main = async () => {
   logStep("Preparing release stage.");
   await rm(stageRoot, { recursive: true, force: true });
   await rm(zipPath, { force: true });
+  await rm(legacyZipPath, { force: true });
   await mkdir(stageRoot, { recursive: true });
 
   const files = await trackedFiles();
@@ -195,6 +199,33 @@ const main = async () => {
 
   logStep("Copying compiled loop-orchestrator dist.");
   await copyPath(distRoot, join(stageRoot, "packages", "loop-orchestrator", "dist"));
+  await writeFile(
+    join(stageRoot, "CODEX_APP_INSTALL.md"),
+    [
+      "# Codex App Install ZIP",
+      "",
+      "This folder is the installable Codex app release image.",
+      "It includes packages/loop-orchestrator/dist and is safe to install in Codex app.",
+      "",
+      "Do not use a repository source archive for Codex app installation."
+    ].join("\n") + "\n",
+    "utf8"
+  );
+  await writeFile(
+    join(stageRoot, "release-manifest.json"),
+    `${JSON.stringify(
+      {
+        artifact_type: "codex_app_install_zip",
+        includes_dist: true,
+        source_archive: false,
+        install_zip_name: installZipName,
+        created_at: new Date().toISOString()
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
   await chmod(join(stageRoot, "init.sh"), 0o755);
   logStep("Creating release ZIP.");
   await createZip();

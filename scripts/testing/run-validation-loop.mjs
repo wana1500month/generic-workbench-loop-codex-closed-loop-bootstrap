@@ -298,3 +298,8 @@ if (summary.runtime_warnings?.length) {
 if (summary.codex_handoff_path) {
   console.log(`Codex handoff: ${relative(repoRoot, summary.codex_handoff_path)}`);
 }
+
+if (process.env.HARNESS_VALIDATION_LOOP_FORCE_EXIT !== "0") {
+  await new Promise((resolvePromise) => setImmediate(resolvePromise));
+  process.exit(0);
+}

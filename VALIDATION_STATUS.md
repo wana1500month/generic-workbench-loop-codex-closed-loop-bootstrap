@@ -1,10 +1,10 @@
 # Validation Status
 
-Generated at: 2026-04-30T23:12:31+09:00
+Generated at: 2026-05-08T06:08:33+09:00
 
-Validation scope: current working tree after verification-surface parsing was hardened against path token false positives, browser/API primary workflow surfaces were normalized by target family, release ZIP regeneration, clean-source bootstrap guard, snapshot-based intake fail-closed checks, expanded Korean natural-language parsing, localized ready output, and source archive export-ignore rules, before commit.
+Validation scope: current working tree after operational hardening for bounded Codex child execution, deterministic smoke cleanup, run-control resume phrase routing, real-smoke result persistence, and install ZIP/source archive separation, before commit.
 
-Git SHA at validation start: `af17fab`
+Git SHA at validation start: `8262fa4`
 
 Runtime:
 
@@ -13,11 +13,16 @@ Runtime:
 - Validation npm: `10.9.2`
 - Note: host Node `v22.12.0` crashed while loading the local TypeScript CLI on this machine, so build and validation commands were executed through the pinned `node@22.16.0` runtime.
 
+Current validation state:
+
+- Green locally after this update: deterministic core gate, clean smoke runtime-state cleanup, Codex timeout coverage, and release ZIP marker validation.
+- Requires trusted runner: real Codex strict smoke and App Server live smoke.
+
 Release artifact:
 
-- Path: `.tmp/release/generic-codex-workbench.zip`
-- Size: `1361129` bytes
-- SHA-256: `2B6D3E58AD9B590F77A92742ED6245604899AA12A1DF9076496449838BA4F257`
+- Path: `.tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip`
+- Size: `1377002` bytes
+- SHA-256: `F3D1DA0FFB081ADDB66A677E7256D9567F5266AE101959FFB409A8A49FF4B168`
 
 Release ZIP contents checked:
 
@@ -25,6 +30,9 @@ Release ZIP contents checked:
 - `packages/loop-orchestrator/dist/intent-gate-cli.js`: present
 - `packages/loop-orchestrator/dist/front-door-session-cli.js`: present
 - `packages/loop-orchestrator/dist/bootstrap/generated-adapter.js`: present
+- `CODEX_APP_INSTALL.md`: present
+- `release-manifest.json`: present
+- `SOURCE_ARCHIVE_NOT_CODEX_APP_INSTALL.md`: absent
 - `VALIDATION_STATUS.md`: external proof file, intentionally not embedded in the ZIP because the archive checksum is computed after packaging
 - `node_modules/`: absent
 - `.tmp/`: absent
@@ -32,18 +40,21 @@ Release ZIP contents checked:
 Passed commands:
 
 - `npm run build`
-- `npm run validate:intake-gate`
-- `npm run validate:front-door-session`
-- `npm run validate:prepared-product-start-bundle`
-- `npm run validate:prepared-session-consumption-boundary`
-- `npm run validate:loop-prepare`
-- `npm run validate:source-bootstrap-guard` with `.tmp` absent before execution
+- `npm run validate:intent-gate`
+- `npm run validate:codex-timeout`
+- `npm run validate:resume-smoke`
+- `npm run validate:attached-resume-smoke`
+- `npm run validate:smoke-clean`
 - `npm run release:zip`
+- `npm run validate:core`
 
 Release proof:
 
-- `release:zip` rebuilt the workspace, packaged `.tmp/release/generic-codex-workbench.zip`, validated the installable ZIP, and validated product discovery -> prepare -> prepared `loop:start:codex` consumption without `node_modules`.
-- `release:zip` ran `validate:release-zip` and `validate:release-product-start` against `.tmp/release/generic-codex-workbench.zip`.
+- `release:zip` rebuilt the workspace, packaged `.tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip`, validated the installable ZIP, and validated product discovery -> prepare -> prepared `loop:start:codex` consumption without `node_modules`.
+- `release:zip` ran `validate:release-zip` and `validate:release-product-start` against `.tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip`.
+- `validate:smoke-clean` verifies tracked `.tmp/semantic-validation` fixtures, clears only fixture runtime state such as `target-state` / `.reference-state`, and then runs the full smoke suite.
+- `validation-utils.runLoop` defaults `HARNESS_DISABLE_CODEX_AGENTS=1`, so deterministic validators do not depend on live Codex CLI availability; trusted live Codex/App Server gates remain separate.
+- `validate:codex-timeout` proves Codex wall-clock timeout, stale-output timeout, auth preflight timeout, process-tree cleanup, and timeout metadata persistence through the fake Codex harness.
 - Verification surface parsing strips path-like tokens before detecting surfaces, so paths such as `/tmp/harness_latest/review-budget-app` no longer mark the session as `test`.
 - Browser-like target families normalize workflow verification to browser-primary surfaces even when users mention test or CLI checks, preserving workflow release-gate probes through prepare.
 - `validate:source-bootstrap-guard` now creates `.tmp` before `mkdtemp`, so the clean source archive path no longer fails before checking source-bootstrap policy.

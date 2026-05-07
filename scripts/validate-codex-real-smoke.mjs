@@ -24,6 +24,24 @@ const assert = (condition, message) => {
 };
 
 const strictMode = process.env.HARNESS_CODEX_REAL_SMOKE_STRICT === "1";
+const latestResultPath = join(process.cwd(), ".tmp", "codex-real-smoke", "latest-result.json");
+
+const writeLatestResult = async (result) => {
+  await mkdir(join(process.cwd(), ".tmp", "codex-real-smoke"), { recursive: true });
+  await writeFile(
+    latestResultPath,
+    JSON.stringify(
+      {
+        validated_at: new Date().toISOString(),
+        strict_mode: strictMode,
+        ...result
+      },
+      null,
+      2
+    ) + "\n",
+    "utf8"
+  );
+};
 
 const main = async () => {
   if (process.env.HARNESS_DISABLE_CODEX_AGENTS === "1") {
@@ -35,6 +53,10 @@ const main = async () => {
     console.log(
       "Codex real smoke environment_blocked: HARNESS_DISABLE_CODEX_AGENTS=1 prevents real Codex execution."
     );
+    await writeLatestResult({
+      status: "environment_blocked",
+      reason: "HARNESS_DISABLE_CODEX_AGENTS=1 prevents real Codex execution."
+    });
     return;
   }
 
@@ -55,6 +77,17 @@ const main = async () => {
       throw new Error(`Codex real smoke strict mode failed: ${reason}`);
     }
     console.log(`Codex real smoke environment_blocked: ${reason}`);
+    await writeLatestResult({
+      status: "environment_blocked",
+      reason,
+      auth_preflight: {
+        mode: authPreflight.mode,
+        auth_file_present: authPreflight.authFilePresent,
+        has_refresh_token: authPreflight.hasRefreshToken,
+        file_backed: authPreflight.fileBacked,
+        timed_out: authPreflight.timedOut === true
+      }
+    });
     return;
   }
 
@@ -70,6 +103,11 @@ const main = async () => {
     console.log(
       "Codex real smoke environment_blocked: could not read Codex version after auth preflight."
     );
+    await writeLatestResult({
+      status: "environment_blocked",
+      reason: "could not read Codex version after auth preflight",
+      codex_version_stderr: codexVersion.stderr
+    });
     return;
   }
 
@@ -275,31 +313,29 @@ const main = async () => {
       "Resumed mutation metadata should not include unsupported --output-schema."
     );
 
+    const result = {
+      status: "passed",
+      codex_version: codexVersion.stdout.trim() || codexVersion.stderr.trim(),
+      auth_preflight: {
+        mode: authPreflight.mode,
+        auth_file_present: authPreflight.authFilePresent,
+        has_refresh_token: authPreflight.hasRefreshToken,
+        file_backed: authPreflight.fileBacked
+      },
+      thread_id: fresh.threadId,
+      fresh_response_path: fresh.responsePath,
+      resume_response_path: resumed.responsePath,
+      mutation_response_path: mutation.responsePath,
+      mutation_resume_response_path: mutationResume.responsePath,
+      mutated_file_path: writtenFilePath,
+      resumed_mutated_file_path: resumedWrittenFilePath
+    };
     await writeFile(
       join(tempRoot, "real-smoke-result.json"),
-      JSON.stringify(
-        {
-          validated_at: new Date().toISOString(),
-          codex_version: codexVersion.stdout.trim() || codexVersion.stderr.trim(),
-          auth_preflight: {
-            mode: authPreflight.mode,
-            auth_file_present: authPreflight.authFilePresent,
-            has_refresh_token: authPreflight.hasRefreshToken,
-            file_backed: authPreflight.fileBacked
-          },
-          thread_id: fresh.threadId,
-          fresh_response_path: fresh.responsePath,
-          resume_response_path: resumed.responsePath,
-          mutation_response_path: mutation.responsePath,
-          mutation_resume_response_path: mutationResume.responsePath,
-          mutated_file_path: writtenFilePath,
-          resumed_mutated_file_path: resumedWrittenFilePath
-        },
-        null,
-        2
-      ) + "\n",
+      JSON.stringify(result, null, 2) + "\n",
       "utf8"
     );
+    await writeLatestResult(result);
 
     console.log(`Validated real Codex smoke in ${tempRoot}.`);
   } finally {
@@ -309,8 +345,12 @@ const main = async () => {
   }
 };
 
-main().catch((error) => {
+main().catch(async (error) => {
   console.error("Codex real smoke failed.");
   console.error(error);
+  await writeLatestResult({
+    status: "failed",
+    reason: error instanceof Error ? error.message : String(error)
+  });
   process.exitCode = 1;
 });

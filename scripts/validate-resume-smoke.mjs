@@ -22,10 +22,13 @@ import {
   readSummary,
   runLoop
 } from "./validation-utils.mjs";
+import { ensureSemanticValidationFixtures } from "./testing/semantic-fixtures.mjs";
 
 const readJson = async (path) => JSON.parse(await readFile(path, "utf8"));
 const writeJson = async (path, value) =>
   writeFile(path, JSON.stringify(value, null, 2));
+
+await ensureSemanticValidationFixtures();
 
 const assertRuntimeCheckpointSurface = async (
   summary,

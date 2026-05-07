@@ -66,7 +66,7 @@ const printSourceArchiveMissingDistMessage = () => {
     [
       "packages/loop-orchestrator/dist is missing.",
       "This folder looks like a source archive, not the installable release ZIP.",
-      "Install .tmp/release/generic-codex-workbench.zip for Codex app use.",
+      "Install .tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip for Codex app use.",
       "If you intentionally want local source bootstrap, run bash ./init.sh yourself or set HARNESS_ALLOW_SOURCE_BOOTSTRAP=1 before retrying."
     ].join(" ") + "\n"
   );

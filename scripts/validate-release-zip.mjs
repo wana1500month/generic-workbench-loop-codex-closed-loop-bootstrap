@@ -176,6 +176,26 @@ const main = async () => {
       !existsSync(join(releaseRoot, "evals", "runs", "run-001")),
       "release image must not include previous run artifacts"
     );
+    if (zipPath) {
+      assert.ok(
+        existsSync(join(releaseRoot, "CODEX_APP_INSTALL.md")),
+        "release image is missing CODEX_APP_INSTALL.md"
+      );
+      assert.ok(
+        existsSync(join(releaseRoot, "release-manifest.json")),
+        "release image is missing release-manifest.json"
+      );
+      assert.ok(
+        !existsSync(join(releaseRoot, "SOURCE_ARCHIVE_NOT_CODEX_APP_INSTALL.md")),
+        "release image must not include source-archive marker"
+      );
+      const releaseManifest = JSON.parse(
+        await readFile(join(releaseRoot, "release-manifest.json"), "utf8")
+      );
+      assert.equal(releaseManifest.artifact_type, "codex_app_install_zip");
+      assert.equal(releaseManifest.includes_dist, true);
+      assert.equal(releaseManifest.source_archive, false);
+    }
     if (process.platform !== "win32") {
       const initStats = await stat(join(releaseRoot, "init.sh"));
       assert.ok(initStats.mode & 0o111, "release init.sh must be executable");
