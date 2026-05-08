@@ -7,6 +7,7 @@ import {
   readSummary,
   repoRoot
 } from "./validation-utils.mjs";
+import { ensureSemanticValidationFixtures } from "./testing/semantic-fixtures.mjs";
 
 const assert = (condition, message) => {
   if (!condition) {
@@ -44,6 +45,7 @@ const runSupervisor = async (args, env) =>
   });
 
 const main = async () => {
+  await ensureSemanticValidationFixtures();
   const execution = await runSupervisor(
     [
       "--max-restarts",

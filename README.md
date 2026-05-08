@@ -16,7 +16,7 @@ A generic Codex workbench for closed-loop harness work. The harness engine is th
 
 ## Operational Status
 
-This workbench is a supervised alpha / early beta harness. Do not use it for long-running unattended closed-loop operation, external user distribution, CI auto-fix, or auto-PR workflows until `npm test`, `npm run validate:release`, and trusted-runner `npm run validate:codex-live` are all green for the target environment.
+This workbench is a supervised alpha / early beta harness. Do not use it for long-running unattended closed-loop operation, external user distribution, CI auto-fix, or auto-PR workflows until `npm test`, `npm run validate:smoke-clean`, `npm run validate:release`, `npm run validate:source-archive-repro`, and trusted-runner `npm run validate:codex-live` are all green for the target environment.
 
 ## Quick Start
 
@@ -64,8 +64,9 @@ Product-build discovery collects product, execution, and adapter-design intake. 
 - `npm run validate:fast`: short deterministic commit gate
 - `npm run validate:process`: process timeout, stale-output, and supervisor cleanup gate
 - `npm run validate:core`: adapter-free deterministic integration gate
-- `npm run validate:smoke-clean`: clears semantic fixture runtime state and proves smoke is self-contained against tracked fixtures
+- `npm run validate:smoke-clean`: hydrates `.tmp/semantic-validation` from `scripts/testing/fixtures/semantic-validation`, clears runtime state, and proves smoke is self-contained
 - `npm run validate:release`: builds the installable Codex app ZIP and validates release startup
+- `npm run validate:source-archive-repro`: stages a clean source archive candidate and runs `npm ci`, `build`, `npm test`, `smoke-clean`, and `release`
 - `npm run validate:codex-live`: trusted-runner-only live Codex and App Server gate
 
 `validate:reference-adapter:check` expects `REFERENCE_ADAPTER_CONTRACT` to be set. Without an attached adapter, external validation should fail closed.

@@ -56,7 +56,9 @@ Use this sequence before treating the workbench as operational:
 ```bash
 npm run build
 npm test
+npm run validate:smoke-clean
 npm run validate:release
+npm run validate:source-archive-repro
 ```
 
 For faster commit checks, run `npm run validate:fast`. Process-control failures are release blockers through `npm test`, because timeout/stale-output classification is part of the harness product.

@@ -20,7 +20,3 @@ evals/runs/*
 !evals/runs/.gitkeep
 
 .tmp/*
-!.tmp/semantic-validation/
-!.tmp/semantic-validation/**
-.tmp/semantic-validation/**/target-state/
-.tmp/semantic-validation/**/target-state/**

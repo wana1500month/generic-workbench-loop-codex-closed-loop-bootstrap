@@ -3,7 +3,7 @@
 ## Current State
 
 - Status: control_plane_prototype
-- Latest decision: P0 operational hardening now treats timeout/stale-output classification as a release-blocking process gate, with timeout state settled before process-tree cleanup to avoid `close` races.
+- Latest decision: P0 artifact reproducibility now treats semantic fixtures as source-controlled inputs under `scripts/testing/fixtures`, with `.tmp/semantic-validation` rebuilt as runtime state and source archive reproduction as a release gate.
 - Rounds executed: control-plane validations only; `build`, `validate:codex-timeout`, `validate:process`, `validate:fast`, `validate:resume-smoke`, `validate:attached-resume-smoke`, `validate:smoke-clean`, `release:zip`, and `validate:core` are green with pinned Node/npm.
 
 ## Recent Decisions
@@ -19,7 +19,7 @@
 - Keep `done_when.md` aligned with the actual stop condition before closeout.
 - Keep the workbench identity sentence stable across `AGENTS.md`, `IDEA.md`, `SPEC.md`, and the durable memory files.
 - Use `init.sh` to rehydrate the workbench before assuming the environment drifted.
-- Use `npm run validate:release-gate` for local pre-release validation and `npm run validate:codex-live` only on a trusted Codex runner.
+- Use `npm run validate:release-gate` for local pre-release validation, including source archive reproduction, and `npm run validate:codex-live` only on a trusted Codex runner.
 
 ## Latest Blocker
 

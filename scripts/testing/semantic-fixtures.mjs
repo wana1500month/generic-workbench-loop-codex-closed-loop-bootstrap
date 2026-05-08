@@ -1,9 +1,16 @@
-import { access, readdir, rm } from "node:fs/promises";
+import { access, cp, mkdir, readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const fixtureRoot = join(repoRoot, ".tmp", "semantic-validation");
+const sourceFixtureRoot = join(
+  repoRoot,
+  "scripts",
+  "testing",
+  "fixtures",
+  "semantic-validation"
+);
+const runtimeFixtureRoot = join(repoRoot, ".tmp", "semantic-validation");
 
 const requiredFixturePaths = [
   "adapter.cjs",
@@ -51,11 +58,11 @@ const walkDirectories = async (root, predicate) => {
 };
 
 export const cleanSemanticValidationRuntimeState = async () => {
-  if (!(await pathExists(fixtureRoot))) {
+  if (!(await pathExists(runtimeFixtureRoot))) {
     return [];
   }
   const runtimeDirectories = await walkDirectories(
-    fixtureRoot,
+    runtimeFixtureRoot,
     (name) => name === "target-state" || name === ".reference-state"
   );
   await Promise.all(
@@ -65,12 +72,9 @@ export const cleanSemanticValidationRuntimeState = async () => {
 };
 
 export const ensureSemanticValidationFixtures = async ({ clean = false } = {}) => {
-  if (clean) {
-    await cleanSemanticValidationRuntimeState();
-  }
   const missing = [];
   for (const relativePath of requiredFixturePaths) {
-    const absolutePath = join(fixtureRoot, relativePath);
+    const absolutePath = join(sourceFixtureRoot, relativePath);
     if (!(await pathExists(absolutePath))) {
       missing.push(relativePath);
     }
@@ -78,18 +82,31 @@ export const ensureSemanticValidationFixtures = async ({ clean = false } = {}) =
   if (missing.length > 0) {
     throw new Error(
       [
-        "Semantic validation fixtures are missing from the checkout.",
-        `Expected tracked fixtures under ${fixtureRoot}.`,
+        "Semantic validation source fixtures are missing from the checkout.",
+        `Expected tracked fixtures under ${sourceFixtureRoot}.`,
         `Missing: ${missing.join(", ")}`
       ].join(" ")
     );
   }
-  return fixtureRoot;
+
+  await mkdir(runtimeFixtureRoot, { recursive: true });
+  await cp(sourceFixtureRoot, runtimeFixtureRoot, {
+    recursive: true,
+    force: true
+  });
+
+  if (clean) {
+    await cleanSemanticValidationRuntimeState();
+  }
+
+  return runtimeFixtureRoot;
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   await ensureSemanticValidationFixtures({
     clean: process.argv.includes("--clean")
   });
-  console.log(`[semantic-fixtures] ready: ${fixtureRoot}`);
+  console.log(
+    `[semantic-fixtures] ready: ${runtimeFixtureRoot} from ${sourceFixtureRoot}`
+  );
 }

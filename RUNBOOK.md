@@ -64,10 +64,11 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `npm run validate:fast`: short deterministic commit gate for front-door, transport, security, score-policy, prepare, continue, and durable-memory checks.
 - `npm run validate:process`: process-control gate for Codex child timeout/stale-output semantics and supervisor restart cleanup.
 - `npm run validate:core`: deterministic adapter-free integration gate.
-- `npm run validate:smoke-clean`: verifies tracked semantic fixtures, clears only fixture runtime state, and proves smoke is self-contained.
+- `npm run validate:smoke-clean`: hydrates `.tmp/semantic-validation` from `scripts/testing/fixtures/semantic-validation`, clears only fixture runtime state, and proves smoke is self-contained.
 - `npm run validate:release`: builds and validates the installable Codex app ZIP.
+- `npm run validate:source-archive-repro`: stages a source archive candidate without `.tmp/` or compiled dist, then runs `npm ci`, `npm run build`, `npm test`, `npm run validate:smoke-clean`, and `npm run validate:release`.
 - `npm test`: release-blocking local test path; it runs `validate:process` before `validate:core`.
-- `npm run validate:release-gate`: local pre-release gate combining process, core, clean smoke, and release ZIP validation.
+- `npm run validate:release-gate`: local pre-release gate combining process, core, clean smoke, release ZIP validation, and source archive reproduction.
 - `npm run validate:codex-live`: trusted-runner live Codex and App Server gate; strict smoke writes `.tmp/codex-real-smoke/latest-result.json`.
 - `npm run validate:codex-strict-gate`: compatibility alias for `validate:codex-live`.
 
