@@ -3,8 +3,8 @@
 ## Current State
 
 - Status: control_plane_prototype
-- Latest decision: P0 operational hardening is now centered on clean smoke runtime-state cleanup, bounded Codex child execution, deterministic validation defaults, and a distinct Codex app install ZIP marker.
-- Rounds executed: control-plane validations only; `build`, `validate:codex-timeout`, `validate:resume-smoke`, `validate:attached-resume-smoke`, `validate:smoke-clean`, `release:zip`, and `validate:core` are green with pinned Node/npm.
+- Latest decision: P0 operational hardening now treats timeout/stale-output classification as a release-blocking process gate, with timeout state settled before process-tree cleanup to avoid `close` races.
+- Rounds executed: control-plane validations only; `build`, `validate:codex-timeout`, `validate:process`, `validate:fast`, `validate:resume-smoke`, `validate:attached-resume-smoke`, `validate:smoke-clean`, `release:zip`, and `validate:core` are green with pinned Node/npm.
 
 ## Recent Decisions
 
@@ -19,7 +19,7 @@
 - Keep `done_when.md` aligned with the actual stop condition before closeout.
 - Keep the workbench identity sentence stable across `AGENTS.md`, `IDEA.md`, `SPEC.md`, and the durable memory files.
 - Use `init.sh` to rehydrate the workbench before assuming the environment drifted.
-- Use `npm run validate:release-gate` for local pre-release validation and `npm run validate:codex-strict-gate` only on a trusted Codex runner.
+- Use `npm run validate:release-gate` for local pre-release validation and `npm run validate:codex-live` only on a trusted Codex runner.
 
 ## Latest Blocker
 

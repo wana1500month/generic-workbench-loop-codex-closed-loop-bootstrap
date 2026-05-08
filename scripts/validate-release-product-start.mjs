@@ -398,6 +398,11 @@ const main = async () => {
 
     assert.ok(existsSync(roundContractPath), "release start did not write round-contract.json");
     const roundContract = await readJsonFile(roundContractPath);
+    assert.equal(roundContract.schema_version, "2026-05-08");
+    assert.equal(roundContract.artifact_type, "round_contract");
+    assert.match(roundContract.run_id, /^run-/);
+    assert.equal(roundContract.producer, "loop-orchestrator");
+    assert.equal(typeof roundContract.created_at, "string");
     assert.match(roundContract.objective, /가계부 앱|runtime\/build-brief\.json/);
     assert.doesNotMatch(
       roundContract.objective,

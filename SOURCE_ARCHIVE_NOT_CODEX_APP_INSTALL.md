@@ -1,8 +1,8 @@
-# Source Archive, Not Codex App Install ZIP
+# Source Archive, Not Codex App Install Package
 
-This repository checkout or source archive is not the installable Codex app ZIP.
+This is a source archive, not a Codex app install package.
 
-For Codex app installation, run:
+Run:
 
 ```bash
 npm ci
@@ -15,4 +15,4 @@ Install:
 .tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip
 ```
 
-Do not install this source archive directly unless you explicitly accept local bootstrap.
+Do not install this source archive directly in the Codex app unless you explicitly accept local bootstrap and build steps.

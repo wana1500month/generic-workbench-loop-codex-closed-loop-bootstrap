@@ -14,7 +14,13 @@ A generic Codex workbench for closed-loop harness work. The harness engine is th
 - Not an end-to-end product proof by itself
 - Not a reference adapter repository
 
+## Operational Status
+
+This workbench is a supervised alpha / early beta harness. Do not use it for long-running unattended closed-loop operation, external user distribution, CI auto-fix, or auto-PR workflows until `npm test`, `npm run validate:release`, and trusted-runner `npm run validate:codex-live` are all green for the target environment.
+
 ## Quick Start
+
+Use Node `22.16.0` or newer for local validation on Windows.
 
 ```bash
 npm ci
@@ -32,20 +38,22 @@ npm run release:zip
 
 Install `.tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip`, not a repository source archive. The release ZIP includes `packages/loop-orchestrator/dist` so product-build front-door and `loop:start:codex` commands can run without `npm ci`; it excludes `node_modules`, `.tmp`, persisted run artifacts, and `SOURCE_ARCHIVE_NOT_CODEX_APP_INSTALL.md`.
 
-If `packages/loop-orchestrator/dist` is missing after unzip, you are not using the installable release ZIP. Prefer installing the generated release ZIP. Run `bash ./init.sh` from a source archive only when the operator explicitly accepts a local `npm ci`/build bootstrap. Skill and npm front-door helpers fail closed by default in this state; set `HARNESS_ALLOW_SOURCE_BOOTSTRAP=1` only when you intentionally want them to invoke bootstrap.
+If `packages/loop-orchestrator/dist` is missing after unzip or `SOURCE_ARCHIVE_NOT_CODEX_APP_INSTALL.md` is present, you are not using the installable release ZIP. Prefer installing the generated release ZIP. Run `bash ./init.sh` from a source archive only when the operator explicitly accepts a local `npm ci`/build bootstrap. Skill and npm front-door helpers fail closed by default in this state; set `HARNESS_ALLOW_SOURCE_BOOTSTRAP=1` only when you intentionally want them to invoke bootstrap.
 
 ## Front Door Commands
 
+Canonical operator flow:
+
 ```bash
 npm run loop:intent -- --json "Build a dashboard app for operators"
-npm run loop:intake -- --json "Build a dashboard app for operators"
 npm run loop:discover -- --message "Build a dashboard app for operators" --json
 npm run loop:prepare -- --front-door-session evals/front-door-sessions/session-thread-123.json --json
 npm run loop:start:codex -- --json
+npm run loop:continue -- --run-dir evals/runs/run-001 --json
 npm run loop:status -- --json
 ```
 
-`loop:intake` stays a stateless staged gate. `loop:discover` is the file-backed discovery surface that accumulates intake answers per thread under `evals/front-door-sessions/`. Once that session reaches `ready_for_prepare`, `loop:prepare -- --front-door-session <path>` materializes the snapshot into run-owned artifacts and leaves the run at `ready_to_start`.
+`loop:intake`, `loop:resume`, `loop:phase`, `loop:run`, `loop:single`, and family/reference-adapter commands are internal, recovery, validation, or compatibility surfaces. `loop:intake` stays a stateless staged parser behind `loop:discover`; new operator flows should not start there. `loop:discover` is the file-backed discovery surface that accumulates intake answers per thread under `evals/front-door-sessions/`. Once that session reaches `ready_for_prepare`, `loop:prepare -- --front-door-session <path>` materializes the snapshot into run-owned artifacts and leaves the run at `ready_to_start`.
 
 Product-build discovery collects product, execution, and adapter-design intake. The prepare step generates `adapter-plan.generated.json`, `adapter-plan.generated.md`, `.generated/codex-adapter/runtime-config.json`, `.generated/codex-adapter/scripts/*`, and `.generated/codex-adapter/adapter-review-task.md` so the operator can inspect the generated adapter before saying `루프 시작`.
 
@@ -53,10 +61,12 @@ Product-build discovery collects product, execution, and adapter-design intake. 
 
 ## Validation Suites
 
-- `npm run validate:core`: adapter-free deterministic core gate
+- `npm run validate:fast`: short deterministic commit gate
+- `npm run validate:process`: process timeout, stale-output, and supervisor cleanup gate
+- `npm run validate:core`: adapter-free deterministic integration gate
 - `npm run validate:smoke-clean`: clears semantic fixture runtime state and proves smoke is self-contained against tracked fixtures
-- `npm run release:zip`: builds the installable Codex app ZIP and validates release startup
-- `npm run validate:codex:real-smoke:strict`: trusted-runner-only live Codex gate
+- `npm run validate:release`: builds the installable Codex app ZIP and validates release startup
+- `npm run validate:codex-live`: trusted-runner-only live Codex and App Server gate
 
 `validate:reference-adapter:check` expects `REFERENCE_ADAPTER_CONTRACT` to be set. Without an attached adapter, external validation should fail closed.
 

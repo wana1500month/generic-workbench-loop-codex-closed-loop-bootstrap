@@ -66,6 +66,7 @@ const generatedLocalAdapterOnlyPaths = [
   ".generated/codex-adapter/runtime-config.json",
   ".generated/codex-adapter/scripts"
 ] as const;
+export const PROTOCOL_ARTIFACT_SCHEMA_VERSION = "2026-05-08";
 const externalAdapterOnlyPaths = [
   "adapter-migration-proposal.json",
   "adapter-migration-approval-prompt.md",
@@ -269,6 +270,7 @@ const adapterOnlyPathsFor = (
 };
 
 export const buildRoundContractArtifact = (input: {
+  runId: string;
   round: number;
   negotiationMode: RoundContractArtifact["negotiation_mode"];
   continuationAuthority: RoundContractArtifact["continuation_authority"];
@@ -306,6 +308,11 @@ export const buildRoundContractArtifact = (input: {
   ]);
 
   return ({
+  schema_version: PROTOCOL_ARTIFACT_SCHEMA_VERSION,
+  artifact_type: "round_contract",
+  run_id: input.runId,
+  created_at: new Date().toISOString(),
+  producer: "loop-orchestrator",
   contract_id: input.contract.contract_id,
   round: input.round,
   attempt_kind: input.contract.attempt_kind,

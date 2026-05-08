@@ -175,6 +175,11 @@ export interface RoundArtifacts {
 }
 
 export interface RoundContractArtifact {
+  schema_version: string;
+  artifact_type: "round_contract";
+  run_id: string;
+  created_at: string;
+  producer: "loop-orchestrator";
   contract_id: string;
   round: number;
   attempt_kind: AttemptKind;

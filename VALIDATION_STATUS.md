@@ -1,10 +1,10 @@
 # Validation Status
 
-Generated at: 2026-05-08T06:08:33+09:00
+Generated at: 2026-05-08T11:56:51+09:00
 
-Validation scope: current working tree after operational hardening for bounded Codex child execution, deterministic smoke cleanup, run-control resume phrase routing, real-smoke result persistence, and install ZIP/source archive separation, before commit.
+Validation scope: current working tree after timeout settle-race hardening, process validation split, round-contract schema metadata, source/install ZIP fail-fast messaging, and canonical operator surface documentation.
 
-Git SHA at validation start: `8262fa4`
+Git SHA at validation start: `7a6ee9498372c84da18f9431e12edbfa3aebd012`
 
 Runtime:
 
@@ -15,14 +15,14 @@ Runtime:
 
 Current validation state:
 
-- Green locally after this update: deterministic core gate, clean smoke runtime-state cleanup, Codex timeout coverage, and release ZIP marker validation.
-- Requires trusted runner: real Codex strict smoke and App Server live smoke.
+- Green locally after this update: `build`, `validate:process`, `npm test`, `validate:smoke-clean`, and `validate:release`.
+- Requires trusted runner: `validate:codex-live` for real Codex strict smoke and App Server live smoke.
 
 Release artifact:
 
 - Path: `.tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip`
-- Size: `1377002` bytes
-- SHA-256: `F3D1DA0FFB081ADDB66A677E7256D9567F5266AE101959FFB409A8A49FF4B168`
+- Size: `1382134` bytes
+- SHA-256: `31BA68575F904F8C358D45D16549EB82B7F96AAFE75A0BB02CC9BC3D980B116F`
 
 Release ZIP contents checked:
 
@@ -40,13 +40,12 @@ Release ZIP contents checked:
 Passed commands:
 
 - `npm run build`
-- `npm run validate:intent-gate`
 - `npm run validate:codex-timeout`
-- `npm run validate:resume-smoke`
-- `npm run validate:attached-resume-smoke`
+- `npm run validate:process`
+- `npm run validate:fast`
+- `npm test`
 - `npm run validate:smoke-clean`
-- `npm run release:zip`
-- `npm run validate:core`
+- `npm run validate:release`
 
 Release proof:
 
@@ -55,6 +54,9 @@ Release proof:
 - `validate:smoke-clean` verifies tracked `.tmp/semantic-validation` fixtures, clears only fixture runtime state such as `target-state` / `.reference-state`, and then runs the full smoke suite.
 - `validation-utils.runLoop` defaults `HARNESS_DISABLE_CODEX_AGENTS=1`, so deterministic validators do not depend on live Codex CLI availability; trusted live Codex/App Server gates remain separate.
 - `validate:codex-timeout` proves Codex wall-clock timeout, stale-output timeout, auth preflight timeout, process-tree cleanup, and timeout metadata persistence through the fake Codex harness.
+- Timeout state now settles before process-tree cleanup finishes, so child `close` / `error` races preserve exit code `124` and the exact timeout reason.
+- `npm test` now runs `validate:process` before `validate:core`, making process timeout/stale-output semantics a release-blocking local gate.
+- `round-contract.json` now includes `schema_version`, `artifact_type`, `run_id`, `created_at`, and `producer`, and `validate:release-product-start` asserts those fields in the install ZIP path.
 - Verification surface parsing strips path-like tokens before detecting surfaces, so paths such as `/tmp/harness_latest/review-budget-app` no longer mark the session as `test`.
 - Browser-like target families normalize workflow verification to browser-primary surfaces even when users mention test or CLI checks, preserving workflow release-gate probes through prepare.
 - `validate:source-bootstrap-guard` now creates `.tmp` before `mkdtemp`, so the clean source archive path no longer fails before checking source-bootstrap policy.

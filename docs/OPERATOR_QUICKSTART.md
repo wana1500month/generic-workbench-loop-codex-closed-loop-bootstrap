@@ -55,15 +55,16 @@ Use this sequence before treating the workbench as operational:
 
 ```bash
 npm run build
-npm run validate:security-guards
 npm test
+npm run validate:release
 ```
 
-Real Codex and App Server smoke checks still require a host with a usable `codex` binary and authenticated `CODEX_HOME`:
+For faster commit checks, run `npm run validate:fast`. Process-control failures are release blockers through `npm test`, because timeout/stale-output classification is part of the harness product.
+
+Real Codex and App Server smoke checks still require a trusted host with a usable `codex` binary and authenticated `CODEX_HOME`:
 
 ```bash
-npm run validate:codex:real-smoke:strict
-npm run validate:app-server:real-smoke:strict
+npm run validate:codex-live
 ```
 
 ## Security Defaults

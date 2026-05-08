@@ -28,12 +28,10 @@ const runSupervisor = async (args, env) =>
     child.stdout.on("data", (chunk) => {
       const text = chunk.toString();
       stdout += text;
-      process.stdout.write(text);
     });
     child.stderr.on("data", (chunk) => {
       const text = chunk.toString();
       stderr += text;
-      process.stderr.write(text);
     });
     child.on("error", rejectPromise);
     child.on("close", (code) => {
@@ -61,6 +59,7 @@ const main = async () => {
     ],
     {
       ...process.env,
+      HARNESS_DISABLE_CODEX_AGENTS: process.env.HARNESS_DISABLE_CODEX_AGENTS ?? "1",
       HARNESS_TEST_CRASH_AFTER_CHECKPOINT_ONCE: "1"
     }
   );

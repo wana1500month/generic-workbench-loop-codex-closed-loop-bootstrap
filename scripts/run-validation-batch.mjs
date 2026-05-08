@@ -24,6 +24,21 @@ const npmInvocationFor = (scriptName) => {
 };
 
 const suites = {
+  fast: [
+    "validate:intent-gate",
+    "validate:intake-gate",
+    "validate:front-door-session",
+    "validate:transport-mode",
+    "validate:security-guards",
+    "validate:score-policy",
+    "validate:loop-prepare",
+    "validate:loop-continue",
+    "validate:durable-memory"
+  ],
+  process: [
+    "validate:codex-timeout",
+    "validate:supervisor-timeout-prevention"
+  ],
   "product-front-door": [
     "validate:intent-gate",
     "validate:intake-gate",
@@ -39,7 +54,6 @@ const suites = {
     "validate:front-door-session",
     "validate:lifecycle-api",
     "validate:transport-mode",
-    "validate:codex-timeout",
     "validate:security-guards",
     "validate:score-policy",
     "validate:loop-prepare",
@@ -57,6 +71,10 @@ const suites = {
     "validate:attached-resume-smoke"
   ],
   external: [
+    "validate:reference-adapter:check",
+    "smoke:reference-adapter"
+  ],
+  "external-adapter": [
     "validate:reference-adapter:check",
     "smoke:reference-adapter"
   ]

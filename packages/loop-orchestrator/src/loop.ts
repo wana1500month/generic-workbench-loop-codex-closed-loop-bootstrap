@@ -3430,6 +3430,7 @@ export const runClosedLoop = async (input: {
               previousPatchRequest
             });
       contractArtifact = buildRoundContractArtifact({
+        runId,
         round,
         negotiationMode: lifecycleDecision.negotiation_mode,
         continuationAuthority: lifecycleDecision.continuation_authority,
