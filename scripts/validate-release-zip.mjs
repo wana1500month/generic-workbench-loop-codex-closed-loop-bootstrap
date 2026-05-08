@@ -173,6 +173,10 @@ const main = async () => {
       "release image must not include .tmp"
     );
     assert.ok(
+      !existsSync(join(releaseRoot, "packages", "loop-orchestrator", "tsconfig.tsbuildinfo")),
+      "release image must not include TypeScript incremental build metadata"
+    );
+    assert.ok(
       !existsSync(join(releaseRoot, "evals", "runs", "run-001")),
       "release image must not include previous run artifacts"
     );

@@ -3,7 +3,7 @@
 ## Current State
 
 - Status: control_plane_prototype
-- Latest decision: P0 artifact reproducibility now treats semantic fixtures as source-controlled inputs under `scripts/testing/fixtures`, with `.tmp/semantic-validation` rebuilt as runtime state and source archive reproduction as a release gate.
+- Latest decision: P0 artifact reproducibility now treats semantic fixtures as source-controlled inputs under `scripts/testing/fixtures`, with `.tmp/semantic-validation` rebuilt as runtime state, `*.tsbuildinfo` excluded from source/install candidates, build-output sentinels enforced, and source archive reproduction as a release gate.
 - Rounds executed: control-plane validations only; `build`, `validate:codex-timeout`, `validate:process`, `validate:fast`, `validate:resume-smoke`, `validate:attached-resume-smoke`, `validate:smoke-clean`, `release:zip`, and `validate:core` are green with pinned Node/npm.
 
 ## Recent Decisions

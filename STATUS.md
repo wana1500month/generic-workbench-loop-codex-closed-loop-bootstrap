@@ -5,7 +5,8 @@
 - Local validation is split into `validate:fast`, `validate:process`, `validate:core`, `validate:release`, `validate:codex-live`, and `validate:external-adapter`; `npm test` and `validate:release-gate` both run the process gate before core/release checks.
 - New `round-contract.json` writes include `schema_version`, `artifact_type`, `run_id`, `created_at`, and `producer` metadata for long-lived resume and migration audits.
 - Semantic validation fixtures now live under `scripts/testing/fixtures/semantic-validation`; `.tmp/semantic-validation` is hydrated as runtime state and is no longer the tracked source of truth.
-- Source archive reproducibility is now a first-class gate through `validate:source-archive-repro`, which proves a clean source candidate can run `npm ci`, `build`, `npm test`, `smoke-clean`, and `release`.
+- Source archive reproducibility is now a first-class gate through `validate:source-archive-repro`, which excludes `.tmp`, compiled dist, and TypeScript incremental metadata before proving a clean source candidate can run `npm ci`, force `build`, `npm test`, `smoke-clean`, and `release`.
+- Workspace builds now fail closed when required loop-orchestrator `dist` sentinels are missing after TypeScript exits, preventing stale `*.tsbuildinfo` from masking absent runtime imports.
 - Smoke validation now keeps tracked semantic adapter fixtures intact; `validate:smoke-clean` clears only fixture runtime state before proving the smoke suite is self-contained.
 - Release packaging now emits `.tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip` with `CODEX_APP_INSTALL.md` and `release-manifest.json`, while source checkouts carry `SOURCE_ARCHIVE_NOT_CODEX_APP_INSTALL.md` and the marker is excluded from the install ZIP.
 - Short run-control phrases such as `resume current loop`, `continue last run`, and `pick up where we left off` now route to `run_control` resume instead of falling through to `unknown`.

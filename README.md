@@ -66,7 +66,7 @@ Product-build discovery collects product, execution, and adapter-design intake. 
 - `npm run validate:core`: adapter-free deterministic integration gate
 - `npm run validate:smoke-clean`: hydrates `.tmp/semantic-validation` from `scripts/testing/fixtures/semantic-validation`, clears runtime state, and proves smoke is self-contained
 - `npm run validate:release`: builds the installable Codex app ZIP and validates release startup
-- `npm run validate:source-archive-repro`: stages a clean source archive candidate and runs `npm ci`, `build`, `npm test`, `smoke-clean`, and `release`
+- `npm run validate:source-archive-repro`: stages a clean source archive candidate without `.tmp`, compiled `dist`, or `*.tsbuildinfo`, then force-builds and runs `npm ci`, `build`, `npm test`, `smoke-clean`, and `release`
 - `npm run validate:codex-live`: trusted-runner-only live Codex and App Server gate
 
 `validate:reference-adapter:check` expects `REFERENCE_ADAPTER_CONTRACT` to be set. Without an attached adapter, external validation should fail closed.

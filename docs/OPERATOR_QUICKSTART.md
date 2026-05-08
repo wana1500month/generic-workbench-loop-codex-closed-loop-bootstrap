@@ -61,6 +61,8 @@ npm run validate:release
 npm run validate:source-archive-repro
 ```
 
+The source archive reproduction gate intentionally omits `.tmp/`, compiled `dist/`, and `*.tsbuildinfo`, then force-builds from the clean staged source before running tests and release packaging.
+
 For faster commit checks, run `npm run validate:fast`. Process-control failures are release blockers through `npm test`, because timeout/stale-output classification is part of the harness product.
 
 Real Codex and App Server smoke checks still require a trusted host with a usable `codex` binary and authenticated `CODEX_HOME`:

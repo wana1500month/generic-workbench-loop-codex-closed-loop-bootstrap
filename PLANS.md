@@ -83,6 +83,7 @@ Acceptance:
 - The repo should expose a lightweight runtime dashboard for attached monitoring through `loop:ui`.
 - Trusted environments should have a real `app-server` smoke validator in addition to the existing `codex exec` smoke, while developer hosts without a usable `codex` binary should remain `environment_blocked`.
 - Validation acceptance should stay split into `validate:fast`, `validate:process`, `validate:core`, `validate:release`, `validate:source-archive-repro`, `validate:codex-live`, and `validate:external-adapter`, with process-control and source-archive reproducibility failures blocking release gates.
+- Source and install archive candidates must exclude TypeScript incremental metadata, and build success must be backed by required compiled-output sentinels rather than TypeScript exit code alone.
 - Operator-facing docs should present `loop:intent`, `loop:discover`, `loop:prepare`, `loop:start:codex`, `loop:continue`, and `loop:status` as the canonical path; lower-level runner, phase, family, and adapter commands remain internal, recovery, validation, or compatibility surfaces.
 
 Validation:

@@ -71,27 +71,86 @@ const runCommand = async (command, args, options = {}) =>
     });
   });
 
-const npmInvocation = (args) => {
-  if (process.env.npm_execpath) {
-    return {
-      command: process.execPath,
-      args: [process.env.npm_execpath, ...args],
-      shell: false
-    };
-  }
-  return {
-    command: "npm",
-    args,
-    shell: process.platform === "win32"
+const npmCandidates = () => {
+  const candidates = [];
+  const addCliPath = (cliPath) => {
+    if (cliPath && existsSync(cliPath)) {
+      candidates.push({
+        command: process.execPath,
+        prefixArgs: [cliPath],
+        shell: false
+      });
+    }
   };
+
+  addCliPath(process.env.HARNESS_NPM_CLI);
+  addCliPath(process.env.npm_execpath);
+  if (process.platform === "win32") {
+    addCliPath(join("C:\\", "Program Files", "nodejs", "node_modules", "npm", "bin", "npm-cli.js"));
+  }
+  candidates.push({
+    command: "npm",
+    prefixArgs: [],
+    shell: process.platform === "win32"
+  });
+  return candidates;
 };
 
-const runNpm = async (cwd, args) => {
-  const invocation = npmInvocation(args);
+const npmMajorVersion = (stdout) => {
+  const match = stdout.trim().match(/^(\d+)\./);
+  return match ? Number.parseInt(match[1], 10) : 0;
+};
+
+let cachedNpmInvocation;
+
+const npmInvocation = async (args) => {
+  if (cachedNpmInvocation) {
+    return {
+      ...cachedNpmInvocation,
+      args: [...cachedNpmInvocation.prefixArgs, ...args]
+    };
+  }
+
+  const rejected = [];
+  for (const candidate of npmCandidates()) {
+    const versionResult = await runCommand(
+      candidate.command,
+      [...candidate.prefixArgs, "--version"],
+      {
+        cwd: repoRoot,
+        shell: candidate.shell,
+        silent: true
+      }
+    );
+    const major = versionResult.code === 0 ? npmMajorVersion(versionResult.stdout) : 0;
+    if (major >= 7) {
+      cachedNpmInvocation = candidate;
+      return {
+        ...candidate,
+        args: [...candidate.prefixArgs, ...args]
+      };
+    }
+    rejected.push(
+      `${candidate.command} ${candidate.prefixArgs.join(" ")} -> ${versionResult.stdout.trim() || versionResult.stderr.trim() || `exit ${versionResult.code}`}`
+    );
+  }
+
+  throw new Error(
+    [
+      "Could not find an npm executable new enough for source archive reproduction.",
+      "`npm ci` requires npm 5.7+; this validator requires npm 7+.",
+      `Rejected candidates: ${rejected.join("; ")}`
+    ].join(" ")
+  );
+};
+
+const runNpm = async (cwd, args, options = {}) => {
+  const invocation = await npmInvocation(args);
   const label = `npm ${args.join(" ")}`;
   process.stderr.write(`[source-archive-repro] ${label}\n`);
   const result = await runCommand(invocation.command, invocation.args, {
     cwd,
+    env: options.env ?? process.env,
     shell: invocation.shell
   });
   if (result.code !== 0) {
@@ -131,7 +190,8 @@ const explicitIgnore = (relativePath) =>
   relativePath === ".git" ||
   relativePath.startsWith(".git/") ||
   relativePath === "node_modules" ||
-  relativePath.startsWith("node_modules/");
+  relativePath.startsWith("node_modules/") ||
+  relativePath.endsWith(".tsbuildinfo");
 
 const shouldInclude = (relativePath, patterns) =>
   !explicitIgnore(relativePath) &&
@@ -267,12 +327,21 @@ const main = async () => {
       "source archive candidate must not include compiled dist"
     );
     assertPath(
+      !files.some((file) => file.endsWith(".tsbuildinfo")),
+      "source archive candidate must not include TypeScript incremental build metadata"
+    );
+    assertPath(
       !existsSync(join(sourceRoot, "CODEX_APP_INSTALL.md")),
       "source archive candidate must not include install ZIP marker"
     );
 
     await runNpm(sourceRoot, ["ci"]);
-    await runNpm(sourceRoot, ["run", "build"]);
+    await runNpm(sourceRoot, ["run", "build"], {
+      env: {
+        ...process.env,
+        HARNESS_FORCE_TYPESCRIPT_BUILD: "1"
+      }
+    });
     await runNpm(sourceRoot, ["test"]);
     await runNpm(sourceRoot, ["run", "validate:smoke-clean"]);
     await runNpm(sourceRoot, ["run", "validate:release"]);
