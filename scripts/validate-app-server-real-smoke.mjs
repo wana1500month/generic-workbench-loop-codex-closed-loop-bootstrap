@@ -159,6 +159,7 @@ const main = async () => {
       initialPhase: "pre_verification",
       initialStatus: "in_progress",
       initialNotes: ["Real app-server smoke validation."],
+      startInitialTurn: false,
       threadName: "real-app-server-smoke · attached-loop",
       defaultTaskTimeoutMs: 180_000,
       requestTimeoutMs: 60_000

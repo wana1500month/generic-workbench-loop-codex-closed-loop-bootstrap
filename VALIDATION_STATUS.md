@@ -1,8 +1,8 @@
 # Validation Status
 
-Generated at: 2026-05-09T04:34:09+09:00
+Generated at: 2026-05-09T06:23:59+09:00
 
-Validation scope: current working tree after source archive reproducibility hardening, semantic fixture relocation, TypeScript incremental metadata exclusion, source/install ZIP fail-fast messaging, and process validation gating.
+Validation scope: current working tree after source archive reproducibility hardening, semantic fixture relocation, TypeScript incremental metadata exclusion, source/install ZIP fail-fast messaging, process validation gating, and live Codex gate clarification.
 
 Git SHA at validation start: `ffb610caea1c42e60afb7039291807fa5765ebeb`
 
@@ -15,14 +15,17 @@ Runtime:
 
 Current validation state:
 
-- Green locally after this update: `build`, `validate:process`, `npm test`, `validate:smoke-clean`, `validate:release`, `validate:source-archive-repro`, and `validate:release-gate`.
+- Green locally after this update: `build`, `validate:process`, `npm test`, `validate:smoke-clean`, `validate:release`, `validate:source-archive-repro`, `validate:release-gate`, and `validate:codex-live`.
 - Requires trusted runner: `validate:codex-live` for real Codex strict smoke and App Server live smoke.
+- Live Codex gate structure: `validate:codex-binary-preflight` -> `validate:codex-auth-preflight:fake` -> `validate:codex:real-smoke:strict` -> `validate:app-server:real-smoke:strict`.
+- Local live runner: `codex-cli 0.128.0`, ChatGPT auth, file-backed auth with refresh token.
+- Environment note: hosts without an executable `codex` binary fail at `validate:codex-binary-preflight` with `HARNESS_CODEX_BIN` guidance rather than reaching strict smoke.
 
 Artifact scope:
 
 - `validated_artifact_type`: `git_checkout`, `source_archive_candidate`, `install_zip`
-- `source_archive_candidate_sha256`: `B7F680B5486A6B3485A6D16C54A47B4ED9B786D52B5DF38EA5A683E72356D3B7`
-- `source_archive_candidate_files`: `335`
+- `source_archive_candidate_sha256`: `530B838854A47492CE67D5D3197B6BFD7ED92498AF8199333819AAF7300F079D`
+- `source_archive_candidate_files`: `336`
 - `source_archive_commands_reproduced`: `npm ci`, `npm run build`, `npm test`, `npm run validate:smoke-clean`, `npm run validate:release`
 - `fixtures_included_in_source_archive`: true, under `scripts/testing/fixtures/semantic-validation`
 - `semantic_runtime_in_source_archive`: false, `.tmp/semantic-validation` is recreated during validation
@@ -34,8 +37,8 @@ Artifact scope:
 Release artifact:
 
 - Path: `.tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip`
-- Size: `1430626` bytes
-- SHA-256: `235A7AAA4B09ED7CF000FE37B3921D87B98BF8B7DE2AE02F64C5F6CEF54B6638`
+- Size: `1432339` bytes
+- SHA-256: `BD84E8D3A9709E8AD363D32E9C5845EEC897DCB251BA42599F5D618255D0474E`
 
 Release ZIP contents checked:
 
@@ -61,6 +64,7 @@ Passed commands:
 - `npm run validate:release`
 - `npm run validate:source-archive-repro`
 - `npm run validate:release-gate`
+- `npm run validate:codex-live`
 
 Release proof:
 
@@ -70,6 +74,8 @@ Release proof:
 - `validate:source-archive-repro` stages a source archive candidate without `.tmp/semantic-validation`, compiled dist, TypeScript incremental metadata, or install markers, then force-builds and proves `npm ci`, `build`, `npm test`, `smoke-clean`, and `release` from that clean copy.
 - `build` now validates required loop-orchestrator `dist` sentinels after TypeScript exits, so stale `*.tsbuildinfo` cannot mask missing runtime imports.
 - `validate:source-archive-repro` rejects npm candidates older than npm 7 before running nested `npm ci`, avoiding lifecycle `npm_execpath` contamination from old npm installations.
+- `validate:codex-live` now fails fast at `validate:codex-binary-preflight` when the real Codex binary is missing, keeps fake auth semantics under `validate:codex-auth-preflight:fake`, and then runs strict real `codex exec` plus App Server smoke.
+- App Server live smoke now starts directly with the task turn to avoid racing an initial status turn, and App Server interrupt cleanup tolerates `no active turn to interrupt` as a no-op race.
 - `validation-utils.runLoop` defaults `HARNESS_DISABLE_CODEX_AGENTS=1`, so deterministic validators do not depend on live Codex CLI availability; trusted live Codex/App Server gates remain separate.
 - `validate:codex-timeout` proves Codex wall-clock timeout, stale-output timeout, auth preflight timeout, process-tree cleanup, and timeout metadata persistence through the fake Codex harness.
 - Timeout state now settles before process-tree cleanup finishes, so child `close` / `error` races preserve exit code `124` and the exact timeout reason.

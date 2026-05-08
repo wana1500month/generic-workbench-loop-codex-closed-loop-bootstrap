@@ -65,9 +65,10 @@ The source archive reproduction gate intentionally omits `.tmp/`, compiled `dist
 
 For faster commit checks, run `npm run validate:fast`. Process-control failures are release blockers through `npm test`, because timeout/stale-output classification is part of the harness product.
 
-Real Codex and App Server smoke checks still require a trusted host with a usable `codex` binary and authenticated `CODEX_HOME`:
+Real Codex and App Server smoke checks still require a trusted host with a usable `codex` binary and authenticated `CODEX_HOME`. If `codex` is not on `PATH`, install Codex CLI or set `HARNESS_CODEX_BIN` before running the live gate:
 
 ```bash
+npm run validate:codex-binary-preflight
 npm run validate:codex-live
 ```
 

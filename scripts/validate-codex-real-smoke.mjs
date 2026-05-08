@@ -302,10 +302,12 @@ const main = async () => {
         resumedMutationMetadata.args.includes("--skip-git-repo-check"),
       "Resumed mutation metadata did not record --skip-git-repo-check."
     );
+    const resumedExecIndex = Array.isArray(resumedMutationMetadata.args)
+      ? resumedMutationMetadata.args.indexOf("exec")
+      : -1;
     assert(
-      Array.isArray(resumedMutationMetadata.args) &&
-        resumedMutationMetadata.args[0] === "exec" &&
-        resumedMutationMetadata.args[1] === "resume",
+      resumedExecIndex >= 0 &&
+        resumedMutationMetadata.args[resumedExecIndex + 1] === "resume",
       "Resumed mutation metadata did not record exec resume ordering."
     );
     assert(

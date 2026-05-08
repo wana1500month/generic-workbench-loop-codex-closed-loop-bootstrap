@@ -3,8 +3,8 @@
 ## Current State
 
 - Status: control_plane_prototype
-- Latest decision: P0 artifact reproducibility now treats semantic fixtures as source-controlled inputs under `scripts/testing/fixtures`, with `.tmp/semantic-validation` rebuilt as runtime state, `*.tsbuildinfo` excluded from source/install candidates, build-output sentinels enforced, and source archive reproduction as a release gate.
-- Rounds executed: control-plane validations only; `build`, `validate:codex-timeout`, `validate:process`, `validate:fast`, `validate:resume-smoke`, `validate:attached-resume-smoke`, `validate:smoke-clean`, `release:zip`, and `validate:core` are green with pinned Node/npm.
+- Latest decision: the release-gate path is green for supervised beta, and live Codex readiness is now separated into a real binary preflight plus fake auth semantics before strict Codex/App Server smoke.
+- Rounds executed: control-plane validations only; `build`, `validate:codex-timeout`, `validate:process`, `validate:fast`, `validate:resume-smoke`, `validate:attached-resume-smoke`, `validate:smoke-clean`, `release:zip`, `validate:core`, `validate:release-gate`, and `validate:codex-live` are green with pinned Node/npm on this host.
 
 ## Recent Decisions
 
@@ -19,8 +19,10 @@
 - Keep `done_when.md` aligned with the actual stop condition before closeout.
 - Keep the workbench identity sentence stable across `AGENTS.md`, `IDEA.md`, `SPEC.md`, and the durable memory files.
 - Use `init.sh` to rehydrate the workbench before assuming the environment drifted.
-- Use `npm run validate:release-gate` for local pre-release validation, including source archive reproduction, and `npm run validate:codex-live` only on a trusted Codex runner.
+- Use `npm run validate:release-gate` for local pre-release validation, including source archive reproduction, and run `npm run validate:codex-binary-preflight` / `npm run validate:codex-live` only on a trusted Codex runner.
 
 ## Latest Blocker
 
-- Live Codex and App Server strict smoke remain trusted-runner gates; deterministic validation now stays green without depending on live Codex CLI execution.
+- No active local release-gate blocker. Remaining risk is broader trusted-runner coverage across Codex CLI versions and external adapters.
+
+- Live Codex and App Server strict smoke passed on the local authenticated runner; repeat on additional trusted runners before broader external beta claims.

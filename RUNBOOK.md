@@ -70,7 +70,9 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `npm test`: release-blocking local test path; it runs `validate:process` before `validate:core`.
 - `npm run validate:release-gate`: local pre-release gate combining process, core, clean smoke, release ZIP validation, and source archive reproduction.
 - `npm run build`: validates required loop-orchestrator `dist` sentinels after TypeScript exits, so stale incremental build metadata cannot report success while runtime imports are missing.
-- `npm run validate:codex-live`: trusted-runner live Codex and App Server gate; strict smoke writes `.tmp/codex-real-smoke/latest-result.json`.
+- `npm run validate:codex-binary-preflight`: trusted-runner check that resolves `HARNESS_CODEX_BIN` or `codex`, runs `--version`, and fails fast with installation guidance when the binary is missing.
+- `npm run validate:codex-auth-preflight:fake`: deterministic fake-Codex auth semantics check; `validate:codex-auth-preflight` remains a compatibility alias.
+- `npm run validate:codex-live`: trusted-runner live Codex and App Server gate; it runs binary preflight before fake auth semantics, real `codex exec` strict smoke, and real App Server strict smoke.
 - `npm run validate:codex-strict-gate`: compatibility alias for `validate:codex-live`.
 
 ## Security guards

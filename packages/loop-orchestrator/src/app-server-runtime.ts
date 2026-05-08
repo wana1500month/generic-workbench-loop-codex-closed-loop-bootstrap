@@ -145,6 +145,9 @@ const appServerCommand = (): { command: string; args: string[] } => {
   });
 };
 
+const isNoActiveTurnInterruptError = (error: unknown): boolean =>
+  error instanceof Error && /no active turn to interrupt/i.test(error.message);
+
 const transportPromptText = (input: {
   runId: string;
   round: number;
@@ -340,6 +343,7 @@ class LiveAppServerTransport implements AppServerTransportController {
     initialPhase: ControllerRoundPhase;
     initialStatus: ControllerPhaseStatus;
     initialNotes?: string[];
+    startInitialTurn?: boolean;
   }): Promise<void> {
     await mkdir(join(this.cwd, "evals", "runs", this.runId, "runtime"), {
       recursive: true
@@ -397,7 +401,10 @@ class LiveAppServerTransport implements AppServerTransportController {
       }
     }
 
-    if (this.snapshotState.turn_status !== "inProgress") {
+    if (
+      input.startInitialTurn !== false &&
+      this.snapshotState.turn_status !== "inProgress"
+    ) {
       await this.startTurn({
         round: input.initialRound,
         phase: input.initialPhase,
@@ -620,11 +627,19 @@ class LiveAppServerTransport implements AppServerTransportController {
           ],
           expectedTurnId: this.snapshotState.turn_id
         });
-        await this.request("turn/interrupt", {
-          threadId: this.snapshotState.thread_id,
-          turnId: this.snapshotState.turn_id
-        });
-        this.snapshotState.last_request_method = "turn/interrupt";
+        try {
+          await this.request("turn/interrupt", {
+            threadId: this.snapshotState.thread_id,
+            turnId: this.snapshotState.turn_id
+          });
+          this.snapshotState.last_request_method = "turn/interrupt";
+        } catch (error) {
+          if (!isNoActiveTurnInterruptError(error)) {
+            throw error;
+          }
+          this.snapshotState.turn_status = "interrupted";
+          this.snapshotState.last_request_method = "turn/interrupt";
+        }
       }
       if (this.snapshotState.thread_id) {
         await this.request("thread/unsubscribe", {
@@ -730,10 +745,17 @@ class LiveAppServerTransport implements AppServerTransportController {
       this.snapshotState.turn_status === "inProgress" &&
       this.snapshotState.thread_id
     ) {
-      await this.request("turn/interrupt", {
-        threadId: this.snapshotState.thread_id,
-        turnId: this.snapshotState.turn_id
-      });
+      try {
+        await this.request("turn/interrupt", {
+          threadId: this.snapshotState.thread_id,
+          turnId: this.snapshotState.turn_id
+        });
+      } catch (error) {
+        if (!isNoActiveTurnInterruptError(error)) {
+          throw error;
+        }
+        this.snapshotState.turn_status = "interrupted";
+      }
       this.snapshotState.last_request_method = "turn/interrupt";
       await this.persistState();
     }
@@ -1291,6 +1313,7 @@ export const startAppServerTransport = async (input: {
   initialPhase: ControllerRoundPhase;
   initialStatus: ControllerPhaseStatus;
   initialNotes?: string[];
+  startInitialTurn?: boolean;
   threadName: string;
   defaultTaskTimeoutMs: number;
   requestTimeoutMs: number;
@@ -1318,7 +1341,8 @@ export const startAppServerTransport = async (input: {
       initialRound: input.initialRound,
       initialPhase: input.initialPhase,
       initialStatus: input.initialStatus,
-      initialNotes: input.initialNotes
+      initialNotes: input.initialNotes,
+      startInitialTurn: input.startInitialTurn
     });
     return controller;
   } catch (error) {
