@@ -43,6 +43,7 @@ type RunCommandArgs = {
   resumeRunPath?: string;
   allowResumeMigration?: boolean;
   allowManualProtocolSeed?: boolean;
+  codexAppForeground?: boolean;
   allowShellResumeDowngrade?: boolean;
   allowExternalTargetRoot?: boolean;
   forceReopenTerminal?: boolean;
@@ -151,6 +152,7 @@ interface StatusReport {
 
 const helpTokens = new Set(["help", "--help", "-h"]);
 const manualProtocolSeedFlag = "--allow-manual-protocol-seed";
+const codexAppForegroundFlag = "--codex-app-foreground";
 const shellResumeDowngradeFlag = "--allow-shell-resume-downgrade";
 const externalTargetRootFlag = "--allow-external-target-root";
 const phaseAliasMap = new Map<string, ControllerRoundPhase>([
@@ -186,7 +188,7 @@ const usageLines = [
   "  npm run loop:prepare",
   "  npm run loop:prepare -- --json",
   "  npm run loop:start:codex",
-  "  npm run loop:start:codex -- --json [--run-id <prepared-run-id>]",
+  `  npm run loop:start:codex -- --json [--run-id <prepared-run-id>] [${codexAppForegroundFlag}]`,
   "  npm run loop:start:bg",
   "  npm run loop:start:manual",
   "  npm run loop:start:manual -- --json",
@@ -208,7 +210,7 @@ const usageLines = [
   "  loop:prepare writes the session-level build brief, run contract, operator surface, session status, session stream, and execution plan without starting the loop.",
   "  loop:start:codex is the Codex-owned current-thread start. loop:start:bg is the detached supervisor surface. loop:start:manual is the intentional shell-owned manual-protocol start.",
   "  Deprecated aliases remain available: loop:run -> loop:start:bg, loop:single:codex -> loop:start:codex, loop:single:manual -> loop:start:manual, loop:single -> detached single-attempt seed.",
-  `  shell-launched attached/current-thread seeds require a bound Codex thread id unless you intentionally pass ${manualProtocolSeedFlag}.`,
+  `  shell-launched attached/current-thread seeds require a bound Codex thread id unless you intentionally pass ${manualProtocolSeedFlag}; Codex app skills without CODEX_THREAD_ID may pass ${codexAppForegroundFlag} with --run-id.`,
   `  adapter target_root values outside this repository require ${externalTargetRootFlag} or HARNESS_ALLOW_EXTERNAL_TARGET_ROOT=1.`,
   "  resume/phase preserve the existing run controller and transport unless you override them explicitly.",
   `  app-visible current-thread runs must continue from the same Codex thread unless you intentionally pass ${shellResumeDowngradeFlag}.`,
@@ -268,6 +270,7 @@ const parseRunArgs = (argv: readonly string[]): RunCommandArgs => {
   let resumeRunPath: string | undefined;
   let allowResumeMigration = false;
   let allowManualProtocolSeed = false;
+  let codexAppForeground = false;
   let allowShellResumeDowngrade = false;
   let allowExternalTargetRoot = false;
   let forceReopenTerminal = false;
@@ -348,6 +351,11 @@ const parseRunArgs = (argv: readonly string[]): RunCommandArgs => {
 
     if (value === manualProtocolSeedFlag) {
       allowManualProtocolSeed = true;
+      continue;
+    }
+
+    if (value === codexAppForegroundFlag) {
+      codexAppForeground = true;
       continue;
     }
 
@@ -503,6 +511,7 @@ const parseRunArgs = (argv: readonly string[]): RunCommandArgs => {
     resumeRunPath,
     allowResumeMigration,
     allowManualProtocolSeed,
+    codexAppForeground,
     allowShellResumeDowngrade,
     allowExternalTargetRoot,
     forceReopenTerminal,
@@ -998,6 +1007,8 @@ const validateSeedOwnership = (input: {
   controllerMode?: ControllerMode;
   transportMode?: TransportMode;
   allowManualProtocolSeed: boolean;
+  codexAppForeground: boolean;
+  preparedRunId?: string;
 }): string | undefined => {
   if (
     input.controllerMode !== "attached" ||
@@ -1014,9 +1025,22 @@ const validateSeedOwnership = (input: {
   if (input.allowManualProtocolSeed) {
     return undefined;
   }
+  const assumedAppForeground =
+    input.codexAppForeground ||
+    process.env.HARNESS_CODEX_APP_FOREGROUND === "1";
+  if (assumedAppForeground && input.preparedRunId) {
+    return undefined;
+  }
+  if (assumedAppForeground && !input.preparedRunId) {
+    return [
+      `Assumed Codex app foreground starts require --run-id <prepared-run-id> with ${codexAppForegroundFlag}.`,
+      "This prevents an unbound app shell from consuming the wrong ready_to_start session."
+    ].join(" ");
+  }
   return [
     "Shell-launched attached/current-thread seeds require a bound Codex thread id.",
     "Start this run from the Codex app so $loop-control can launch the Codex-owned foreground thread,",
+    `pass ${codexAppForegroundFlag} with --run-id from a Codex app skill when CODEX_THREAD_ID is unavailable,`,
     `or rerun with ${manualProtocolSeedFlag} if you intentionally want a manual-protocol shell seed.`
   ].join(" ");
 };
@@ -1365,11 +1389,22 @@ const main = async (): Promise<void> => {
     args.executorMode ??
     envExecutorMode ??
     (args.resumeRunPath ? undefined : defaultExecutorMode);
+  if (args.codexAppForeground) {
+    process.env.HARNESS_CODEX_APP_FOREGROUND = "1";
+    process.env.HARNESS_LAUNCH_ORIGIN = "codex-app-thread";
+    process.env.HARNESS_THREAD_BINDING_STATE =
+      process.env.CODEX_THREAD_ID?.trim() ? "bound" : "assumed";
+    process.env.HARNESS_SURFACE_OWNER = "stock-codex-thread";
+    process.env.HARNESS_ENTRYPOINT = "skill";
+    process.env.HARNESS_APP_VISIBILITY = "visible-in-stock-app";
+  }
   if (!args.resumeRunPath) {
     const seedOwnershipError = validateSeedOwnership({
       controllerMode,
       transportMode,
-      allowManualProtocolSeed: args.allowManualProtocolSeed ?? false
+      allowManualProtocolSeed: args.allowManualProtocolSeed ?? false,
+      codexAppForeground: args.codexAppForeground ?? false,
+      preparedRunId: args.preparedRunId
     });
     if (seedOwnershipError) {
       console.error(seedOwnershipError);

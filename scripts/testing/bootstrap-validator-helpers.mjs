@@ -120,6 +120,8 @@ export const createBootstrapFixture = async (tempRoot, answerOverrides = {}) => 
     checkCommand: "npm test",
     readyUrl: "http://127.0.0.1:3000/",
     appUrl: "http://127.0.0.1:3000/",
+    verificationSurfaces: ["browser"],
+    workflowChecks: [],
     constraints: [],
     qualityBar: ["basic flow works end to end"],
     notes: "validator fixture",

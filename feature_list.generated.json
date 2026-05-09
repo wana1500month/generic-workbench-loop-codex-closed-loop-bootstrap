@@ -18,7 +18,7 @@
         "The workflow works in the intended product path."
       ],
       "notes": [
-        "loop:intent, loop:intake, loop:discover, and operator-facing skills expose the lane-oriented front door; product prepare now writes run-local generated adapter artifacts and indexed ready_to_start markers."
+        "loop:intent, loop:intake, loop:discover, and operator-facing skills expose the lane-oriented front door; product prepare writes run-local generated adapter artifacts, indexed ready_to_start markers, and human-readable ready-to-start guidance."
       ]
     },
     {
@@ -57,7 +57,7 @@
         "The workflow works in the intended product path."
       ],
       "notes": [
-        "Attached/app-server resume validation passes, prepared sessions now index ready_to_start by run and thread, and app foreground/release gates pass without requiring a local codex binary."
+        "Attached/app-server resume validation passes, prepared sessions index ready_to_start by run and thread, validator runs can isolate HARNESS_RUNS_DIRECTORY, and CODEX_THREAD_ID-less app foreground starts require explicit --run-id plus --codex-app-foreground."
       ]
     },
     {
@@ -70,7 +70,7 @@
         "The harness should read clearly from its artifacts alone."
       ],
       "notes": [
-        "Session-status, session-stream, operator-surface, transport-state, run-local adapter plans, and ready indexes are now projected, while broader docs continue to be tightened."
+        "Session-status, session-stream, operator-surface, transport-state, run-local adapter plans, ready indexes, and runtime/ready-to-start.md are now projected, while broader docs continue to be tightened."
       ]
     },
     {
@@ -109,7 +109,7 @@
         "The repo structure should not distract from the workbench or its harness engine."
       ],
       "notes": [
-        "Generated product adapter artifacts moved under evals/runs/<run-id>/generated-adapter so repo root no longer receives singleton product-build outputs during prepare."
+        "Generated product adapter artifacts moved under evals/runs/<run-id>/generated-adapter, generated browser contracts now avoid product-scope pollution from implicit API/draft/error probes, and semantic workflow selectors are the primary release contract."
       ]
     },
     {
@@ -122,7 +122,7 @@
         "The generic front door routes product_build, harness_design, run_resume, and evaluator_tuning reliably, durable memory stays identity-coherent, and control-plane validations pass without bundling a product surface."
       ],
       "notes": [
-        "validate:app and validate:app-release are green for the Codex app foreground/install path; trusted transport lanes and external adapters remain separate proof surfaces."
+        "The Codex app foreground/install path has focused green checks for generated verification contracts, run-local adapter isolation, thread-ready consumption, front-door parsing, transport mode, and release ZIP product start; trusted transport lanes and external adapters remain separate proof surfaces."
       ]
     }
   ]

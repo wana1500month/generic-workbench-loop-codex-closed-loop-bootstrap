@@ -9,7 +9,8 @@ import {
   ensureBuild,
   importDist,
   readJsonFile,
-  repoRoot
+  repoRoot,
+  runCommand
 } from "./testing/bootstrap-validator-helpers.mjs";
 
 const safeRm = async (path, allowedRoot) => {
@@ -60,7 +61,7 @@ const main = async () => {
   const workspaceDirectory = join(tempRoot, "workspace");
   const ideaPath = join(workspaceDirectory, "IDEA.md");
   const sessionsDirectory = join(tempRoot, "front-door-sessions");
-  const runsDirectory = join(repoRoot, "evals", "runs");
+  const runsDirectory = join(tempRoot, "runs");
   const repoRootIntakePath = join(repoRoot, "intake.json");
   const repoTmpPath = join(repoRoot, "tmp");
   const repoRootIntakeExisted = existsSync(repoRootIntakePath);
@@ -68,14 +69,24 @@ const main = async () => {
   const previousEnv = {
     HARNESS_FRONT_DOOR_SESSIONS_DIRECTORY:
       process.env.HARNESS_FRONT_DOOR_SESSIONS_DIRECTORY,
+    HARNESS_RUNS_DIRECTORY: process.env.HARNESS_RUNS_DIRECTORY,
     CODEX_THREAD_ID: process.env.CODEX_THREAD_ID,
     HARNESS_THREAD_BINDING_STATE: process.env.HARNESS_THREAD_BINDING_STATE,
-    HARNESS_LAUNCH_ORIGIN: process.env.HARNESS_LAUNCH_ORIGIN
+    HARNESS_LAUNCH_ORIGIN: process.env.HARNESS_LAUNCH_ORIGIN,
+    HARNESS_SURFACE_OWNER: process.env.HARNESS_SURFACE_OWNER,
+    HARNESS_ENTRYPOINT: process.env.HARNESS_ENTRYPOINT,
+    HARNESS_APP_VISIBILITY: process.env.HARNESS_APP_VISIBILITY,
+    HARNESS_CODEX_APP_FOREGROUND: process.env.HARNESS_CODEX_APP_FOREGROUND
   };
   process.env.HARNESS_FRONT_DOOR_SESSIONS_DIRECTORY = sessionsDirectory;
+  process.env.HARNESS_RUNS_DIRECTORY = runsDirectory;
   delete process.env.CODEX_THREAD_ID;
   delete process.env.HARNESS_THREAD_BINDING_STATE;
   delete process.env.HARNESS_LAUNCH_ORIGIN;
+  delete process.env.HARNESS_SURFACE_OWNER;
+  delete process.env.HARNESS_ENTRYPOINT;
+  delete process.env.HARNESS_APP_VISIBILITY;
+  delete process.env.HARNESS_CODEX_APP_FOREGROUND;
   await mkdir(workspaceDirectory, { recursive: true });
   await writeFile(
     ideaPath,
@@ -184,7 +195,57 @@ const main = async () => {
     const resolvedA = await findLatestPreparedRunAwaitingStart(runsDirectory, threadA);
     assert.equal(resolvedA?.runId, preparedA.runId);
 
-    await clearReadyToStartSessionMarker(runsDirectory, markerBByThread);
+    const assumedStart = await runCommand(
+      process.execPath,
+      [
+        "./scripts/loop-runner.mjs",
+        "--single",
+        "--controller-mode",
+        "attached",
+        "--transport",
+        "current-thread",
+        "--json",
+        "--run-id",
+        preparedB.runId,
+        "--codex-app-foreground"
+      ],
+      {
+        env: {
+          ...process.env,
+          CODEX_THREAD_ID: "",
+          HARNESS_RUNS_DIRECTORY: runsDirectory,
+          HARNESS_CODEX_APP_FOREGROUND: "1",
+          HARNESS_LAUNCH_ORIGIN: "codex-app-thread",
+          HARNESS_THREAD_BINDING_STATE: "assumed",
+          HARNESS_SURFACE_OWNER: "stock-codex-thread",
+          HARNESS_ENTRYPOINT: "skill",
+          HARNESS_APP_VISIBILITY: "visible-in-stock-app"
+        }
+      }
+    );
+    assert.equal(
+      assumedStart.code,
+      0,
+      `assumed foreground start failed.\nSTDOUT:\n${assumedStart.stdout}\nSTDERR:\n${assumedStart.stderr}`
+    );
+    const assumedStartReport = JSON.parse(assumedStart.stdout);
+    assert.equal(assumedStartReport.run_directory, preparedB.runDirectory);
+    assert.equal(assumedStartReport.stop_reason, "awaiting_codex_checkpoint");
+    assert.equal(
+      assumedStartReport.operator_surface.presentation_mode,
+      "foreground-thread"
+    );
+    assert.equal(
+      assumedStartReport.operator_surface.thread_binding_state,
+      "assumed"
+    );
+    assert.equal(
+      assumedStartReport.operator_surface.app_visibility,
+      "visible-in-stock-app"
+    );
+    assert.equal(assumedStartReport.active.ui_visibility, "internal_checkpoint");
+    assert.equal(assumedStartReport.active.foreground_owner, "codex");
+
     assert.ok(
       existsSync(readyToStartMarkerPathForRun(runsDirectory, preparedA.runId)),
       "clearing thread B must not remove thread A by-run marker"
@@ -205,6 +266,11 @@ const main = async () => {
   } finally {
     process.env.HARNESS_FRONT_DOOR_SESSIONS_DIRECTORY =
       previousEnv.HARNESS_FRONT_DOOR_SESSIONS_DIRECTORY;
+    if (previousEnv.HARNESS_RUNS_DIRECTORY === undefined) {
+      delete process.env.HARNESS_RUNS_DIRECTORY;
+    } else {
+      process.env.HARNESS_RUNS_DIRECTORY = previousEnv.HARNESS_RUNS_DIRECTORY;
+    }
     if (previousEnv.CODEX_THREAD_ID === undefined) {
       delete process.env.CODEX_THREAD_ID;
     } else {
@@ -220,6 +286,18 @@ const main = async () => {
       delete process.env.HARNESS_LAUNCH_ORIGIN;
     } else {
       process.env.HARNESS_LAUNCH_ORIGIN = previousEnv.HARNESS_LAUNCH_ORIGIN;
+    }
+    for (const key of [
+      "HARNESS_SURFACE_OWNER",
+      "HARNESS_ENTRYPOINT",
+      "HARNESS_APP_VISIBILITY",
+      "HARNESS_CODEX_APP_FOREGROUND"
+    ]) {
+      if (previousEnv[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = previousEnv[key];
+      }
     }
     for (const prepared of preparedRuns) {
       await safeRm(prepared.runDirectory, runsDirectory);

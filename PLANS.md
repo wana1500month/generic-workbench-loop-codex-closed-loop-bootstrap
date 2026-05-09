@@ -79,6 +79,9 @@ Acceptance:
 - Installable release ZIPs should be the documented Codex app artifact, with source archives treated as bootstrap-required developer inputs rather than zero-touch installs.
 - Dist-missing source archives should not trigger local npm bootstrap from skill helpers or front-door wrappers unless the operator explicitly opts in.
 - Product-build attached generator task artifacts should expose product-facing deliverables and release-gate selector requirements, not internal harness control-plane checks.
+- Product-build generated verification profiles should preserve the requested product surface: browser-only builds must not inherit API probes, draft/persistence probes, or error-recovery probes unless intake explicitly asks for those surfaces or behaviors, and generated workflow selectors should be semantic-first with legacy selectors as fallbacks.
+- App foreground starts without a stable `CODEX_THREAD_ID` should be allowed only as assumed-foreground starts with an explicit prepared `--run-id`, so unbound app skills cannot consume the wrong ready session.
+- Validator-created runs should be isolated with `HARNESS_RUNS_DIRECTORY` instead of writing transient ready markers into the operator's real `evals/runs`.
 - Outer-timeout prevention should live in a separate supervisor surface that can restart the controller from `--resume-run` state, survive launcher-shell death when detached, and discover the owned run through an explicit supervisor marker instead of newest-run guessing.
 - The repo should expose a lightweight runtime dashboard for attached monitoring through `loop:ui`.
 - Trusted environments should have a real `app-server` smoke validator in addition to the existing `codex exec` smoke, while developer hosts without a usable `codex` binary should remain `environment_blocked`.
@@ -102,6 +105,8 @@ Validation:
 - `npm run validate:app-server-interrupted-generator`
 - `npm run validate:supervisor-timeout-prevention`
 - `npm run validate:resume-smoke`
+- `npm run validate:browser-only-no-api-probes`
+- `npm run validate:semantic-workflow-selectors`
 
 ## M3. External adapter boundary
 

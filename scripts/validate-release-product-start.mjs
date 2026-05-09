@@ -438,6 +438,8 @@ const main = async () => {
     assert.match(attachedPrompt, /가계부 앱/);
     assert.match(attachedPrompt, /수입\/지출 기록/);
     assert.match(attachedPrompt, /Required release-gate selectors/);
+    assert.match(attachedPrompt, /\[data-workflow-id='workflow-1'\]/);
+    assert.match(attachedPrompt, /\[data-workflow-action='primary'\]/);
     assert.match(attachedPrompt, /\[data-testid='feature-1-action'\]/);
     assert.doesNotMatch(attachedPrompt, /planner_context_surface_reserved/);
     assert.doesNotMatch(attachedPrompt, /packages\/loop-orchestrator\/src/);

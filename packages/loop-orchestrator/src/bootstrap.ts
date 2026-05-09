@@ -850,6 +850,164 @@ const liveVerificationModesForFamily = (targetFamily: BootstrapTargetFamily) =>
     ...(apiBackedFamily(targetFamily) ? ["api"] : [])
   ]) as Array<"browser" | "api">;
 
+const verificationSurfaceSetFor = (answers: BootstrapAnswers): Set<VerificationSurface> =>
+  new Set(
+    answers.verificationSurfaces.length > 0
+      ? answers.verificationSurfaces
+      : defaultVerificationSurfacesForFamily(answers.targetFamily)
+  );
+
+const browserSurfaceRequested = (answers: BootstrapAnswers): boolean =>
+  verificationSurfaceSetFor(answers).has("browser");
+
+const apiSurfaceRequested = (answers: BootstrapAnswers): boolean =>
+  verificationSurfaceSetFor(answers).has("api");
+
+const targetSurfacesForAnswers = (answers: BootstrapAnswers): TargetSurface[] =>
+  uniqueList([
+    ...(browserSurfaceRequested(answers) ? ["browser"] : []),
+    ...(apiSurfaceRequested(answers) ? ["api"] : [])
+  ]) as TargetSurface[];
+
+const liveVerificationModesForAnswers = (
+  answers: BootstrapAnswers
+): NonNullable<VerificationProfile["required_live_verification_modes"]> =>
+  uniqueList([
+    ...(browserSurfaceRequested(answers) ? ["browser"] : []),
+    ...(apiSurfaceRequested(answers) ? ["api"] : []),
+    ...(verificationSurfaceSetFor(answers).has("test") ||
+    verificationSurfaceSetFor(answers).has("cli")
+      ? ["shell"]
+      : [])
+  ]) as NonNullable<VerificationProfile["required_live_verification_modes"]>;
+
+const productIntentText = (answers: BootstrapAnswers): string =>
+  [
+    answers.title,
+    answers.summary,
+    answers.finishLine,
+    ...answers.coreFeatures,
+    ...answers.qualityBar,
+    ...(answers.mustNotBreak ?? []),
+    ...(answers.failureExpectations ?? []),
+    ...(answers.continuityBoundaries ?? []),
+    ...(answers.referenceSignals ?? []),
+    answers.notes ?? ""
+  ]
+    .join(" ")
+    .toLowerCase();
+
+const shouldProbeContinuity = (answers: BootstrapAnswers): boolean => {
+  const continuityBoundaries = new Set(
+    (answers.continuityBoundaries ?? []).map((boundary) => boundary.toLowerCase())
+  );
+  if (
+    continuityBoundaries.has("reload") ||
+    continuityBoundaries.has("refresh") ||
+    continuityBoundaries.has("reopen")
+  ) {
+    return true;
+  }
+
+  return /저장|복원|새로고침|리로드|유지|초안|드래프트|임시저장|autosave|draft|persist|persistence|restore|reload|refresh|reopen|local storage|session storage|state continuity/.test(
+    productIntentText(answers)
+  );
+};
+
+const shouldProbeErrorRecovery = (answers: BootstrapAnswers): boolean => {
+  if ((answers.failureExpectations ?? []).length > 0) {
+    return true;
+  }
+
+  return /오류|에러|검증|실패|거부|잘못된|invalid|validation|reject|recovery|error path|failure/.test(
+    productIntentText(answers)
+  );
+};
+
+const probeAllowedForSurfaces = (
+  probe: VerificationCoreProbe,
+  surfaces: ReadonlySet<VerificationSurface>
+): boolean => {
+  const tags = new Set(probe.assertion_tags ?? []);
+  if (probe.target_manifest_key === "api_base_url" || probe.mode === "http_json") {
+    return surfaces.has("api");
+  }
+  if (tags.has("api")) {
+    return surfaces.has("api");
+  }
+  if (probe.mode === "browser_journey" || probe.mode === "browser" || tags.has("browser")) {
+    return surfaces.has("browser");
+  }
+  if (probe.mode === "shell_command") {
+    return surfaces.has("test") || surfaces.has("cli");
+  }
+  return true;
+};
+
+const probeAllowedForProductIntent = (
+  probe: VerificationCoreProbe,
+  answers: BootstrapAnswers
+): boolean => {
+  const tags = new Set(probe.assertion_tags ?? []);
+  if ((tags.has("persistence") || tags.has("consistency")) && !shouldProbeContinuity(answers)) {
+    return false;
+  }
+  if (tags.has("error_path") && !shouldProbeErrorRecovery(answers)) {
+    return false;
+  }
+  return true;
+};
+
+const filterCriteriaForActiveProbes = (
+  criteria: readonly NonNullable<VerificationProfile["criteria"]>[number][] | undefined,
+  probes: readonly VerificationCoreProbe[]
+): VerificationProfile["criteria"] => {
+  const activeAssertionIds = new Set(
+    probes
+      .map((probe) => probe.assertion_id)
+      .filter((assertionId): assertionId is string => Boolean(assertionId))
+  );
+
+  return (criteria ?? []).filter((criterion) => {
+    if (
+      criterion.criterion_id === "target_accessible" ||
+      criterion.criterion_id === "command_checks"
+    ) {
+      return true;
+    }
+    if (!criterion.assertion_id) {
+      return true;
+    }
+    return activeAssertionIds.has(criterion.assertion_id);
+  });
+};
+
+const filterVerificationProfileForAnswers = (
+  profile: VerificationProfile,
+  answers: BootstrapAnswers
+): VerificationProfile => {
+  const surfaces = verificationSurfaceSetFor(answers);
+  const coreProbes = (profile.core_probes ?? []).filter(
+    (probe) =>
+      probeAllowedForSurfaces(probe, surfaces) &&
+      probeAllowedForProductIntent(probe, answers)
+  );
+
+  return {
+    ...profile,
+    expected_target_surfaces: targetSurfacesForAnswers(answers),
+    required_live_verification_modes: liveVerificationModesForAnswers(answers),
+    core_probes: coreProbes,
+    criteria: filterCriteriaForActiveProbes(profile.criteria, coreProbes),
+    minimum_assertion_tag_counts: minimumAssertionTagCountsForGeneratedProbes(coreProbes),
+    minimum_feature_release_assertions: Math.max(
+      coreProbes.filter((probe) => (probe.role ?? "supporting") === "release_gate")
+        .length,
+      1
+    )
+  };
+};
+
 const buildGeneratedQualityAxes = (
   answers: BootstrapAnswers
 ): NonNullable<VerificationProfile["quality_contract"]>["quality_axes"] => {
@@ -889,15 +1047,20 @@ const buildGeneratedQualityAxes = (
       reference_signals: topReferenceSignals(answers, 4)
     },
     ...featureAxes,
-    {
-      axis_id: "error_recovery",
-      label: "Error Recovery",
-      description: "Invalid flows should fail with a visible, explicit recovery state.",
-      desired_outcome: "Invalid flows should surface a clear recovery affordance instead of silently breaking.",
-      preserve_signals: topPreserveSignals(answers, 4),
-      reference_signals: topReferenceSignals(answers, 4)
-    },
-    ...(browserBackedFamily(answers.targetFamily) || apiBackedFamily(answers.targetFamily)
+    ...(shouldProbeErrorRecovery(answers)
+      ? [
+          {
+            axis_id: "error_recovery",
+            label: "Error Recovery",
+            description: "Invalid flows should fail with a visible, explicit recovery state.",
+            desired_outcome:
+              "Invalid flows should surface a clear recovery affordance instead of silently breaking.",
+            preserve_signals: topPreserveSignals(answers, 4),
+            reference_signals: topReferenceSignals(answers, 4)
+          }
+        ]
+      : []),
+    ...(shouldProbeContinuity(answers)
       ? [
           {
             axis_id: "state_continuity",
@@ -1239,10 +1402,15 @@ const buildGeneratedCoreProbes = (
   const titleSlug = slugify(answers.title);
   const qualityContract = buildGeneratedQualityContract(answers);
   const selectors = {
-    appShell: answers.probeHints?.appShellSelector ?? "[data-testid='app-shell']",
+    appShell:
+      answers.probeHints?.appShellSelector ??
+      "[data-harness='app-shell'], [data-testid='app-shell']",
     success:
-      answers.probeHints?.successSelector ?? "[data-testid='finish-line-ready']",
-    error: answers.probeHints?.errorSelector ?? "[data-testid='error-banner']",
+      answers.probeHints?.successSelector ??
+      "[data-harness='finish-line-ready'], [data-testid='finish-line-ready']",
+    error:
+      answers.probeHints?.errorSelector ??
+      "[data-harness='error-banner'], [data-testid='error-banner']",
     draftInput:
       answers.probeHints?.persistenceInputSelector ?? "[data-testid='draft-input']",
     saveAction:
@@ -1255,21 +1423,15 @@ const buildGeneratedCoreProbes = (
     errorPath: answers.probeHints?.apiErrorPath ?? "quality/error-path",
     persistence: answers.probeHints?.apiPersistencePath ?? "quality/persistence"
   };
-  const continuityBoundaries = new Set(
-    (answers.continuityBoundaries ?? []).map((boundary) => boundary.toLowerCase())
-  );
-  const shouldProbeContinuity =
-    continuityBoundaries.size === 0 ||
-    continuityBoundaries.has("reload") ||
-    continuityBoundaries.has("refresh") ||
-    continuityBoundaries.has("reopen");
+  const requestedVerificationSurfaces = Array.from(verificationSurfaceSetFor(answers));
+  const includeContinuityProbe = shouldProbeContinuity(answers);
+  const includeErrorRecoveryProbe = shouldProbeErrorRecovery(answers);
   const workflowChecks =
     (answers.workflowChecks ?? []).length > 0
       ? answers.workflowChecks
       : defaultWorkflowChecksFromCoreFeatures(
           answers.coreFeatures,
-          answers.verificationSurfaces ??
-            defaultVerificationSurfacesForFamily(answers.targetFamily)
+          requestedVerificationSurfaces
         ).map(toBootstrapWorkflowCheck);
   const featureSlugs = workflowChecks
     .slice(0, 5)
@@ -1299,7 +1461,7 @@ const buildGeneratedCoreProbes = (
     });
   }
 
-  if (browserBackedFamily(answers.targetFamily)) {
+  if (browserSurfaceRequested(answers)) {
     probes.push(
       buildBrowserJourneyProbe({
         probeId: `${titleSlug}-finish-line`,
@@ -1313,23 +1475,27 @@ const buildGeneratedCoreProbes = (
           { action: "assert_visible", selector: selectors.success }
         ]
       }),
-      buildBrowserJourneyProbe({
-        probeId: `${titleSlug}-error-recovery`,
-        label: `Invalid browser flows surface explicit recovery for ${answers.title}`,
-        assertionId: `${titleSlug}_error_recovery_ready`,
-        qualityAxisId: "error_recovery",
-        assertionTags: ["browser", "error_path"],
-        steps: [
-          { action: "goto", value: "?fixture=invalid" },
-          { action: "assert_visible", selector: selectors.appShell },
-          { action: "assert_visible", selector: selectors.error },
-          {
-            action: "assert_not_visible",
-            selector: selectors.success
-          }
-        ]
-      }),
-      ...(shouldProbeContinuity
+      ...(includeErrorRecoveryProbe
+        ? [
+            buildBrowserJourneyProbe({
+              probeId: `${titleSlug}-error-recovery`,
+              label: `Invalid browser flows surface explicit recovery for ${answers.title}`,
+              assertionId: `${titleSlug}_error_recovery_ready`,
+              qualityAxisId: "error_recovery",
+              assertionTags: ["browser", "error_path"],
+              steps: [
+                { action: "goto", value: "?fixture=invalid" },
+                { action: "assert_visible", selector: selectors.appShell },
+                { action: "assert_visible", selector: selectors.error },
+                {
+                  action: "assert_not_visible",
+                  selector: selectors.success
+                }
+              ]
+            })
+          ]
+        : []),
+      ...(includeContinuityProbe
         ? [
             buildBrowserJourneyProbe({
               probeId: `${titleSlug}-state-continuity`,
@@ -1399,7 +1565,7 @@ const buildGeneratedCoreProbes = (
     );
   }
 
-  if (apiBackedFamily(answers.targetFamily)) {
+  if (apiSurfaceRequested(answers)) {
     probes.push(
       buildApiJsonProbe({
         probeId: `${titleSlug}-finish-line-api`,
@@ -1410,17 +1576,21 @@ const buildGeneratedCoreProbes = (
         targetPath: apiPaths.finishLine,
         expectedValue: "ready"
       }),
-      buildApiJsonProbe({
-        probeId: `${titleSlug}-error-recovery-api`,
-        label: `Invalid API flows are rejected with explicit recovery metadata`,
-        assertionId: `${titleSlug}_api_error_recovery_ready`,
-        qualityAxisId: "error_recovery",
-        assertionTags: ["api", "error_path"],
-        targetPath: apiPaths.errorPath,
-        expectedValue: "handled",
-        expectedStatus: 400
-      }),
-      ...(shouldProbeContinuity
+      ...(includeErrorRecoveryProbe
+        ? [
+            buildApiJsonProbe({
+              probeId: `${titleSlug}-error-recovery-api`,
+              label: `Invalid API flows are rejected with explicit recovery metadata`,
+              assertionId: `${titleSlug}_api_error_recovery_ready`,
+              qualityAxisId: "error_recovery",
+              assertionTags: ["api", "error_path"],
+              targetPath: apiPaths.errorPath,
+              expectedValue: "handled",
+              expectedStatus: 400
+            })
+          ]
+        : []),
+      ...(includeContinuityProbe
         ? [
             buildApiJsonProbe({
               probeId: `${titleSlug}-persistence-api`,
@@ -1480,6 +1650,7 @@ const buildGeneratedVerificationProfile = async (
   }
 
   const baseProfile = await loadJson<VerificationProfile>(familySelection.profile_path);
+  const filteredBaseProfile = filterVerificationProfileForAnswers(baseProfile, answers);
   const generatedCoreProbes = buildGeneratedCoreProbes(answers);
   const generatedCriteria = buildGeneratedCriteria(answers, generatedCoreProbes);
   const generatedSubjectiveMetrics = buildGeneratedSubjectiveMetrics(answers);
@@ -1489,36 +1660,34 @@ const buildGeneratedVerificationProfile = async (
   const generatedMinimumAssertionTagCounts =
     minimumAssertionTagCountsForGeneratedProbes(generatedCoreProbes);
   const mergedCoreProbes = mergeGeneratedProbeOverlay(
-    baseProfile.core_probes ?? [],
+    filteredBaseProfile.core_probes ?? [],
     generatedCoreProbes
   );
   const mergedCriteria = uniqueCriteria([
-    ...(baseProfile.criteria ?? []),
+    ...(filteredBaseProfile.criteria ?? []),
     ...generatedCriteria
   ]);
-  const mergedMinimumAssertionTagCounts = mergeAssertionTagCountFloors(
-    baseProfile.minimum_assertion_tag_counts ?? {},
-    generatedMinimumAssertionTagCounts
-  );
+  const mergedMinimumAssertionTagCounts =
+    minimumAssertionTagCountsForGeneratedProbes(mergedCoreProbes);
   const titleSlug = slugify(answers.title);
   const qualityContract = mergeQualityContract(
-    baseProfile.quality_contract,
+    filteredBaseProfile.quality_contract,
     buildGeneratedQualityContract(answers)
   );
   const mergedSubjectiveMetrics = mergeSubjectiveMetrics(
-    baseProfile.subjective_metrics ?? [],
+    filteredBaseProfile.subjective_metrics ?? [],
     generatedSubjectiveMetrics
   );
   const mergedScorePolicy =
-    generatedSubjectiveMetrics.length > 0 && browserBackedFamily(answers.targetFamily)
+    generatedSubjectiveMetrics.length > 0 && browserSurfaceRequested(answers)
       ? {
-          ...(baseProfile.score_policy ?? {}),
+          ...(filteredBaseProfile.score_policy ?? {}),
           proof_weights: {
             proof_pass_rate: 0.15,
             criterion_pass_rate: 0.2,
             threshold_verdict: 0.05,
             external_grade: Math.max(
-              baseProfile.score_policy?.proof_weights?.external_grade ?? 0,
+              filteredBaseProfile.score_policy?.proof_weights?.external_grade ?? 0,
               0.6
             )
           },
@@ -1529,27 +1698,24 @@ const buildGeneratedVerificationProfile = async (
         }
       : generatedSubjectiveMetrics.length > 0
         ? {
-            ...(baseProfile.score_policy ?? {}),
+            ...(filteredBaseProfile.score_policy ?? {}),
             proof_weights: {
-              ...(baseProfile.score_policy?.proof_weights ?? {}),
+              ...(filteredBaseProfile.score_policy?.proof_weights ?? {}),
               external_grade: Math.max(
-                baseProfile.score_policy?.proof_weights?.external_grade ?? 0,
+                filteredBaseProfile.score_policy?.proof_weights?.external_grade ?? 0,
                 0.35
               )
             }
           }
-        : baseProfile.score_policy;
-  const mergedExpectedTargetSurfaces = uniqueList([
-    ...(baseProfile.expected_target_surfaces ?? []),
-    ...targetSurfacesForFamily(answers.targetFamily)
-  ]) as TargetSurface[];
-  const mergedLiveVerificationModes = uniqueList([
-    ...(baseProfile.required_live_verification_modes ?? []),
-    ...liveVerificationModesForFamily(answers.targetFamily)
-  ]) as NonNullable<VerificationProfile["required_live_verification_modes"]>;
+        : filteredBaseProfile.score_policy;
+  const mergedExpectedTargetSurfaces = targetSurfacesForAnswers(answers);
+  const mergedLiveVerificationModes = liveVerificationModesForAnswers(answers);
+  const mergedReleaseGateProbeCount = mergedCoreProbes.filter(
+    (probe) => (probe.role ?? "supporting") === "release_gate"
+  ).length;
 
   return {
-    ...baseProfile,
+    ...filteredBaseProfile,
     profile_id: `generated-${titleSlug}-profile`,
     label: `${answers.title} Evaluator Bundle`,
     bundle_label: `${answers.title} Evaluator Bundle`,
@@ -1558,10 +1724,10 @@ const buildGeneratedVerificationProfile = async (
     expected_target_surfaces: mergedExpectedTargetSurfaces,
     required_live_verification_modes: mergedLiveVerificationModes,
     target_reached_requires_core_probes:
-      baseProfile.target_reached_requires_core_probes ?? true,
+      filteredBaseProfile.target_reached_requires_core_probes ?? true,
     minimum_feature_release_assertions: Math.max(
-      baseProfile.minimum_feature_release_assertions ?? 2,
-      Math.max(generatedReleaseGateProbeCount, 2)
+      mergedReleaseGateProbeCount,
+      Math.max(generatedReleaseGateProbeCount, 1)
     ),
     minimum_assertion_tag_counts: mergedMinimumAssertionTagCounts,
     score_policy: mergedScorePolicy,
@@ -1572,7 +1738,7 @@ const buildGeneratedVerificationProfile = async (
       ? { subjective_metrics: mergedSubjectiveMetrics }
       : {}),
     notes: uniqueList([
-      ...(baseProfile.notes ?? []),
+      ...(filteredBaseProfile.notes ?? []),
       `Generated from intake for '${answers.title}'.`,
       `Finish line: ${answers.finishLine}`,
       ...qualityContract.quality_axes

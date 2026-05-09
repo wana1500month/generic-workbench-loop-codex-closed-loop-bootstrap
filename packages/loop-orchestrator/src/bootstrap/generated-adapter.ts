@@ -30,15 +30,27 @@ const slugify = (value: string): string => slugifyAscii(value) || "generated-app
 const slugForIndexedFeature = (value: string, index: number): string =>
   slugifyAscii(value) || `feature-${index + 1}`;
 
+const workflowRootSelector = (index: number): string =>
+  `[data-workflow-id='workflow-${index + 1}'], [data-testid='feature-${index + 1}']`;
+
+const workflowActionSelector = (index: number): string =>
+  `[data-workflow-id='workflow-${index + 1}'] [data-workflow-action='primary'], [data-testid='feature-${index + 1}-action']`;
+
+const workflowResultSelector = (index: number): string =>
+  `[data-workflow-id='workflow-${index + 1}'] [data-workflow-result='primary'], [data-testid='feature-${index + 1}-result']`;
+
 const featureProbeMap = (features: readonly string[]) =>
   features.slice(0, 3).map((feature, index) => {
     const slug = slugForIndexedFeature(feature, index);
     return {
       feature,
       slug,
-      root_selector: `[data-testid='feature-${slug}']`,
-      action_selector: `[data-testid='feature-${slug}-action']`,
-      result_selector: `[data-testid='feature-${slug}-result']`
+      root_selector: workflowRootSelector(index),
+      action_selector: workflowActionSelector(index),
+      result_selector: workflowResultSelector(index),
+      legacy_root_selector: `[data-testid='feature-${index + 1}']`,
+      legacy_action_selector: `[data-testid='feature-${index + 1}-action']`,
+      legacy_result_selector: `[data-testid='feature-${index + 1}-result']`
     };
   });
 
@@ -54,9 +66,9 @@ const workflowProbeMap = (input: {
           surface: "browser" as const,
           expectedResult: `${feature} succeeds visibly.`,
           selectorHints: {
-            root: `[data-testid='feature-${index + 1}']`,
-            action: `[data-testid='feature-${index + 1}-action']`,
-            result: `[data-testid='feature-${index + 1}-result']`
+            root: workflowRootSelector(index),
+            action: workflowActionSelector(index),
+            result: workflowResultSelector(index)
           }
         }));
 
@@ -67,11 +79,14 @@ const workflowProbeMap = (input: {
       surface: check.surface,
       slug,
       expected_result: check.expectedResult,
-      root_selector: check.selectorHints?.root ?? `[data-testid='feature-${slug}']`,
+      root_selector: check.selectorHints?.root ?? workflowRootSelector(index),
       action_selector:
-        check.selectorHints?.action ?? `[data-testid='feature-${slug}-action']`,
+        check.selectorHints?.action ?? workflowActionSelector(index),
       result_selector:
-        check.selectorHints?.result ?? `[data-testid='feature-${slug}-result']`,
+        check.selectorHints?.result ?? workflowResultSelector(index),
+      legacy_root_selector: `[data-testid='feature-${index + 1}']`,
+      legacy_action_selector: `[data-testid='feature-${index + 1}-action']`,
+      legacy_result_selector: `[data-testid='feature-${index + 1}-result']`,
       api_path: check.apiHint?.path ?? `quality/features/${slug}`
     };
   });
@@ -158,9 +173,10 @@ export const scaffoldAdapterArtifacts = async (
     })),
     adapter_plan: answers.adapterPlan,
     verification_contract: {
-      app_shell_selector: "[data-testid='app-shell']",
-      finish_line_selector: "[data-testid='finish-line-ready']",
-      error_selector: "[data-testid='error-banner']",
+      app_shell_selector: "[data-harness='app-shell'], [data-testid='app-shell']",
+      finish_line_selector:
+        "[data-harness='finish-line-ready'], [data-testid='finish-line-ready']",
+      error_selector: "[data-harness='error-banner'], [data-testid='error-banner']",
       legacy_feature_selectors: featureProbeMap(answers.coreFeatures),
       workflow_selectors: workflowProbeMap({
         coreFeatures: answers.coreFeatures,

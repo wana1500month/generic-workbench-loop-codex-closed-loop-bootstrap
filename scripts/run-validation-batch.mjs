@@ -39,10 +39,20 @@ const suites = {
     "validate:codex-timeout",
     "validate:supervisor-timeout-prevention"
   ],
+  app: [
+    "validate:intent-gate",
+    "validate:intake-gate",
+    "validate:front-door-session",
+    "validate:transport-mode",
+    "validate:generated-verification-contract",
+    "validate:generated-adapter-run-local",
+    "validate:prepared-session-consumption-boundary"
+  ],
   "product-front-door": [
     "validate:intent-gate",
     "validate:intake-gate",
     "validate:front-door-session",
+    "validate:generated-verification-contract",
     "validate:release-zip",
     "validate:cli-front-door",
     "validate:loop-prepare",

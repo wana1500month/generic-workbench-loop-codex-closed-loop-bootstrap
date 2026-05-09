@@ -23,7 +23,9 @@ import {
   pathExists,
   repoRoot,
   removeIfExists,
-  writeJson
+  resolveRunsDirectory,
+  writeJson,
+  writeText
 } from "./file-system.js";
 import { defaultIdeaPath, readIdeaBrief } from "./idea-intake.js";
 import type {
@@ -404,7 +406,8 @@ const markerMatchesPreparedThread = (
 
 const matchesPreparedThread = (
   sessionStatus: SessionStatusArtifact,
-  currentThreadId: string | undefined
+  currentThreadId: string | undefined,
+  allowAssumedForeground: boolean
 ): boolean => {
   const preparedThreadId = sessionStatus.session_binding.thread_id;
   if (sessionStatus.session_binding.binding_state === "unbound") {
@@ -416,12 +419,16 @@ const matchesPreparedThread = (
   if (currentThreadId) {
     return preparedThreadId === currentThreadId;
   }
+  if (allowAssumedForeground) {
+    return true;
+  }
   return !preparedThreadId && sessionStatus.session_binding.binding_state !== "bound";
 };
 
 const isPreparedRunAwaitingStart = async (input: {
   runDirectory: string;
   currentThreadId?: string;
+  allowAssumedForeground?: boolean;
   sessionStatus?: SessionStatusArtifact;
   preparedSeed?: PreparedSessionSeed;
 }): Promise<boolean> => {
@@ -434,7 +441,13 @@ const isPreparedRunAwaitingStart = async (input: {
   if (input.sessionStatus.latest_stop_reason !== undefined) {
     return false;
   }
-  if (!matchesPreparedThread(input.sessionStatus, input.currentThreadId)) {
+  if (
+    !matchesPreparedThread(
+      input.sessionStatus,
+      input.currentThreadId,
+      input.allowAssumedForeground === true
+    )
+  ) {
     return false;
   }
   return !(await pathExists(join(input.runDirectory, "summary.json")));
@@ -443,7 +456,7 @@ const isPreparedRunAwaitingStart = async (input: {
 export const findLatestPreparedRunAwaitingStart = async (
   runsDirectory: string,
   currentThreadId?: string,
-  options: { runId?: string } = {}
+  options: { runId?: string; allowAssumedForeground?: boolean } = {}
 ): Promise<
   | { runId: string; runDirectory: string; marker?: ReadyToStartSessionMarker }
   | undefined
@@ -468,6 +481,8 @@ export const findLatestPreparedRunAwaitingStart = async (
         await isPreparedRunAwaitingStart({
           runDirectory: markerCandidate.run_directory,
           currentThreadId,
+          allowAssumedForeground:
+            options.allowAssumedForeground === true && Boolean(options.runId),
           sessionStatus: markerSessionStatus,
           preparedSeed: markerPreparedSeed
         })
@@ -491,6 +506,7 @@ export const findLatestPreparedRunAwaitingStart = async (
         await isPreparedRunAwaitingStart({
           runDirectory: explicitRunDirectory,
           currentThreadId,
+          allowAssumedForeground: options.allowAssumedForeground === true,
           sessionStatus,
           preparedSeed
         })
@@ -557,7 +573,7 @@ export const findLatestPreparedRunAwaitingStart = async (
 export const prepareSessionRun = async (
   input: PrepareSessionRunInput
 ): Promise<PrepareSessionResult> => {
-  const runsDirectory = join(repoRoot, "evals", "runs");
+  const runsDirectory = resolveRunsDirectory();
   const resolvedRunDirectory = input.runDirectory
     ? resolve(input.runDirectory)
     : undefined;
@@ -931,6 +947,43 @@ export const prepareSessionRun = async (
     markdownPath: runtimePaths.operatorSurfaceMarkdownPath,
     artifact: operatorSurface
   });
+  await writeText(
+    join(runDirectory, "runtime", "ready-to-start.md"),
+    [
+      "# Ready to start",
+      "",
+      `Run ID: ${runId}`,
+      frontDoorSession?.artifact.session_id
+        ? `Front-door session: ${frontDoorSession.artifact.session_id}`
+        : undefined,
+      "",
+      "## Product brief",
+      "",
+      `- Product: ${intake?.product_title ?? durableMemory.context.title}`,
+      `- Target users: ${(intake?.target_users ?? []).join(", ") || "unspecified"}`,
+      "- Core workflows:",
+      ...(intake?.core_features?.length
+        ? intake.core_features.map((feature) => `  - ${feature}`)
+        : ["  - unspecified"]),
+      `- Finish line: ${intake?.finish_line ?? intake?.quality_bar?.[0] ?? "unspecified"}`,
+      "",
+      "## Verification",
+      "",
+      `- Surface: ${(intake?.verification_surfaces ?? []).join(", ") || "default"}`,
+      `- Runtime: ${intake?.run_command ?? "npm run dev"}`,
+      "- Release checks:",
+      ...(intake?.workflow_checks?.length
+        ? intake.workflow_checks.map((check) => `  - ${check.workflow}`)
+        : (intake?.core_features ?? []).map((feature) => `  - ${feature}`)),
+      "",
+      "## Start",
+      "",
+      "Say: start loop / 루프 시작",
+      ""
+    ]
+      .filter((line): line is string => typeof line === "string")
+      .join("\n")
+  );
   await writeReadyToStartSessionMarker(runsDirectory, {
     run_id: runId,
     run_directory: runDirectory,

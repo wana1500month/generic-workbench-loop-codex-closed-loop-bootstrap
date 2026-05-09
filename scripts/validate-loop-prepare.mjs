@@ -15,19 +15,22 @@ import {
   runLoop
 } from "./validation-utils.mjs";
 
-const foregroundThreadEnv = {
+const foregroundThreadEnvFor = (runsDirectory) => ({
   ...process.env,
+  HARNESS_RUNS_DIRECTORY: runsDirectory,
   CODEX_THREAD_ID: "thread_validate_prepare",
   HARNESS_LAUNCH_ORIGIN: "codex-app-thread",
   HARNESS_THREAD_BINDING_STATE: "bound",
   HARNESS_SURFACE_OWNER: "stock-codex-thread",
   HARNESS_ENTRYPOINT: "skill",
   HARNESS_APP_VISIBILITY: "visible-in-stock-app"
-};
+});
 
 const main = async () => {
   await ensureBuild();
   const tempRoot = await createTempRoot("validate-loop-prepare");
+  const runsDirectory = `${tempRoot}/runs`;
+  const foregroundThreadEnv = foregroundThreadEnvFor(runsDirectory);
 
   try {
     const fixture = await createBootstrapFixture(tempRoot, {
@@ -52,6 +55,7 @@ const main = async () => {
     ]);
     const previousEnv = {
       CODEX_THREAD_ID: process.env.CODEX_THREAD_ID,
+      HARNESS_RUNS_DIRECTORY: process.env.HARNESS_RUNS_DIRECTORY,
       HARNESS_THREAD_BINDING_STATE: process.env.HARNESS_THREAD_BINDING_STATE,
       HARNESS_LAUNCH_ORIGIN: process.env.HARNESS_LAUNCH_ORIGIN,
       HARNESS_SURFACE_OWNER: process.env.HARNESS_SURFACE_OWNER,

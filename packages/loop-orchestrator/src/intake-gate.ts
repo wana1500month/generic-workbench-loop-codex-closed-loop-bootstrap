@@ -500,6 +500,11 @@ const extractProjectMode = (normalizedLower: string): "new" | "existing" | undef
     },
     {
       mode: "new",
+      pattern:
+        /(?:^|[.!?\n]\s*)(?:\uC774\uAC74|\uC774\uAC83\uC740)?\s*\uC0C8\s*(?:\uD504\uB85C\uC81D\uD2B8|\uB808\uD3EC|\uD3F4\uB354)(?:\uB85C\s*(?:\uC9C4\uD589|\uC2DC\uC791|\uC0DD\uC131|\uB9CC\uB4E4)[^\s.!?]*)?/u
+    },
+    {
+      mode: "new",
       pattern: /(?:^|[.!?]\s*)(?:\uCC98\uC74C\uBD80\uD130|\uC0C8\uB85C)\b/u
     }
   ];

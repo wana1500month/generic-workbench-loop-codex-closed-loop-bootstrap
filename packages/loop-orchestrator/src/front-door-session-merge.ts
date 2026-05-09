@@ -4,7 +4,10 @@ import {
   parseVerificationSurfacesAnswer,
   parseWorkflowChecksAnswer
 } from "./adapter-plan.js";
-import type { IntakeGateResult } from "./intake-gate.js";
+import {
+  evaluateIntakeRequest,
+  type IntakeGateResult
+} from "./intake-gate.js";
 import type {
   FrontDoorSessionArtifact,
   FrontDoorSessionConflict,
@@ -621,11 +624,14 @@ const extractCandidatesFromQuestionOrder = (
         }
         break;
       case "target_root":
-        result.target_root =
-          parsePathAnswer(answer) ??
-          (isExecutionPair && questionIds.length > 1
-            ? undefined
-            : normalizeInlineValue(answer));
+        {
+          const parsedPath = parsePathAnswer(answer);
+          if (parsedPath) {
+            result.target_root = parsedPath;
+          } else if (!(isExecutionPair && questionIds.length > 1)) {
+            result.target_root = normalizeInlineValue(answer);
+          }
+        }
         break;
       case "target_score": {
         const targetScore = parseTargetScoreAnswer(answer);
@@ -693,6 +699,16 @@ const explicitFieldMentions = (message: string): { targetScore: boolean; maxRoun
   maxRounds: explicitMaxRoundsPattern.test(message)
 });
 
+const targetRootValuePattern = String.raw`(?:[A-Za-z]:\\[^\r\n\s),.;!?]+|(?:\/|\.\/|\.\.\/)[^\r\n\s),.;!?]+|[A-Za-z0-9._-]+(?:[\\/][^\r\n\s),.;!?]+)+)`;
+
+const extractTargetRootFromMessage = (message: string): string | undefined => {
+  const match = new RegExp(
+    String.raw`(?:target root|root(?: directory)?|working directory|project root|target folder|working folder|\uC791\uC5C5\s*\uD3F4\uB354|\uC791\uC5C5\uD3F4\uB354|\uB300\uC0C1\s*\uD3F4\uB354|\uD504\uB85C\uC81D\uD2B8\s*\uD3F4\uB354|\uD3F4\uB354|\uACBD\uB85C)\s*(?:is|\uB294|\uC740|:|=)?\s*(${targetRootValuePattern})`,
+    "iu"
+  ).exec(message)?.[1];
+  return match?.trim();
+};
+
 const extractCandidates = (input: {
   message: string;
   sourceRequest: string;
@@ -707,6 +723,9 @@ const extractCandidates = (input: {
   const acceptsAdapterAnswer =
     isAdapterQuestionPair(previousQuestionIds) ||
     messageExplicitlyAnswersAdapterDesign(message);
+  const messageOnlyIntakeResult =
+    message === sourceRequest ? intakeResult : evaluateIntakeRequest(message);
+  const targetRootFromMessage = extractTargetRootFromMessage(message);
   const shouldImplicitlyParse = (field: SessionIntakeFieldId): boolean =>
     !hasQuestionContext || previousQuestionSet.has(field);
   const explicit = explicitFieldMentions(message);
@@ -773,11 +792,23 @@ const extractCandidates = (input: {
     ...(intakeResult.internal_working_hypothesis
       ? { target_family: intakeResult.internal_working_hypothesis }
       : {}),
-    ...(intakeResult.extracted_project_mode
-      ? { project_mode: intakeResult.extracted_project_mode }
+    ...(messageOnlyIntakeResult.extracted_project_mode ??
+    intakeResult.extracted_project_mode
+      ? {
+          project_mode:
+            messageOnlyIntakeResult.extracted_project_mode ??
+            intakeResult.extracted_project_mode
+        }
       : {}),
-    ...(intakeResult.extracted_target_root
-      ? { target_root: intakeResult.extracted_target_root }
+    ...(targetRootFromMessage ??
+    messageOnlyIntakeResult.extracted_target_root ??
+    intakeResult.extracted_target_root
+      ? {
+          target_root:
+            targetRootFromMessage ??
+            messageOnlyIntakeResult.extracted_target_root ??
+            intakeResult.extracted_target_root
+        }
       : {}),
     ...(explicit.targetScore && intakeResult.extracted_target_score !== undefined
       ? { target_score: intakeResult.extracted_target_score }
@@ -1205,6 +1236,10 @@ export const mergeFrontDoorSessionTurn = (input: {
   });
   const previousQuestionIds = input.existingSession?.last_question_ids ?? [];
   const replaceFields = replaceFieldsForTurn(input.message, previousQuestionIds);
+  const candidateOverridesDefaultTargetRoot =
+    candidates.target_root !== undefined &&
+    (input.existingSession?.defaults_accepted?.includes("target_root") ||
+      nextIntake.target_root?.startsWith("./apps/"));
 
   applyScalarField(nextIntake, "product_title", candidates.product_title, input.turnCount, conflicts);
   if (!nextIntake.product_summary || replaceFields.has("product_summary")) {
@@ -1222,7 +1257,7 @@ export const mergeFrontDoorSessionTurn = (input: {
     replace: replaceFields.has("project_mode")
   });
   applyScalarField(nextIntake, "target_root", candidates.target_root, input.turnCount, conflicts, {
-    replace: replaceFields.has("target_root")
+    replace: replaceFields.has("target_root") || candidateOverridesDefaultTargetRoot
   });
   applyScalarField(nextIntake, "target_score", candidates.target_score, input.turnCount, conflicts);
   applyScalarField(nextIntake, "max_rounds", candidates.max_rounds, input.turnCount, conflicts);

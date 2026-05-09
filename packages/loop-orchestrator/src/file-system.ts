@@ -1,12 +1,18 @@
 import { appendFile, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const repoRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../../../"
 );
+
+export const resolveRunsDirectory = (): string =>
+  resolve(
+    process.env.HARNESS_RUNS_DIRECTORY?.trim() ||
+      join(repoRoot, "evals", "runs")
+  );
 
 export const loadJson = async <T>(path: string): Promise<T> => {
   const raw = await readFile(path, "utf8");

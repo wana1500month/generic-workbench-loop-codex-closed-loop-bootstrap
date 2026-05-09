@@ -203,6 +203,9 @@ const parseBooleanEnv = (key: string): boolean | undefined => {
 const readRequiresCodexAppOverride = (): boolean | undefined =>
   parseBooleanEnv("HARNESS_REQUIRES_CODEX_APP");
 
+const readCodexAppForegroundOverride = (): boolean | undefined =>
+  parseBooleanEnv("HARNESS_CODEX_APP_FOREGROUND");
+
 export type ResolvedOperatorSurfaceContext = {
   threadId?: string;
   threadName?: string;
@@ -235,10 +238,15 @@ const resolveCurrentThreadContext = (input: {
       : explicitThreadBindingState === "bound"
         ? "assumed"
         : explicitThreadBindingState ?? (launchOrigin === "codex-app-thread" ? "assumed" : "unbound");
-  const foregroundThread =
+  const boundForegroundThread =
     launchOrigin === "codex-app-thread" &&
     threadBindingState === "bound" &&
     typeof effectiveThreadId === "string";
+  const assumedForegroundThread =
+    launchOrigin === "codex-app-thread" &&
+    threadBindingState === "assumed" &&
+    readCodexAppForegroundOverride() === true;
+  const foregroundThread = boundForegroundThread || assumedForegroundThread;
   const surfaceOwner = foregroundThread ? "stock-codex-thread" : "external-controller";
   const appVisibility = foregroundThread ? "visible-in-stock-app" : "not-visible-in-stock-app";
 

@@ -24,6 +24,14 @@ const main = async () => {
   const releaseGateProbes = coreProbeResults.filter(
     (probe) => (probe.role ?? "supporting") === "release_gate"
   );
+  const verificationSurfaces = Array.isArray(config.verification_surfaces)
+    ? config.verification_surfaces
+    : [];
+  const witnessMode = verificationSurfaces.includes("browser")
+    ? "browser"
+    : verificationSurfaces.includes("api")
+      ? "api"
+      : "test";
   const workflowChecks =
     Array.isArray(config.workflow_checks) && config.workflow_checks.length > 0
       ? config.workflow_checks
@@ -112,9 +120,7 @@ const main = async () => {
     provider_id: process.env.HARNESS_PROVIDER_ID ?? "generated-codex-verifier",
     provider_role: process.env.HARNESS_PROVIDER_ROLE ?? "verifier",
     capability: "run_checks",
-    mode: ["api-service", "crud-api", "chat-agent"].includes(config.target_family)
-      ? "api"
-      : "browser",
+    mode: witnessMode,
     target_root: runtimePaths.targetRoot,
     target_reference: config.ready_url,
     interaction_log_path: interactionLogPath,

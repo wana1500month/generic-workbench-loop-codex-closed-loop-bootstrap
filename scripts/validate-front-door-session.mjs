@@ -17,6 +17,7 @@ const main = async () => {
   await ensureBuild();
   const tempRoot = await createTempRoot("validate-front-door-session");
   const sessionsDirectory = join(tempRoot, "front-door-sessions");
+  const runsDirectory = join(tempRoot, "runs");
   const workspaceRoot = join(tempRoot, "workspace");
   const targetRootRelative = `tmp-targets/${basename(tempRoot)}-target-app`;
   const targetRoot = resolve(repoRoot, targetRootRelative);
@@ -24,11 +25,13 @@ const main = async () => {
   const previousEnv = {
     HARNESS_FRONT_DOOR_SESSIONS_DIRECTORY:
       process.env.HARNESS_FRONT_DOOR_SESSIONS_DIRECTORY,
+    HARNESS_RUNS_DIRECTORY: process.env.HARNESS_RUNS_DIRECTORY,
     CODEX_THREAD_ID: process.env.CODEX_THREAD_ID,
     HARNESS_THREAD_BINDING_STATE: process.env.HARNESS_THREAD_BINDING_STATE,
     HARNESS_LAUNCH_ORIGIN: process.env.HARNESS_LAUNCH_ORIGIN
   };
   process.env.HARNESS_FRONT_DOOR_SESSIONS_DIRECTORY = sessionsDirectory;
+  process.env.HARNESS_RUNS_DIRECTORY = runsDirectory;
   delete process.env.CODEX_THREAD_ID;
   delete process.env.HARNESS_THREAD_BINDING_STATE;
   delete process.env.HARNESS_LAUNCH_ORIGIN;
@@ -232,7 +235,7 @@ const main = async () => {
       !existsSync(join(repoRoot, "adapter-plan.generated.json")),
       "prepared session should not write root adapter-plan.generated.json"
     );
-    const readyIndexRoot = join(repoRoot, "evals", "runs", "ready-to-start");
+    const readyIndexRoot = join(runsDirectory, "ready-to-start");
     const [readyLatest, readyByRun, readyByThread] = await Promise.all([
       readJsonFile(join(readyIndexRoot, "latest.json")),
       readJsonFile(join(readyIndexRoot, "by-run", `${prepared.runId}.json`)),
@@ -407,6 +410,25 @@ const main = async () => {
     assert.equal(executionTurn.intake.project_mode, "new");
     assert.equal(executionTurn.intake.target_root, "tmp-targets/foo");
     assert.deepEqual(executionTurn.intake.target_users, ["Solo founders"]);
+
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-target-root-colloquial",
+      message: "Build a budget browser app"
+    });
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-target-root-colloquial",
+      message:
+        "Freelancers. Core workflows: add transactions, review monthly totals, filter by category. Finish line: users can enter and review budget data."
+    });
+    const koExecution = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-target-root-colloquial",
+      message: [
+        "\uC0C8 \uD504\uB85C\uC81D\uD2B8\uB85C \uC9C4\uD589\uD558\uACE0 \uC791\uC5C5 \uD3F4\uB354\uB294 .tmp/inspect-budget-app \uC774\uC57C.",
+        "\uBE0C\uB77C\uC6B0\uC800\uB85C \uAC80\uC99D\uD574."
+      ].join("\n")
+    });
+    assert.equal(koExecution.intake.project_mode, "new");
+    assert.equal(koExecution.intake.target_root, ".tmp/inspect-budget-app");
 
     await runFrontDoorDiscoveryTurn({
       threadId: "thread-users-can-finish",
@@ -961,7 +983,8 @@ const main = async () => {
         cwd: repoRoot,
         env: {
           ...process.env,
-          HARNESS_FRONT_DOOR_SESSIONS_DIRECTORY: sessionsDirectory
+          HARNESS_FRONT_DOOR_SESSIONS_DIRECTORY: sessionsDirectory,
+          HARNESS_RUNS_DIRECTORY: runsDirectory
         },
         shell: false
       }

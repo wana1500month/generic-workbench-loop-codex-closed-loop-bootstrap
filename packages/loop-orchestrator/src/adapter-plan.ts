@@ -102,9 +102,9 @@ const defaultRuntimeStrategyForFamily = (
 export const selectorHintsForWorkflow = (
   index: number
 ): NonNullable<SessionWorkflowCheck["selector_hints"]> => ({
-  root: `[data-testid='feature-${index + 1}']`,
-  action: `[data-testid='feature-${index + 1}-action']`,
-  result: `[data-testid='feature-${index + 1}-result']`
+  root: `[data-workflow-id='workflow-${index + 1}'], [data-testid='feature-${index + 1}']`,
+  action: `[data-workflow-id='workflow-${index + 1}'] [data-workflow-action='primary'], [data-testid='feature-${index + 1}-action']`,
+  result: `[data-workflow-id='workflow-${index + 1}'] [data-workflow-result='primary'], [data-testid='feature-${index + 1}-result']`
 });
 
 export const normalizeWorkflowName = (value: string): string =>

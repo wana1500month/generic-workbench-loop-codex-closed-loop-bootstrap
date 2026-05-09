@@ -54,6 +54,7 @@ import {
   pathExists,
   repoRoot,
   removeIfExists,
+  resolveRunsDirectory,
   writeJson,
   writeText
 } from "./file-system.js";
@@ -450,8 +451,7 @@ export const runClosedLoop = async (input: {
     transportMode === "current-thread" &&
     input.maxRounds === 1 &&
     input.includeRemediationBudget === false;
-  const runsDirectory = join(repoRoot, "evals", "runs");
-  const preparedRunCandidate =
+  const preparedStartResolutionEligible =
     !restoredRun &&
     controllerMode === "attached" &&
     transportMode === "current-thread" &&
@@ -460,13 +460,27 @@ export const runClosedLoop = async (input: {
     input.evaluatorProfilePath === undefined &&
     input.targetFamily === undefined &&
     input.targetScore === undefined &&
-    (input.maxRounds === undefined || singleForegroundSeedDefaults)
+    (input.maxRounds === undefined || singleForegroundSeedDefaults);
+  const runsDirectory = resolveRunsDirectory();
+  const preparedRunCandidate =
+    preparedStartResolutionEligible
       ? await findLatestPreparedRunAwaitingStart(
           runsDirectory,
           process.env.CODEX_THREAD_ID?.trim() || undefined,
-          input.preparedRunId ? { runId: input.preparedRunId } : {}
+          input.preparedRunId
+            ? {
+                runId: input.preparedRunId,
+                allowAssumedForeground:
+                  process.env.HARNESS_CODEX_APP_FOREGROUND === "1"
+              }
+            : {}
         )
       : undefined;
+  if (!restoredRun && input.preparedRunId && !preparedRunCandidate) {
+    throw new Error(
+      `Prepared run '${input.preparedRunId}' is not ready_to_start for this current-thread start.`
+    );
+  }
   const runId = restoredRun?.runId ?? preparedRunCandidate?.runId ?? (
     await nextRunId(runsDirectory)
   );

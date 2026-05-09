@@ -1,5 +1,4 @@
 import { strict as assert } from "node:assert";
-import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
@@ -17,8 +16,9 @@ import {
   runLoop
 } from "./validation-utils.mjs";
 
-const buildForegroundThreadEnv = (threadId) => ({
+const buildForegroundThreadEnv = (threadId, runsDirectory) => ({
   ...process.env,
+  HARNESS_RUNS_DIRECTORY: runsDirectory,
   CODEX_THREAD_ID: threadId,
   HARNESS_LAUNCH_ORIGIN: "codex-app-thread",
   HARNESS_THREAD_BINDING_STATE: "bound",
@@ -27,15 +27,16 @@ const buildForegroundThreadEnv = (threadId) => ({
   HARNESS_APP_VISIBILITY: "visible-in-stock-app"
 });
 
-const unboundCurrentThreadEnv = {
+const buildUnboundCurrentThreadEnv = (runsDirectory) => ({
   ...process.env,
+  HARNESS_RUNS_DIRECTORY: runsDirectory,
   CODEX_THREAD_ID: "",
   HARNESS_LAUNCH_ORIGIN: "shell",
   HARNESS_THREAD_BINDING_STATE: "unbound",
   HARNESS_SURFACE_OWNER: "external-controller",
   HARNESS_ENTRYPOINT: "shell",
   HARNESS_APP_VISIBILITY: "not-visible-in-stock-app"
-};
+});
 
 const restoreProcessEnv = (previousEnv) => {
   for (const [key, value] of Object.entries(previousEnv)) {
@@ -53,8 +54,9 @@ const main = async () => {
     "validate-prepared-session-consumption-boundary"
   );
   const threadId = `thread_validate_prepared_session_boundary_${Date.now()}`;
-  const foregroundThreadEnv = buildForegroundThreadEnv(threadId);
-  const runsDirectory = join(process.cwd(), "evals", "runs");
+  const runsDirectory = join(tempRoot, "runs");
+  const foregroundThreadEnv = buildForegroundThreadEnv(threadId, runsDirectory);
+  const unboundCurrentThreadEnv = buildUnboundCurrentThreadEnv(runsDirectory);
 
   try {
     const fixture = await createBootstrapFixture(tempRoot, {
@@ -81,6 +83,7 @@ const main = async () => {
       await Promise.all([importDist("prepare-session.js")]);
     const previousEnv = {
       CODEX_THREAD_ID: process.env.CODEX_THREAD_ID,
+      HARNESS_RUNS_DIRECTORY: process.env.HARNESS_RUNS_DIRECTORY,
       HARNESS_THREAD_BINDING_STATE: process.env.HARNESS_THREAD_BINDING_STATE,
       HARNESS_LAUNCH_ORIGIN: process.env.HARNESS_LAUNCH_ORIGIN,
       HARNESS_SURFACE_OWNER: process.env.HARNESS_SURFACE_OWNER,
@@ -156,8 +159,6 @@ const main = async () => {
     const unboundCandidateAfterStart =
       await findLatestPreparedRunAwaitingStart(runsDirectory, undefined);
     assert.notEqual(unboundCandidateAfterStart?.runDirectory, prepared.runDirectory);
-
-    await rm(tempRoot, { recursive: true, force: true });
 
     const unboundExecution = await runLoop(
       ["--single", "--controller-mode", "attached", "--transport", "current-thread"],

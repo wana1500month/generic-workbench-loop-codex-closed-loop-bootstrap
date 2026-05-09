@@ -1,6 +1,10 @@
 # Status
 
 - Codex app validation is now split from trusted-runner transports: `validate:app` covers the foreground app path, `validate:app-release` / `validate:release-gate` cover the install ZIP path, while `validate:transport:cli` and `validate:transport:app-server` keep live Codex/App Server checks out of the app release gate.
+- The app foreground gate now uses a lighter `validate:app` batch, with `validate:app-full` retaining the older fast-plus-product-front-door sweep for deeper local runs.
+- Generated browser-only verification profiles now filter base bundle probes by requested surfaces and product intent, so browser builds no longer inherit API probes, `api_base_url`, draft/persistence, consistency, or error-recovery assertions unless intake explicitly asks for them.
+- Generated workflow selectors are now semantic-first (`data-workflow-id`, `data-workflow-action`, `data-workflow-result`, `data-harness`) with legacy `data-testid` selectors retained as fallbacks.
+- Validators can isolate run artifacts through `HARNESS_RUNS_DIRECTORY`, and app foreground starts without `CODEX_THREAD_ID` are allowed only through explicit `--run-id` plus `--codex-app-foreground` / `HARNESS_CODEX_APP_FOREGROUND=1`.
 - Product prepare now writes generated adapter artifacts under `evals/runs/<run-id>/generated-adapter/` and indexes `ready_to_start` sessions under `evals/runs/ready-to-start/` by run and thread, eliminating repo-root singleton clobbering for Codex app foreground starts.
 - Codex child execution now has a bounded wall-clock timeout, stale-output watchdog, output cap, process-tree cleanup, and persisted timeout metadata, so `runCodexCommand` and auth preflight cannot hang the controller indefinitely.
 - Timeout classification now settles fail-closed before process-tree cleanup completes, so `close` / `error` races cannot downgrade wall-clock or stale-output timeouts from exit code `124` to a generic child exit.
