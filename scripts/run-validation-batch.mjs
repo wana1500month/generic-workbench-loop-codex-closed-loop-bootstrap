@@ -1,6 +1,11 @@
 import { spawn } from "node:child_process";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { stopProcessTree } from "./process-tree.mjs";
+
+const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 const validationTimeoutMs = () => {
   const parsed = Number(process.env.HARNESS_VALIDATION_TIMEOUT_MS);
@@ -93,11 +98,34 @@ const suites = {
 
 const suiteName = process.argv[2] ?? "core";
 const suite = suites[suiteName];
+const stateIsolatedSuites = new Set(["app", "core", "fast", "product-front-door", "smoke"]);
+let batchEnv = process.env;
 
 if (!suite) {
   console.error(`Unknown suite: ${suiteName}`);
   process.exit(1);
 }
+
+const createBatchEnvironment = async () => {
+  const env = { ...process.env };
+  if (
+    !stateIsolatedSuites.has(suiteName) ||
+    (env.HARNESS_RUNS_DIRECTORY && env.HARNESS_FRONT_DOOR_SESSIONS_DIRECTORY)
+  ) {
+    return { env };
+  }
+
+  await mkdir(join(repoRoot, ".tmp"), { recursive: true });
+  const tempRoot = await mkdtemp(
+    join(repoRoot, ".tmp", `validation-batch-${suiteName}-`)
+  );
+  env.HARNESS_RUNS_DIRECTORY ??= join(tempRoot, "runs");
+  env.HARNESS_FRONT_DOOR_SESSIONS_DIRECTORY ??= join(
+    tempRoot,
+    "front-door-sessions"
+  );
+  return { env, tempRoot };
+};
 
 const runScript = async (scriptName) =>
   new Promise((resolvePromise, rejectPromise) => {
@@ -108,7 +136,8 @@ const runScript = async (scriptName) =>
       stdio: "inherit",
       shell: invocation.shell,
       detached: process.platform !== "win32",
-      windowsHide: true
+      windowsHide: true,
+      env: batchEnv
     });
     const timer = setTimeout(() => {
       timedOut = true;
@@ -131,9 +160,23 @@ const runScript = async (scriptName) =>
     });
   });
 
-for (const scriptName of suite) {
-  const code = await runScript(scriptName);
-  if (code !== 0) {
-    process.exit(code);
+const { env, tempRoot } = await createBatchEnvironment();
+batchEnv = env;
+
+try {
+  for (const scriptName of suite) {
+    const code = await runScript(scriptName);
+    if (code !== 0) {
+      process.exitCode = code;
+      break;
+    }
   }
+} finally {
+  if (tempRoot) {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+}
+
+if (process.exitCode) {
+  process.exit(process.exitCode);
 }

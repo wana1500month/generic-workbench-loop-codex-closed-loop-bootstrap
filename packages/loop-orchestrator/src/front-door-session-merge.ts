@@ -44,6 +44,7 @@ const finishLineLabelPattern = String.raw`good enough means|finish line(?: is)?|
 const referenceLabelPattern = String.raw`reference products?|reference apps?|reference visuals?|visual direction|references?|visuals?|참고\s*제품|참고\s*앱|참고\s*화면|참고|레퍼런스`;
 const productTitleLabelPattern = String.raw`product title|app name|product name|제품명|앱\s*이름|서비스\s*이름`;
 const nextIntakeLabelPattern = String.raw`good enough means|finish line|success means|mvp means|target users?|primary users?|core workflows?|workflows?|core features?|features?|references?|target root|target score|max(?:imum)? rounds?|run command|ready url|주\s*사용자|대상\s*사용자|핵심\s*작업|핵심\s*기능|핵심\s*플로우|참고\s*앱|참고|레퍼런스|성공\s*기준|완성\s*기준|작업\s*폴더|프로젝트\s*폴더|대상\s*폴더|경로`;
+const coreFeaturesLabelPatternEnhanced = String.raw`${coreFeaturesLabelPattern}|\uD575\uC2EC\s*\uC791\uC5C5\uBCC4\s*\uC2E4\uC81C\s*\uB3D9\uC791|\uC791\uC5C5\uBCC4\s*\uC2E4\uC81C\s*\uB3D9\uC791|\uD575\uC2EC\s*\uC791\uC5C5|\uD575\uC2EC\s*\uAE30\uB2A5|\uD575\uC2EC\s*\uC6CC\uD06C\uD50C\uB85C|\uCCAB\s*\uBC84\uC804\s*\uAE30\uB2A5`;
 const explicitTargetScorePattern = /\btarget\s*score\b|\bscore\b/i;
 const explicitMaxRoundsPattern = /\bmax(?:imum)?\s*rounds?\b|\brounds?\b/i;
 
@@ -62,6 +63,18 @@ const stripFinalSentencePunctuation = (value: string): string =>
     .replace(/[!?]+$/u, "")
     .replace(/\.(?=\s*$)/u, "")
     .trim();
+
+const workflowHeaderOnlyPattern =
+  /^(?:\uD575\uC2EC\s*)?(?:\uC791\uC5C5|\uC6CC\uD06C\uD50C\uB85C)(?:\uBCC4)?\s*(?:\uC2E4\uC81C\s*)?(?:\uB3D9\uC791|\uAC80\uC99D|\uC131\uACF5\s*\uC870\uAC74)?\s*[:\uFF1A]?$/u;
+const workflowHeaderRemainderPattern =
+  /^(?:\uBCC4\s*)?(?:\uC2E4\uC81C\s*)?(?:\uB3D9\uC791|\uAC80\uC99D|\uC131\uACF5\s*\uC870\uAC74)\s*[:\uFF1A]?$/u;
+const isWorkflowHeaderOnlyValue = (value: string): boolean => {
+  const normalized = normalizeInlineValue(value);
+  return (
+    workflowHeaderOnlyPattern.test(normalized) ||
+    workflowHeaderRemainderPattern.test(normalized)
+  );
+};
 
 const protectUrls = (
   value: string
@@ -289,13 +302,23 @@ const extractImplicitTargetUsers = (message: string): string[] | undefined => {
 };
 
 const extractExplicitCoreFeatures = (message: string): string[] | undefined => {
-  const labeledMatch = extractLabeledRestOfLine(message, coreFeaturesLabelPattern);
+  const labeledMatch = extractLabeledRestOfLine(
+    message,
+    coreFeaturesLabelPatternEnhanced
+  );
   const explicitMatch =
     labeledMatch ??
     firstMatch(message, [
       /\b(?:core workflows?|workflows?|core features?|features?)\s*(?:are|is|:)?\s*(.+?)(?:[.!?]|$)/i
     ]);
-  return explicitMatch ? splitInlineList(explicitMatch) : undefined;
+  if (!explicitMatch) {
+    return undefined;
+  }
+
+  const features = splitInlineList(explicitMatch).filter(
+    (entry) => !isWorkflowHeaderOnlyValue(entry)
+  );
+  return features.length > 0 ? features : undefined;
 };
 
 const extractImplicitCoreFeatures = (message: string): string[] | undefined => {
@@ -368,7 +391,7 @@ const isAdapterQuestionPair = (
   );
 
 const messageExplicitlyAnswersAdapterDesign = (message: string): boolean =>
-  /(?:\uAC80\uC99D\s*(?:\uBC29\uC2DD|\uC218\uB2E8|\uBC29\uBC95)|verification\s*surface|verify\s+with|browser\s+verification|screen\s+verification|\uD654\uBA74\uC73C\uB85C\s*\uAC80\uC99D|API\uB85C\s*\uAC80\uC99D|\uD14C\uC2A4\uD2B8\s*\uBA85\uB839\uC73C\uB85C\s*\uAC80\uC99D)/iu.test(
+  /(?:\uAC80\uC99D\s*(?:\uBC29\uC2DD|\uC218\uB2E8|\uBC29\uBC95)|verification\s*surface|verify\s+with|browser\s+verification|screen\s+verification|\uD654\uBA74\uC73C\uB85C\s*\uAC80\uC99D|\uBE0C\uB77C\uC6B0\uC800\uB85C\s*\uAC80\uC99D|API\uB85C\s*\uAC80\uC99D|\uD14C\uC2A4\uD2B8\s*\uBA85\uB839\uC73C\uB85C\s*\uAC80\uC99D)/iu.test(
     message
   );
 
@@ -442,7 +465,7 @@ const normalizeKoreanCoreWorkflowText = (value: string): string =>
   stripKoreanSentenceEnding(
     normalizeInlineValue(value)
       .replace(
-        /^(?:(?:\uD575\uC2EC|\uC8FC\uC694)?\s*(?:\uC791\uC5C5|\uAE30\uB2A5|\uC6CC\uD06C\uD50C\uB85C|\uD750\uB984)|\uD575\uC2EC|\uC8FC\uC694|\uD574\uC57C\s*\uD558\uB294\s*(?:\uAC83|\uC791\uC5C5)?)(?:\uC740|\uB294|:|=)?\s*/u,
+        /^(?:(?:\uD575\uC2EC|\uC8FC\uC694)?\s*(?:\uC791\uC5C5|\uAE30\uB2A5|\uC6CC\uD06C\uD50C\uB85C|\uD750\uB984)(?:\uBCC4)?(?:\s*\uC2E4\uC81C\s*(?:\uB3D9\uC791|\uAC80\uC99D|\uC131\uACF5\s*\uC870\uAC74))?|\uD575\uC2EC|\uC8FC\uC694|\uD574\uC57C\s*\uD558\uB294\s*(?:\uAC83|\uC791\uC5C5)?)(?:\uC740|\uB294|:|=)?\s*/u,
         ""
       )
       .trim()
@@ -532,6 +555,7 @@ const extractKoreanNaturalProductAnswers = (
           .filter(
             (entry) =>
               entry.length > 0 &&
+              !isWorkflowHeaderOnlyValue(entry) &&
               !/(?:\uC131\uACF5|\uB418\uBA74|\uD655\uC778\s*\uAC00\uB2A5)/u.test(
                 entry
               )
@@ -606,6 +630,8 @@ const extractCandidatesFromQuestionOrder = (
           /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/u.test(entry)
             ? normalizeKoreanCoreWorkflowText(entry)
             : entry
+        ).filter(
+          (entry) => entry.length > 0 && !isWorkflowHeaderOnlyValue(entry)
         );
         break;
       case "references":

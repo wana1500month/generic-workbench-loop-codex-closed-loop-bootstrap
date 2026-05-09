@@ -72,6 +72,9 @@ const ignoredPackagePath = (relativePath) =>
   relativePath === "SOURCE_ARCHIVE_NOT_CODEX_APP_INSTALL.md" ||
   relativePath === "VALIDATION_STATUS.md" ||
   relativePath.endsWith(".tsbuildinfo") ||
+  relativePath === "evals/runs" ||
+  relativePath === "evals/front-door-sessions" ||
+  relativePath.startsWith("evals/front-door-sessions/") ||
   relativePath.startsWith("evals/runs/");
 
 const walkFiles = async (root, prefix = "") => {

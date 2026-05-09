@@ -196,21 +196,41 @@ const stripPathLikeTokens = (value: string): string =>
     .replace(/(?:^|[\s:=])https?:\/\/[^\s,;]+/gi, " ")
     .replace(/(?:^|[\s:=])(?:\/|\.\/|\.\.\/|[A-Za-z]:\\)[^\s,;]+/g, " ");
 
+export const hasExplicitApiNegation = (value: string): boolean => {
+  const normalized = value.normalize("NFKC").toLowerCase();
+  const apiTerm = String.raw`(?:api|http|endpoint|\uC5D4\uB4DC\uD3EC\uC778\uD2B8)`;
+  const apiNegativeAfterPattern = new RegExp(
+    String.raw`${apiTerm}\s*(?:\uB294|\uC740|is|are)?\s*(?:\uD544\uC694\s*\uC5C6|\uBD88\uD544\uC694|\uB9CC\uB4E4\uC9C0\s*\uB9C8|\uB9CC\uB4E4\s*\uD544\uC694\s*\uC5C6|\uC5C6\uC774|\uC81C\uC678|\uAE08\uC9C0|no|not|not\s*(?:needed|required)|unneeded|unnecessary|required\s*false|do\s*not|don't|dont)`,
+    "iu"
+  );
+  const negativeApiBeforePattern = new RegExp(
+    String.raw`(?:no|not|without|do\s*not|don't|dont|\uD544\uC694\s*\uC5C6|\uBD88\uD544\uC694|\uC5C6\uC774|\uC81C\uC678|\uAE08\uC9C0|\uB9CC\uB4E4\uC9C0\s*\uB9C8)[^.!?\n]{0,48}${apiTerm}`,
+    "iu"
+  );
+
+  return (
+    apiNegativeAfterPattern.test(normalized) ||
+    negativeApiBeforePattern.test(normalized)
+  );
+};
+
 export const parseVerificationSurfacesAnswer = (
   value: string
 ): VerificationSurface[] => {
-  const normalized = stripPathLikeTokens(value).toLowerCase();
+  const normalized = stripPathLikeTokens(value).normalize("NFKC").toLowerCase();
   const surfaces: VerificationSurface[] = [];
+  const apiExplicitlyNegated = hasExplicitApiNegation(normalized);
 
   if (
-    /(?:browser|screen|\bui\b|\uD654\uBA74|\uBE0C\uB77C\uC6B0\uC800)/.test(
+    /(?:browser|screen|\bui\b|\uD654\uBA74|\uBE0C\uB77C\uC6B0\uC800|\uC6F9\uC571|\uD504\uB860\uD2B8\uC5D4\uB4DC)/u.test(
       normalized
     )
   ) {
     surfaces.push("browser");
   }
   if (
-    /(?:api|http|endpoint|\uC5D4\uB4DC\uD3EC\uC778\uD2B8|\uC751\uB2F5|json)/.test(
+    !apiExplicitlyNegated &&
+    /(?:api|http|endpoint|\uC5D4\uB4DC\uD3EC\uC778\uD2B8|\uC751\uB2F5|json)/u.test(
       normalized
     )
   ) {
@@ -246,8 +266,10 @@ export const parseWorkflowChecksAnswer = (
 ): SessionWorkflowCheck[] => {
   const workflowDelimiter = /\s*(?:->|=>|\u2192|:|\uFF1A)\s*/;
   const metadataLabelPattern =
-    /\b(?:product title|product summary|target users?|primary users?|core workflows?|core features?|references?|good enough|finish line|target root|target score|max rounds?|run command|check command|ready url|app url|health url|api base url|verification surfaces?)\b/i;
-  const lines = value
+    /(?:\b(?:product title|product summary|target users?|primary users?|core workflows?|core features?|references?|good enough|finish line|target root|target score|max rounds?|run command|check command|ready url|app url|health url|api base url|verification surfaces?)\b|\uC81C\uD488\s*\uC81C\uBAA9|\uC81C\uD488\s*\uC694\uC57D|\uB300\uC0C1\s*\uC0AC\uC6A9\uC790|\uC8FC\s*\uC0AC\uC6A9\uC790|\uD575\uC2EC\s*\uC791\uC5C5|\uD575\uC2EC\s*\uC791\uC5C5\uBCC4\s*\uC2E4\uC81C\s*\uB3D9\uC791|\uC791\uC5C5\uBCC4\s*\uC2E4\uC81C\s*\uB3D9\uC791|\uC6CC\uD06C\uD50C\uB85C|\uC131\uACF5\s*\uAE30\uC900|\uC644\uB8CC\s*\uAE30\uC900|\uC791\uC5C5\s*\uD3F4\uB354|\uB300\uC0C1\s*\uD3F4\uB354|\uAC80\uC99D\s*\uBC29\uC2DD|\uAC80\uC99D\s*\uD45C\uBA74)/iu;
+  const workflowHeaderOnlyPattern =
+    /^(?:\uD575\uC2EC\s*)?(?:\uC791\uC5C5|\uC6CC\uD06C\uD50C\uB85C)(?:\uBCC4)?\s*(?:\uC2E4\uC81C\s*)?(?:\uB3D9\uC791|\uAC80\uC99D|\uC131\uACF5\s*\uC870\uAC74)?\s*[:\uFF1A]?$/u;
+  const candidateLines = value
     .split(/\r?\n|\\n/)
     .flatMap((line) =>
       line.split(
@@ -255,10 +277,12 @@ export const parseWorkflowChecksAnswer = (
       )
     )
     .map((line) => line.replace(/^\s*(?:[-*]|\d+[.)])\s*/, "").trim())
-    .filter(Boolean);
-
-  return lines
+    .filter(Boolean)
+    .filter((line) => !workflowHeaderOnlyPattern.test(line))
     .filter((line) => workflowDelimiter.test(line))
+    .filter((line) => !metadataLabelPattern.test(line.slice(0, 120)));
+
+  return candidateLines
     .map((line, index): SessionWorkflowCheck | undefined => {
       const parts = line.split(workflowDelimiter);
       const workflow = parts[0]?.trim();
@@ -266,10 +290,7 @@ export const parseWorkflowChecksAnswer = (
       if (!workflow || !expectedResult) {
         return undefined;
       }
-      if (
-        metadataLabelPattern.test(workflow) ||
-        metadataLabelPattern.test(line.slice(0, 120))
-      ) {
+      if (workflowHeaderOnlyPattern.test(workflow)) {
         return undefined;
       }
 

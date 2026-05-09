@@ -177,8 +177,12 @@ const main = async () => {
       "release image must not include TypeScript incremental build metadata"
     );
     assert.ok(
-      !existsSync(join(releaseRoot, "evals", "runs", "run-001")),
-      "release image must not include previous run artifacts"
+      !existsSync(join(releaseRoot, "evals", "runs")),
+      "release image must not include run state"
+    );
+    assert.ok(
+      !existsSync(join(releaseRoot, "evals", "front-door-sessions")),
+      "release image must not include front-door session state"
     );
     if (zipPath) {
       assert.ok(

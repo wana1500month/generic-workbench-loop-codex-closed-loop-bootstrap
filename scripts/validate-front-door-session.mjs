@@ -62,11 +62,81 @@ const main = async () => {
 
     const [
       { getFrontDoorSessionStatus, runFrontDoorDiscoveryTurn },
-      { prepareSessionRun }
+      { prepareSessionRun },
+      { parseVerificationSurfacesAnswer, parseWorkflowChecksAnswer },
+      { inferProductTargetFamily }
     ] = await Promise.all([
       importDist("front-door-session.js"),
-      importDist("prepare-session.js")
+      importDist("prepare-session.js"),
+      importDist("adapter-plan.js"),
+      importDist("intake-gate.js")
     ]);
+
+    assert.deepEqual(
+      parseVerificationSurfacesAnswer(
+        "\uAC00\uACC4\uBD80 \uBE0C\uB77C\uC6B0\uC800 \uC571 \uB9CC\uB4E4\uC5B4\uC918. API\uB294 \uD544\uC694 \uC5C6\uC5B4."
+      ),
+      ["browser"]
+    );
+    assert.deepEqual(
+      parseVerificationSurfacesAnswer("Budget browser app. No API needed."),
+      ["browser"]
+    );
+    assert.equal(
+      inferProductTargetFamily("Budget browser app. No API needed."),
+      "browser-app"
+    );
+
+    const koWorkflowHeaderChecks = parseWorkflowChecksAnswer(
+      [
+        "\uD575\uC2EC \uC791\uC5C5\uBCC4 \uC2E4\uC81C \uB3D9\uC791:",
+        "- \uC218\uC785/\uC9C0\uCD9C \uC785\uB825 -> \uAC70\uB798 \uCD94\uAC00 \uBC84\uD2BC\uC73C\uB85C \uD56D\uBAA9\uC744 \uCD94\uAC00\uD558\uBA74 \uBAA9\uB85D\uACFC \uD569\uACC4\uAC00 \uBC14\uB010\uB2E4.",
+        "- \uC6D4\uBCC4 \uD569\uACC4 \uBCF4\uAE30 -> \uC6D4 \uC120\uD0DD \uD6C4 \uD569\uACC4 \uCE74\uB4DC\uAC00 \uAC31\uC2E0\uB41C\uB2E4.",
+        "- \uCE74\uD14C\uACE0\uB9AC\uBCC4 \uD544\uD130\uB9C1 -> \uCE74\uD14C\uACE0\uB9AC \uC120\uD0DD \uC2DC \uBAA9\uB85D\uC774 \uD544\uD130\uB9C1\uB41C\uB2E4."
+      ].join("\n"),
+      "browser"
+    );
+    assert.deepEqual(
+      koWorkflowHeaderChecks.map((check) => check.workflow),
+      [
+        "\uC218\uC785/\uC9C0\uCD9C \uC785\uB825",
+        "\uC6D4\uBCC4 \uD569\uACC4 \uBCF4\uAE30",
+        "\uCE74\uD14C\uACE0\uB9AC\uBCC4 \uD544\uD130\uB9C1"
+      ]
+    );
+    assert.match(koWorkflowHeaderChecks[0].selector_hints.root, /workflow-1/);
+    assert.match(koWorkflowHeaderChecks[1].selector_hints.root, /workflow-2/);
+    assert.match(koWorkflowHeaderChecks[2].selector_hints.root, /workflow-3/);
+
+    const koApiNegatedBrowser = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-api-negated-ko-browser",
+      message:
+        "\uAC00\uACC4\uBD80 \uBE0C\uB77C\uC6B0\uC800 \uC571 \uB9CC\uB4E4\uC5B4\uC918. API\uB294 \uD544\uC694 \uC5C6\uC5B4."
+    });
+    assert.equal(koApiNegatedBrowser.intake.target_family, "browser-app");
+
+    const koApiNegatedVerification = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-api-negated-ko-verification",
+      message:
+        "\uAC00\uACC4\uBD80 \uC571 \uB9CC\uB4E4\uC5B4\uC918. \uBE0C\uB77C\uC6B0\uC800\uB85C \uAC80\uC99D\uD574. API\uB294 \uB9CC\uB4E4\uC9C0 \uB9C8."
+    });
+    assert.equal(koApiNegatedVerification.intake.target_family, "browser-app");
+    assert.deepEqual(
+      koApiNegatedVerification.intake.adapter_plan.verification_surfaces,
+      ["browser"]
+    );
+
+    const enApiNegatedBrowser = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-api-negated-en-browser",
+      message: "Build a budget browser app. No API needed."
+    });
+    assert.equal(enApiNegatedBrowser.intake.target_family, "browser-app");
+
+    const restApiBudget = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-rest-api-budget-service",
+      message: "Build a REST API budget service."
+    });
+    assert.equal(restApiBudget.intake.target_family, "crud-api");
 
     const firstTurn = await runFrontDoorDiscoveryTurn({
       threadId: "thread-123",

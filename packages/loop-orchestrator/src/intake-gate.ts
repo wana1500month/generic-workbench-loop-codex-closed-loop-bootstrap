@@ -1,6 +1,7 @@
 import {
   adapterPlanPreviewLines,
   buildAdapterPlanFromIntake,
+  hasExplicitApiNegation,
   normalizeVerificationSurfacesForFamily,
   parseVerificationSurfacesAnswer,
   parseWorkflowChecksAnswer
@@ -350,6 +351,7 @@ export const inferProductTargetFamily = (
   request: string
 ): Exclude<TargetFamily, "generic-core" | "editor-app"> => {
   const normalizedLower = lowerText(request);
+  const apiExplicitlyNegated = hasExplicitApiNegation(normalizedLower);
 
   if (
     includesAny(normalizedLower, [
@@ -368,6 +370,7 @@ export const inferProductTargetFamily = (
   }
 
   if (
+    !apiExplicitlyNegated &&
     includesAny(normalizedLower, ["crud", "rest api", "resource", "백오피스 api"])
   ) {
     return "crud-api";
@@ -381,7 +384,10 @@ export const inferProductTargetFamily = (
     return "dashboard";
   }
 
-  if (includesAny(normalizedLower, ["api", "webhook", "backend", "백엔드"])) {
+  if (
+    !apiExplicitlyNegated &&
+    includesAny(normalizedLower, ["api", "webhook", "backend", "백엔드"])
+  ) {
     return "api-service";
   }
 
