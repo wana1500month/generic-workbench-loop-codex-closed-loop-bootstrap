@@ -55,21 +55,19 @@ Use this sequence before treating the workbench as operational:
 
 ```bash
 npm run build
-npm test
-npm run validate:smoke-clean
-npm run validate:release
-npm run validate:source-archive-repro
+npm run validate:app
+npm run validate:app-release
 ```
 
-The source archive reproduction gate intentionally omits `.tmp/`, compiled `dist/`, and `*.tsbuildinfo`, then force-builds from the clean staged source before running tests and release packaging.
+The app gates validate the Codex app foreground path and install ZIP without requiring a local `codex` binary. `npm run validate:release-gate` is an alias for the app release gate.
 
-For faster commit checks, run `npm run validate:fast`. Process-control failures are release blockers through `npm test`, because timeout/stale-output classification is part of the harness product.
+For faster commit checks, run `npm run validate:fast`. For heavier deterministic coverage, run `npm test`, `npm run validate:smoke-clean`, and `npm run validate:source-archive-repro`; those are nightly or pre-broader-beta gates, not prerequisites for installing the Codex app ZIP.
 
 Real Codex and App Server smoke checks still require a trusted host with a usable `codex` binary and authenticated `CODEX_HOME`. If `codex` is not on `PATH`, install Codex CLI or set `HARNESS_CODEX_BIN` before running the live gate:
 
 ```bash
-npm run validate:codex-binary-preflight
-npm run validate:codex-live
+npm run validate:transport:cli
+npm run validate:transport:app-server
 ```
 
 ## Security Defaults

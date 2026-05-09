@@ -23,12 +23,13 @@ export const isBootstrapGeneratedAdapter = (
   const applyChangeSpec = loadedAdapter.contract.capabilities.apply_change;
   const applyChangeCommand = applyChangeSpec?.command ?? "";
   const applyChangeArgs = applyChangeSpec?.args ?? [];
+  const pointsAtGeneratedApplyChange = (value: string): boolean =>
+    value.includes(".generated/codex-adapter/scripts/apply-change") ||
+    value.includes("codex-adapter/scripts/apply-change");
   return (
     loadedAdapter.contract.adapter_id.startsWith("generated-") &&
-    (applyChangeCommand.includes(".generated/codex-adapter/scripts/apply-change") ||
-      applyChangeArgs.some((arg) =>
-        arg.includes(".generated/codex-adapter/scripts/apply-change")
-      ))
+    (pointsAtGeneratedApplyChange(applyChangeCommand) ||
+      applyChangeArgs.some((arg) => pointsAtGeneratedApplyChange(arg)))
   );
 };
 

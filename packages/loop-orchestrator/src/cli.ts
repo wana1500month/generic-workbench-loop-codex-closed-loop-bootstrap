@@ -39,6 +39,7 @@ type RunCommandArgs = {
   rubricPath?: string;
   evaluatorProfilePath?: string;
   targetFamily?: string;
+  preparedRunId?: string;
   resumeRunPath?: string;
   allowResumeMigration?: boolean;
   allowManualProtocolSeed?: boolean;
@@ -185,7 +186,7 @@ const usageLines = [
   "  npm run loop:prepare",
   "  npm run loop:prepare -- --json",
   "  npm run loop:start:codex",
-  "  npm run loop:start:codex -- --json",
+  "  npm run loop:start:codex -- --json [--run-id <prepared-run-id>]",
   "  npm run loop:start:bg",
   "  npm run loop:start:manual",
   "  npm run loop:start:manual -- --json",
@@ -263,6 +264,7 @@ const parseRunArgs = (argv: readonly string[]): RunCommandArgs => {
   let rubricPath: string | undefined;
   let evaluatorProfilePath: string | undefined;
   let targetFamily: string | undefined;
+  let preparedRunId: string | undefined;
   let resumeRunPath: string | undefined;
   let allowResumeMigration = false;
   let allowManualProtocolSeed = false;
@@ -323,6 +325,12 @@ const parseRunArgs = (argv: readonly string[]): RunCommandArgs => {
 
     if (value === "--target-family") {
       targetFamily = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (value === "--run-id" || value === "--prepared-run-id") {
+      preparedRunId = argv[index + 1];
       index += 1;
       continue;
     }
@@ -491,6 +499,7 @@ const parseRunArgs = (argv: readonly string[]): RunCommandArgs => {
     rubricPath,
     evaluatorProfilePath,
     targetFamily,
+    preparedRunId,
     resumeRunPath,
     allowResumeMigration,
     allowManualProtocolSeed,
@@ -1420,6 +1429,7 @@ const main = async (): Promise<void> => {
           rubricPath,
           evaluatorProfilePath,
           targetFamily,
+          preparedRunId: args.preparedRunId,
           resumeRunPath: args.resumeRunPath,
           allowResumeMigration: args.allowResumeMigration,
           forceReopenTerminal: args.forceReopenTerminal,
@@ -1438,6 +1448,7 @@ const main = async (): Promise<void> => {
           rubricPath,
           evaluatorProfilePath,
           targetFamily,
+          preparedRunId: args.preparedRunId,
           resumeRunPath: args.resumeRunPath,
           allowResumeMigration: args.allowResumeMigration,
           forceReopenTerminal: args.forceReopenTerminal,

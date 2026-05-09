@@ -15,6 +15,7 @@ Use this skill when the lane is `run_control`.
 
 ```bash
 npm run loop:start:codex -- --json
+npm run loop:start:codex -- --json --run-id run-###
 npm run loop:start:bg -- --max-rounds 3
 npm run loop:start:manual -- --json
 npm run loop:status -- --run-dir evals/runs/run-### --json
@@ -37,6 +38,7 @@ npm run loop:stop -- --run-dir evals/runs/run-###
 ## Hard rules
 
 - In the Codex app, default `start` to `npm run loop:start:codex -- --json`.
+- If the active operator surface exposes a prepared `run_id`, pass it with `--run-id <run-id>` so start consumes that run even when other prepared sessions exist.
 - In the Codex app, `start` is not complete when `loop:start:codex -- --json` returns.
 - In the Codex app, `start` and `resume` own the same-thread autocontinue chain.
 - `loop-control` is the operator-facing gate that moves a session from `ready_to_start` into `running`.

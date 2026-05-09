@@ -1,5 +1,5 @@
 import { mkdir, readFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 import {
   buildActiveContractFrame,
@@ -172,9 +172,9 @@ import {
   writeSessionPreparationArtifacts
 } from "./session-artifacts.js";
 import {
+  clearReadyToStartSessionMarker,
   findLatestPreparedRunAwaitingStart,
-  loadPreparedSessionSeedForRun,
-  readyToStartMarkerPathForRuns
+  loadPreparedSessionSeedForRun
 } from "./prepare-session.js";
 import { buildAdapterDriftReport } from "./adapter-drift.js";
 import {
@@ -380,6 +380,7 @@ export const runClosedLoop = async (input: {
   rubricPath?: string;
   evaluatorProfilePath?: string;
   targetFamily?: string;
+  preparedRunId?: string;
   resumeRunPath?: string;
   allowResumeMigration?: boolean;
   forceReopenTerminal?: boolean;
@@ -462,7 +463,8 @@ export const runClosedLoop = async (input: {
     (input.maxRounds === undefined || singleForegroundSeedDefaults)
       ? await findLatestPreparedRunAwaitingStart(
           runsDirectory,
-          process.env.CODEX_THREAD_ID?.trim() || undefined
+          process.env.CODEX_THREAD_ID?.trim() || undefined,
+          input.preparedRunId ? { runId: input.preparedRunId } : {}
         )
       : undefined;
   const runId = restoredRun?.runId ?? preparedRunCandidate?.runId ?? (
@@ -473,7 +475,14 @@ export const runClosedLoop = async (input: {
     preparedRunCandidate?.runDirectory ??
     join(runsDirectory, runId);
   if (preparedRunCandidate) {
-    await removeIfExists(readyToStartMarkerPathForRuns(runsDirectory));
+    await clearReadyToStartSessionMarker(
+      runsDirectory,
+      preparedRunCandidate.marker ?? {
+        run_id: preparedRunCandidate.runId,
+        run_directory: preparedRunCandidate.runDirectory,
+        updated_at: new Date().toISOString()
+      }
+    );
   }
   await mkdir(runDirectory, { recursive: true });
   const runDiscoveryMarkerPath = process.env.HARNESS_RUN_DISCOVERY_MARKER;
@@ -2483,12 +2492,10 @@ export const runClosedLoop = async (input: {
       runtimeDirectory: runRuntimeDirectory
     });
     const generatedAdapterRoot = dirname(resolve(adapterContractPath));
-    const generatedScriptRoot = resolve(
-      generatedAdapterRoot,
-      ".generated",
-      "codex-adapter",
-      "scripts"
-    );
+    const generatedScriptRoot =
+      basename(generatedAdapterRoot) === "generated-adapter"
+        ? resolve(generatedAdapterRoot, "codex-adapter", "scripts")
+        : resolve(generatedAdapterRoot, ".generated", "codex-adapter", "scripts");
     const generatedRuntimeConfig = resolve(
       generatedAdapterRuntimeConfigPath(adapterContractPath)
     );

@@ -18,7 +18,7 @@
         "The workflow works in the intended product path."
       ],
       "notes": [
-        "loop:intent, loop:intake, and operator-facing skills now expose the front door, but app-builder-loop is still being aligned as the canonical product-build lane."
+        "loop:intent, loop:intake, loop:discover, and operator-facing skills expose the lane-oriented front door; product prepare now writes run-local generated adapter artifacts and indexed ready_to_start markers."
       ]
     },
     {
@@ -31,7 +31,7 @@
         "The workflow works in the intended product path."
       ],
       "notes": [
-        "Adapter boundaries, evaluator bundles, and generated/runtime migration checks are now validated explicitly."
+        "Adapter boundaries, evaluator bundles, generated/runtime migration checks, and run-local generated adapter startup are now validated explicitly."
       ]
     },
     {
@@ -57,7 +57,7 @@
         "The workflow works in the intended product path."
       ],
       "notes": [
-        "Attached/app-server resume validation passes, and bootstrap generator session resume is wired; live Codex smoke is still environment-blocked in this workspace."
+        "Attached/app-server resume validation passes, prepared sessions now index ready_to_start by run and thread, and app foreground/release gates pass without requiring a local codex binary."
       ]
     },
     {
@@ -70,7 +70,7 @@
         "The harness should read clearly from its artifacts alone."
       ],
       "notes": [
-        "Session-status, session-stream, operator-surface, and transport-state are now projected, but bookkeeping docs are still catching up."
+        "Session-status, session-stream, operator-surface, transport-state, run-local adapter plans, and ready indexes are now projected, while broader docs continue to be tightened."
       ]
     },
     {
@@ -83,7 +83,7 @@
         "The controller should be able to continue across multiple rounds before stopping."
       ],
       "notes": [
-        "resume-autocontinue, attached-resume-smoke, and interrupted-round repair validations are passing."
+        "resume-autocontinue, attached-resume-smoke, interrupted-round repair, and current-thread continue validations are passing."
       ]
     },
     {
@@ -96,7 +96,7 @@
         "The stop reason should be explicit whether an adapter is attached or not."
       ],
       "notes": [
-        "stop_reason, session attention, and transport mode surfaces are now validated across attached and detached flows."
+        "stop_reason, session attention, UI visibility, foreground owner, and transport mode surfaces are validated across attached and detached flows."
       ]
     },
     {
@@ -109,7 +109,7 @@
         "The repo structure should not distract from the workbench or its harness engine."
       ],
       "notes": [
-        "The repo stays harness-focused, but some docs and operator-facing route names were still inconsistent before this patch."
+        "Generated product adapter artifacts moved under evals/runs/<run-id>/generated-adapter so repo root no longer receives singleton product-build outputs during prepare."
       ]
     },
     {
@@ -122,7 +122,7 @@
         "The generic front door routes product_build, harness_design, run_resume, and evaluator_tuning reliably, durable memory stays identity-coherent, and control-plane validations pass without bundling a product surface."
       ],
       "notes": [
-        "Generic front door and control-plane validations are strong, but real Codex/App Server smoke still need a green run in an environment with the codex binary available."
+        "validate:app and validate:app-release are green for the Codex app foreground/install path; trusted transport lanes and external adapters remain separate proof surfaces."
       ]
     }
   ]

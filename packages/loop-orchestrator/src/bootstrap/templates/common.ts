@@ -27,9 +27,10 @@ const codexSessionRegistryPath =
 const inputPath = process.env.HARNESS_INPUT_PATH;
 const outputPath = process.env.HARNESS_OUTPUT_PATH;
 const targetRoot = process.env.HARNESS_TARGET_ROOT ?? process.cwd();
-const verificationProfilePath =
-  process.env.HARNESS_VERIFICATION_PROFILE_PATH ??
-  new URL("../../../verification-profile.generated.json", import.meta.url);
+const fallbackVerificationProfileUrl = new URL(
+  "../../../verification-profile.generated.json",
+  import.meta.url
+);
 
 const ensureDirectory = async (path) => {
   await mkdir(path, { recursive: true });
@@ -52,7 +53,14 @@ export const readIdeaMarkdown = async () => {
 };
 
 export const readVerificationProfile = async () =>
-  JSON.parse(await readFile(verificationProfilePath, "utf8"));
+  JSON.parse(
+    await readFile(
+      process.env.HARNESS_VERIFICATION_PROFILE_PATH ??
+        (await readConfig()).verification_profile_path ??
+        fallbackVerificationProfileUrl,
+      "utf8"
+    )
+  );
 
 export const readPacket = async () => {
   if (!inputPath) {

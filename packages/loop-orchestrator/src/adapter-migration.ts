@@ -60,7 +60,9 @@ const isGeneratedLocalAdapterSurfacePath = (relativePath: string): boolean => {
   return (
     normalized === "adapter.generated.json" ||
     normalized === ".generated/codex-adapter/runtime-config.json" ||
-    normalized.startsWith(".generated/codex-adapter/scripts/")
+    normalized === "codex-adapter/runtime-config.json" ||
+    normalized.startsWith(".generated/codex-adapter/scripts/") ||
+    normalized.startsWith("codex-adapter/scripts/")
   );
 };
 
@@ -148,7 +150,9 @@ const runGitApply = async (input: {
   });
 
 export const generatedAdapterRuntimeConfigPath = (adapterContractPath: string): string =>
-  join(dirname(adapterContractPath), ".generated", "codex-adapter", "runtime-config.json");
+  basename(dirname(adapterContractPath)) === "generated-adapter"
+    ? join(dirname(adapterContractPath), "codex-adapter", "runtime-config.json")
+    : join(dirname(adapterContractPath), ".generated", "codex-adapter", "runtime-config.json");
 
 export const detectAdapterOrigin = (
   loadedAdapter: LoadedAdapterContract | undefined
@@ -390,7 +394,10 @@ export const applyGeneratedLocalAdapterMigration = async (input: {
   const adapterContractPath = resolve(input.loadedAdapter.contract_path);
   const adapterRoot = dirname(adapterContractPath);
   const runtimeConfigPath = generatedAdapterRuntimeConfigPath(adapterContractPath);
-  const generatedAdapterRoot = resolve(adapterRoot, ".generated", "codex-adapter");
+  const generatedAdapterRoot =
+    basename(adapterRoot) === "generated-adapter"
+      ? resolve(adapterRoot, "codex-adapter")
+      : resolve(adapterRoot, ".generated", "codex-adapter");
   const backupDirectory = join(
     input.runtimeDirectory,
     "adapter-migrations",

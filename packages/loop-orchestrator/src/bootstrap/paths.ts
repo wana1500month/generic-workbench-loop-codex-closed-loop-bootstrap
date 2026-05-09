@@ -2,10 +2,22 @@ import { join } from "node:path";
 
 import type { BootstrapArtifactPaths } from "../bootstrap.js";
 
+export interface BootstrapArtifactPathInput {
+  rootDirectory: string;
+  runDirectory?: string;
+}
+
 export const createBootstrapArtifactPaths = (
-  rootDirectory: string
+  input: string | BootstrapArtifactPathInput
 ): BootstrapArtifactPaths => {
-  const generatedAdapterRoot = join(rootDirectory, ".generated", "codex-adapter");
+  const rootDirectory = typeof input === "string" ? input : input.rootDirectory;
+  const runDirectory = typeof input === "string" ? undefined : input.runDirectory;
+  const generatedRoot = runDirectory
+    ? join(runDirectory, "generated-adapter")
+    : rootDirectory;
+  const generatedAdapterRoot = runDirectory
+    ? join(generatedRoot, "codex-adapter")
+    : join(rootDirectory, ".generated", "codex-adapter");
   return {
     rootDirectory,
     ideaPath: join(rootDirectory, "IDEA.md"),
@@ -15,22 +27,24 @@ export const createBootstrapArtifactPaths = (
     progressLogPath: join(rootDirectory, "progress.jsonl"),
     doneWhenPath: join(rootDirectory, "done_when.md"),
     initScriptPath: join(rootDirectory, "init.sh"),
-    adapterPath: join(rootDirectory, "adapter.generated.json"),
-    adapterPlanPath: join(rootDirectory, "adapter-plan.generated.json"),
-    adapterPlanMarkdownPath: join(rootDirectory, "adapter-plan.generated.md"),
+    adapterPath: join(generatedRoot, "adapter.generated.json"),
+    adapterPlanPath: join(generatedRoot, "adapter-plan.generated.json"),
+    adapterPlanMarkdownPath: join(generatedRoot, "adapter-plan.generated.md"),
     adapterReviewTaskPath: join(generatedAdapterRoot, "adapter-review-task.md"),
     adapterReviewResponsePath: join(
       generatedAdapterRoot,
       "adapter-review-response.json"
     ),
-    generatedRubricPath: join(rootDirectory, "rubric.generated.json"),
+    generatedRubricPath: join(generatedRoot, "rubric.generated.json"),
     generatedVerificationProfilePath: join(
-      rootDirectory,
+      generatedRoot,
       "verification-profile.generated.json"
     ),
     generatedAdapterRoot,
     generatedScriptsRoot: join(generatedAdapterRoot, "scripts"),
     generatedRuntimeConfigPath: join(generatedAdapterRoot, "runtime-config.json"),
-    generatedAdapterRelativePath: "./.generated/codex-adapter"
+    generatedAdapterRelativePath: runDirectory
+      ? "./codex-adapter"
+      : "./.generated/codex-adapter"
   };
 };

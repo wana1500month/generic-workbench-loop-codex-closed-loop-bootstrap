@@ -16,7 +16,7 @@ A generic Codex workbench for closed-loop harness work. The harness engine is th
 
 ## Operational Status
 
-This workbench is a supervised alpha / early beta harness. Do not use it for long-running unattended closed-loop operation, external user distribution, CI auto-fix, or auto-PR workflows until `npm test`, `npm run validate:smoke-clean`, `npm run validate:release`, `npm run validate:source-archive-repro`, and trusted-runner `npm run validate:codex-live` are all green for the target environment.
+This workbench is a supervised alpha / early beta harness. For Codex app installation, use the app gate (`npm run validate:app-release` or `npm run validate:release-gate`) and keep CLI/App Server live checks on trusted transport lanes. Do not use it for long-running unattended closed-loop operation, CI auto-fix, or auto-PR workflows until `npm test`, `npm run validate:smoke-clean`, `npm run validate:source-archive-repro`, and trusted-runner `npm run validate:transport:cli` are all green for the target environment.
 
 ## Quick Start
 
@@ -55,18 +55,23 @@ npm run loop:status -- --json
 
 `loop:intake`, `loop:resume`, `loop:phase`, `loop:run`, `loop:single`, and family/reference-adapter commands are internal, recovery, validation, or compatibility surfaces. `loop:intake` stays a stateless staged parser behind `loop:discover`; new operator flows should not start there. `loop:discover` is the file-backed discovery surface that accumulates intake answers per thread under `evals/front-door-sessions/`. Once that session reaches `ready_for_prepare`, `loop:prepare -- --front-door-session <path>` materializes the snapshot into run-owned artifacts and leaves the run at `ready_to_start`.
 
-Product-build discovery collects product, execution, and adapter-design intake. The prepare step generates `adapter-plan.generated.json`, `adapter-plan.generated.md`, `.generated/codex-adapter/runtime-config.json`, `.generated/codex-adapter/scripts/*`, and `.generated/codex-adapter/adapter-review-task.md` so the operator can inspect the generated adapter before saying `루프 시작`.
+Product-build discovery collects product, execution, and adapter-design intake. The prepare step generates run-owned adapter artifacts under `evals/runs/<run-id>/generated-adapter/`, including `adapter.generated.json`, `adapter-plan.generated.json`, `adapter-plan.generated.md`, `rubric.generated.json`, `verification-profile.generated.json`, and `codex-adapter/*`, so the operator can inspect the generated adapter before saying `루프 시작` or `start loop`.
 
 `loop:intent`, `loop:intake`, `loop:discover`, `loop:prepare`, and the `loop-runner` start/resume/phase surfaces use bundled dist first. Use `HARNESS_FORCE_BUILD=1` only for intentional developer rebuilds.
 
 ## Validation Suites
 
 - `npm run validate:fast`: short deterministic commit gate
+- `npm run validate:app`: Codex app foreground gate; builds, runs fast checks, and validates product front-door surfaces without requiring a `codex` binary
+- `npm run validate:app-release` / `npm run validate:release-gate`: Codex app install ZIP gate; packages the release ZIP and validates release startup without requiring a `codex` binary
 - `npm run validate:process`: process timeout, stale-output, and supervisor cleanup gate
 - `npm run validate:core`: adapter-free deterministic integration gate
 - `npm run validate:smoke-clean`: hydrates `.tmp/semantic-validation` from `scripts/testing/fixtures/semantic-validation`, clears runtime state, and proves smoke is self-contained
 - `npm run validate:release`: builds the installable Codex app ZIP and validates release startup
 - `npm run validate:source-archive-repro`: stages a clean source archive candidate without `.tmp`, compiled `dist`, or `*.tsbuildinfo`, then force-builds and runs `npm ci`, `build`, `npm test`, `smoke-clean`, and `release`
+- `npm run validate:nightly`: heavier deterministic core plus smoke-clean lane
+- `npm run validate:transport:cli`: trusted-runner Codex CLI transport lane
+- `npm run validate:transport:app-server`: optional App Server transport lane
 - `npm run validate:codex-binary-preflight`: trusted-runner check that fails fast when `codex` is not executable; install Codex CLI or set `HARNESS_CODEX_BIN`
 - `npm run validate:codex-auth-preflight:fake`: deterministic fake-Codex auth semantics check; `validate:codex-auth-preflight` remains a compatibility alias
 - `npm run validate:codex-live`: trusted-runner-only live Codex and App Server gate, starting with the real binary preflight

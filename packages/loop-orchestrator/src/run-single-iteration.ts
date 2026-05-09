@@ -13,6 +13,7 @@ export const runSingleIteration = async (input: {
   rubricPath?: string;
   evaluatorProfilePath?: string;
   targetFamily?: string;
+  preparedRunId?: string;
   resumeRunPath?: string;
   allowResumeMigration?: boolean;
   forceReopenTerminal?: boolean;
@@ -31,6 +32,7 @@ export const runSingleIteration = async (input: {
     rubricPath: input.rubricPath,
     evaluatorProfilePath: input.evaluatorProfilePath,
     targetFamily: input.targetFamily,
+    preparedRunId: input.preparedRunId,
     resumeRunPath: input.resumeRunPath,
     allowResumeMigration: input.allowResumeMigration,
     forceReopenTerminal: input.forceReopenTerminal,

@@ -22,6 +22,7 @@ import {
   nextRunId,
   pathExists,
   repoRoot,
+  removeIfExists,
   writeJson
 } from "./file-system.js";
 import { defaultIdeaPath, readIdeaBrief } from "./idea-intake.js";
@@ -81,6 +82,8 @@ export interface ReadyToStartSessionMarker {
   updated_at: string;
   thread_id?: string;
   binding_state?: ThreadBindingState;
+  front_door_session_id?: string;
+  front_door_session_path?: string;
 }
 
 export interface PrepareSessionRunInput {
@@ -279,15 +282,100 @@ const markFrontDoorSessionPrepared = async (input: {
   ]);
 };
 
-export const readyToStartMarkerPathForRuns = (runsDirectory: string): string =>
+const encodeReadyToStartKey = (value: string): string =>
+  encodeURIComponent(value).replace(/\./g, "%2E");
+
+export const legacyReadyToStartMarkerPathForRuns = (runsDirectory: string): string =>
   join(runsDirectory, "ready-to-start-session.json");
+
+export const readyToStartIndexDirectoryForRuns = (runsDirectory: string): string =>
+  join(runsDirectory, "ready-to-start");
+
+export const readyToStartMarkerPathForRuns = (runsDirectory: string): string =>
+  join(readyToStartIndexDirectoryForRuns(runsDirectory), "latest.json");
+
+export const readyToStartMarkerPathForRun = (
+  runsDirectory: string,
+  runId: string
+): string =>
+  join(
+    readyToStartIndexDirectoryForRuns(runsDirectory),
+    "by-run",
+    `${encodeReadyToStartKey(runId)}.json`
+  );
+
+export const readyToStartMarkerPathForThread = (
+  runsDirectory: string,
+  threadId: string
+): string =>
+  join(
+    readyToStartIndexDirectoryForRuns(runsDirectory),
+    "by-thread",
+    `${encodeReadyToStartKey(threadId)}.json`
+  );
 
 export const loadReadyToStartSessionMarker = async (
   runsDirectory: string
 ): Promise<ReadyToStartSessionMarker | undefined> =>
-  loadJsonIfExists<ReadyToStartSessionMarker>(
+  (await loadJsonIfExists<ReadyToStartSessionMarker>(
     readyToStartMarkerPathForRuns(runsDirectory)
+  )) ??
+  (await loadJsonIfExists<ReadyToStartSessionMarker>(
+    legacyReadyToStartMarkerPathForRuns(runsDirectory)
+  ));
+
+const loadReadyToStartSessionMarkerForRun = async (
+  runsDirectory: string,
+  runId: string
+): Promise<ReadyToStartSessionMarker | undefined> =>
+  loadJsonIfExists<ReadyToStartSessionMarker>(
+    readyToStartMarkerPathForRun(runsDirectory, runId)
   );
+
+const loadReadyToStartSessionMarkerForThread = async (
+  runsDirectory: string,
+  threadId: string
+): Promise<ReadyToStartSessionMarker | undefined> =>
+  loadJsonIfExists<ReadyToStartSessionMarker>(
+    readyToStartMarkerPathForThread(runsDirectory, threadId)
+  );
+
+export const writeReadyToStartSessionMarker = async (
+  runsDirectory: string,
+  marker: ReadyToStartSessionMarker
+): Promise<void> => {
+  const writes = [
+    removeIfExists(legacyReadyToStartMarkerPathForRuns(runsDirectory)),
+    writeJson(readyToStartMarkerPathForRuns(runsDirectory), marker),
+    writeJson(readyToStartMarkerPathForRun(runsDirectory, marker.run_id), marker)
+  ];
+  if (marker.thread_id && !isFallbackThreadId(marker.thread_id)) {
+    writes.push(
+      writeJson(readyToStartMarkerPathForThread(runsDirectory, marker.thread_id), marker)
+    );
+  }
+  await Promise.all(writes);
+};
+
+export const clearReadyToStartSessionMarker = async (
+  runsDirectory: string,
+  marker: ReadyToStartSessionMarker
+): Promise<void> => {
+  const removals = [
+    removeIfExists(readyToStartMarkerPathForRun(runsDirectory, marker.run_id)),
+    removeIfExists(legacyReadyToStartMarkerPathForRuns(runsDirectory))
+  ];
+  const latest = await loadReadyToStartSessionMarker(runsDirectory);
+  if (latest?.run_id === marker.run_id) {
+    removals.push(removeIfExists(readyToStartMarkerPathForRuns(runsDirectory)));
+  }
+  if (marker.thread_id && !isFallbackThreadId(marker.thread_id)) {
+    removals.push(
+      removeIfExists(readyToStartMarkerPathForThread(runsDirectory, marker.thread_id))
+    );
+  }
+  await Promise.all(removals);
+};
 
 export const loadPreparedSessionSeedForRun = async (
   runDirectory: string
@@ -354,30 +442,65 @@ const isPreparedRunAwaitingStart = async (input: {
 
 export const findLatestPreparedRunAwaitingStart = async (
   runsDirectory: string,
-  currentThreadId?: string
-): Promise<{ runId: string; runDirectory: string } | undefined> => {
+  currentThreadId?: string,
+  options: { runId?: string } = {}
+): Promise<
+  | { runId: string; runDirectory: string; marker?: ReadyToStartSessionMarker }
+  | undefined
+> => {
   try {
-    const marker = await loadReadyToStartSessionMarker(runsDirectory);
-    if (marker && markerMatchesPreparedThread(marker, currentThreadId)) {
+    const markerCandidate = options.runId
+      ? await loadReadyToStartSessionMarkerForRun(runsDirectory, options.runId)
+      : currentThreadId
+        ? await loadReadyToStartSessionMarkerForThread(runsDirectory, currentThreadId)
+        : await loadReadyToStartSessionMarker(runsDirectory);
+    if (
+      markerCandidate &&
+      (options.runId || markerMatchesPreparedThread(markerCandidate, currentThreadId))
+    ) {
       const markerSessionStatus = await loadJsonIfExists<SessionStatusArtifact>(
-        runtimeStatePathsForRun(marker.run_directory).sessionStatusPath
+        runtimeStatePathsForRun(markerCandidate.run_directory).sessionStatusPath
       );
       const markerPreparedSeed = await loadPreparedSessionSeedForRun(
-        marker.run_directory
+        markerCandidate.run_directory
       );
       if (
         await isPreparedRunAwaitingStart({
-          runDirectory: marker.run_directory,
+          runDirectory: markerCandidate.run_directory,
           currentThreadId,
           sessionStatus: markerSessionStatus,
           preparedSeed: markerPreparedSeed
         })
       ) {
         return {
-          runId: marker.run_id,
-          runDirectory: marker.run_directory
+          runId: markerCandidate.run_id,
+          runDirectory: markerCandidate.run_directory,
+          marker: markerCandidate
         };
       }
+    }
+
+    if (options.runId) {
+      const explicitRunDirectory = join(runsDirectory, options.runId);
+      const runtimePaths = runtimeStatePathsForRun(explicitRunDirectory);
+      const [sessionStatus, preparedSeed] = await Promise.all([
+        loadJsonIfExists<SessionStatusArtifact>(runtimePaths.sessionStatusPath),
+        loadPreparedSessionSeedForRun(explicitRunDirectory)
+      ]);
+      if (
+        await isPreparedRunAwaitingStart({
+          runDirectory: explicitRunDirectory,
+          currentThreadId,
+          sessionStatus,
+          preparedSeed
+        })
+      ) {
+        return {
+          runId: options.runId,
+          runDirectory: explicitRunDirectory
+        };
+      }
+      return undefined;
     }
 
     const entries = await readdir(runsDirectory, { withFileTypes: true });
@@ -386,6 +509,7 @@ export const findLatestPreparedRunAwaitingStart = async (
       .map((entry) => entry.name)
       .sort((left, right) => Number(right.slice(4)) - Number(left.slice(4)));
 
+    const candidates: Array<{ runId: string; runDirectory: string }> = [];
     for (const runId of runDirectories) {
       const runDirectory = join(runsDirectory, runId);
       const runtimePaths = runtimeStatePathsForRun(runDirectory);
@@ -401,11 +525,19 @@ export const findLatestPreparedRunAwaitingStart = async (
           preparedSeed
         })
       ) {
-        return {
-          runId,
-          runDirectory
-        };
+        candidates.push({ runId, runDirectory });
       }
+    }
+
+    if (candidates.length === 1) {
+      return candidates[0];
+    }
+    if (candidates.length > 1) {
+      throw new Error(
+        `Multiple ready_to_start runs match this start request: ${candidates
+          .map((candidate) => candidate.runId)
+          .join(", ")}. Pass --run-id <run-id> to choose one explicitly.`
+      );
     }
   } catch (error: unknown) {
     if (
@@ -488,13 +620,16 @@ export const prepareSessionRun = async (
     3;
   const bootstrapTargetFamily = normalizeBootstrapTargetFamily(resolvedTargetFamily);
   const isProductBuild = bootstrapTargetFamily !== undefined;
-  const bootstrapPaths = createBootstrapArtifactPaths(durableMemory.rootDirectory);
+  const bootstrapPaths = createBootstrapArtifactPaths({
+    rootDirectory: durableMemory.rootDirectory,
+    runDirectory
+  });
   let preparedValidationBundle:
     | SessionRunContractArtifact["validation_strategy"]["validation_bundle"]
     | undefined;
   let resolvedRubricPath = resolve(input.rubricPath ?? defaultRubricPath);
 
-  if (bootstrapTargetFamily && input.rubricPath === undefined) {
+  if (bootstrapTargetFamily) {
     if (!intake?.target_root?.trim()) {
       throw new Error(
         "Prepared product session is missing intake.target_root. Refusing to scaffold a product adapter bundle without execution target identity."
@@ -610,14 +745,16 @@ export const prepareSessionRun = async (
       bootstrapPaths
     );
     const targetFamilySelection = resolveTargetFamilySelection(bootstrapResult.targetFamily);
-    resolvedRubricPath = resolve(bootstrapResult.rubricPath);
+    if (input.rubricPath === undefined) {
+      resolvedRubricPath = resolve(bootstrapResult.rubricPath);
+    }
     preparedValidationBundle = {
       target_family: bootstrapResult.targetFamily,
       ...(targetFamilySelection?.validation_lane
         ? { validation_lane: targetFamilySelection.validation_lane }
         : {}),
       adapter_contract_path: resolve(bootstrapResult.adapterPath),
-      rubric_path: resolve(bootstrapResult.rubricPath),
+      rubric_path: resolvedRubricPath,
       evaluator_profile_path: resolve(bootstrapResult.evaluatorProfilePath)
     };
   }
@@ -794,12 +931,22 @@ export const prepareSessionRun = async (
     markdownPath: runtimePaths.operatorSurfaceMarkdownPath,
     artifact: operatorSurface
   });
-  await writeJson(readyToStartMarkerPathForRuns(runsDirectory), {
+  await writeReadyToStartSessionMarker(runsDirectory, {
     run_id: runId,
     run_directory: runDirectory,
     updated_at: new Date().toISOString(),
     binding_state: effectiveThreadBindingState,
-    ...(sessionContext.threadId ? { thread_id: sessionContext.threadId } : {})
+    ...(sessionContext.threadId ? { thread_id: sessionContext.threadId } : {}),
+    ...(frontDoorSession?.artifact.session_id
+      ? { front_door_session_id: frontDoorSession.artifact.session_id }
+      : {}),
+    ...(frontDoorSession?.path
+      ? {
+          front_door_session_path: normalizeRelativePath(
+            relative(repoRoot, frontDoorSession.path)
+          )
+        }
+      : {})
   } satisfies ReadyToStartSessionMarker);
   if (frontDoorSession) {
     await markFrontDoorSessionPrepared({

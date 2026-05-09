@@ -275,6 +275,7 @@ const main = async () => {
     assertNoBuildAttempt(prepareResult, "release prepare");
     const prepared = parseJsonStdout(prepareResult, "release prepare");
     const preparedRunDirectory = resolveReleasePath(releaseRoot, prepared.run_directory);
+    const preparedAdapterPath = resolveReleasePath(releaseRoot, prepared.adapter_path);
     assert.ok(
       existsSync(resolveReleasePath(releaseRoot, prepared.adapter_plan_path)),
       "release prepare did not expose adapter_plan_path"
@@ -283,13 +284,36 @@ const main = async () => {
       existsSync(resolveReleasePath(releaseRoot, prepared.adapter_review_task_path)),
       "release prepare did not expose adapter_review_task_path"
     );
+    assert.ok(
+      preparedAdapterPath.startsWith(join(preparedRunDirectory, "generated-adapter")),
+      `release prepare wrote adapter outside run-local generated-adapter directory: ${preparedAdapterPath}`
+    );
+    assert.ok(
+      !existsSync(join(releaseRoot, "adapter.generated.json")),
+      "release prepare must not write adapter.generated.json at repo root"
+    );
 
     const readyMarker = await readJsonFile(
-      join(releaseRoot, "evals", "runs", "ready-to-start-session.json")
+      join(releaseRoot, "evals", "runs", "ready-to-start", "latest.json")
     );
     assert.equal(readyMarker.run_directory, preparedRunDirectory);
     assert.equal(readyMarker.binding_state, "unbound");
     assert.equal(readyMarker.thread_id, undefined);
+    const readyMarkerByRun = await readJsonFile(
+      join(
+        releaseRoot,
+        "evals",
+        "runs",
+        "ready-to-start",
+        "by-run",
+        `${prepared.run_id}.json`
+      )
+    );
+    assert.equal(readyMarkerByRun.run_directory, preparedRunDirectory);
+    assert.ok(
+      !existsSync(join(releaseRoot, "evals", "runs", "ready-to-start-session.json")),
+      "release prepare must not write singleton ready-to-start-session.json"
+    );
 
     const startEnv = {
       ...releaseEnv,

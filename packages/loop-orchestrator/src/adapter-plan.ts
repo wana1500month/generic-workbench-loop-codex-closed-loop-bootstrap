@@ -7,14 +7,18 @@ import type {
 import type { TargetFamily } from "./types.js";
 
 export const generatedAdapterFiles = [
-  "adapter.generated.json",
-  ".generated/codex-adapter/runtime-config.json",
-  ".generated/codex-adapter/scripts/prepare-target.mjs",
-  ".generated/codex-adapter/scripts/apply-change.mjs",
-  ".generated/codex-adapter/scripts/run-target.mjs",
-  ".generated/codex-adapter/scripts/capture-evidence.mjs",
-  ".generated/codex-adapter/scripts/run-checks.mjs",
-  ".generated/codex-adapter/scripts/grade-round.mjs"
+  "generated-adapter/adapter.generated.json",
+  "generated-adapter/adapter-plan.generated.json",
+  "generated-adapter/adapter-plan.generated.md",
+  "generated-adapter/rubric.generated.json",
+  "generated-adapter/verification-profile.generated.json",
+  "generated-adapter/codex-adapter/runtime-config.json",
+  "generated-adapter/codex-adapter/scripts/prepare-target.mjs",
+  "generated-adapter/codex-adapter/scripts/apply-change.mjs",
+  "generated-adapter/codex-adapter/scripts/run-target.mjs",
+  "generated-adapter/codex-adapter/scripts/capture-evidence.mjs",
+  "generated-adapter/codex-adapter/scripts/run-checks.mjs",
+  "generated-adapter/codex-adapter/scripts/grade-round.mjs"
 ] as const;
 
 export const defaultVerificationSurfacesForFamily = (

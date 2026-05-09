@@ -46,6 +46,7 @@ const suites = {
     "validate:release-zip",
     "validate:cli-front-door",
     "validate:loop-prepare",
+    "validate:generated-adapter-run-local",
     "validate:prepared-session-consumption-boundary"
   ],
   core: [

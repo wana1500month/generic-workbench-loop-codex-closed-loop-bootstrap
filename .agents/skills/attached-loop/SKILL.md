@@ -17,6 +17,7 @@ Recover an existing Codex-owned current-thread run without spawning nested `code
 
 - Do not spawn nested `codex exec` or `codex exec resume`.
 - Treat this as a recovery or re-entry surface for `transport_mode = current-thread`.
+- Re-enter an existing run by explicit `--run-dir`; do not resolve fresh `ready_to_start` sessions from `latest.json`.
 - Keep shell usage phase-local and short-lived.
 - Prefer repairing from `runtime/live-state.json`, `runtime/round-phase.json`, `runtime/operator-surface.json`, and committed `round_summary.json` files instead of guessing from chat history.
 - Read `runtime/current-thread-protocol.md` when it exists and treat it as the operator checklist for the active run.

@@ -3,7 +3,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  latestModifiedTimeMs,
   prepareFrontDoorDist,
   runCommand,
   runPinnedTypeScriptBuild
@@ -88,16 +87,7 @@ const runBuild = async () => {
 };
 
 const readOnlyFrontDoorNeedsBuild = () => {
-  if (!existsSync(cliEntryPath)) {
-    return true;
-  }
-
-  const distMtimeMs = latestModifiedTimeMs(cliEntryPath);
-  const latestWatchMtimeMs = readOnlyCliWatchPaths.reduce(
-    (latest, targetPath) => Math.max(latest, latestModifiedTimeMs(targetPath)),
-    0
-  );
-  return latestWatchMtimeMs > distMtimeMs;
+  return !existsSync(cliEntryPath);
 };
 
 const shouldForceBuild = () =>

@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 
@@ -207,6 +208,45 @@ const main = async () => {
     assert.equal(preparedSessionStatus.foreground_owner, "human");
     assert.equal(preparedOperatorSurface.ui_visibility, "user_boundary");
     assert.equal(preparedOperatorSurface.foreground_owner, "human");
+    assert.ok(
+      prepared.adapterPath.startsWith(join(prepared.runDirectory, "generated-adapter")),
+      `prepared adapter should be run-local: ${prepared.adapterPath}`
+    );
+    assert.ok(
+      prepared.adapterPlanPath.startsWith(join(prepared.runDirectory, "generated-adapter")),
+      `prepared adapter plan should be run-local: ${prepared.adapterPlanPath}`
+    );
+    assert.ok(
+      prepared.evaluatorProfilePath.startsWith(join(prepared.runDirectory, "generated-adapter")),
+      `prepared evaluator profile should be run-local: ${prepared.evaluatorProfilePath}`
+    );
+    assert.ok(
+      existsSync(join(prepared.runDirectory, "generated-adapter", "codex-adapter", "runtime-config.json")),
+      "prepared session should write run-local generated adapter runtime config"
+    );
+    assert.ok(
+      !existsSync(join(repoRoot, "adapter.generated.json")),
+      "prepared session should not write root adapter.generated.json"
+    );
+    assert.ok(
+      !existsSync(join(repoRoot, "adapter-plan.generated.json")),
+      "prepared session should not write root adapter-plan.generated.json"
+    );
+    const readyIndexRoot = join(repoRoot, "evals", "runs", "ready-to-start");
+    const [readyLatest, readyByRun, readyByThread] = await Promise.all([
+      readJsonFile(join(readyIndexRoot, "latest.json")),
+      readJsonFile(join(readyIndexRoot, "by-run", `${prepared.runId}.json`)),
+      readJsonFile(
+        join(readyIndexRoot, "by-thread", `${encodeURIComponent("thread-123")}.json`)
+      )
+    ]);
+    assert.equal(readyLatest.run_id, prepared.runId);
+    assert.equal(readyByRun.run_id, prepared.runId);
+    assert.equal(readyByThread.run_id, prepared.runId);
+    assert.ok(
+      !existsSync(join(repoRoot, "evals", "runs", "ready-to-start-session.json")),
+      "prepared session should not write singleton ready-to-start-session.json"
+    );
 
     const preparedStatus = await getFrontDoorSessionStatus("thread-123");
     assert.equal(preparedStatus.status, "prepared");
@@ -508,6 +548,66 @@ const main = async () => {
       koLabeledNaturalProduct.intake.finish_line,
       "\uAC70\uB798 \uCD94\uAC00/\uC0AD\uC81C\uC640 \uC6D4\uBCC4 \uD1B5\uACC4\uB97C \uD655\uC778"
     );
+
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-freelancer-labeled-answer",
+      message: "\uAC00\uACC4\uBD80 \uC571 \uB9CC\uB4E4\uC5B4\uC918"
+    });
+    const koFreelancerLabeled = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-freelancer-labeled-answer",
+      message: [
+        "\uC8FC \uC0AC\uC6A9\uC790\uB294 \uD504\uB9AC\uB79C\uC11C 1\uC778\uC774\uACE0,",
+        "\uD575\uC2EC \uC791\uC5C5\uC740 \uC218\uC785/\uC9C0\uCD9C \uC785\uB825, \uC6D4\uBCC4 \uD569\uACC4 \uBCF4\uAE30, \uCE74\uD14C\uACE0\uB9AC\uBCC4 \uD544\uD130\uB9C1\uC774\uB2E4.",
+        "\uC131\uACF5 \uAE30\uC900\uC740 \uAC70\uB798 \uC785\uB825 \uD6C4 \uC6D4\uBCC4 \uD569\uACC4\uC640 \uCE74\uD14C\uACE0\uB9AC \uD544\uD130\uAC00 \uD654\uBA74\uC5D0\uC11C \uD655\uC778\uB418\uB294 \uAC83\uC774\uB2E4."
+      ].join("\n")
+    });
+    assert.deepEqual(koFreelancerLabeled.intake.target_users, [
+      "\uD504\uB9AC\uB79C\uC11C 1\uC778"
+    ]);
+    assert.deepEqual(koFreelancerLabeled.intake.core_features, [
+      "\uC218\uC785/\uC9C0\uCD9C \uC785\uB825",
+      "\uC6D4\uBCC4 \uD569\uACC4 \uBCF4\uAE30",
+      "\uCE74\uD14C\uACE0\uB9AC\uBCC4 \uD544\uD130\uB9C1"
+    ]);
+
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-inline-numbered-workflows",
+      message: "\uAC00\uACC4\uBD80 \uC571 \uB9CC\uB4E4\uC5B4\uC918"
+    });
+    const koInlineNumbered = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-inline-numbered-workflows",
+      message: [
+        "\uB300\uC0C1 \uC0AC\uC6A9\uC790\uB294 \uD504\uB9AC\uB79C\uC11C 1\uC778",
+        "\uD575\uC2EC \uC791\uC5C5: 1) \uC218\uC785 \uC785\uB825 2) \uC9C0\uCD9C \uC785\uB825 3) \uC6D4\uBCC4 \uD569\uACC4 \uBCF4\uAE30",
+        "\uC131\uACF5 \uAE30\uC900: \uAC70\uB798\uB97C \uC785\uB825\uD558\uBA74 \uC6D4\uBCC4 \uD569\uACC4\uAC00 \uAC31\uC2E0\uB428"
+      ].join("\n")
+    });
+    assert.deepEqual(koInlineNumbered.intake.target_users, [
+      "\uD504\uB9AC\uB79C\uC11C 1\uC778"
+    ]);
+    assert.deepEqual(koInlineNumbered.intake.core_features, [
+      "\uC218\uC785 \uC785\uB825",
+      "\uC9C0\uCD9C \uC785\uB825",
+      "\uC6D4\uBCC4 \uD569\uACC4 \uBCF4\uAE30"
+    ]);
+
+    await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-circled-numbered-workflows",
+      message: "\uAC00\uACC4\uBD80 \uC571 \uB9CC\uB4E4\uC5B4\uC918"
+    });
+    const koCircledNumbered = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-ko-circled-numbered-workflows",
+      message: [
+        "\uB300\uC0C1 \uC0AC\uC6A9\uC790\uB294 \uD504\uB9AC\uB79C\uC11C 1\uC778",
+        "\uD575\uC2EC \uC791\uC5C5\uC740 \u2460 \uC218\uC785 \uC785\uB825 \u2461 \uC9C0\uCD9C \uC785\uB825 \u2462 \uC6D4\uBCC4 \uD569\uACC4 \uBCF4\uAE30",
+        "\uC131\uACF5 \uAE30\uC900\uC740 \uAC70\uB798\uB97C \uC785\uB825\uD558\uBA74 \uC6D4\uBCC4 \uD569\uACC4\uAC00 \uAC31\uC2E0\uB428"
+      ].join("\n")
+    });
+    assert.deepEqual(koCircledNumbered.intake.core_features, [
+      "\uC218\uC785 \uC785\uB825",
+      "\uC9C0\uCD9C \uC785\uB825",
+      "\uC6D4\uBCC4 \uD569\uACC4 \uBCF4\uAE30"
+    ]);
 
     await runFrontDoorDiscoveryTurn({
       threadId: "thread-ko-incomplete-product-snapshot",

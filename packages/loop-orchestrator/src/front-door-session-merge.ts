@@ -81,7 +81,23 @@ const normalizeListEntry = (
   return urls.get(normalized) ?? stripFinalSentencePunctuation(normalized);
 };
 
+const splitKoreanEnumeratedList = (value: string): string[] => {
+  const parts = value
+    .replace(/(?:^|\s)(?:\d+[.)]\s+|[①②③④⑤⑥⑦⑧⑨]\s*)/gu, "\n")
+    .replace(/(?:^|\s)(?:첫째|둘째|셋째|넷째|다섯째)\s*/gu, "\n")
+    .split(/\n+/u)
+    .map((part) => normalizeInlineValue(part))
+    .filter(Boolean);
+
+  return parts.length > 1 ? parts : [normalizeInlineValue(value)];
+};
+
 const splitInlineList = (value: string): string[] => {
+  const enumerated = splitKoreanEnumeratedList(value);
+  if (enumerated.length > 1) {
+    return uniqueStrings(enumerated.map((entry) => stripFinalSentencePunctuation(entry)));
+  }
+
   const { protectedValue, urls } = protectUrls(value);
 
   return uniqueStrings(
@@ -393,10 +409,10 @@ const parseRunCommandAnswer = (value: string): string | undefined => {
 
 const stripKoreanSentenceEnding = (value: string): string =>
   value
-    .replace(/[.!?\u3002]+$/u, "")
+    .replace(/[.!?\u3002\uFF01\uFF1F,，;；]+$/u, "")
     .trim()
     .replace(
-      /(?:\uC774\uC57C|\uC57C|\uC785\uB2C8\uB2E4|\uC608\uC694|\uC774\uC5D0\uC694|\uC774\uACE0|\uC774\uB2E4|\uC784)$/u,
+      /(?:\uC774\uC57C|\uC57C|\uC785\uB2C8\uB2E4|\uC608\uC694|\uC774\uC5D0\uC694|\uC774\uACE0|\uC774\uBA70|\uC774\uB2E4|\uC784)$/u,
       ""
     )
     .trim();
@@ -405,7 +421,11 @@ const normalizeKoreanUserValue = (value: string): string => {
   const cleaned = stripKoreanSentenceEnding(
     normalizeInlineValue(value)
       .replace(
-        /^(?:\uB300\uC0C1|\uC0AC\uC6A9\uC790|\uC720\uC800|\uACE0\uAC1D)(?:\uC740|\uB294|:)?\s*/u,
+        /^(?:\uC8FC\s*)?(?:\uB300\uC0C1\s*)?(?:\uC0AC\uC6A9\uC790|\uC720\uC800|\uC774\uC6A9\uC790|\uACE0\uAC1D)(?:\uC740|\uB294|:|=)?\s*/u,
+        ""
+      )
+      .replace(
+        /^(?:\uB300\uC0C1|\uC8FC\s*\uB300\uC0C1)(?:\uC740|\uB294|:|=)?\s*/u,
         ""
       )
       .replace(/(?:\uAC00|\uC774|\uC744|\uB97C|\uC5D0\uAC8C|\uC6A9)$/u, "")
@@ -419,7 +439,7 @@ const normalizeKoreanCoreWorkflowText = (value: string): string =>
   stripKoreanSentenceEnding(
     normalizeInlineValue(value)
       .replace(
-        /^(?:\uD575\uC2EC|\uC8FC\uC694\s*\uAE30\uB2A5|\uC8FC\uC694|\uAE30\uB2A5|\uC791\uC5C5|\uD574\uC57C\s*\uD558\uB294\s*(?:\uAC83|\uC791\uC5C5)?)(?:\uC740|\uB294|:)?\s*/u,
+        /^(?:(?:\uD575\uC2EC|\uC8FC\uC694)?\s*(?:\uC791\uC5C5|\uAE30\uB2A5|\uC6CC\uD06C\uD50C\uB85C|\uD750\uB984)|\uD575\uC2EC|\uC8FC\uC694|\uD574\uC57C\s*\uD558\uB294\s*(?:\uAC83|\uC791\uC5C5)?)(?:\uC740|\uB294|:|=)?\s*/u,
         ""
       )
       .trim()

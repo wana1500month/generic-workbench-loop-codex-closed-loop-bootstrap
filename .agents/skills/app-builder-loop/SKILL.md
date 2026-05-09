@@ -29,9 +29,12 @@ intake and execution sessions.
    - `runtime/session-status-events.jsonl`
    - `runtime/session-stream.json`
    - `docs/EXECUTION_PLAN.md`
-   - `adapter-plan.generated.json`
-   - `adapter-plan.generated.md`
-   - `.generated/codex-adapter/adapter-review-task.md`
+   - `generated-adapter/adapter.generated.json`
+   - `generated-adapter/adapter-plan.generated.json`
+   - `generated-adapter/adapter-plan.generated.md`
+   - `generated-adapter/rubric.generated.json`
+   - `generated-adapter/verification-profile.generated.json`
+   - `generated-adapter/codex-adapter/adapter-review-task.md`
 8. After prepare mode, show the generated adapter plan/review task and stop at `ready_to_start` on the same thread.
 9. Start running only when the operator explicitly says `루프 시작` or `start loop`.
 10. After start, continue in running mode on the same thread.
@@ -41,6 +44,7 @@ intake and execution sessions.
 
 - Follow `INTAKE_PROTOCOL.md` before acting like implementation is ready.
 - Treat `loop:intake` as the stateless parser and `loop:discover` as the stateful same-thread discovery front door.
+- Preserve `front_door_session_path`, `front_door_session_id`, and `run_id` from discovery/prepare outputs. Pass `--front-door-session <path>` to prepare and prefer `--run-id <run-id>` on start when multiple prepared runs could exist.
 - Once a discovery session is prepared, treat it as immutable; use `loop:start:codex` rather than reopening discovery.
 - Keep the first phase product-first. Do not jump straight into layout, stack,
   adapter, or validation plans until the product is concrete enough.
