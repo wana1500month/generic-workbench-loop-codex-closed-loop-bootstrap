@@ -72,6 +72,7 @@ const suites = {
     "validate:transport-mode",
     "validate:security-guards",
     "validate:score-policy",
+    "validate:quality-lift",
     "validate:loop-prepare",
     "validate:prepared-session-consumption-boundary",
     "validate:canonical-foreground-worker",

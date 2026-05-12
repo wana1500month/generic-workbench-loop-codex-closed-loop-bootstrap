@@ -11,6 +11,9 @@ const {
   normalizeVerificationProfile,
   validateAdapterCapabilityResult
 } = await import("../packages/loop-orchestrator/dist/adapter-runtime/shared.js");
+const { executeAdapterCapability } = await import(
+  "../packages/loop-orchestrator/dist/adapter-runtime.js"
+);
 const { executeCoreVerificationProbes } = await import(
   "../packages/loop-orchestrator/dist/core-verifier.js"
 );
@@ -272,5 +275,97 @@ if (previousOutputCap === undefined) {
 
 assert.equal(capped.outputLimitExceeded, true);
 assert.equal(capped.outputLimitBytes, 16);
+
+const envProbeRoundDirectory = join(runDirectory, "round-env-probe");
+await mkdir(envProbeRoundDirectory, { recursive: true });
+const envProbeScriptPath = join(adapterRoot, "env-probe.mjs");
+const openAiSecret = "openai-secret-value-123456";
+const githubSecret = "github-secret-value-123456";
+const previousOpenAiKey = process.env.OPENAI_API_KEY;
+const previousGithubToken = process.env.GITHUB_TOKEN;
+const previousCodexThreadId = process.env.CODEX_THREAD_ID;
+process.env.OPENAI_API_KEY = openAiSecret;
+process.env.GITHUB_TOKEN = githubSecret;
+process.env.CODEX_THREAD_ID = "thread_secret_should_not_cross_adapter_env";
+await writeFile(
+  envProbeScriptPath,
+  [
+    "import { writeFile } from 'node:fs/promises';",
+    "process.stdout.write(`openai=${String(process.env.OPENAI_API_KEY)}\\n`);",
+    "process.stdout.write(`github=${String(process.env.GITHUB_TOKEN)}\\n`);",
+    "process.stdout.write(`codex=${String(process.env.CODEX_THREAD_ID)}\\n`);",
+    "process.stdout.write(`harness=${process.env.HARNESS_INPUT_PATH ? 'present' : 'missing'}\\n`);",
+    `process.stdout.write('literal=${openAiSecret}\\n');`,
+    `process.stderr.write('literal=${githubSecret}\\n');`,
+    "await writeFile(process.env.HARNESS_OUTPUT_PATH, JSON.stringify({ capability: 'prepare_target', ok: true, summary: 'env probe complete', findings: [], evidence_paths: [] }, null, 2));"
+  ].join("\n"),
+  "utf8"
+);
+try {
+  const envProbeExecution = await executeAdapterCapability({
+    loadedAdapter: {
+      base_directory: adapterRoot,
+      contract_path: join(adapterRoot, "adapter.json"),
+      contract: {
+        adapter_id: "adapter-env-policy-guard",
+        label: "Adapter Env Policy Guard",
+        contract_version: "1",
+        target_root: ".",
+        capabilities: {
+          prepare_target: {
+            command: process.execPath,
+            args: [envProbeScriptPath],
+            timeout_ms: 5000
+          }
+        }
+      }
+    },
+    capability: "prepare_target",
+    packet: {
+      adapter_id: "adapter-env-policy-guard",
+      capability: "prepare_target",
+      run_id: "security-guards",
+      round: 1,
+      run_directory: runDirectory,
+      round_directory: envProbeRoundDirectory,
+      target_root: targetRoot,
+      round_contract_path: join(envProbeRoundDirectory, "round-contract.json"),
+      generator_plan_path: join(envProbeRoundDirectory, "generator-plan.json")
+    },
+    roundDirectory: envProbeRoundDirectory
+  });
+  const envProbeStdout = await readFile(
+    envProbeExecution.attestation.stdout_path,
+    "utf8"
+  );
+  const envProbeStderr = await readFile(
+    envProbeExecution.attestation.stderr_path,
+    "utf8"
+  );
+  assert.match(envProbeStdout, /openai=undefined/);
+  assert.match(envProbeStdout, /github=undefined/);
+  assert.match(envProbeStdout, /codex=undefined/);
+  assert.match(envProbeStdout, /harness=present/);
+  assert.doesNotMatch(envProbeStdout, new RegExp(openAiSecret));
+  assert.doesNotMatch(envProbeStderr, new RegExp(githubSecret));
+  assert.match(envProbeStdout, /literal=\[REDACTED\]/);
+  assert.match(envProbeStderr, /literal=\[REDACTED\]/);
+} finally {
+  if (previousOpenAiKey === undefined) {
+    delete process.env.OPENAI_API_KEY;
+  } else {
+    process.env.OPENAI_API_KEY = previousOpenAiKey;
+  }
+  if (previousGithubToken === undefined) {
+    delete process.env.GITHUB_TOKEN;
+  } else {
+    process.env.GITHUB_TOKEN = previousGithubToken;
+  }
+  if (previousCodexThreadId === undefined) {
+    delete process.env.CODEX_THREAD_ID;
+  } else {
+    process.env.CODEX_THREAD_ID = previousCodexThreadId;
+  }
+}
 
 console.log("security guards validation passed");

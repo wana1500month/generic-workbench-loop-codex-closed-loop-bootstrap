@@ -8,6 +8,7 @@ import {
   readJsonFile,
   repoRoot
 } from "./testing/bootstrap-validator-helpers.mjs";
+import { ensureSemanticValidationFixtures } from "./testing/semantic-fixtures.mjs";
 import { scaffoldExternalQualityLane } from "./scaffold-external-quality-lane.mjs";
 import {
   assertPatchRequestQualitySurface,
@@ -25,6 +26,7 @@ const assert = (condition, message) => {
 };
 
 const main = async () => {
+  await ensureSemanticValidationFixtures({ clean: true });
   await ensureBuild();
   const tempRoot = await createTempRoot("validate-quality-lift");
 

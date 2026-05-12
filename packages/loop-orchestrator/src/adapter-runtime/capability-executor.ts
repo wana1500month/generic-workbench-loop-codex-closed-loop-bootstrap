@@ -26,6 +26,105 @@ import {
   withExecutionMetadata
 } from "./shared.js";
 
+const defaultInheritedAdapterEnvNames = new Set([
+  "CI",
+  "COMSPEC",
+  "HOME",
+  "PATH",
+  "PATHEXT",
+  "SHELL",
+  "SYSTEMROOT",
+  "TEMP",
+  "TMP",
+  "TMPDIR",
+  "USERPROFILE",
+  "WINDIR"
+]);
+
+const adapterEnvSecretNamePattern =
+  /(^OPENAI_API_KEY$|^CODEX_|^AWS_|^GCP_|^AZURE_|^GITHUB_TOKEN$|^NPM_TOKEN$|(^|_)(AUTH|CREDENTIAL|KEY|PASSWORD|PRIVATE|SECRET|TOKEN)($|_))/i;
+
+const extraInheritedAdapterEnvNames = (): Set<string> =>
+  new Set(
+    (process.env.HARNESS_ADAPTER_ENV_ALLOWLIST ?? "")
+      .split(",")
+      .map((name) => name.trim().toUpperCase())
+      .filter(Boolean)
+  );
+
+const isSensitiveEnvName = (name: string): boolean =>
+  adapterEnvSecretNamePattern.test(name.toUpperCase());
+
+const buildAdapterProcessEnv = (input: {
+  harnessEnv: Record<string, string>;
+  extraEnv?: Record<string, string>;
+}): NodeJS.ProcessEnv => {
+  const env: NodeJS.ProcessEnv = {};
+  const allowlist = new Set([
+    ...defaultInheritedAdapterEnvNames,
+    ...extraInheritedAdapterEnvNames()
+  ]);
+
+  for (const [name, value] of Object.entries(process.env)) {
+    if (value === undefined) {
+      continue;
+    }
+    const normalizedName = name.toUpperCase();
+    if (!allowlist.has(normalizedName) || isSensitiveEnvName(normalizedName)) {
+      continue;
+    }
+    env[name] = value;
+  }
+
+  for (const [name, value] of Object.entries({
+    ...input.harnessEnv,
+    ...(input.extraEnv ?? {})
+  })) {
+    if (isSensitiveEnvName(name)) {
+      continue;
+    }
+    env[name] = value;
+  }
+
+  return env;
+};
+
+const sensitiveEnvValuesForRedaction = (
+  extraEnv?: Record<string, string>
+): string[] =>
+  [
+    ...Object.entries(process.env),
+    ...Object.entries(extraEnv ?? {})
+  ]
+    .filter(([name, value]) => isSensitiveEnvName(name) && typeof value === "string")
+    .map(([, value]) => value)
+    .filter(
+      (value): value is string => typeof value === "string" && value.length >= 8
+    );
+
+const escapeRegExp = (value: string): string =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const redactAdapterOutput = (
+  output: string,
+  sensitiveValues: readonly string[]
+): string => {
+  let redacted = output;
+  for (const value of sensitiveValues) {
+    redacted = redacted.replace(new RegExp(escapeRegExp(value), "g"), "[REDACTED]");
+  }
+  return redacted
+    .replace(
+      /\b(?:(?:sk|sess)[-_][A-Za-z0-9_-]{12,}|(?:ghp|github_pat)_[A-Za-z0-9_]{12,})\b/g,
+      "[REDACTED]"
+    )
+    .replace(/\bAKIA[0-9A-Z]{16}\b/g, "[REDACTED]")
+    .replace(
+      /\b(Bearer\s+)[A-Za-z0-9._~+/-]{12,}={0,2}\b/g,
+      "$1[REDACTED]"
+    );
+};
+
 export const executeAdapterCapability = async (input: {
   loadedAdapter: LoadedAdapterContract;
   capability: AdapterCapabilityName;
@@ -95,8 +194,7 @@ export const executeAdapterCapability = async (input: {
     ...(capabilitySpec.shell ? { shell: capabilitySpec.shell } : {})
   };
   await writeJson(attemptPath, runningAttempt);
-  const env = {
-    ...process.env,
+  const harnessEnv = {
     HARNESS_INPUT_PATH: packetPath,
     HARNESS_OUTPUT_PATH: resultPath,
     HARNESS_TARGET_ROOT: targetRoot,
@@ -110,9 +208,13 @@ export const executeAdapterCapability = async (input: {
     HARNESS_CAPABILITY: input.capability,
     HARNESS_PROVIDER_ID: provider.providerId,
     HARNESS_PROVIDER_ROLE: provider.providerRole,
-    HARNESS_EXECUTION_ID: executionId,
-    ...(input.extraEnv ?? {})
+    HARNESS_EXECUTION_ID: executionId
   };
+  const env = buildAdapterProcessEnv({
+    harnessEnv,
+    extraEnv: input.extraEnv
+  });
+  const sensitiveValues = sensitiveEnvValuesForRedaction(input.extraEnv);
 
   let execution: Awaited<ReturnType<typeof execCommand>>;
   try {
@@ -135,9 +237,11 @@ export const executeAdapterCapability = async (input: {
     } satisfies AdapterCapabilityAttemptArtifact);
     throw error;
   }
+  const stdout = redactAdapterOutput(execution.stdout, sensitiveValues);
+  const stderr = redactAdapterOutput(execution.stderr, sensitiveValues);
   await Promise.all([
-    writeText(stdoutPath, execution.stdout),
-    writeText(stderrPath, execution.stderr)
+    writeText(stdoutPath, stdout),
+    writeText(stderrPath, stderr)
   ]);
 
   if (execution.timedOut) {
@@ -188,7 +292,7 @@ export const executeAdapterCapability = async (input: {
         execution.code === 0
           ? `Capability '${input.capability}' completed without an explicit result file.`
           : `Capability '${input.capability}' failed with exit code ${execution.code ?? -1}.`,
-      findings: execution.stderr.trim() ? [execution.stderr.trim()] : [],
+      findings: stderr.trim() ? [stderr.trim()] : [],
       evidence_paths: []
       },
       executionId
@@ -229,9 +333,9 @@ export const executeAdapterCapability = async (input: {
     finished_at: execution.finishedAt,
     duration_ms: execution.durationMs,
     stdout_path: stdoutPath,
-    stdout_sha256: sha256ForBuffer(execution.stdout),
+    stdout_sha256: sha256ForBuffer(stdout),
     stderr_path: stderrPath,
-    stderr_sha256: sha256ForBuffer(execution.stderr),
+    stderr_sha256: sha256ForBuffer(stderr),
     result_sha256: sha256ForBuffer(resultRaw)
   };
 

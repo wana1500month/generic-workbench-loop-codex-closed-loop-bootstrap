@@ -9,7 +9,7 @@
   "scripts": {
     "build": "node ./scripts/build-workspace.mjs",
     "release:package": "node ./scripts/package-release.mjs",
-    "release:zip": "npm run build && node ./scripts/package-release.mjs && npm run validate:release-zip -- --zip .tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip && npm run validate:release-product-start -- --zip .tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip",
+    "release:zip": "npm run build && npm run validate:quality-lift && node ./scripts/package-release.mjs && npm run validate:release-zip -- --zip .tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip && npm run validate:release-product-start -- --zip .tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip",
     "test": "npm run validate:process && npm run validate:core",
     "smoke": "node ./scripts/run-validation-batch.mjs smoke",
     "prevalidate:core": "npm run build",

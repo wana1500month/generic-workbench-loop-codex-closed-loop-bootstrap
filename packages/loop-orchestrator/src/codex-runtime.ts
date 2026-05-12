@@ -536,16 +536,23 @@ export const runCodexCommand = async (
 
   const command = codexLaunch.command;
   const baseArgs = input.profile ? ["--profile", input.profile] : [];
-  const configArgs = Object.entries(input.configOverrides ?? {}).flatMap(([key, value]) => [
+  const configArgsFor = (
+    overrides: Record<string, string | number | boolean> | undefined
+  ): string[] => Object.entries(overrides ?? {}).flatMap(([key, value]) => [
     "-c",
     `${key}=${tomlLiteral(value)}`
   ]);
+  const configArgs = configArgsFor(input.configOverrides);
+  const resumeConfigArgs = configArgsFor({
+    ...(input.sandboxMode ? { sandbox_mode: input.sandboxMode } : {}),
+    ...(input.configOverrides ?? {})
+  });
   const args = input.sessionId
     ? [
         ...codexLaunch.args,
         "exec",
         "resume",
-        ...configArgs,
+        ...resumeConfigArgs,
         "--skip-git-repo-check",
         "--json",
         "--output-last-message",

@@ -1627,16 +1627,23 @@ const buildGeneratedCoreProbes = (
 const minimumAssertionTagCountsForGeneratedProbes = (
   probes: readonly VerificationCoreProbe[]
 ): Partial<Record<VerificationAssertionTag, number>> => {
-  const counts: Partial<Record<VerificationAssertionTag, number>> = {};
+  const assertionIdsByTag: Partial<Record<VerificationAssertionTag, Set<string>>> = {};
   for (const probe of probes) {
     if ((probe.role ?? "supporting") !== "release_gate") {
       continue;
     }
     for (const tag of probe.assertion_tags ?? []) {
-      counts[tag] = 1;
+      const assertionIds = assertionIdsByTag[tag] ?? new Set<string>();
+      assertionIds.add(probe.assertion_id ?? probe.probe_id);
+      assertionIdsByTag[tag] = assertionIds;
     }
   }
-  return counts;
+  return Object.fromEntries(
+    Object.entries(assertionIdsByTag).map(([tag, assertionIds]) => [
+      tag,
+      assertionIds.size
+    ])
+  ) as Partial<Record<VerificationAssertionTag, number>>;
 };
 
 const buildGeneratedVerificationProfile = async (

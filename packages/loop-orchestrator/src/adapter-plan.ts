@@ -32,6 +32,14 @@ export const defaultVerificationSurfacesForFamily = (
     return ["api"];
   }
 
+  if (
+    targetFamily === "fullstack-app" ||
+    targetFamily === "browser-editor" ||
+    targetFamily === "dashboard"
+  ) {
+    return ["browser", "api"];
+  }
+
   return ["browser"];
 };
 

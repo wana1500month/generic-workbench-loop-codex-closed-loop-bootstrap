@@ -251,6 +251,7 @@ const main = async () => {
       artifactDirectory: join(tempRoot, "runtime-resume-artifacts"),
       profile: "readonly_agent",
       sessionId: initialRuntimeCall.threadId,
+      sandboxMode: "read-only",
       outputSchema: {
         type: "object",
         additionalProperties: false,
@@ -272,6 +273,11 @@ const main = async () => {
     assert(
       runtimeRecords[1].argv[0] === "exec" && runtimeRecords[1].argv[1] === "resume",
       "runtime resume call must use exec resume ordering"
+    );
+    assert(
+      runtimeRecords[1].argv.includes("-c") &&
+        runtimeRecords[1].argv.includes('sandbox_mode="read-only"'),
+      "runtime resume call must reapply sandbox mode through resume-supported config overrides"
     );
     assert(
       !runtimeRecords[1].argv.includes("--output-schema"),
