@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 
@@ -12,7 +12,10 @@ import type {
   AdapterExecutionAttestation,
   LoadedAdapterContract
 } from "../types.js";
+import { redactJsonValue, redactText } from "../redaction.js";
 
+import { resolveAdapterExecutionPolicy } from "./execution-policy.js";
+import { resolveAdapterCommandLaunch } from "./process-boundary.js";
 import {
   attemptPathForCapability,
   commandDigestFor,
@@ -29,7 +32,6 @@ import {
 const defaultInheritedAdapterEnvNames = new Set([
   "CI",
   "COMSPEC",
-  "HOME",
   "PATH",
   "PATHEXT",
   "SHELL",
@@ -37,9 +39,9 @@ const defaultInheritedAdapterEnvNames = new Set([
   "TEMP",
   "TMP",
   "TMPDIR",
-  "USERPROFILE",
   "WINDIR"
 ]);
+const adapterHomeEnvNames = new Set(["HOME", "USERPROFILE"]);
 
 const adapterEnvSecretNamePattern =
   /(^OPENAI_API_KEY$|^CODEX_|^AWS_|^GCP_|^AZURE_|^GITHUB_TOKEN$|^NPM_TOKEN$|(^|_)(AUTH|CREDENTIAL|KEY|PASSWORD|PRIVATE|SECRET|TOKEN)($|_))/i;
@@ -57,23 +59,38 @@ const isSensitiveEnvName = (name: string): boolean =>
 
 const buildAdapterProcessEnv = (input: {
   harnessEnv: Record<string, string>;
+  adapterHome: string;
   extraEnv?: Record<string, string>;
 }): NodeJS.ProcessEnv => {
   const env: NodeJS.ProcessEnv = {};
+  const inheritHome = process.env.HARNESS_ADAPTER_INHERIT_HOME === "1";
   const allowlist = new Set([
     ...defaultInheritedAdapterEnvNames,
     ...extraInheritedAdapterEnvNames()
   ]);
+
+  if (inheritHome) {
+    allowlist.add("HOME");
+    allowlist.add("USERPROFILE");
+  }
 
   for (const [name, value] of Object.entries(process.env)) {
     if (value === undefined) {
       continue;
     }
     const normalizedName = name.toUpperCase();
+    if (!inheritHome && adapterHomeEnvNames.has(normalizedName)) {
+      continue;
+    }
     if (!allowlist.has(normalizedName) || isSensitiveEnvName(normalizedName)) {
       continue;
     }
     env[name] = value;
+  }
+
+  if (!inheritHome) {
+    env.HOME = input.adapterHome;
+    env.USERPROFILE = input.adapterHome;
   }
 
   for (const [name, value] of Object.entries({
@@ -102,29 +119,6 @@ const sensitiveEnvValuesForRedaction = (
       (value): value is string => typeof value === "string" && value.length >= 8
     );
 
-const escapeRegExp = (value: string): string =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-const redactAdapterOutput = (
-  output: string,
-  sensitiveValues: readonly string[]
-): string => {
-  let redacted = output;
-  for (const value of sensitiveValues) {
-    redacted = redacted.replace(new RegExp(escapeRegExp(value), "g"), "[REDACTED]");
-  }
-  return redacted
-    .replace(
-      /\b(?:(?:sk|sess)[-_][A-Za-z0-9_-]{12,}|(?:ghp|github_pat)_[A-Za-z0-9_]{12,})\b/g,
-      "[REDACTED]"
-    )
-    .replace(/\bAKIA[0-9A-Z]{16}\b/g, "[REDACTED]")
-    .replace(
-      /\b(Bearer\s+)[A-Za-z0-9._~+/-]{12,}={0,2}\b/g,
-      "$1[REDACTED]"
-    );
-};
-
 export const executeAdapterCapability = async (input: {
   loadedAdapter: LoadedAdapterContract;
   capability: AdapterCapabilityName;
@@ -133,6 +127,7 @@ export const executeAdapterCapability = async (input: {
   extraEnv?: Record<string, string>;
 }): Promise<AdapterCapabilityExecution> => {
   const adapterDirectory = join(input.roundDirectory, "adapter");
+  const adapterHome = join(adapterDirectory, "home");
   const attemptPath = attemptPathForCapability(input.roundDirectory, input.capability);
   const packetPath = join(adapterDirectory, `${input.capability}-input.json`);
   const resultPath = join(adapterDirectory, `${input.capability}-result.json`);
@@ -149,6 +144,7 @@ export const executeAdapterCapability = async (input: {
     ...input.packet,
     execution_id: executionId
   };
+  await mkdir(adapterHome, { recursive: true });
   await writeJson(packetPath, packet);
   if (!capabilitySpec) {
     const result = defaultCapabilityResult(
@@ -177,6 +173,18 @@ export const executeAdapterCapability = async (input: {
     ? resolve(input.loadedAdapter.base_directory, capabilitySpec.cwd)
     : targetRoot;
   const timeoutMs = capabilitySpec.timeout_ms ?? 120000;
+  const executionPolicy = resolveAdapterExecutionPolicy({
+    contract: input.loadedAdapter.contract,
+    capabilitySpec,
+    targetRoot
+  });
+  const launch = resolveAdapterCommandLaunch({
+    policy: executionPolicy,
+    command: capabilitySpec.command,
+    args: capabilitySpec.args,
+    shell: capabilitySpec.shell,
+    cwd
+  });
   const startedAt = new Date().toISOString();
   const runningAttempt: AdapterCapabilityAttemptArtifact = {
     capability: input.capability,
@@ -212,6 +220,7 @@ export const executeAdapterCapability = async (input: {
   };
   const env = buildAdapterProcessEnv({
     harnessEnv,
+    adapterHome,
     extraEnv: input.extraEnv
   });
   const sensitiveValues = sensitiveEnvValuesForRedaction(input.extraEnv);
@@ -219,12 +228,12 @@ export const executeAdapterCapability = async (input: {
   let execution: Awaited<ReturnType<typeof execCommand>>;
   try {
     execution = await execCommand({
-      command: capabilitySpec.command,
-      ...(capabilitySpec.args ? { args: capabilitySpec.args } : {}),
+      command: launch.command,
+      ...(launch.args ? { args: launch.args } : {}),
       cwd,
       timeoutMs,
       env,
-      shell: capabilitySpec.shell
+      shell: launch.shell
     });
   } catch (error) {
     const failedAt = new Date().toISOString();
@@ -237,8 +246,10 @@ export const executeAdapterCapability = async (input: {
     } satisfies AdapterCapabilityAttemptArtifact);
     throw error;
   }
-  const stdout = redactAdapterOutput(execution.stdout, sensitiveValues);
-  const stderr = redactAdapterOutput(execution.stderr, sensitiveValues);
+  const stdoutRedaction = redactText(execution.stdout, sensitiveValues);
+  const stderrRedaction = redactText(execution.stderr, sensitiveValues);
+  const stdout = stdoutRedaction.text;
+  const stderr = stderrRedaction.text;
   await Promise.all([
     writeText(stdoutPath, stdout),
     writeText(stderrPath, stderr)
@@ -281,8 +292,12 @@ export const executeAdapterCapability = async (input: {
   }
 
   let rawResult: unknown;
+  let resultRedactionCount = 0;
   if (await pathExists(resultPath)) {
-    rawResult = withExecutionMetadata(await loadJson<unknown>(resultPath), executionId);
+    const loaded = withExecutionMetadata(await loadJson<unknown>(resultPath), executionId);
+    const redacted = redactJsonValue(loaded, sensitiveValues);
+    rawResult = redacted.value;
+    resultRedactionCount = redacted.count;
   } else {
     rawResult = withExecutionMetadata(
       {
@@ -329,6 +344,7 @@ export const executeAdapterCapability = async (input: {
     cwd,
     shell: capabilitySpec.shell ?? "system",
     timeout_ms: timeoutMs,
+    execution_policy: executionPolicy,
     started_at: execution.startedAt,
     finished_at: execution.finishedAt,
     duration_ms: execution.durationMs,
@@ -336,7 +352,16 @@ export const executeAdapterCapability = async (input: {
     stdout_sha256: sha256ForBuffer(stdout),
     stderr_path: stderrPath,
     stderr_sha256: sha256ForBuffer(stderr),
-    result_sha256: sha256ForBuffer(resultRaw)
+    result_sha256: sha256ForBuffer(resultRaw),
+    redaction: {
+      policy_version: stdoutRedaction.policy_version,
+      stdout_redacted: stdoutRedaction.redacted,
+      stdout_redaction_count: stdoutRedaction.count,
+      stderr_redacted: stderrRedaction.redacted,
+      stderr_redaction_count: stderrRedaction.count,
+      result_redacted: resultRedactionCount > 0,
+      result_redaction_count: resultRedactionCount
+    }
   };
 
   return {

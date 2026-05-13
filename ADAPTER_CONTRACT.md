@@ -27,6 +27,11 @@ The adapter contract should carry execution wiring only. The harness core select
   "label": "External Target Example",
   "contract_version": "1",
   "target_root": "../external-target-repo",
+  "execution_policy": {
+    "trust_mode": "trusted",
+    "isolated_home": true,
+    "network_access": false
+  },
   "capabilities": {
     "prepare_target": {
       "command": "node scripts/prepare-target.js"
@@ -55,6 +60,13 @@ The adapter contract should carry execution wiring only. The harness core select
 }
 ```
 
+Adapters run in one of two explicit trust modes:
+
+- `trusted`: a local companion adapter. This is the default. The harness still allowlists the subprocess environment, blocks credential-looking names, and gives the subprocess a round-local HOME/USERPROFILE by default.
+- `sandboxed`: an untrusted adapter. The harness fails closed unless `HARNESS_ADAPTER_SANDBOX_WRAPPER_JSON` provides an external sandbox wrapper command as a JSON string array.
+
+`execution_policy` can be set at the contract level and overridden per capability. The first runtime implementation records the resolved policy in adapter execution attestations; actual OS isolation for `sandboxed` mode is delegated to the configured wrapper.
+
 The evaluator profile now lives in the harness trust domain, for example under `evals/verification-profiles/fullstack-app.profile.json`, `evals/verification-profiles/api-service.profile.json`, or `evals/verification-profiles/browser-app.profile.json`. The verification provider keeps proof execution in a separate trust domain from target mutation. The adapter should publish `observed_value` fields, and the harness core compares them against the core-owned profile. That profile may also declare evaluator-owned `core_probes`, which the core executes itself before it will emit `target_reached`. Core probes now split into `release_gate` and `supporting` roles. Supporting probes may use `http`, `browser`, `file_contains`, `json_value`, or `shell_command` for liveness and diagnostics, but they cannot open `target_reached`. Required `release_gate` probes must use mode `http_json` or `browser_journey`, declare an `assertion_id`, may carry `assertion_tags`, stay at `semantic_level: "feature"` or `"workflow"`, and resolve target surfaces through `target_manifest` URLs published by `run_target` instead of run-local harness artifacts. Profiles may also set `minimum_feature_release_assertions`, `minimum_assertion_tag_counts`, and optional metadata such as `target_family`, `validation_lane`, and `bundle_label`, so explicit `--evaluator-profile` launches still report the correct family/lane in `summary.json`, `round_summary.json`, and round handoff text. Before the adapter runs, the harness now also writes a round-local `round-contract.json` that names the current implementation slice, release-gate checks, release-gate probe ids, and pivot triggers. Adapter-side tooling should treat that round contract as the authoritative round scope and should not widen beyond it on its own.
 
 Target-family selection can now happen directly at runtime through `--target-family`, which resolves bundled profiles such as `api-service`, `crud-api`, `chat-agent`, `browser-app`, `browser-editor`, `fullstack-app`, or `dashboard` without delegating bundle choice back to the adapter. Adapter-free runs now default to the neutral `generic-core` bundle; that family is for harness-core structural closure and should not be used as the target-quality story for a real external adapter.
@@ -76,6 +88,8 @@ The harness runtime sets:
 - `HARNESS_PROVIDER_ID`
 - `HARNESS_PROVIDER_ROLE`
 - `HARNESS_ROUND_CONTRACT_PATH` (when the round has a scoped round contract artifact)
+
+Parent `HOME` and `USERPROFILE` are not inherited by default. Adapter subprocesses receive a round-local adapter home directory under the current round artifact tree. Set `HARNESS_ADAPTER_INHERIT_HOME=1` only for a trusted local adapter that explicitly needs the parent tool home.
 
 ## Result format
 

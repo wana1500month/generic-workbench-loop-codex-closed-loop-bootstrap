@@ -80,6 +80,9 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `npm run validate:transport:cli`: trusted-runner Codex CLI transport lane.
 - `npm run validate:transport:app-server`: optional App Server transport lane.
 - `npm run validate:codex-live`: trusted-runner live Codex and App Server gate; it runs binary preflight before fake auth semantics, real `codex exec` strict smoke, and real App Server strict smoke.
+- `npm run validate:codex:fake-matrix`: deterministic fake-Codex matrix for profile wiring, executor mode, and fallback warning propagation.
+- `npm run validate:codex:live-matrix`: trusted-runner real Codex CLI matrix for strict `codex exec` fresh/resume behavior. It is intentionally separate from `release:zip` so packaging still works on hosts without a local Codex binary.
+- `npm run release:preflight-live`: operational release preflight that runs the strict Codex live matrix and strict App Server live smoke.
 - `npm run validate:codex-strict-gate`: compatibility alias for `validate:codex-live`.
 
 ## Security guards
@@ -91,8 +94,9 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - Core HTTP, HTTP JSON, browser, and browser journey probes accept only localhost or loopback target URLs by default. External target probes require `HARNESS_ALLOW_NONLOCAL_TARGET_URLS=1`, while private, link-local, loopback, broadcast, and metadata hosts remain blocked in nonlocal mode.
 - Core fetch probes use manual redirects and cap response body capture with `HARNESS_HTTP_BODY_MAX_BYTES`, which defaults to `1048576`.
 - Adapter capability commands run without a shell by default. A string command such as `node ./executor.mjs prepare_target` is tokenized and direct-spawned; shell execution only occurs when the adapter capability explicitly sets `shell`.
-- Adapter capability subprocesses inherit only a small parent env allowlist by default (`PATH`, home/temp/shell essentials, Windows process essentials, and `CI`), then receive harness-owned `HARNESS_*` capability paths. Add non-secret parent variables with `HARNESS_ADAPTER_ENV_ALLOWLIST`; credential-looking names such as `OPENAI_API_KEY`, `CODEX_*`, `*_TOKEN`, `*_SECRET`, `*_KEY`, cloud provider secrets, `GITHUB_TOKEN`, and `NPM_TOKEN` stay blocked.
-- Adapter stdout/stderr are redacted before artifact persistence and hashing when they contain blocked parent secret values or common token shapes such as OpenAI/GitHub/AWS/Bearer tokens.
+- Adapter capability subprocesses inherit only a small parent env allowlist by default (`PATH`, temp/shell essentials, Windows process essentials, and `CI`), then receive harness-owned `HARNESS_*` capability paths. Parent `HOME` and `USERPROFILE` are replaced with a round-local adapter home unless `HARNESS_ADAPTER_INHERIT_HOME=1` is explicitly set for a trusted local adapter. Add non-secret parent variables with `HARNESS_ADAPTER_ENV_ALLOWLIST`; credential-looking names such as `OPENAI_API_KEY`, `CODEX_*`, `*_TOKEN`, `*_SECRET`, `*_KEY`, cloud provider secrets, `GITHUB_TOKEN`, and `NPM_TOKEN` stay blocked.
+- Adapter trust mode is explicit. `trusted` is the default local companion mode. `sandboxed` fails closed unless `HARNESS_ADAPTER_SANDBOX_WRAPPER_JSON` provides an external sandbox wrapper command as a JSON string array.
+- Adapter stdout, stderr, and result JSON are redacted before artifact persistence and hashing when they contain blocked parent secret values or common token shapes such as OpenAI/GitHub/AWS/Bearer tokens. Adapter execution attestations record whether redaction was applied and how many replacements occurred.
 - Core shell/browser probe commands also run without a shell by default and kill the full process tree on timeout or output-cap breach. Use `args` for commands such as `python -c ...`; shell execution only occurs when a core probe explicitly sets `shell`.
 - Adapter capability commands and core shell/browser probe commands cap stdout and stderr with `HARNESS_COMMAND_OUTPUT_MAX_BYTES`, which defaults to `1048576`; adapter capabilities fail when the cap is exceeded.
 - Process-tree cleanup sends `SIGTERM`, waits `HARNESS_PROCESS_TREE_KILL_GRACE_MS` milliseconds, then sends `SIGKILL` on Unix-like hosts; Windows cleanup uses `taskkill /T /F`.

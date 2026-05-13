@@ -265,9 +265,22 @@ const main = async () => {
       resumedRuntimeCall.code === 0 && resumedRuntimeCall.usedResume,
       "direct runtime resume call must succeed"
     );
+    const resumedLastRuntimeCall = await runCodexCommand({
+      name: "runtime-direct-resume-last",
+      prompt: 'Respond with {"status":"ok"}',
+      cwd: repoRoot,
+      artifactDirectory: join(tempRoot, "runtime-resume-last-artifacts"),
+      profile: "readonly_agent",
+      resumeLast: true,
+      sandboxMode: "read-only"
+    });
+    assert(
+      resumedLastRuntimeCall.code === 0 && resumedLastRuntimeCall.usedResume,
+      "direct runtime resume --last call must succeed"
+    );
     const runtimeRecords = await readJsonFile(runtimeRecordPath);
     assert(
-      Array.isArray(runtimeRecords) && runtimeRecords.length >= 2,
+      Array.isArray(runtimeRecords) && runtimeRecords.length >= 3,
       "direct runtime resume calls were not recorded"
     );
     assert(
@@ -282,6 +295,34 @@ const main = async () => {
     assert(
       !runtimeRecords[1].argv.includes("--output-schema"),
       "runtime resume call must omit unsupported --output-schema"
+    );
+    assert(
+      runtimeRecords[2].used_resume === true &&
+        runtimeRecords[2].used_resume_last === true &&
+        runtimeRecords[2].argv.includes("--last"),
+      "runtime resume --last call must be recorded explicitly"
+    );
+    const resumedRuntimeMetadata = JSON.parse(
+      await readFile(
+        join(tempRoot, "runtime-resume-artifacts", "runtime-direct-resume-metadata.json"),
+        "utf8"
+      )
+    );
+    assert(
+      resumedRuntimeMetadata.effective_policy?.used_resume === true,
+      "runtime resume metadata must record effective_policy.used_resume"
+    );
+    assert(
+      resumedRuntimeMetadata.effective_policy?.sandbox_mode === "read-only",
+      "runtime resume metadata must record effective sandbox mode"
+    );
+    assert(
+      resumedRuntimeMetadata.effective_policy?.output_schema_requested === true,
+      "runtime resume metadata must record requested output schema"
+    );
+    assert(
+      resumedRuntimeMetadata.effective_policy?.output_schema_passed_to_cli === false,
+      "runtime resume metadata must record intentionally omitted output schema"
     );
 
     console.log("Validated Codex profile wiring.");

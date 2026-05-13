@@ -25,10 +25,8 @@ const profileIndex = argv.indexOf("--profile");
 const profile = profileIndex >= 0 ? argv[profileIndex + 1] : undefined;
 const execIndex = argv.indexOf("exec");
 const loginStatus = argv[0] === "login" && argv[1] === "status";
-const usedResume =
-  execIndex >= 0 &&
-  argv[execIndex + 1] === "resume" &&
-  typeof argv[argv.length - 2] === "string";
+const usedResume = execIndex >= 0 && argv[execIndex + 1] === "resume";
+const usedResumeLast = usedResume && argv.includes("--last");
 let stdinText = "";
 
 const failSyntax = (message) => {
@@ -111,7 +109,8 @@ if (recordPath) {
     stdin: stdinText,
     output_path: outputPath ?? null,
     profile: profile ?? null,
-    used_resume: usedResume
+    used_resume: usedResume,
+    used_resume_last: usedResumeLast
   };
   let existing = [];
   try {
@@ -152,5 +151,8 @@ process.stdout.write(
 );
 process.stdout.write(
   `${JSON.stringify({ type: "message.completed", role: "assistant" })}\n`
+);
+process.stdout.write(
+  `${JSON.stringify({ type: "turn.completed" })}\n`
 );
 process.exitCode = 0;

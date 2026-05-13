@@ -43,9 +43,6 @@ const main = async () => {
     ...process.env,
     HARNESS_DISABLE_CODEX_AGENTS: "1"
   });
-  if (execution.code !== 0) {
-    throw new Error("loop:single failed while validating Codex warning propagation.");
-  }
 
   const after = await listRunDirectories();
   const createdRunFromOutput = /Run created:\s+evals[\\/]+runs[\\/]+(run-\d+)/i.exec(
@@ -56,6 +53,9 @@ const main = async () => {
       ? createdRunFromOutput
       : after.find((entry) => !before.includes(entry)) ?? after[after.length - 1];
   if (!createdRun) {
+    if (execution.code !== 0) {
+      throw new Error("loop:single failed while validating Codex warning propagation.");
+    }
     throw new Error("Could not determine which run directory was created.");
   }
 

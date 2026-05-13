@@ -23,6 +23,31 @@ const assert = (condition, message) => {
   }
 };
 
+const parseJsonlEvents = (text) =>
+  text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        return [];
+      }
+    });
+
+const assertCodexEventStream = (eventsText, label) => {
+  const events = parseJsonlEvents(eventsText);
+  assert(
+    events.some((event) => event.type === "thread.started"),
+    `${label} JSONL event stream did not include thread.started.`
+  );
+  assert(
+    events.some((event) => event.type === "turn.completed"),
+    `${label} JSONL event stream did not include turn.completed.`
+  );
+};
+
 const strictMode = process.env.HARNESS_CODEX_REAL_SMOKE_STRICT === "1";
 const latestResultPath = join(process.cwd(), ".tmp", "codex-real-smoke", "latest-result.json");
 
@@ -143,6 +168,7 @@ const main = async () => {
     assert(fresh.code === 0 && !fresh.error, `Fresh Codex exec failed: ${fresh.error ?? fresh.stderr}`);
     assert(fresh.responseWritten, "Fresh Codex exec did not write a response file.");
     assert(typeof fresh.threadId === "string", "Fresh Codex exec did not emit a thread id.");
+    assertCodexEventStream(fresh.eventsText, "Fresh Codex exec");
     const freshResponse = parseJson(fresh.responseText ?? "", "fresh response");
     assert(freshResponse.status === "ok", "Fresh Codex exec returned the wrong payload.");
 
@@ -170,6 +196,36 @@ const main = async () => {
     assert(
       resumedResponse.status === "resumed",
       "Resume Codex exec returned the wrong payload."
+    );
+    const resumedLast = await runCodexCommand({
+      name: "real-smoke-resume-last",
+      prompt: [
+        "Return JSON only.",
+        'Respond with {"status":"resumed_last","note":"real smoke resume last"}'
+      ].join("\n"),
+      cwd: repoRoot,
+      artifactDirectory: join(tempRoot, "resume-last-artifacts"),
+      profile: "readonly_agent",
+      resumeLast: true,
+      metadata: {
+        smoke: "real",
+        stage: "resume_last"
+      }
+    });
+
+    assert(
+      resumedLast.code === 0 && !resumedLast.error,
+      `Resume --last Codex exec failed: ${resumedLast.error ?? resumedLast.stderr}`
+    );
+    assert(resumedLast.usedResume, "Resume --last Codex exec did not record usedResume.");
+    assert(resumedLast.responseWritten, "Resume --last Codex exec did not write a response file.");
+    const resumedLastResponse = parseJson(
+      resumedLast.responseText ?? "",
+      "resume --last response"
+    );
+    assert(
+      resumedLastResponse.status === "resumed_last",
+      "Resume --last Codex exec returned the wrong payload."
     );
 
     const targetRoot = join(tempRoot, "external-target-root");
@@ -314,6 +370,26 @@ const main = async () => {
       !resumedMutationMetadata.args.includes("--output-schema"),
       "Resumed mutation metadata should not include unsupported --output-schema."
     );
+    assert(
+      resumedMutationMetadata.effective_policy?.used_resume === true,
+      "Resumed mutation metadata must record effective_policy.used_resume."
+    );
+    assert(
+      resumedMutationMetadata.effective_policy?.sandbox_mode === "workspace-write",
+      "Resumed mutation metadata must record workspace-write sandbox mode."
+    );
+    assert(
+      resumedMutationMetadata.effective_policy?.network_access === false,
+      "Resumed mutation metadata must record disabled network access."
+    );
+    assert(
+      resumedMutationMetadata.effective_policy?.output_schema_requested === true,
+      "Resumed mutation metadata must record that output schema was requested."
+    );
+    assert(
+      resumedMutationMetadata.effective_policy?.output_schema_passed_to_cli === false,
+      "Resume metadata must record that output schema was intentionally not passed to CLI."
+    );
 
     const result = {
       status: "passed",
@@ -327,6 +403,7 @@ const main = async () => {
       thread_id: fresh.threadId,
       fresh_response_path: fresh.responsePath,
       resume_response_path: resumed.responsePath,
+      resume_last_response_path: resumedLast.responsePath,
       mutation_response_path: mutation.responsePath,
       mutation_resume_response_path: mutationResume.responsePath,
       mutated_file_path: writtenFilePath,

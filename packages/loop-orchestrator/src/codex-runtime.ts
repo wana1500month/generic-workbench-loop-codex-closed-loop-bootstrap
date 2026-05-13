@@ -7,6 +7,7 @@ import { resolveCodexCliLaunch } from "./codex-cli.js";
 import { isControllerMode } from "./controller-mode.js";
 import { writeJson, writeText } from "./file-system.js";
 import { stopProcessTree } from "./process-runtime.js";
+import { redactText } from "./redaction.js";
 import {
   defaultTransportModeForControllerMode,
   isCurrentThreadTransport,
@@ -40,6 +41,7 @@ export type CodexCommandInput = {
   outputSchema?: CodexJsonSchema;
   sandboxMode?: CodexSandboxMode;
   sessionId?: string;
+  resumeLast?: boolean;
   metadata?: Record<string, string | number | boolean | null>;
   allowCurrentThreadReadOnlyJudge?: boolean;
   timeoutMs?: number;
@@ -103,6 +105,14 @@ const codexStaleOutputTimeoutMs = (): number =>
 
 const codexOutputLimitBytes = (): number =>
   positiveIntegerEnv("HARNESS_CODEX_OUTPUT_LIMIT_BYTES", 10 * 1024 * 1024);
+
+const codexSensitiveValuesForRedaction = (): string[] =>
+  [
+    process.env.CODEX_API_KEY,
+    process.env.OPENAI_API_KEY,
+    process.env.GITHUB_TOKEN,
+    process.env.NPM_TOKEN
+  ].filter((value): value is string => typeof value === "string" && value.length >= 8);
 
 type CodexTimeoutState = {
   reason: NonNullable<CodexCommandResult["timeoutReason"]>;
@@ -434,6 +444,28 @@ export const runCodexCommand = async (
   }
 
   const codexLaunch = resolveCodexCliLaunch();
+  const usesResume = Boolean(input.sessionId || input.resumeLast);
+  const effectiveCodexPolicy = {
+    used_resume: usesResume,
+    profile: input.profile ?? null,
+    sandbox_mode:
+      input.sandboxMode ??
+      (typeof input.configOverrides?.sandbox_mode === "string"
+        ? input.configOverrides.sandbox_mode
+        : null),
+    approval_policy:
+      typeof input.configOverrides?.approval_policy === "string"
+        ? input.configOverrides.approval_policy
+        : null,
+    network_access:
+      typeof input.configOverrides?.["sandbox_workspace_write.network_access"] ===
+      "boolean"
+        ? input.configOverrides["sandbox_workspace_write.network_access"]
+        : null,
+    output_schema_requested: Boolean(input.outputSchema),
+    output_schema_passed_to_cli: Boolean(schemaPath && !usesResume),
+    add_dirs: unique(input.addDirs ?? [])
+  };
 
   if (process.env.HARNESS_DISABLE_CODEX_AGENTS === "1") {
     const disabledResult: CodexCommandResult = {
@@ -451,7 +483,7 @@ export const runCodexCommand = async (
       ...(schemaPath ? { schemaPath } : {}),
       ...(input.profile ? { profile: input.profile } : {}),
       responseWritten: false,
-      usedResume: Boolean(input.sessionId),
+      usedResume: usesResume,
       disabled: true
     };
     await Promise.all([
@@ -462,6 +494,7 @@ export const runCodexCommand = async (
         name: input.name,
         cwd: input.cwd,
         used_resume: disabledResult.usedResume,
+        effective_policy: effectiveCodexPolicy,
         disabled: true,
         error: disabledResult.error,
         prompt_path: promptPath,
@@ -501,7 +534,7 @@ export const runCodexCommand = async (
       ...(schemaPath ? { schemaPath } : {}),
       ...(input.profile ? { profile: input.profile } : {}),
       responseWritten: false,
-      usedResume: Boolean(input.sessionId),
+      usedResume: usesResume,
       disabled: true
     };
     await Promise.all([
@@ -512,6 +545,7 @@ export const runCodexCommand = async (
         name: input.name,
         cwd: input.cwd,
         used_resume: blockedResult.usedResume,
+        effective_policy: effectiveCodexPolicy,
         disabled: true,
         current_thread_transport_blocked: true,
         transport_mode: harnessTransportMode,
@@ -547,7 +581,7 @@ export const runCodexCommand = async (
     ...(input.sandboxMode ? { sandbox_mode: input.sandboxMode } : {}),
     ...(input.configOverrides ?? {})
   });
-  const args = input.sessionId
+  const args = usesResume
     ? [
         ...codexLaunch.args,
         "exec",
@@ -557,7 +591,7 @@ export const runCodexCommand = async (
         "--json",
         "--output-last-message",
         responsePath,
-        input.sessionId,
+        ...(input.resumeLast ? ["--last"] : [input.sessionId ?? ""]),
         "-"
       ]
     : [
@@ -746,18 +780,31 @@ export const runCodexCommand = async (
     child.stdin.end();
   });
 
+  const codexSensitiveValues = codexSensitiveValuesForRedaction();
+  const stdoutRedaction = redactText(execution.stdout, codexSensitiveValues);
+  const stderrRedaction = redactText(execution.stderr, codexSensitiveValues);
+  const stdout = stdoutRedaction.text;
+  const stderr = stderrRedaction.text;
+
   await Promise.all([
-    writeText(stdoutPath, execution.stdout),
-    writeText(stderrPath, execution.stderr),
-    writeText(eventsPath, execution.stdout)
+    writeText(stdoutPath, stdout),
+    writeText(stderrPath, stderr),
+    writeText(eventsPath, stdout)
   ]);
 
   let responseText: string | undefined;
   let responseError: string | undefined;
   let responseWritten = false;
+  let responseRedactionCount = 0;
   if (execution.code === 0 && !execution.error) {
     try {
-      responseText = await readFile(responsePath, "utf8");
+      const rawResponseText = await readFile(responsePath, "utf8");
+      const responseRedaction = redactText(rawResponseText, codexSensitiveValues);
+      responseText = responseRedaction.text;
+      responseRedactionCount = responseRedaction.count;
+      if (responseRedaction.redacted) {
+        await writeText(responsePath, responseRedaction.text);
+      }
       responseWritten = true;
     } catch (error: unknown) {
       responseError =
@@ -767,12 +814,12 @@ export const runCodexCommand = async (
     }
   }
 
-  const threadId = extractThreadIdFromJsonl(execution.stdout) ?? input.sessionId;
+  const threadId = extractThreadIdFromJsonl(stdout) ?? input.sessionId;
   const result: CodexCommandResult = {
     code: execution.code,
-    stdout: execution.stdout,
-    stderr: execution.stderr,
-    eventsText: execution.stdout,
+    stdout,
+    stderr,
+    eventsText: stdout,
     ...(responseText ? { responseText } : {}),
     ...(execution.error ? { error: execution.error } : {}),
     ...(responseError ? { error: responseError } : {}),
@@ -789,7 +836,7 @@ export const runCodexCommand = async (
     ...(threadId ? { threadId } : {}),
     ...(input.profile ? { profile: input.profile } : {}),
     responseWritten,
-    usedResume: Boolean(input.sessionId),
+    usedResume: usesResume,
     disabled: false
   };
 
@@ -798,6 +845,7 @@ export const runCodexCommand = async (
     cwd: input.cwd,
     args,
     used_resume: result.usedResume,
+    effective_policy: effectiveCodexPolicy,
     disabled: false,
     code: result.code,
     thread_id: result.threadId ?? null,
@@ -815,6 +863,15 @@ export const runCodexCommand = async (
     stale_output_timeout_ms:
       input.staleOutputTimeoutMs ?? codexStaleOutputTimeoutMs(),
     output_limit_bytes: input.outputLimitBytes ?? codexOutputLimitBytes(),
+    redaction: {
+      policy_version: stdoutRedaction.policy_version,
+      stdout_redacted: stdoutRedaction.redacted,
+      stdout_redaction_count: stdoutRedaction.count,
+      stderr_redacted: stderrRedaction.redacted,
+      stderr_redaction_count: stderrRedaction.count,
+      response_redacted: responseRedactionCount > 0,
+      response_redaction_count: responseRedactionCount
+    },
     ...(schemaPath ? { schema_path: schemaPath } : {}),
     ...(input.profile ? { profile: input.profile } : {}),
     ...(input.configOverrides ? { config_overrides: input.configOverrides } : {}),

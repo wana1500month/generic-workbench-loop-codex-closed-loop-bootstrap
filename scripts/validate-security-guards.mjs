@@ -284,6 +284,8 @@ const githubSecret = "github-secret-value-123456";
 const previousOpenAiKey = process.env.OPENAI_API_KEY;
 const previousGithubToken = process.env.GITHUB_TOKEN;
 const previousCodexThreadId = process.env.CODEX_THREAD_ID;
+const previousHome = process.env.HOME;
+const previousUserProfile = process.env.USERPROFILE;
 process.env.OPENAI_API_KEY = openAiSecret;
 process.env.GITHUB_TOKEN = githubSecret;
 process.env.CODEX_THREAD_ID = "thread_secret_should_not_cross_adapter_env";
@@ -295,9 +297,11 @@ await writeFile(
     "process.stdout.write(`github=${String(process.env.GITHUB_TOKEN)}\\n`);",
     "process.stdout.write(`codex=${String(process.env.CODEX_THREAD_ID)}\\n`);",
     "process.stdout.write(`harness=${process.env.HARNESS_INPUT_PATH ? 'present' : 'missing'}\\n`);",
+    "process.stdout.write(`home=${String(process.env.HOME)}\\n`);",
+    "process.stdout.write(`userprofile=${String(process.env.USERPROFILE)}\\n`);",
     `process.stdout.write('literal=${openAiSecret}\\n');`,
     `process.stderr.write('literal=${githubSecret}\\n');`,
-    "await writeFile(process.env.HARNESS_OUTPUT_PATH, JSON.stringify({ capability: 'prepare_target', ok: true, summary: 'env probe complete', findings: [], evidence_paths: [] }, null, 2));"
+    `await writeFile(process.env.HARNESS_OUTPUT_PATH, JSON.stringify({ capability: 'prepare_target', ok: true, summary: 'env probe complete ${openAiSecret}', findings: ['${githubSecret}'], evidence_paths: [] }, null, 2));`
   ].join("\n"),
   "utf8"
 );
@@ -342,14 +346,93 @@ try {
     envProbeExecution.attestation.stderr_path,
     "utf8"
   );
+  const envProbeResult = JSON.parse(await readFile(envProbeExecution.result_path, "utf8"));
+  const stdoutEntries = Object.fromEntries(
+    envProbeStdout
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => {
+        const index = line.indexOf("=");
+        return index >= 0 ? [line.slice(0, index), line.slice(index + 1)] : [line, ""];
+      })
+  );
+  const expectedAdapterHome = resolve(envProbeRoundDirectory, "adapter", "home");
   assert.match(envProbeStdout, /openai=undefined/);
   assert.match(envProbeStdout, /github=undefined/);
   assert.match(envProbeStdout, /codex=undefined/);
   assert.match(envProbeStdout, /harness=present/);
+  assert.equal(resolve(stdoutEntries.home), expectedAdapterHome);
+  assert.equal(resolve(stdoutEntries.userprofile), expectedAdapterHome);
+  if (previousHome) {
+    assert.notEqual(resolve(stdoutEntries.home), resolve(previousHome));
+  }
+  if (previousUserProfile) {
+    assert.notEqual(resolve(stdoutEntries.userprofile), resolve(previousUserProfile));
+  }
   assert.doesNotMatch(envProbeStdout, new RegExp(openAiSecret));
   assert.doesNotMatch(envProbeStderr, new RegExp(githubSecret));
+  assert.doesNotMatch(JSON.stringify(envProbeResult), new RegExp(openAiSecret));
+  assert.doesNotMatch(JSON.stringify(envProbeResult), new RegExp(githubSecret));
   assert.match(envProbeStdout, /literal=\[REDACTED\]/);
   assert.match(envProbeStderr, /literal=\[REDACTED\]/);
+  assert.match(JSON.stringify(envProbeResult), /\[REDACTED\]/);
+  assert.equal(envProbeExecution.attestation.execution_policy.trust_mode, "trusted");
+  assert.equal(envProbeExecution.attestation.execution_policy.isolated_home, true);
+  assert.equal(envProbeExecution.attestation.redaction.stdout_redacted, true);
+  assert.equal(envProbeExecution.attestation.redaction.stderr_redacted, true);
+  assert.equal(envProbeExecution.attestation.redaction.result_redacted, true);
+  assert.ok(envProbeExecution.attestation.redaction.result_redaction_count >= 1);
+
+  const previousSandboxWrapper = process.env.HARNESS_ADAPTER_SANDBOX_WRAPPER_JSON;
+  try {
+    delete process.env.HARNESS_ADAPTER_SANDBOX_WRAPPER_JSON;
+    await assert.rejects(
+      () =>
+        executeAdapterCapability({
+          loadedAdapter: {
+            base_directory: adapterRoot,
+            contract_path: join(adapterRoot, "adapter.json"),
+            contract: {
+              adapter_id: "adapter-sandbox-policy-guard",
+              label: "Adapter Sandbox Policy Guard",
+              contract_version: "1",
+              target_root: ".",
+              capabilities: {
+                prepare_target: {
+                  command: process.execPath,
+                  args: ["-e", "process.exit(0)"],
+                  timeout_ms: 5000,
+                  execution_policy: {
+                    trust_mode: "sandboxed",
+                    sandbox_provider: "custom-wrapper"
+                  }
+                }
+              }
+            }
+          },
+          capability: "prepare_target",
+          packet: {
+            adapter_id: "adapter-sandbox-policy-guard",
+            capability: "prepare_target",
+            run_id: "security-guards",
+            round: 1,
+            run_directory: runDirectory,
+            round_directory: join(runDirectory, "round-sandbox-probe"),
+            target_root: targetRoot,
+            round_contract_path: join(runDirectory, "round-sandbox-probe", "round-contract.json"),
+            generator_plan_path: join(runDirectory, "round-sandbox-probe", "generator-plan.json")
+          },
+          roundDirectory: join(runDirectory, "round-sandbox-probe")
+        }),
+      /sandboxed execution.*HARNESS_ADAPTER_SANDBOX_WRAPPER_JSON/i
+    );
+  } finally {
+    if (previousSandboxWrapper === undefined) {
+      delete process.env.HARNESS_ADAPTER_SANDBOX_WRAPPER_JSON;
+    } else {
+      process.env.HARNESS_ADAPTER_SANDBOX_WRAPPER_JSON = previousSandboxWrapper;
+    }
+  }
 } finally {
   if (previousOpenAiKey === undefined) {
     delete process.env.OPENAI_API_KEY;

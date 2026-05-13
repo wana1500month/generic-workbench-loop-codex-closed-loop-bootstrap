@@ -23,6 +23,33 @@ export interface AdapterCommandSpec {
   cwd?: string;
   timeout_ms?: number;
   shell?: "powershell" | "sh" | "bash" | "cmd";
+  execution_policy?: AdapterExecutionPolicy;
+}
+
+export type AdapterTrustMode = "trusted" | "sandboxed";
+
+export type AdapterSandboxProvider =
+  | "none"
+  | "bubblewrap"
+  | "firejail"
+  | "container"
+  | "custom-wrapper";
+
+export interface AdapterExecutionPolicy {
+  trust_mode?: AdapterTrustMode;
+  sandbox_provider?: AdapterSandboxProvider;
+  network_access?: boolean;
+  isolated_home?: boolean;
+  writable_roots?: string[];
+}
+
+export interface ResolvedAdapterExecutionPolicy {
+  trust_mode: AdapterTrustMode;
+  sandbox_provider: AdapterSandboxProvider;
+  network_access: boolean;
+  isolated_home: boolean;
+  writable_roots: string[];
+  fail_closed: boolean;
 }
 
 export interface VerificationProviderSpec {
@@ -149,6 +176,7 @@ export interface ExternalAdapterContract {
   label: string;
   contract_version: "1";
   target_root: string;
+  execution_policy?: AdapterExecutionPolicy;
   capabilities: Partial<Record<AdapterCapabilityName, AdapterCommandSpec>>;
   verification_provider?: VerificationProviderSpec;
   // Deprecated: the harness no longer loads adapter-authored profiles.
@@ -240,6 +268,7 @@ export interface AdapterExecutionAttestation {
   cwd: string;
   shell: "powershell" | "sh" | "bash" | "cmd" | "system";
   timeout_ms: number;
+  execution_policy: ResolvedAdapterExecutionPolicy;
   started_at: string;
   finished_at: string;
   duration_ms: number;
@@ -248,6 +277,15 @@ export interface AdapterExecutionAttestation {
   stderr_path: string;
   stderr_sha256: string;
   result_sha256: string;
+  redaction: {
+    policy_version: string;
+    stdout_redacted: boolean;
+    stdout_redaction_count: number;
+    stderr_redacted: boolean;
+    stderr_redaction_count: number;
+    result_redacted: boolean;
+    result_redaction_count: number;
+  };
 }
 
 export interface AdapterCapabilityAttemptArtifact {
