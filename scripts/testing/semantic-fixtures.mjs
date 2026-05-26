@@ -17,9 +17,11 @@ const requiredFixturePaths = [
   "executor.cjs",
   "verifier.cjs",
   "target-server.cjs",
+  "cli-success/adapter.json",
   "patch-only-success/adapter.json",
   "patch-recontract/adapter.json",
   "contradictory/adapter.json",
+  "verification-profile-cli.json",
   "verification-profile-api-only.json"
 ];
 

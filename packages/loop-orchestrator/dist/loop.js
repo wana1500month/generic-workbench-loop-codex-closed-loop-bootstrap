@@ -12,7 +12,8 @@ import { detectDurableMemoryPaths, ensureDurableMemoryArtifacts, loadDurableMemo
 import { loadJson, loadJsonIfExists, nextRunId, pathExists, repoRoot, resolveRunsDirectory, writeJson, writeText } from "./file-system.js";
 import { attachedPreGeneratorBaselineWindowOpen, captureBootstrapGeneratedBaselineIfNeeded, describePrototypeBaselineSourceSemantics, hasValidPrototypeBaseline, loadPrototypeBaselineState, prototypeBaselineSourceSemanticsForPhase, prototypeBaselinePaths } from "./prototype-baseline.js";
 import { defaultIdeaPath, readIdeaBrief } from "./idea-intake.js";
-import { buildRoundScorecard, evaluationPolicyPathForRun, loadEvaluationPolicyForRun, writeEvaluationPolicyArtifacts, writeRoundScorecardArtifacts } from "./evaluation-policy.js";
+import { evaluationPolicyPathForRun, loadEvaluationPolicyForRun, writeEvaluationPolicyArtifacts, writeRoundScorecardArtifacts } from "./evaluation-policy.js";
+import { applyEvaluationPolicyGate } from "./loop/evaluation-policy-gate.js";
 import { defaultControllerMode, isControllerMode } from "./controller-mode.js";
 import { defaultExecutorMode, isExecutorMode } from "./executor-mode.js";
 import { buildTransportStateArtifact, defaultTransportModeForControllerMode, isCurrentThreadTransport, isTransportMode, transportRuntimeWarningsForMode, validateTransportMode } from "./transport-mode.js";
@@ -3425,37 +3426,12 @@ export const runClosedLoop = async (input) => {
                             evalReport.check_results.some((result) => result.check_id === "previous_patch_request_resolved" &&
                                 result.status === "pass");
                     if (evaluationPolicy) {
-                        roundScorecard = buildRoundScorecard({
+                        const gatedEvaluation = applyEvaluationPolicyGate({
                             policy: evaluationPolicy,
                             evalReport
                         });
-                        if (roundScorecard.blocking_reasons.length > 0) {
-                            const scorecardGapDetails = roundScorecard.blocking_reasons.map((reason) => `Evaluation policy dimension '${reason.dimension_id}' scored ${reason.score} below the minimum ${reason.minimum_score}. ${reason.reason}`);
-                            evalReport = {
-                                ...evalReport,
-                                blockers: unique([
-                                    ...evalReport.blockers,
-                                    ...roundScorecard.blocking_reasons.map((reason) => `Required evaluation dimension failed: ${reason.dimension_id}`)
-                                ]),
-                                next_actions: unique([
-                                    ...roundScorecard.next_round_focus,
-                                    ...evalReport.next_actions
-                                ]).slice(0, 10),
-                                threshold_gap_details: unique([
-                                    ...evalReport.threshold_gap_details,
-                                    ...scorecardGapDetails
-                                ]),
-                                threshold_results: {
-                                    ...evalReport.threshold_results,
-                                    dimension_thresholds_met: false,
-                                    target_reached_eligible: false
-                                }
-                            };
-                            roundScorecard = buildRoundScorecard({
-                                policy: evaluationPolicy,
-                                evalReport
-                            });
-                        }
+                        evalReport = gatedEvaluation.evalReport;
+                        roundScorecard = gatedEvaluation.scorecard;
                     }
                     evaluatorVerdictArtifact = buildEvaluatorVerdictArtifact({
                         contractArtifact,

@@ -110,7 +110,8 @@ const suites = {
     "validate:loop-scorecards",
     "validate:scorecard-e2e-prepared-run",
     "validate:adaptive-intake",
-    "validate:non-web-target"
+    "validate:non-web-target",
+    "validate:non-web-e2e"
   ]
 };
 

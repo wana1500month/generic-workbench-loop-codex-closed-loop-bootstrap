@@ -83,6 +83,7 @@ export declare const isTargetManifestKey: (value: unknown) => value is TargetMan
 export declare const isProbeSemanticLevel: (value: unknown) => value is ProbeSemanticLevel;
 export declare const isBrowserJourneyStepAction: (value: unknown) => value is BrowserJourneyStepAction;
 export declare const defaultProbeRoleForMode: (mode: CoreVerificationProbeMode) => CoreVerificationProbeRole;
+export declare const releaseGateCapableProbeModes: Set<CoreVerificationProbeMode>;
 export declare const isHttpUrl: (value: string) => boolean;
 export declare const normalizedEvidenceKind: (explicitKind: string | undefined, evidencePath: string) => string;
 export declare const isJsonEvidence: (kind: string, evidencePath: string) => boolean;

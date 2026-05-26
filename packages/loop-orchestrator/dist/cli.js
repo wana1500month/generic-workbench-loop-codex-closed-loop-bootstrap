@@ -2,7 +2,7 @@ import { relative, resolve } from "node:path";
 import { runInteractiveBootstrap } from "./bootstrap.js";
 import { controllerRoundPhases, defaultControllerMode, isControllerMode, isControllerRoundPhase } from "./controller-mode.js";
 import { defaultExecutorMode, isExecutorMode } from "./executor-mode.js";
-import { repoRoot } from "./file-system.js";
+import { loadJsonIfExists, repoRoot } from "./file-system.js";
 import { runClosedLoop } from "./loop.js";
 import { restoreRunState } from "./resume-state.js";
 import { assessRuntimeHealth, pausedStopReasons } from "./runtime-health.js";
@@ -574,6 +574,7 @@ const buildStatusReport = async (runDirectory) => {
         supervisorState: supervisorState ?? undefined
     });
     const summary = restoredRun.summary;
+    const latestScorecard = await latestScorecardForStatus(summary, restoredRun.runDirectory);
     const normalizedStopReason = normalizeRunStopReason(summary.stop_reason);
     const activeRound = operatorSurface?.round ??
         restoredRun.runtimeRoundPhase?.round ??
@@ -617,6 +618,7 @@ const buildStatusReport = async (runDirectory) => {
             proof: summary.proof_score,
             release: summary.release_score
         },
+        ...(latestScorecard ? { latest_scorecard: latestScorecard } : {}),
         active: {
             ...(activeRound !== undefined ? { round: activeRound } : {}),
             ...(activePhase ? { phase: activePhase } : {}),
@@ -693,6 +695,29 @@ const buildStatusReport = async (runDirectory) => {
     };
 };
 const joinRunPath = (runDirectory, fileName) => resolve(runDirectory, fileName);
+const scorecardPathForRound = (runDirectory, round) => resolve(runDirectory, `round-${String(round).padStart(3, "0")}`, "scorecard.json");
+const latestScorecardForStatus = async (summary, runDirectory) => {
+    const round = summary.terminal_round ??
+        summary.round_history?.at(-1)?.round ??
+        (summary.round_count > 0 ? summary.round_count : undefined);
+    if (round === undefined) {
+        return undefined;
+    }
+    const scorecardPath = scorecardPathForRound(runDirectory, round);
+    const scorecard = await loadJsonIfExists(scorecardPath);
+    if (!scorecard) {
+        return undefined;
+    }
+    return {
+        round: scorecard.round,
+        path: scorecardPath,
+        target_reached: scorecard.target_reached,
+        total_score: scorecard.total_score,
+        target_total_score: scorecard.target_total_score,
+        strictness_level: scorecard.strictness_level,
+        required_failures: scorecard.blocking_reasons
+    };
+};
 const requiresCodexThreadContinuation = (operatorSurface) => operatorSurface?.transport_mode === "current-thread" &&
     operatorSurface.app_visibility === "visible-in-stock-app" &&
     operatorSurface.requires_codex_app === true &&
@@ -935,6 +960,15 @@ const printStatusReport = (report) => {
         console.log(`Checkpoint id: ${report.active.checkpoint_id}`);
     }
     console.log(`Scores: total ${report.scores.total}, control-plane ${report.scores.control_plane}, proof ${report.scores.proof}, release ${report.scores.release}`);
+    if (report.latest_scorecard) {
+        console.log(`Scorecard: round ${report.latest_scorecard.round} / ${report.latest_scorecard.target_reached ? "pass" : "fail"} / strictness ${report.latest_scorecard.strictness_level} / total ${report.latest_scorecard.total_score} / target ${report.latest_scorecard.target_total_score}`);
+        if (report.latest_scorecard.required_failures.length > 0) {
+            console.log("Required scorecard failures:");
+            for (const failure of report.latest_scorecard.required_failures.slice(0, 5)) {
+                console.log(`- ${failure.dimension_id}: ${failure.score} < ${failure.minimum_score} (${failure.reason})`);
+            }
+        }
+    }
     console.log(`Attempts written: ${report.round_count}`);
     if (report.stop_reason) {
         console.log(`Stop reason: ${report.stop_reason}`);

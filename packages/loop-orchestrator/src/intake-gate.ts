@@ -6,6 +6,7 @@ import {
   parseVerificationSurfacesAnswer,
   parseWorkflowChecksAnswer
 } from "./adapter-plan.js";
+import { buildAdaptiveQuestionSet } from "./adaptive-interviewer.js";
 import type {
   AdapterIntakeFieldId,
   ExecutionIntakeFieldId as ExecutionFieldId,
@@ -821,51 +822,37 @@ const buildAdapterFieldStates = (
       : normalizeVerificationSurfacesForFamily(targetFamily, []);
   const defaultSurface = verificationSurfaces[0] ?? "browser";
   const workflowChecks = parseWorkflowChecksAnswer(request, defaultSurface);
-  const adaptiveVerificationQuestion = (() => {
-    switch (projectKind) {
-      case "cli_tool":
-      case "data_pipeline":
-        return "This looks command/file oriented. What CLI command, output file, or test evidence should prove success?";
-      case "library_package":
-        return "This looks like a library/package. What import example, package API, or test evidence should prove success?";
-      case "api_service":
-        return "This looks API oriented. Which endpoint response, status code, or API test should prove success?";
-      case "agent_workflow":
-        return "This looks agent oriented. Which sample conversation or task completion transcript should prove success?";
-      case "document_artifact":
-        return "This looks document oriented. What document structure, file output, or manual review evidence should prove success?";
-      case "browser_ui":
-      case "mobile_ui":
-        return "This looks visual. Should the loop verify it with browser, screenshot, or test evidence?";
-      default:
-        return "How should the loop verify this result: browser, API, CLI, test, file, DB, agent conversation, document, package import, or manual review?";
-    }
-  })();
-  const adaptiveWorkflowQuestion = (() => {
-    switch (projectKind) {
-      case "cli_tool":
-        return "Give the top CLI workflow as command -> expected stdout/file result.";
-      case "library_package":
-        return "Give the top package workflow as import/API call -> expected result.";
-      case "agent_workflow":
-        return "Give one representative user prompt -> expected agent response outcome.";
-      case "document_artifact":
-        return "Give the required document artifact -> expected sections or quality outcome.";
-      default:
-        return "For each core workflow, what action and result prove success? Example: add transaction -> list and monthly total update.";
-    }
-  })();
+  const adaptiveQuestions = buildAdaptiveQuestionSet({
+    request,
+    projectKind,
+    explicitEvidenceSurfaces: verificationSurfaces as EvidenceSurface[],
+    hasVerificationSurface: extractedVerificationSurfaces.length > 0,
+    hasWorkflowChecks: workflowChecks.length > 0,
+    hasCustomQualityMetrics:
+      /(?:quality metric|scored|score|minimum|strictness|clean|copy|app-like|output format|평가|점수|깔끔|앱스러|텍스트)/iu.test(
+        request
+      ),
+    hasFailureExpectations:
+      /(?:failure|error|invalid|edge case|must fail|실패|에러|잘못|빈\s*파일)/iu.test(
+        request
+      ),
+    maxQuestions: 3
+  });
 
   return [
     {
       id: "verification_surface",
       satisfied: extractedVerificationSurfaces.length > 0,
-      question: adaptiveVerificationQuestion
+      question:
+        adaptiveQuestions.by_field.verification_surface?.question ??
+        "How should the loop verify this result?"
     },
     {
       id: "workflow_checks",
       satisfied: workflowChecks.length > 0,
-      question: adaptiveWorkflowQuestion
+      question:
+        adaptiveQuestions.by_field.workflow_checks?.question ??
+        "What action and result prove success?"
     },
     {
       id: "quality_metrics",

@@ -95,7 +95,14 @@ export const liveVerificationKinds = new Set([
     "shell-session"
 ]);
 export const proofCapabilityKinds = new Set(["capture_evidence", "run_checks", "grade_round"]);
-export const releaseGateCoreProbeModes = new Set(["http_json", "browser_journey"]);
+export const releaseGateCoreProbeModes = new Set([
+    "http_json",
+    "browser_journey",
+    "shell_command",
+    "file_contains",
+    "json_value"
+]);
+export const releaseGateCoreProbeModeList = "'http_json', 'browser_journey', 'shell_command', 'file_contains', or 'json_value'";
 export const unique = (values) => [...new Set(values)];
 export const isProofCapabilityName = (value) => proofCapabilityKinds.has(value);
 export const proofExecutionsFor = (adapterExecutions) => adapterExecutions.filter((execution) => execution.capability === "capture_evidence" ||
@@ -426,16 +433,17 @@ export const verificationBoundaryIssues = (loadedAdapter) => {
         (loadedAdapter.verification_profile.profile.target_reached_requires_core_probes ?? true) &&
         requiredCoreProbes.length > 0 &&
         requiredReleaseGateCoreProbesFor(loadedAdapter).length === 0) {
-        issues.push("verification_profile.core_probes must include at least one required release-gate probe using mode 'http_json' or 'browser_journey' before target_reached can be claimed.");
+        issues.push(`verification_profile.core_probes must include at least one required release-gate probe using mode ${releaseGateCoreProbeModeList} before target_reached can be claimed.`);
     }
     const verificationProfile = loadedAdapter.verification_profile?.profile;
     const expectedSurfaces = expectedTargetSurfacesFor(loadedAdapter);
     const requiredReleaseGateProbes = requiredReleaseGateCoreProbesFor(loadedAdapter);
     for (const probe of requiredReleaseGateProbes) {
         if (!releaseGateCoreProbeModes.has(probe.mode)) {
-            issues.push(`verification_profile core probe '${probe.probe_id}' must use mode 'http_json' or 'browser_journey' for release-gate use.`);
+            issues.push(`verification_profile core probe '${probe.probe_id}' must use mode ${releaseGateCoreProbeModeList} for release-gate use.`);
         }
-        if (!probe.target_manifest_key) {
+        if ((probe.mode === "http_json" || probe.mode === "browser_journey") &&
+            !probe.target_manifest_key) {
             issues.push(`verification_profile core probe '${probe.probe_id}' must declare target_manifest_key for release-gate use.`);
         }
         if (!probe.assertion_id?.trim()) {
@@ -708,7 +716,7 @@ export const independentTargetProbeCheck = (input) => (() => {
     const requiredReleaseGateProbes = requiredReleaseGateCoreProbesFor(input.loadedAdapter);
     const requiredBrowserReleaseGateProbes = requiredBrowserJourneyReleaseProbesFor(input.loadedAdapter);
     if (requiredReleaseGateProbes.length === 0) {
-        return checkResult("independent_target_probe_present", "fail", "No required release-gate core probe is configured. target_reached now requires at least one required 'http_json' or 'browser_journey' probe.");
+        return checkResult("independent_target_probe_present", "fail", `No required release-gate core probe is configured. target_reached now requires at least one required ${releaseGateCoreProbeModeList} probe.`);
     }
     const resultByProbeId = new Map(input.coreProbeResults.map((result) => [result.probe_id, result]));
     const failures = requiredProbes.flatMap((probe) => {

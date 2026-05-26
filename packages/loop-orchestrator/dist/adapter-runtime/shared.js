@@ -324,6 +324,13 @@ export const isTargetManifestKey = (value) => typeof value === "string" && targe
 export const isProbeSemanticLevel = (value) => typeof value === "string" && probeSemanticLevels.has(value);
 export const isBrowserJourneyStepAction = (value) => typeof value === "string" && browserJourneyStepActions.has(value);
 export const defaultProbeRoleForMode = (mode) => mode === "http_json" || mode === "browser_journey" ? "release_gate" : "supporting";
+export const releaseGateCapableProbeModes = new Set([
+    "http_json",
+    "browser_journey",
+    "shell_command",
+    "file_contains",
+    "json_value"
+]);
 export const isHttpUrl = (value) => {
     const policy = validateTargetUrlPolicy(value);
     return policy.ok;
@@ -1831,7 +1838,7 @@ export const normalizeVerificationProfile = (rawProfile, profilePath) => {
                     jsonPath !== undefined) {
                     throw new Error(`Verification profile '${profilePath}' core probe '${probeId}' cannot declare 'json_path' for mode 'browser_journey'.`);
                 }
-                if (role === "release_gate" && mode !== "http_json" && mode !== "browser_journey") {
+                if (role === "release_gate" && !releaseGateCapableProbeModes.has(mode)) {
                     throw new Error(`Verification profile '${profilePath}' core probe '${probeId}' cannot use role 'release_gate' with mode '${mode}'.`);
                 }
                 const probe = {

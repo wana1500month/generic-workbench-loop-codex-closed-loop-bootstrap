@@ -8,11 +8,12 @@ import {
   isControllerRoundPhase
 } from "./controller-mode.js";
 import { defaultExecutorMode, isExecutorMode } from "./executor-mode.js";
-import { repoRoot } from "./file-system.js";
+import { loadJsonIfExists, repoRoot } from "./file-system.js";
 import { runClosedLoop } from "./loop.js";
 import { restoreRunState } from "./resume-state.js";
 import { assessRuntimeHealth, pausedStopReasons } from "./runtime-health.js";
 import { normalizeRunStopReason } from "./stop-reason.js";
+import type { RoundScorecard } from "./evaluation-policy.js";
 import {
   readOperatorSurfaceArtifact,
   readSupervisorStateArtifact,
@@ -97,6 +98,20 @@ interface StatusReport {
     control_plane: number;
     proof: number;
     release: number;
+  };
+  latest_scorecard?: {
+    round: number;
+    path: string;
+    target_reached: boolean;
+    total_score: number;
+    target_total_score: number;
+    strictness_level: number;
+    required_failures: Array<{
+      dimension_id: string;
+      score: number;
+      minimum_score: number;
+      reason: string;
+    }>;
   };
   active: {
     round?: number;
@@ -792,6 +807,10 @@ const buildStatusReport = async (runDirectory: string): Promise<StatusReport> =>
     supervisorState: supervisorState ?? undefined
   });
   const summary = restoredRun.summary;
+  const latestScorecard = await latestScorecardForStatus(
+    summary,
+    restoredRun.runDirectory
+  );
   const normalizedStopReason = normalizeRunStopReason(summary.stop_reason);
   const activeRound =
     operatorSurface?.round ??
@@ -841,6 +860,7 @@ const buildStatusReport = async (runDirectory: string): Promise<StatusReport> =>
       proof: summary.proof_score,
       release: summary.release_score
     },
+    ...(latestScorecard ? { latest_scorecard: latestScorecard } : {}),
     active: {
       ...(activeRound !== undefined ? { round: activeRound } : {}),
       ...(activePhase ? { phase: activePhase } : {}),
@@ -919,6 +939,36 @@ const buildStatusReport = async (runDirectory: string): Promise<StatusReport> =>
 
 const joinRunPath = (runDirectory: string, fileName: string): string =>
   resolve(runDirectory, fileName);
+
+const scorecardPathForRound = (runDirectory: string, round: number): string =>
+  resolve(runDirectory, `round-${String(round).padStart(3, "0")}`, "scorecard.json");
+
+const latestScorecardForStatus = async (
+  summary: LoopRunSummary,
+  runDirectory: string
+): Promise<StatusReport["latest_scorecard"] | undefined> => {
+  const round =
+    summary.terminal_round ??
+    summary.round_history?.at(-1)?.round ??
+    (summary.round_count > 0 ? summary.round_count : undefined);
+  if (round === undefined) {
+    return undefined;
+  }
+  const scorecardPath = scorecardPathForRound(runDirectory, round);
+  const scorecard = await loadJsonIfExists<RoundScorecard>(scorecardPath);
+  if (!scorecard) {
+    return undefined;
+  }
+  return {
+    round: scorecard.round,
+    path: scorecardPath,
+    target_reached: scorecard.target_reached,
+    total_score: scorecard.total_score,
+    target_total_score: scorecard.target_total_score,
+    strictness_level: scorecard.strictness_level,
+    required_failures: scorecard.blocking_reasons
+  };
+};
 
 const requiresCodexThreadContinuation = (
   operatorSurface: OperatorSurfaceArtifact | undefined
@@ -1254,6 +1304,19 @@ const printStatusReport = (report: StatusReport): void => {
   console.log(
     `Scores: total ${report.scores.total}, control-plane ${report.scores.control_plane}, proof ${report.scores.proof}, release ${report.scores.release}`
   );
+  if (report.latest_scorecard) {
+    console.log(
+      `Scorecard: round ${report.latest_scorecard.round} / ${report.latest_scorecard.target_reached ? "pass" : "fail"} / strictness ${report.latest_scorecard.strictness_level} / total ${report.latest_scorecard.total_score} / target ${report.latest_scorecard.target_total_score}`
+    );
+    if (report.latest_scorecard.required_failures.length > 0) {
+      console.log("Required scorecard failures:");
+      for (const failure of report.latest_scorecard.required_failures.slice(0, 5)) {
+        console.log(
+          `- ${failure.dimension_id}: ${failure.score} < ${failure.minimum_score} (${failure.reason})`
+        );
+      }
+    }
+  }
   console.log(`Attempts written: ${report.round_count}`);
   if (report.stop_reason) {
     console.log(`Stop reason: ${report.stop_reason}`);

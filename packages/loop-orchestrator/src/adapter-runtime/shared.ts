@@ -536,6 +536,14 @@ export const defaultProbeRoleForMode = (
 ): CoreVerificationProbeRole =>
   mode === "http_json" || mode === "browser_journey" ? "release_gate" : "supporting";
 
+export const releaseGateCapableProbeModes = new Set<CoreVerificationProbeMode>([
+  "http_json",
+  "browser_journey",
+  "shell_command",
+  "file_contains",
+  "json_value"
+]);
+
 export const isHttpUrl = (value: string): boolean => {
   const policy = validateTargetUrlPolicy(value);
   return policy.ok;
@@ -2787,7 +2795,7 @@ export const normalizeVerificationProfile = (
                 `Verification profile '${profilePath}' core probe '${probeId}' cannot declare 'json_path' for mode 'browser_journey'.`
               );
             }
-            if (role === "release_gate" && mode !== "http_json" && mode !== "browser_journey") {
+            if (role === "release_gate" && !releaseGateCapableProbeModes.has(mode)) {
               throw new Error(
                 `Verification profile '${profilePath}' core probe '${probeId}' cannot use role 'release_gate' with mode '${mode}'.`
               );

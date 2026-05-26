@@ -110,6 +110,32 @@ const main = async () => {
       "design.no_noise_text"
     );
 
+    const statusJsonResult = await runCommand(process.execPath, [
+      "./scripts/loop-runner.mjs",
+      "status",
+      "--run-dir",
+      runDirectory,
+      "--json"
+    ]);
+    assert.equal(statusJsonResult.code, 0, statusJsonResult.stderr);
+    const statusPayload = JSON.parse(statusJsonResult.stdout);
+    assert.equal(statusPayload.latest_scorecard.round, 1);
+    assert.equal(statusPayload.latest_scorecard.target_reached, false);
+    assert.equal(
+      statusPayload.latest_scorecard.required_failures[0].dimension_id,
+      "design.no_noise_text"
+    );
+
+    const statusTextResult = await runCommand(process.execPath, [
+      "./scripts/loop-runner.mjs",
+      "status",
+      "--run-dir",
+      runDirectory
+    ]);
+    assert.equal(statusTextResult.code, 0, statusTextResult.stderr);
+    assert.match(statusTextResult.stdout, /Scorecard: round 1 \/ fail/u);
+    assert.match(statusTextResult.stdout, /Required scorecard failures:/u);
+
     assert.equal(
       existsSync(join(runDirectory, "evaluation-policy.generated.json")),
       true

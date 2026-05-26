@@ -22,6 +22,7 @@ const isApiOnlyWitness = mode === "api-only-witness";
 const isHiddenAppUrl = mode === "hidden-app-url";
 const isPatchOnlySuccess = mode === "patch-only-success";
 const isPatchRecontract = mode === "patch-recontract";
+const isCliSuccess = mode === "cli-success";
 const isChatSuccess = mode === "chat-success";
 const isChatPatchOnly = mode === "chat-patch-only";
 const isChatRecontract = mode === "chat-recontract";
@@ -596,6 +597,10 @@ const witnessAssertionIdsFor = (kind) => {
 };
 
 const witnessModeFor = (kind) => {
+  if (isCliSuccess) {
+    return "shell";
+  }
+
   if (isApiOnlyWitness || semanticFamily === "chat") {
     return "api";
   }

@@ -71,7 +71,8 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `npm run validate:scorecard-e2e-prepared-run`: loop-level gate proving a required custom dimension miss writes `round-###/scorecard.json`, blocks `target_reached`, updates the eval report threshold eligibility, and is visible through `loop:scorecards`.
 - `npm run validate:adaptive-intake`: focused gate for natural-language strictness/custom metrics extraction, scoreless quality criteria inference, and non-browser adaptive questions.
 - `npm run validate:non-web-target`: focused gate proving CLI/file/test targets do not require browser ready URLs.
-- `npm run validate:productization`: focused productization suite covering readiness doctor, evaluation policy, strictness, scorecards, adaptive intake, and non-web target behavior.
+- `npm run validate:non-web-e2e`: loop-level gate proving a CLI-style target can close through shell release-gate evidence without browser/API release probes.
+- `npm run validate:productization`: focused productization suite covering readiness doctor, evaluation policy, strictness, scorecards, adaptive intake, non-web readiness, and non-web loop closure.
 - `npm run validate:app`: lightweight Codex app foreground gate for build plus intent, intake, front-door, transport, generated verification contract, run-local adapter, and prepared-session consumption checks. It does not require a local `codex` binary.
 - `npm run validate:app-full`: deeper local app sweep that keeps the older `validate:fast` plus `validate:product-front-door` composition.
 - `npm run validate:app-release`: Codex app install ZIP gate. It builds the release ZIP and validates install-ZIP startup without requiring a local `codex` binary.
@@ -637,6 +638,8 @@ For concurrency validation, launch `loop:single` multiple times in parallel and 
 - `evals/runs/latest-realism-state.json`: the latest browser/editor/fullstack/dashboard environment-lane state observed locally or in CI
 - `evals/runs/latest-positive-realism-state.json`: the latest known `target_reached` realism evidence per browser/editor/fullstack/dashboard family
 - `evals/runs/realism-positive-summary.json`: the canonical positive-realism summary artifact uploaded with `realism-positive-runs`
+
+`loop:status` also reports the latest round scorecard when present, including pass/fail, strictness level, total target, and required scorecard failures. Use `npm run loop:scorecards -- --run-dir <run>` when you need the full per-round scorecard list.
 
 For browser/fullstack realism on a host that does not already allow headless browser probes:
 

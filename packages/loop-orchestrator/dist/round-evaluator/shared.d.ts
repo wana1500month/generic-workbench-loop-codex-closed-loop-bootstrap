@@ -11,6 +11,7 @@ export declare const nonScoringDerivedChecks: Set<string>;
 export declare const liveVerificationKinds: Set<string>;
 export declare const proofCapabilityKinds: Set<string>;
 export declare const releaseGateCoreProbeModes: Set<string>;
+export declare const releaseGateCoreProbeModeList = "'http_json', 'browser_journey', 'shell_command', 'file_contains', or 'json_value'";
 export declare const unique: <T>(values: readonly T[]) => T[];
 export declare const isProofCapabilityName: (value: string) => boolean;
 export declare const proofExecutionsFor: (adapterExecutions: readonly AdapterCapabilityExecution[]) => AdapterCapabilityExecution[];

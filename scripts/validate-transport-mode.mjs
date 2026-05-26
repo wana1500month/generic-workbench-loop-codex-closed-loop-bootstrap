@@ -449,7 +449,11 @@ const expectInvalidCombination = async (args, expectedMessage) => {
 };
 
 const runAttachedAppServerValidation = async (fakeAppServerPath, attempt) => {
-  const recordDirectory = join(process.cwd(), ".tmp", "validate-transport-mode");
+  const recordDirectory = join(
+    process.cwd(),
+    ".tmp",
+    `validate-transport-mode-${process.pid}-${attempt}`
+  );
   const recordPath = join(recordDirectory, `fake-app-server-record-${attempt}.json`);
   await mkdir(recordDirectory, { recursive: true });
   await rm(recordPath, { force: true });
@@ -509,6 +513,7 @@ const runAttachedAppServerValidation = async (fakeAppServerPath, attempt) => {
     "Expected attached app-server loop to issue at least one round-enhancement skill turn."
   );
   await rm(recordPath, { force: true });
+  await rm(recordDirectory, { recursive: true, force: true });
 };
 
 const main = async () => {

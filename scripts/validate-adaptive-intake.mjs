@@ -5,6 +5,7 @@ import { importDist } from "./testing/bootstrap-validator-helpers.mjs";
 const main = async () => {
   const { evaluateIntakeRequest } = await importDist("intake-gate.js");
   const { mergeFrontDoorSessionTurn } = await importDist("front-door-session-merge.js");
+  const { buildAdaptiveQuestionSet } = await importDist("adaptive-interviewer.js");
 
   const browserRequest = [
     "가계부 앱을 만들어줘.",
@@ -74,6 +75,28 @@ const main = async () => {
     (scorelessMerged.intake.custom_quality_metrics ?? []).every(
       (metric) => metric.minimum_score_out_of_ten >= 9.3
     )
+  );
+
+  const libraryQuestions = buildAdaptiveQuestionSet({
+    request:
+      "Build an npm package SDK. It should expose a clean import API and stable examples.",
+    hasVerificationSurface: false,
+    hasWorkflowChecks: false,
+    hasCustomQualityMetrics: false,
+    hasFailureExpectations: false,
+    maxQuestions: 3
+  });
+  assert.equal(libraryQuestions.project_kind, "library_package");
+  assert.ok(libraryQuestions.evidence_surfaces.includes("package_import"));
+  assert.ok(libraryQuestions.selected_questions.length <= 3);
+  assert.ok(
+    libraryQuestions.selected_questions.every(
+      (question) => question.why_it_matters.length > 0
+    )
+  );
+  assert.match(
+    libraryQuestions.by_field.workflow_checks.question,
+    /import\/API call/u
   );
 };
 

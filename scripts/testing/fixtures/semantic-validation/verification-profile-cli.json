@@ -1,0 +1,59 @@
+{
+  "profile_id": "semantic-validation-cli-profile",
+  "label": "Semantic Validation CLI Profile",
+  "bundle_label": "Semantic Validation CLI Profile",
+  "target_family": "api-service",
+  "validation_lane": "deterministic_semantic",
+  "required_live_verification_modes": ["shell"],
+  "target_reached_requires_core_probes": true,
+  "minimum_feature_release_assertions": 2,
+  "core_probes": [
+    {
+      "probe_id": "cli-command-runs",
+      "label": "CLI command produces expected output",
+      "role": "release_gate",
+      "mode": "shell_command",
+      "semantic_level": "workflow",
+      "assertion_id": "item_persists",
+      "assertion_tags": ["workflow_multi_step"],
+      "target": "node ../core-probe.cjs",
+      "cwd": ".",
+      "expected_value": "run_target evidence for round",
+      "required": true
+    },
+    {
+      "probe_id": "cli-output-repeatable",
+      "label": "CLI output remains repeatable",
+      "role": "release_gate",
+      "mode": "shell_command",
+      "semantic_level": "feature",
+      "assertion_id": "invalid_item_rejected",
+      "assertion_tags": ["consistency"],
+      "target": "node ../core-probe.cjs",
+      "cwd": ".",
+      "expected_value": "run_target evidence for round",
+      "required": true
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "item_persists",
+      "capability": "run_checks",
+      "summary": "CLI run should leave a durable target marker.",
+      "operator": "equals",
+      "expected_value": "persisted",
+      "hard": true
+    },
+    {
+      "criterion_id": "invalid_item_rejected",
+      "capability": "run_checks",
+      "summary": "CLI verifier should prove the failure/edge path stays handled.",
+      "operator": "equals",
+      "expected_value": "rejected",
+      "hard": true
+    }
+  ],
+  "notes": [
+    "This profile proves non-web shell release gates can close target_reached without requiring browser or API target manifests."
+  ]
+}

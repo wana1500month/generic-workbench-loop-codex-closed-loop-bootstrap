@@ -94,6 +94,8 @@ Acceptance:
 - `loop:scorecards` should read scorecards from the runtime's actual `run/round-###/` directories and the compatibility `run/rounds/round-###/` layout.
 - Scorecard gating should have a loop-level validation that proves generated scorecards, custom-dimension target blocking, eval-report threshold updates, and CLI display stay connected end to end.
 - Intake should infer evidence surfaces for CLI tools, API services, libraries, agents, document artifacts, data pipelines, automation, and browser/mobile UI without making browser evidence the default for every target.
+- Non-web targets should be able to close through evidence-appropriate release gates such as `shell_command`, `file_contains`, or `json_value` instead of requiring browser/API probes.
+- `loop:status` should surface the latest scorecard and required custom-dimension failures so operators do not need to inspect raw round files first.
 
 Validation:
 - Inspect the latest run under `evals/runs`
@@ -115,6 +117,7 @@ Validation:
 - `npm run validate:productization`
 - `npm run validate:loop-scorecards`
 - `npm run validate:scorecard-e2e-prepared-run`
+- `npm run validate:non-web-e2e`
 
 ## M3. External adapter boundary
 

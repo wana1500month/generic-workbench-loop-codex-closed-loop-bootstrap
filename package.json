@@ -107,6 +107,7 @@
     "validate:scorecard-e2e-prepared-run": "node ./scripts/validate-scorecard-e2e-prepared-run.mjs",
     "validate:adaptive-intake": "node ./scripts/validate-adaptive-intake.mjs",
     "validate:non-web-target": "node ./scripts/validate-non-web-target.mjs",
+    "validate:non-web-e2e": "node ./scripts/validate-non-web-e2e.mjs",
     "validate:adapter-drift": "node ./scripts/validate-adapter-drift.mjs",
     "validate:adapter-migration-generated-runtime": "node ./scripts/validate-adapter-migration-generated-runtime.mjs",
     "validate:adapter-migration-generated-kernel": "node ./scripts/validate-adapter-migration-generated-kernel.mjs",
