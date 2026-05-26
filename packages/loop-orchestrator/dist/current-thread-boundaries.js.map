@@ -1,0 +1,1 @@
+{"version":3,"file":"current-thread-boundaries.js","sourceRoot":"","sources":["../src/current-thread-boundaries.ts"],"names":[],"mappings":"AAEA,MAAM,CAAC,MAAM,mCAAmC,GAAG,CACjD,KAAwF,EAC/E,EAAE,CACX,KAAK,CAAC,QAAQ,KAAK,QAAQ;IAC3B,KAAK,CAAC,gBAAgB,CAAC,MAAM,GAAG,CAAC;IACjC,KAAK,CAAC,eAAe,CAAC,MAAM,KAAK,CAAC,CAAC"}

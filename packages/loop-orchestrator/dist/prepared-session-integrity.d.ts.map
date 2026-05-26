@@ -1,0 +1,1 @@
+{"version":3,"file":"prepared-session-integrity.d.ts","sourceRoot":"","sources":["../src/prepared-session-integrity.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EACV,kBAAkB,EAClB,0BAA0B,EAC1B,mBAAmB,EACpB,MAAM,YAAY,CAAC;AAGpB,eAAO,MAAM,uCAAuC,GAAI,OAAO;IAC7D,UAAU,EAAE,kBAAkB,CAAC;IAC/B,WAAW,EAAE,0BAA0B,CAAC;IACxC,gBAAgB,CAAC,EAAE,mBAAmB,CAAC;CACxC,KAAG,MAAM,EAiFT,CAAC"}

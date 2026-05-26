@@ -1,0 +1,82 @@
+export type CodexSandboxMode = "read-only" | "workspace-write";
+export type CodexJsonSchema = Record<string, unknown>;
+export type CodexAuthMode = "chatgpt" | "api" | "unknown";
+export type CodexSessionEntry = {
+    thread_id: string;
+    updated_at: string;
+    cwd?: string;
+    run_id?: string;
+    round?: number;
+    role?: string;
+    metadata?: Record<string, string | number | boolean | null>;
+};
+export type CodexSessionRegistry = Record<string, CodexSessionEntry>;
+export type CodexCommandInput = {
+    name: string;
+    prompt: string;
+    cwd: string;
+    artifactDirectory: string;
+    profile?: string;
+    configOverrides?: Record<string, string | number | boolean>;
+    addDirs?: string[];
+    outputSchema?: CodexJsonSchema;
+    sandboxMode?: CodexSandboxMode;
+    sessionId?: string;
+    resumeLast?: boolean;
+    metadata?: Record<string, string | number | boolean | null>;
+    allowCurrentThreadReadOnlyJudge?: boolean;
+    timeoutMs?: number;
+    staleOutputTimeoutMs?: number;
+    outputLimitBytes?: number;
+};
+export type CodexCommandResult = {
+    code: number;
+    stdout: string;
+    stderr: string;
+    eventsText: string;
+    responseText?: string;
+    error?: string;
+    promptPath: string;
+    responsePath: string;
+    stdoutPath: string;
+    stderrPath: string;
+    eventsPath: string;
+    metadataPath: string;
+    schemaPath?: string;
+    threadId?: string;
+    profile?: string;
+    responseWritten: boolean;
+    usedResume: boolean;
+    disabled: boolean;
+    timedOut?: boolean;
+    timeoutReason?: "wall_clock_timeout" | "stale_output_timeout" | "output_limit_exceeded";
+    durationMs?: number;
+};
+export type CodexAuthPreflight = {
+    ok: boolean;
+    mode: CodexAuthMode;
+    authFilePath: string;
+    authFilePresent: boolean;
+    hasRefreshToken: boolean;
+    fileBacked: boolean;
+    statusCode: number;
+    blockedReason?: string;
+    error?: string;
+    statusStdout: string;
+    statusStderr: string;
+    timedOut?: boolean;
+};
+export declare const extractThreadIdFromJsonl: (raw: string) => string | undefined;
+export declare const readCodexSessionRegistry: (registryPath: string) => Promise<CodexSessionRegistry>;
+export declare const readCodexSession: (registryPath: string, key: string) => Promise<CodexSessionEntry | undefined>;
+export declare const writeCodexSession: (registryPath: string, key: string, entry: Omit<CodexSessionEntry, "updated_at"> & {
+    updated_at?: string;
+}) => Promise<void>;
+export declare const checkCodexAuth: (options: {
+    strict: boolean;
+    requireChatgpt: boolean;
+    requireFileBacked: boolean;
+    cwd?: string;
+}) => Promise<CodexAuthPreflight>;
+export declare const runCodexCommand: (input: CodexCommandInput) => Promise<CodexCommandResult>;
+//# sourceMappingURL=codex-runtime.d.ts.map

@@ -1,0 +1,31 @@
+import type { AttachedGeneratorResponseArtifact, AttachedGeneratorTaskArtifact, BuildBriefArtifact, ContractAgreementArtifact, GeneratorPlanArtifact, LoadedAdapterContract, PatchRequestArtifact, RoundArtifacts, RoundContractArtifact, TransportMode, VerificationCoreProbe } from "./types.js";
+export declare const isBootstrapGeneratedAdapter: (loadedAdapter: LoadedAdapterContract | undefined) => boolean;
+export declare const isAttachedGeneratorTransport: (transportMode: TransportMode) => transportMode is Extract<TransportMode, "current-thread" | "app-server">;
+export declare const writeAttachedGeneratorTask: (input: {
+    runId: string;
+    round: number;
+    controllerMode: "attached";
+    transportMode: Extract<TransportMode, "current-thread" | "app-server">;
+    checkpointId?: string;
+    checkpointSeq?: number;
+    targetRoot: string;
+    taskCwd: string;
+    writableRoots: string[];
+    networkAccess: boolean;
+    completionTimeoutMs: number;
+    transportProtocolPath?: string;
+    artifacts: RoundArtifacts;
+    contract: RoundContractArtifact;
+    agreement: ContractAgreementArtifact;
+    generatorPlan: GeneratorPlanArtifact;
+    previousPatchRequest?: PatchRequestArtifact;
+    buildBrief?: BuildBriefArtifact;
+    verificationProbes?: VerificationCoreProbe[];
+    prototypeBaselineManifestPath?: string;
+    prototypeBaselineScreenshotPath?: string;
+    prototypeBaselineSourcePhase?: string;
+    prototypeBaselineValid?: boolean;
+    notes?: string[];
+}) => Promise<AttachedGeneratorTaskArtifact>;
+export declare const readAttachedGeneratorResponse: (path: string, expectedCheckpointId?: string) => Promise<AttachedGeneratorResponseArtifact | undefined>;
+//# sourceMappingURL=attached-generator.d.ts.map

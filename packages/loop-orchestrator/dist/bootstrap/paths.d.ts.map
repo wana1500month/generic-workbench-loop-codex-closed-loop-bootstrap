@@ -1,0 +1,1 @@
+{"version":3,"file":"paths.d.ts","sourceRoot":"","sources":["../../src/bootstrap/paths.ts"],"names":[],"mappings":"AAEA,OAAO,KAAK,EAAE,sBAAsB,EAAE,MAAM,iBAAiB,CAAC;AAE9D,MAAM,WAAW,0BAA0B;IACzC,aAAa,EAAE,MAAM,CAAC;IACtB,YAAY,CAAC,EAAE,MAAM,CAAC;CACvB;AAED,eAAO,MAAM,4BAA4B,GACvC,OAAO,MAAM,GAAG,0BAA0B,KACzC,sBAsCF,CAAC"}

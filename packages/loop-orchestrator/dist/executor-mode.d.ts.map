@@ -1,0 +1,1 @@
+{"version":3,"file":"executor-mode.d.ts","sourceRoot":"","sources":["../src/executor-mode.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,YAAY,EAAE,MAAM,YAAY,CAAC;AAE/C,eAAO,MAAM,mBAAmB,EAAE,YAAwB,CAAC;AAE3D,eAAO,MAAM,aAAa,gDAGkB,CAAC;AAE7C,eAAO,MAAM,cAAc,GAAI,OAAO,MAAM,GAAG,SAAS,KAAG,KAAK,IAAI,YAEd,CAAC"}

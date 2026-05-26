@@ -1,0 +1,1 @@
+{"version":3,"file":"target-url-policy.d.ts","sourceRoot":"","sources":["../src/target-url-policy.ts"],"names":[],"mappings":"AA+DA,MAAM,WAAW,qBAAqB;IACpC,EAAE,EAAE,OAAO,CAAC;IACZ,GAAG,CAAC,EAAE,MAAM,CAAC;IACb,MAAM,CAAC,EAAE,MAAM,CAAC;CACjB;AAED,eAAO,MAAM,uBAAuB,GAAI,OAAO,MAAM,KAAG,qBAiCvD,CAAC;AAEF,eAAO,MAAM,sBAAsB,GAAI,OAAO,MAAM,EAAE,SAAS,MAAM,KAAG,MAMvE,CAAC"}

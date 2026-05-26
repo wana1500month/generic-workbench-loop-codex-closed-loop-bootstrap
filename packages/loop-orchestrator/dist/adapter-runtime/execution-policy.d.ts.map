@@ -1,0 +1,1 @@
+{"version":3,"file":"execution-policy.d.ts","sourceRoot":"","sources":["../../src/adapter-runtime/execution-policy.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EACV,kBAAkB,EAElB,uBAAuB,EACvB,8BAA8B,EAC/B,MAAM,aAAa,CAAC;AAErB,eAAO,MAAM,6BAA6B,GAAI,OAAO;IACnD,QAAQ,EAAE,uBAAuB,CAAC;IAClC,cAAc,EAAE,kBAAkB,CAAC;IACnC,UAAU,EAAE,MAAM,CAAC;CACpB,KAAG,8BAkBH,CAAC"}

@@ -1,0 +1,1 @@
+{"version":3,"file":"executor-mode.js","sourceRoot":"","sources":["../src/executor-mode.ts"],"names":[],"mappings":"AAEA,MAAM,CAAC,MAAM,mBAAmB,GAAiB,SAAS,CAAC;AAE3D,MAAM,CAAC,MAAM,aAAa,GAAG;IAC3B,SAAS;IACT,wBAAwB;CACkB,CAAC;AAE7C,MAAM,CAAC,MAAM,cAAc,GAAG,CAAC,KAAyB,EAAyB,EAAE,CACjF,OAAO,KAAK,KAAK,QAAQ;IACxB,aAAmC,CAAC,QAAQ,CAAC,KAAK,CAAC,CAAC"}

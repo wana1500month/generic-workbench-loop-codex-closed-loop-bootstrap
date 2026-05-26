@@ -1,0 +1,1 @@
+{"version":3,"file":"adapter-drift.d.ts","sourceRoot":"","sources":["../src/adapter-drift.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EACV,kBAAkB,EAClB,sBAAsB,EACtB,cAAc,EAEf,MAAM,YAAY,CAAC;AASpB,eAAO,MAAM,uBAAuB,GAAI,OAAO;IAC7C,UAAU,EAAE,MAAM,CAAC;IACnB,KAAK,EAAE,MAAM,CAAC;IACd,sBAAsB,EAAE,sBAAsB,CAAC;IAC/C,cAAc,CAAC,EAAE,cAAc,CAAC;CACjC,KAAG,kBAAkB,GAAG,SA8DxB,CAAC"}

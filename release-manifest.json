@@ -1,0 +1,7 @@
+{
+  "artifact_type": "codex_app_install_zip",
+  "includes_dist": true,
+  "source_archive": false,
+  "install_zip_name": "generic-codex-workbench-CODEX-APP-INSTALL.zip",
+  "created_at": "2026-05-26T09:31:01.232Z"
+}

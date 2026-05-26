@@ -1,0 +1,1 @@
+{"version":3,"file":"contract-review.d.ts","sourceRoot":"","sources":["../../src/round-evaluator/contract-review.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EACV,sBAAsB,EACtB,qBAAqB,EACrB,qBAAqB,EACtB,MAAM,aAAa,CAAC;AASrB,eAAO,MAAM,2BAA2B,GAAI,OAAO;IACjD,gBAAgB,EAAE,qBAAqB,CAAC;IACxC,aAAa,CAAC,EAAE,qBAAqB,CAAC;CACvC,KAAG,sBA+FH,CAAC"}
