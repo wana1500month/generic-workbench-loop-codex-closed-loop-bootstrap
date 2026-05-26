@@ -29,7 +29,8 @@ import { resolveEvaluatorBundleSelection } from "./loop/evaluator-bundle.js";
 import { PhaseBudgetExceededError, parsePhaseTimeoutOverrides, parsePositiveTimeoutMs } from "./loop/phase-timeouts.js";
 import { crashAfterCheckpointEnabled, ensureJsonFile, isImproved, roundDirectoryFor, writeRoundSummary } from "./loop/round-files.js";
 import { buildRuntimeEvent, ephemeralRuntimeEventCodes, mergeRuntimeEvents, normalizeRuntimeWarnings } from "./loop/runtime-events.js";
-import { isResumeNoopTerminalStopReason, stopReasonFromState } from "./loop/stop-reasons.js";
+import { stopReasonForMissingRoundTargetDecision, stopReasonForRoundTargetDecision } from "./loop/round-target-decision.js";
+import { isResumeNoopTerminalStopReason } from "./loop/stop-reasons.js";
 import { artifactsForRound, buildEvaluatorVerdictArtifact, buildGeneratorPlanArtifact, buildPatchRequestArtifact, buildQualityCritiqueArtifact, buildRoundContractArtifact, buildRoundResultArtifact, writeAdapterMigrationProposalArtifacts, writeNegotiationArtifacts, writeRoundEvaluationPlaceholders, writeRoundArtifacts } from "./protocol-artifacts.js";
 import { applyFailureLineagePolicySnapshot } from "./failure-lineage.js";
 import { buildResumeIdentityState, compareResumeIdentity, loadResumeIdentityArtifact, resumeIdentityArtifactPath, resumeIdentityFingerprint, summaryResumeIdentity } from "./resume-identity.js";
@@ -3652,14 +3653,8 @@ export const runClosedLoop = async (input) => {
                     (!adapterMigrationStopPreview ||
                         adapterMigrationStopPreview.apply_mode === "new_run_required")
             };
-            const roundStopReason = stopReasonFromState({
-                latestVerdict: latestRoundState.verdict,
-                latestUnresolvedCheckIds: latestRoundState.unresolvedCheckIds,
-                latestPatchNextAction: latestRoundState.patchNextAction,
-                latestMustFixCount: latestRoundState.patchMustFixCount,
-                latestThresholdResults: latestRoundState.thresholdResults,
-                latestFailureLineage: latestRoundState.failureLineage,
-                latestStaticAdapterContractInvalid: latestRoundState.staticAdapterContractInvalid,
+            const roundStopReason = stopReasonForRoundTargetDecision({
+                state: latestRoundState,
                 plateauCount,
                 plateauLimit: hydratedRubric.stop_after_plateau_rounds,
                 completedRounds: round,
@@ -3781,28 +3776,16 @@ export const runClosedLoop = async (input) => {
             }
         }
         const finalStopReason = latestRoundState
-            ? stopReasonFromState({
-                latestVerdict: latestRoundState.verdict,
-                latestUnresolvedCheckIds: latestRoundState.unresolvedCheckIds,
-                latestPatchNextAction: latestRoundState.patchNextAction,
-                latestMustFixCount: latestRoundState.patchMustFixCount,
-                latestThresholdResults: latestRoundState.thresholdResults,
-                latestFailureLineage: latestRoundState.failureLineage,
-                latestStaticAdapterContractInvalid: latestRoundState.staticAdapterContractInvalid,
+            ? stopReasonForRoundTargetDecision({
+                state: latestRoundState,
                 plateauCount,
                 plateauLimit: hydratedRubric.stop_after_plateau_rounds,
                 completedRounds: history.length,
                 maxRounds: executionMaxRounds
             })
             : undefined;
-        const resolvedStopReason = stopReasonFromState({
-            latestVerdict: latestRoundState?.verdict ?? "hold",
-            latestUnresolvedCheckIds: latestRoundState?.unresolvedCheckIds ?? [],
-            latestPatchNextAction: latestRoundState?.patchNextAction,
-            latestMustFixCount: latestRoundState?.patchMustFixCount ?? 0,
-            latestThresholdResults: latestRoundState?.thresholdResults,
-            latestFailureLineage: latestRoundState?.failureLineage,
-            latestStaticAdapterContractInvalid: latestRoundState?.staticAdapterContractInvalid,
+        const resolvedStopReason = stopReasonForMissingRoundTargetDecision({
+            state: latestRoundState,
             plateauCount,
             plateauLimit: hydratedRubric.stop_after_plateau_rounds,
             completedRounds: history.length,

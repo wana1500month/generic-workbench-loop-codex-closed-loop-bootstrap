@@ -13,18 +13,36 @@ const foregroundThreadEnv = {
   HARNESS_APP_VISIBILITY: "visible-in-stock-app"
 };
 
+const npmInvocationFor = (scriptName, scriptArgs) => {
+  const args = [
+    "run",
+    scriptName,
+    "--silent",
+    ...(scriptArgs.length > 0 ? ["--", ...scriptArgs] : [])
+  ];
+  if (process.env.npm_execpath) {
+    return {
+      command: process.execPath,
+      args: [process.env.npm_execpath, ...args],
+      shell: false
+    };
+  }
+  return {
+    command: "npm",
+    args,
+    shell: process.platform === "win32"
+  };
+};
+
 const runPackageScript = async (scriptName, scriptArgs = [], env = process.env) =>
   new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(
-      "npm",
-      ["run", scriptName, "--silent", ...(scriptArgs.length > 0 ? ["--", ...scriptArgs] : [])],
-      {
-        cwd: repoRoot,
-        env,
-        shell: process.platform === "win32",
-        windowsHide: true
-      }
-    );
+    const invocation = npmInvocationFor(scriptName, scriptArgs);
+    const child = spawn(invocation.command, invocation.args, {
+      cwd: repoRoot,
+      env,
+      shell: invocation.shell,
+      windowsHide: true
+    });
 
     let stdout = "";
     let stderr = "";

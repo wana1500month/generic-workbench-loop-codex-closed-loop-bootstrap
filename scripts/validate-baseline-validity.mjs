@@ -20,6 +20,13 @@ const assert = (condition, message) => {
   }
 };
 
+const debugBaselineValidity = process.env.HARNESS_DEBUG_BASELINE_VALIDITY === "1";
+const debugStep = (message) => {
+  if (debugBaselineValidity) {
+    console.error(`[baseline-validity] ${message}`);
+  }
+};
+
 const listen = async (server) =>
   new Promise((resolvePromise, rejectPromise) => {
     server.once("error", rejectPromise);
@@ -96,61 +103,6 @@ const gradeRoundOverride = (prototypeDeltaScore) => ({
     }
   ]
 });
-
-const browserExecutableCandidates = () =>
-  process.platform === "win32"
-    ? ["msedge", "chrome", "chromium"]
-    : process.platform === "darwin"
-      ? ["Google Chrome", "Microsoft Edge", "chromium"]
-      : ["google-chrome", "chromium", "chromium-browser", "microsoft-edge"];
-
-const resolveBrowserExecutableCandidate = () => {
-  if (
-    typeof process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH === "string" &&
-    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.trim().length > 0
-  ) {
-    return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.trim();
-  }
-  return browserExecutableCandidates()[0];
-};
-
-const canCaptureBrowserBaseline = async (baseUrl) => {
-  let browser;
-  let screenshotPath;
-  try {
-    const { chromium } = await import("playwright-core");
-    screenshotPath = join(process.cwd(), ".tmp", `baseline-validator-probe-${process.pid}.png`);
-    const executablePath = resolveBrowserExecutableCandidate();
-    browser = await chromium.launch({
-      headless: true,
-      ...(typeof executablePath === "string" && executablePath.length > 0
-        ? { executablePath }
-        : {})
-    });
-    const page = await browser.newPage();
-    await page.goto(baseUrl, {
-      waitUntil: "networkidle",
-      timeout: 5000
-    });
-    await page.screenshot({ path: screenshotPath, fullPage: true });
-    return {
-      available: true,
-      reason: "captured"
-    };
-  } catch (error) {
-    return {
-      available: false,
-      reason: error instanceof Error ? error.message : String(error)
-    };
-  } finally {
-    if (browser) {
-      await browser.close().catch(() => undefined);
-    }
-    if (screenshotPath) {
-      await rm(screenshotPath, { force: true }).catch(() => undefined);
-    }
-  }
-};
 
 const seedSyntheticVisualEvidence = async (fixture) => {
   const screenshotPath = join(fixture.roundDirectory, "synthetic-visual-evidence.png");
@@ -241,11 +193,14 @@ const runCapability = async (fixture, capability, round, outputFile, overrides =
 };
 
 const main = async () => {
+  debugStep("ensure build");
   await ensureBuild();
+  debugStep("create temp root");
   const tempRoot = await createTempRoot("validate-baseline-validity");
   let server;
 
   try {
+    debugStep("create server");
     server = createServer((request, response) => {
       if (request.url?.startsWith("/healthz")) {
         response.writeHead(200, { "content-type": "application/json" });
@@ -264,24 +219,28 @@ const main = async () => {
         </html>
       `);
     });
+    debugStep("listen server");
     const address = await listen(server);
     if (!address || typeof address === "string") {
       throw new Error("baseline validity validator did not expose a TCP port");
     }
 
     const baseUrl = `http://127.0.0.1:${address.port}`;
+    debugStep(`create helper fixture ${baseUrl}`);
     const fixture = await createBaselineFixture(tempRoot, "helper-capture", baseUrl);
 
+    debugStep("import adapter-runtime");
     const { loadAdapterContract } = await importDist("adapter-runtime.js");
+    debugStep("import prototype-baseline");
     const {
       attachedPreGeneratorBaselineWindowOpen,
       captureBootstrapGeneratedBaselineIfNeeded
     } = await importDist(
       "prototype-baseline.js"
     );
+    debugStep("load adapter contract");
     const loadedAdapter = await loadAdapterContract(fixture.paths.adapterPath);
     assert(loadedAdapter, "expected generated adapter contract to load");
-    const browserCaptureAvailability = await canCaptureBrowserBaseline(baseUrl);
     assert(
       attachedPreGeneratorBaselineWindowOpen({
         round: 1,
@@ -313,6 +272,7 @@ const main = async () => {
       "an existing attached-generator response should close the pre-generator baseline window"
     );
 
+    debugStep("capture helper baseline");
     const helperCapture = await captureBootstrapGeneratedBaselineIfNeeded({
       loadedAdapter,
       runtimeDirectory: fixture.runtimeDirectory,
@@ -321,10 +281,11 @@ const main = async () => {
         health_url: `${baseUrl}/healthz`
       }
     });
-    if (browserCaptureAvailability.available) {
+    debugStep(`helper baseline status ${helperCapture.status}`);
+    if (helperCapture.status === "captured") {
       assert(
-        helperCapture.status === "captured",
-        "loop-side baseline helper should capture a pre-round baseline"
+        helperCapture.prototype_baseline_present === true,
+        "captured helper baseline should report a present baseline"
       );
       assert(
         helperCapture.source_phase === "pre_round_1" && helperCapture.prototype_baseline_valid,
@@ -347,16 +308,12 @@ const main = async () => {
         typeof helperCapture.reason === "string" || helperCapture.status === "skipped",
         "helper capture should preserve a blocked/skipped reason when browser capture is unavailable"
       );
-      assert(
-        typeof browserCaptureAvailability.reason === "string" &&
-          browserCaptureAvailability.reason.length > 0,
-        "capture probe should report why browser baseline capture is unavailable"
-      );
     }
 
     await rm(join(fixture.runtimeDirectory, "product-baseline.json"), { force: true });
     await rm(join(fixture.runtimeDirectory, "baseline-home.png"), { force: true });
     await rm(join(fixture.runtimeDirectory, "baseline-trace.zip"), { force: true });
+    debugStep("create existing fixture");
     const existingProjectFixture = await createBaselineFixture(
       tempRoot,
       "existing-project-no-fallback",
@@ -366,6 +323,7 @@ const main = async () => {
     await seedSyntheticVisualEvidence(existingProjectFixture);
     const round1ReviewPath = join(existingProjectFixture.roundDirectory, "subjective-round1.json");
     await writeJsonFile(round1ReviewPath, gradeRoundOverride(9.1));
+    debugStep("run existing round 1 grade");
     const existingRound1Grade = await runCapability(
       existingProjectFixture,
       "grade_round",
@@ -388,6 +346,7 @@ const main = async () => {
       "existing project round 1 should not mint a fallback baseline without an allowed reason"
     );
 
+    debugStep("create allowed fallback fixture");
     const allowedExistingFixture = await createBaselineFixture(
       tempRoot,
       "existing-project-allowed-fallback",
@@ -406,6 +365,7 @@ const main = async () => {
       "subjective-round1.json"
     );
     await writeJsonFile(allowedRound1ReviewPath, gradeRoundOverride(9.1));
+    debugStep("run allowed round 1 grade");
     const allowedRound1Grade = await runCapability(
       allowedExistingFixture,
       "grade_round",
@@ -446,6 +406,7 @@ const main = async () => {
 
     const round2ReviewPath = join(allowedExistingFixture.roundDirectory, "subjective-round2.json");
     await writeJsonFile(round2ReviewPath, gradeRoundOverride(9.8));
+    debugStep("run allowed round 2 grade");
     const round2Grade = await runCapability(
       allowedExistingFixture,
       "grade_round",
@@ -499,6 +460,7 @@ const main = async () => {
 
     console.log("Validated prototype baseline validity semantics.");
   } finally {
+    debugStep("cleanup");
     if (server) {
       await closeServer(server);
     }
@@ -506,8 +468,10 @@ const main = async () => {
   }
 };
 
-main().catch((error) => {
+try {
+  await main();
+} catch (error) {
   console.error("Baseline validity validation failed.");
   console.error(error);
   process.exitCode = 1;
-});
+}

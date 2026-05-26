@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { loadJsonIfExists, writeJson } from "./file-system.js";
+import { assertPlaywrightCoreImportAvailable } from "./playwright-availability.js";
 import type {
   AttachedGeneratorResponseArtifact,
   AttachedGeneratorTaskArtifact,
@@ -17,6 +18,33 @@ type BootstrapRuntimeConfig = {
   ready_url?: string;
   health_url?: string;
   api_base_url?: string;
+};
+
+type BaselinePage = {
+  goto: (url: string, options: Record<string, unknown>) => Promise<void>;
+  locator: (selector: string) => {
+    click: (options: Record<string, unknown>) => Promise<void>;
+    fill: (value: string, options: Record<string, unknown>) => Promise<void>;
+    press: (value: string, options: Record<string, unknown>) => Promise<void>;
+    waitFor: (options: Record<string, unknown>) => Promise<void>;
+  };
+  reload: (options: Record<string, unknown>) => Promise<void>;
+  screenshot: (options: Record<string, unknown>) => Promise<void>;
+  waitForTimeout: (timeoutMs: number) => Promise<void>;
+};
+
+type BaselineBrowserContext = {
+  tracing: {
+    start: (options: Record<string, unknown>) => Promise<void>;
+    stop: (options: Record<string, unknown>) => Promise<void>;
+  };
+  close: () => Promise<void>;
+  newPage: () => Promise<BaselinePage>;
+};
+
+type BaselineBrowser = {
+  close: () => Promise<void>;
+  newContext: () => Promise<BaselineBrowserContext>;
 };
 
 export type PrototypeBaselineState = {
@@ -231,8 +259,36 @@ const waitForUrl = async (url: string, timeoutMs = 60000) => {
 };
 
 const loadChromium = async () => {
+  await assertPlaywrightCoreImportAvailable();
   const playwright = await import("playwright-core");
   return playwright.chromium;
+};
+
+const withBrowserLaunchTimeout = async <T extends { close: () => Promise<void> }>(
+  operation: Promise<T>,
+  timeoutMs: number
+): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      timedOut = true;
+      reject(new Error(`browser_launch_timeout_${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+  const guardedOperation = operation.then(async (browser) => {
+    if (timedOut) {
+      await browser.close().catch(() => undefined);
+    }
+    return browser;
+  });
+  try {
+    return await Promise.race([guardedOperation, timeout]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
 };
 
 const browserExecutableCandidates = () =>
@@ -432,12 +488,17 @@ export const captureBootstrapGeneratedBaselineIfNeeded = async (input: {
   try {
     const chromium = await loadChromium();
     const executablePath = resolveBrowserExecutable(profile);
-    const activeBrowser = await chromium.launch({
-      headless: true,
-      ...(typeof executablePath === "string" && executablePath.length > 0
-        ? { executablePath }
-        : {})
-    });
+    const launchTimeoutMs = Math.min(Math.max(timeoutMs, 1000), 10000);
+    const activeBrowser = await withBrowserLaunchTimeout<BaselineBrowser>(
+      chromium.launch({
+        headless: true,
+        timeout: launchTimeoutMs,
+        ...(typeof executablePath === "string" && executablePath.length > 0
+          ? { executablePath }
+          : {})
+      }),
+      launchTimeoutMs
+    );
     browser = activeBrowser;
     const activeContext = await activeBrowser.newContext();
     context = activeContext;

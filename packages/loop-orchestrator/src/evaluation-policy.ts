@@ -245,7 +245,11 @@ export const inferProjectKindFromText = (value: string): ProjectKind => {
   if (/(?:agent|chatbot|assistant|에이전트|챗봇)/u.test(normalized)) {
     return "agent_workflow";
   }
-  if (/(?:document|markdown|report|proposal|문서|보고서|기획서)/u.test(normalized)) {
+  if (
+    /(?:document|markdown|report|proposal|문서|보고서|기획서|마크다운|가이드|체크리스트)/u.test(
+      normalized
+    )
+  ) {
     return "document_artifact";
   }
   if (/(?:pipeline|etl|csv|data|데이터|파이프라인)/u.test(normalized)) {

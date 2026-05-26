@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadJsonIfExists, writeJson } from "./file-system.js";
+import { assertPlaywrightCoreImportAvailable } from "./playwright-availability.js";
 const prototypeBaselineSourceSemanticsValues = new Set([
     "initial_pre_round_baseline",
     "first_rendered_round_fallback",
@@ -120,8 +121,33 @@ const waitForUrl = async (url, timeoutMs = 60000) => {
     };
 };
 const loadChromium = async () => {
+    await assertPlaywrightCoreImportAvailable();
     const playwright = await import("playwright-core");
     return playwright.chromium;
+};
+const withBrowserLaunchTimeout = async (operation, timeoutMs) => {
+    let timeoutId;
+    let timedOut = false;
+    const timeout = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+            timedOut = true;
+            reject(new Error(`browser_launch_timeout_${timeoutMs}ms`));
+        }, timeoutMs);
+    });
+    const guardedOperation = operation.then(async (browser) => {
+        if (timedOut) {
+            await browser.close().catch(() => undefined);
+        }
+        return browser;
+    });
+    try {
+        return await Promise.race([guardedOperation, timeout]);
+    }
+    finally {
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+        }
+    }
 };
 const browserExecutableCandidates = () => process.platform === "win32"
     ? ["msedge", "chrome", "chromium"]
@@ -269,12 +295,14 @@ export const captureBootstrapGeneratedBaselineIfNeeded = async (input) => {
     try {
         const chromium = await loadChromium();
         const executablePath = resolveBrowserExecutable(profile);
-        const activeBrowser = await chromium.launch({
+        const launchTimeoutMs = Math.min(Math.max(timeoutMs, 1000), 10000);
+        const activeBrowser = await withBrowserLaunchTimeout(chromium.launch({
             headless: true,
+            timeout: launchTimeoutMs,
             ...(typeof executablePath === "string" && executablePath.length > 0
                 ? { executablePath }
                 : {})
-        });
+        }), launchTimeoutMs);
         browser = activeBrowser;
         const activeContext = await activeBrowser.newContext();
         context = activeContext;

@@ -132,9 +132,11 @@ import {
   normalizeRuntimeWarnings
 } from "./loop/runtime-events.js";
 import {
-  isResumeNoopTerminalStopReason,
-  stopReasonFromState
-} from "./loop/stop-reasons.js";
+  stopReasonForMissingRoundTargetDecision,
+  stopReasonForRoundTargetDecision,
+  type RoundTargetDecisionState
+} from "./loop/round-target-decision.js";
+import { isResumeNoopTerminalStopReason } from "./loop/stop-reasons.js";
 import {
   artifactsForRound,
   buildEvaluatorVerdictArtifact,
@@ -1312,20 +1314,7 @@ export const runClosedLoop = async (input: {
   let previousRoundSummary: RoundSummary | undefined =
     restoredRun?.previousRoundSummary;
   let scoreDeltas = scoreDeltasForHistory(history);
-  let latestRoundState:
-    | {
-        score: number;
-        controlPlaneScore: number;
-        proofScore: number;
-        verdict: RoundSummary["overall_verdict"];
-        unresolvedCheckIds: string[];
-        patchNextAction: PatchRequestArtifact["next_action"];
-        patchMustFixCount: number;
-        thresholdResults: ReleaseThresholdResults;
-        failureLineage?: FailureLineage;
-        staticAdapterContractInvalid: boolean;
-      }
-    | undefined =
+  let latestRoundState: RoundTargetDecisionState | undefined =
       restoredRun?.latestRoundSummary
         ? {
             score: restoredRun.latestRoundSummary.total_score,
@@ -4742,14 +4731,8 @@ export const runClosedLoop = async (input: {
             adapterMigrationStopPreview.apply_mode === "new_run_required")
       };
     const roundStopReason =
-      stopReasonFromState({
-        latestVerdict: latestRoundState.verdict,
-        latestUnresolvedCheckIds: latestRoundState.unresolvedCheckIds,
-        latestPatchNextAction: latestRoundState.patchNextAction,
-        latestMustFixCount: latestRoundState.patchMustFixCount,
-        latestThresholdResults: latestRoundState.thresholdResults,
-        latestFailureLineage: latestRoundState.failureLineage,
-        latestStaticAdapterContractInvalid: latestRoundState.staticAdapterContractInvalid,
+      stopReasonForRoundTargetDecision({
+        state: latestRoundState,
         plateauCount,
         plateauLimit: hydratedRubric.stop_after_plateau_rounds,
         completedRounds: round,
@@ -4879,14 +4862,8 @@ export const runClosedLoop = async (input: {
 
   const finalStopReason =
     latestRoundState
-      ? stopReasonFromState({
-          latestVerdict: latestRoundState.verdict,
-          latestUnresolvedCheckIds: latestRoundState.unresolvedCheckIds,
-          latestPatchNextAction: latestRoundState.patchNextAction,
-          latestMustFixCount: latestRoundState.patchMustFixCount,
-          latestThresholdResults: latestRoundState.thresholdResults,
-          latestFailureLineage: latestRoundState.failureLineage,
-          latestStaticAdapterContractInvalid: latestRoundState.staticAdapterContractInvalid,
+      ? stopReasonForRoundTargetDecision({
+          state: latestRoundState,
           plateauCount,
           plateauLimit: hydratedRubric.stop_after_plateau_rounds,
           completedRounds: history.length,
@@ -4895,14 +4872,8 @@ export const runClosedLoop = async (input: {
       : undefined;
 
   const resolvedStopReason =
-    stopReasonFromState({
-      latestVerdict: latestRoundState?.verdict ?? "hold",
-      latestUnresolvedCheckIds: latestRoundState?.unresolvedCheckIds ?? [],
-      latestPatchNextAction: latestRoundState?.patchNextAction,
-      latestMustFixCount: latestRoundState?.patchMustFixCount ?? 0,
-      latestThresholdResults: latestRoundState?.thresholdResults,
-      latestFailureLineage: latestRoundState?.failureLineage,
-      latestStaticAdapterContractInvalid: latestRoundState?.staticAdapterContractInvalid,
+    stopReasonForMissingRoundTargetDecision({
+      state: latestRoundState,
       plateauCount,
       plateauLimit: hydratedRubric.stop_after_plateau_rounds,
       completedRounds: history.length,

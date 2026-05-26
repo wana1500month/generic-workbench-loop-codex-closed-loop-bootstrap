@@ -5,6 +5,7 @@ import { delimiter, isAbsolute, join, resolve } from "node:path";
 
 import { resolvedAdapterTargetRoot } from "./adapter-paths.js";
 import { loadJsonIfExists, writeJson, writeText } from "./file-system.js";
+import { assertPlaywrightCoreImportAvailable } from "./playwright-availability.js";
 import { stopProcessTree } from "./process-runtime.js";
 import { assertAllowedTargetUrl } from "./target-url-policy.js";
 import type {
@@ -114,6 +115,7 @@ const classifyProbeFailureSummary = (
   blockedEnvironmentPattern.test(summary) ? "environment_blocked" : "probe_error";
 
 const loadChromium = async () => {
+  await assertPlaywrightCoreImportAvailable();
   const playwright = await import("playwright-core");
   return playwright.chromium;
 };

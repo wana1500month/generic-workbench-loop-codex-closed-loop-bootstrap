@@ -1,0 +1,1 @@
+{"version":3,"file":"playwright-availability.d.ts","sourceRoot":"","sources":["../src/playwright-availability.ts"],"names":[],"mappings":"AAEA,MAAM,MAAM,2BAA2B,GACnC;IACE,EAAE,EAAE,IAAI,CAAC;CACV,GACD;IACE,EAAE,EAAE,KAAK,CAAC;IACV,MAAM,EAAE,MAAM,CAAC;CAChB,CAAC;AAaN,eAAO,MAAM,yBAAyB,QAAa,OAAO,CAAC,2BAA2B,CAkFrF,CAAC;AAEF,eAAO,MAAM,mCAAmC,QAAa,OAAO,CAAC,IAAI,CAKxE,CAAC"}
