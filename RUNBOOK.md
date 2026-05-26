@@ -48,7 +48,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `quality critique`: turns threshold gaps, failed dimensions, and failed release-gate probes into structured quality findings while keeping patch authority carry-forward-safe
 - `trajectory controller`: turns critique, patch, and failure-lineage signals into explicit continuation policy for the next attempt
 - `subjective judge`: optional bootstrap-owned grading path inside generated `grade_round` that scores user-defined quality metrics from captured evidence, fails closed when review evidence is unavailable, and publishes structured metric results
-- `evaluation policy`: run-local policy generated from intake with `project_kind`, evidence surfaces, strictness level 1-5, target score, and required custom dimensions. Required dimensions below their minimum keep `target_reached` false even when total score passes.
+- `evaluation policy`: run-local policy generated from intake with `project_kind`, evidence surfaces, strictness level 1-5, target score, and required custom dimensions. If a run starts without an intake policy, the loop writes a default `evaluation-policy.generated.*` and per-round `scorecard.*` artifacts. Required dimensions below their minimum keep `target_reached` false even when total score passes.
 - `controller`: records the attempt summary and stop reason
 - `adapter`: optional external capability provider for target prep, apply, and run
 - `verifier`: optional external proof provider for capture, checks, and grading under a separate trust domain
@@ -69,8 +69,12 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `npm run validate:scorecard-output`: focused gate for per-round `scorecard.json` / `scorecard.md` output, structured violation caps, and required-dimension target gating.
 - `npm run validate:loop-scorecards`: focused gate proving `loop:scorecards` finds scorecards under both `run/round-###/` and `run/rounds/round-###/`.
 - `npm run validate:scorecard-e2e-prepared-run`: loop-level gate proving a required custom dimension miss writes `round-###/scorecard.json`, blocks `target_reached`, updates the eval report threshold eligibility, and is visible through `loop:scorecards`.
+- `npm run validate:default-scorecard-policy`: loop-level gate proving runs without an explicit evaluation policy still write a default policy plus per-round scorecard artifacts.
 - `npm run validate:adaptive-intake`: focused gate for natural-language strictness/custom metrics extraction, scoreless quality criteria inference, and non-browser adaptive questions.
 - `npm run validate:non-web-target`: focused gate proving CLI/file/test targets do not require browser ready URLs.
+- `npm run validate:cli-front-door-product-detection`: focused gate proving CLI log analyzers, log analysis tools, parsers, converters, and analyzers route to `product_build` instead of non-product rejection.
+- `npm run validate:non-web-front-door-adapter-plan`: focused gate proving non-web project kinds and explicit CLI/file/test surfaces take priority over browser-family fallback in adapter plans and runtime strategy, with CLI routed to `cli-tool` and other command-first products routed to `command-artifact`.
+- `npm run validate:fast-exits`: focused gate proving known non-product analysis/docs/roadmap requests still exit quickly while analyzer/tool nouns remain product-build requests.
 - `npm run validate:non-web-e2e`: loop-level gate proving a CLI-style target can close through shell release-gate evidence without browser/API release probes.
 - `npm run validate:productization`: focused productization suite covering readiness doctor, evaluation policy, strictness, scorecards, adaptive intake, non-web readiness, and non-web loop closure.
 - `npm run validate:app`: lightweight Codex app foreground gate for build plus intent, intake, front-door, transport, generated verification contract, run-local adapter, and prepared-session consumption checks. It does not require a local `codex` binary.
@@ -85,7 +89,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `npm test`: release-blocking local test path; it runs `validate:process` before `validate:core`.
 - `npm run validate:nightly`: heavier deterministic core plus smoke-clean lane.
 - `npm run validate:release-gate`: Codex app release gate alias for `validate:app-release`; CLI live and heavy nightly lanes are intentionally separate from app installation.
-- `npm run build`: validates required loop-orchestrator `dist` sentinels after TypeScript exits, so stale incremental build metadata cannot report success while runtime imports are missing.
+- `npm run build`: validates required loop-orchestrator `dist` sentinels after TypeScript exits, so stale incremental build metadata cannot report success while runtime imports are missing. If the local TypeScript entrypoint fails on Windows/Unicode checkout paths, the build copies the local TypeScript package to a safe TEMP path and retries from there before any optional `HARNESS_ALLOW_NPX_INSTALL=1` network fallback.
 - `npm run validate:codex-binary-preflight`: trusted-runner check that resolves `HARNESS_CODEX_BIN` or `codex`, runs `--version`, and fails fast with installation guidance when the binary is missing.
 - `npm run validate:codex-auth-preflight:fake`: deterministic fake-Codex auth semantics check; `validate:codex-auth-preflight` remains a compatibility alias.
 - `npm run validate:transport:cli`: trusted-runner Codex CLI transport lane.
@@ -215,7 +219,7 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `summary.json.round_history[]` now also persists `round_stop_reason`, so per-round terminal outcomes no longer depend on parsing handoff prose.
 - `summary.json.round_history[]` now also persists `decision_source`, so reviewers can tell whether a round followed `policy_snapshot`, a hard rule, or default patch authority without reading handoff prose.
 - `summary.json.feature_list_path`, `summary.json.progress_path`, `summary.json.progress_log_path`, `summary.json.done_when_path`, and `summary.json.init_script_path` now point at the durable memory surfaces that travel with the run.
-- The root `build`, `loop:run`, `loop:run:raw`, and `loop:single` entrypoints now retry the TypeScript build with pinned `5.8.3` when the host compiler exits abnormally, matching the bootstrap fallback already used by `init.sh`.
+- The root `build`, `loop:run`, `loop:run:raw`, and `loop:single` entrypoints now retry TypeScript from a copied local package under TEMP when the host compiler exits abnormally, avoiding network fallback unless `HARNESS_ALLOW_NPX_INSTALL=1` is explicitly set.
 - Browser-first bootstrap defaults now use `npm run dev -- --host 127.0.0.1 --port 3000 --strictPort`, so the generated harness fails closed on port collisions instead of silently drifting to a different Vite port than `ready_url` or `app_url`.
 - Resume identity mismatches fail closed by default. Use `--allow-resume-migration` only when intentionally changing the adapter contract, bundle, rubric, or target family for an existing run, and expect the controller to write `resume-migration.json`.
 - Rejected resume attempts no longer overwrite `resume-identity.json`. The persisted identity only advances after the resume is actually allowed to continue or reopen.

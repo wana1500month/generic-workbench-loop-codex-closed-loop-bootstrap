@@ -653,9 +653,7 @@ const extractCandidates = (input) => {
         (message === sourceRequest ? parseStrictnessLevel(sourceRequest) : undefined);
     const customQualityMetrics = parseCustomQualityMetrics(message, strictnessLevel ?? input.existingIntake?.strictness_level ?? 3);
     const rawExplicitVerificationSurfaces = parseVerificationSurfacesAnswer(message);
-    const explicitVerificationSurfaces = input.existingIntake?.target_family && rawExplicitVerificationSurfaces.length
-        ? normalizeVerificationSurfacesForFamily(input.existingIntake.target_family, rawExplicitVerificationSurfaces)
-        : rawExplicitVerificationSurfaces;
+    const explicitVerificationSurfaces = rawExplicitVerificationSurfaces;
     const candidateVerificationSurfaces = acceptsAdapterAnswer && intakeResult.extracted_verification_surfaces?.length
         ? intakeResult.extracted_verification_surfaces
         : explicitVerificationSurfaces.length

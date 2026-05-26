@@ -65,7 +65,7 @@ export type TargetManifestKey = "health_url" | "app_url" | "api_base_url";
 export type ProbeSemanticLevel = "liveness" | "feature" | "workflow";
 export type TargetSurface = "browser" | "api";
 export type VerificationAssertionTag = "browser" | "api" | "persistence" | "error_path" | "auth" | "consistency" | "workflow_multi_step" | "latency_budget" | "undo_redo" | "grounded_tool_use";
-export type TargetFamily = "generic-core" | "api-service" | "crud-api" | "chat-agent" | "browser-app" | "browser-editor" | "editor-app" | "fullstack-app" | "dashboard";
+export type TargetFamily = "generic-core" | "api-service" | "crud-api" | "chat-agent" | "cli-tool" | "command-artifact" | "browser-app" | "browser-editor" | "editor-app" | "fullstack-app" | "dashboard";
 export type BrowserJourneyStepAction = "goto" | "click" | "fill" | "press" | "reload" | "wait_for" | "assert_visible" | "assert_not_visible" | "assert_text" | "assert_value" | "assert_url";
 export interface BrowserJourneyStep {
     action: BrowserJourneyStepAction;

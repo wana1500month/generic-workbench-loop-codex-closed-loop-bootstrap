@@ -6,6 +6,7 @@ import {
   readConfig,
   readJsonIfExists,
   runtimePaths,
+  spawnCommand,
   startDetachedCommand,
   stopProcessTree,
   waitForUrl,
@@ -23,6 +24,37 @@ const main = async () => {
       ? previousState.pid
       : null;
   const trackedProcessAlive = previousPid !== null && isProcessAlive(previousPid);
+
+  if (!config.ready_url) {
+    const execution = config.run_command
+      ? await spawnCommand(config.run_command, { cwd: runtimePaths.targetRoot })
+      : { code: 0, stdout: "", stderr: "" };
+    const commandLogPath = await writeArtifact(
+      "run-target-command.log",
+      [execution.stdout, execution.stderr].filter(Boolean).join("\\n\\n")
+    );
+    await writeRuntimeJson("server-process.json", {
+      pid: null,
+      command: config.run_command,
+      reused: false,
+      command_only: true
+    });
+    await finalize({
+      capability: "run_target",
+      ok: execution.code === 0,
+      summary: config.run_command
+        ? "Ran command-first target command."
+        : "No live target runtime configured.",
+      findings: execution.code === 0 ? [] : ["Run command failed."],
+      evidence_paths: config.run_command ? [commandLogPath] : [],
+      target_manifest: {}
+    });
+    if (execution.code !== 0) {
+      process.exitCode = 1;
+    }
+    return;
+  }
+
   const existingProbe = await waitForUrl(config.ready_url, 1500);
   if (existingProbe.ok) {
     await writeRuntimeJson("server-process.json", {
@@ -118,4 +150,3 @@ main().catch(async (error) => {
   process.exitCode = 1;
 });
 `;
-

@@ -835,9 +835,11 @@ const main = async () => {
       ].join("\n")
     });
     assert.equal(koTestSurfaceReady.status, "ready_for_prepare");
-    assert.equal(koTestSurfaceReady.intake.verification_surfaces?.[0], "browser");
-    assert.ok(koTestSurfaceReady.intake.verification_surfaces?.includes("test"));
-    assert.equal(koTestSurfaceReady.intake.workflow_checks?.[0]?.surface, "browser");
+    assert.deepEqual(koTestSurfaceReady.intake.verification_surfaces, [
+      "test",
+      "cli"
+    ]);
+    assert.equal(koTestSurfaceReady.intake.workflow_checks?.[0]?.surface, "test");
     const koTestSurfacePrepared = await prepareSessionRun({
       ideaPath: genericIdeaPath,
       frontDoorSessionPath: koTestSurfaceReady.front_door_session_path,
@@ -849,7 +851,8 @@ const main = async () => {
     );
     assert.ok(
       koTestSurfaceProfile.core_probes.some((probe) =>
-        probe.label.includes("\uC218\uC785/\uC9C0\uCD9C \uAE30\uB85D")
+        probe.label.includes("\uC218\uC785/\uC9C0\uCD9C \uAE30\uB85D") &&
+        probe.mode === "shell_command"
       ),
       JSON.stringify(koTestSurfaceProfile.core_probes, null, 2)
     );

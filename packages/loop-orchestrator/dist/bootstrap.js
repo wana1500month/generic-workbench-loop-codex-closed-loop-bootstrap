@@ -19,7 +19,9 @@ const familyHelp = [
     "4. dashboard (browser analytics or admin surface with API data)",
     "5. browser-editor (drag/drop editor, canvas, storyboard, builder)",
     "6. crud-api (canonical CRUD-style service)",
-    "7. chat-agent (tool-using or grounded chat API)"
+    "7. chat-agent (tool-using or grounded chat API)",
+    "8. cli-tool (command-line tool with stdout/file proof)",
+    "9. command-artifact (non-web command, package, pipeline, document, or automation proof)"
 ].join("\n");
 const goalHelp = [
     "Choose the target level:",
@@ -158,6 +160,14 @@ const normalizeTargetFamily = (value) => {
     if (normalized === "7" || normalized === "chat-agent") {
         return "chat-agent";
     }
+    if (normalized === "8" || normalized === "cli-tool" || normalized === "cli") {
+        return "cli-tool";
+    }
+    if (normalized === "9" ||
+        normalized === "command-artifact" ||
+        normalized === "command") {
+        return "command-artifact";
+    }
     return undefined;
 };
 const normalizeGoalLevel = (value) => {
@@ -183,7 +193,18 @@ const defaultRootForTitle = (title) => resolve(repoRoot, "..", slugify(title));
 const isApiOnlyFamily = (targetFamily) => targetFamily === "api-service" ||
     targetFamily === "crud-api" ||
     targetFamily === "chat-agent";
+const isCommandOnlyFamily = (targetFamily) => targetFamily === "cli-tool" || targetFamily === "command-artifact";
 const defaultFrameworkHintForFamily = (targetFamily, projectMode = "existing") => {
+    if (targetFamily === "cli-tool") {
+        return projectMode === "new"
+            ? "dependency-light Node.js CLI using built-in modules where possible"
+            : "Node.js CLI";
+    }
+    if (targetFamily === "command-artifact") {
+        return projectMode === "new"
+            ? "dependency-light command-first Node.js package or script with file/test evidence"
+            : "command-first package or script";
+    }
     if (projectMode === "new") {
         if (targetFamily === "browser-app" ||
             targetFamily === "browser-editor" ||
@@ -220,12 +241,17 @@ const defaultFrameworkHintForFamily = (targetFamily, projectMode = "existing") =
     return "Vite + React";
 };
 const defaultReadyUrlForFamily = (targetFamily) => {
+    if (isCommandOnlyFamily(targetFamily)) {
+        return "";
+    }
     if (isApiOnlyFamily(targetFamily)) {
         return "http://127.0.0.1:3000/health";
     }
     return "http://127.0.0.1:3000/";
 };
-const defaultAppUrlForFamily = (targetFamily) => (isApiOnlyFamily(targetFamily) ? undefined : "http://127.0.0.1:3000/");
+const defaultAppUrlForFamily = (targetFamily) => isApiOnlyFamily(targetFamily) || isCommandOnlyFamily(targetFamily)
+    ? undefined
+    : "http://127.0.0.1:3000/";
 const defaultHealthUrlForFamily = (targetFamily) => isApiOnlyFamily(targetFamily) ||
     targetFamily === "fullstack-app" ||
     targetFamily === "browser-editor" ||
@@ -238,6 +264,11 @@ const defaultApiBaseUrlForFamily = (targetFamily) => isApiOnlyFamily(targetFamil
     targetFamily === "dashboard"
     ? "http://127.0.0.1:3000/api"
     : undefined;
+const surfacesNeedBrowserRuntime = (surfaces) => Boolean(surfaces?.some((surface) => surface === "browser" || surface === "screenshot"));
+const surfacesNeedApiRuntime = (surfaces) => Boolean(surfaces?.includes("api"));
+const surfacesNeedUrlRuntime = (surfaces) => surfaces === undefined || surfaces.length === 0
+    ? true
+    : surfacesNeedBrowserRuntime(surfaces) || surfacesNeedApiRuntime(surfaces);
 const toSessionWorkflowCheck = (check) => ({
     workflow: check.workflow,
     surface: check.surface,
@@ -317,6 +348,10 @@ export const buildBootstrapAnswersFromSeed = (seed) => {
     const maxRounds = seed.maxRounds ?? 3;
     const projectMode = seed.projectMode ?? "existing";
     const targetRoot = resolveUserPath(seed.targetRoot ?? "", defaultRootForTitle(normalizedTitle));
+    const seedVerificationSurfaces = seed.verificationSurfaces?.length
+        ? seed.verificationSurfaces
+        : seed.adapterPlan?.verification_surfaces;
+    const needsUrlRuntime = surfacesNeedUrlRuntime(seedVerificationSurfaces);
     const runCommand = seed.runCommand?.trim() ||
         defaultRunCommandForBootstrap(seed.targetFamily, projectMode);
     const packageManager = seed.packageManager?.trim() || inferPackageManagerFromCommand(runCommand);
@@ -324,13 +359,22 @@ export const buildBootstrapAnswersFromSeed = (seed) => {
         (packageManager === "pnpm" ? "pnpm test" : "npm test");
     const frameworkHint = seed.frameworkHint?.trim() ||
         defaultFrameworkHintForFamily(seed.targetFamily, projectMode);
-    const appUrl = seed.appUrl?.trim() || defaultAppUrlForFamily(seed.targetFamily);
-    const healthUrl = seed.healthUrl?.trim() || defaultHealthUrlForFamily(seed.targetFamily);
-    const apiBaseUrl = seed.apiBaseUrl?.trim() || defaultApiBaseUrlForFamily(seed.targetFamily);
+    const appUrl = seed.appUrl?.trim() ||
+        (surfacesNeedBrowserRuntime(seedVerificationSurfaces)
+            ? defaultAppUrlForFamily(seed.targetFamily)
+            : undefined);
+    const healthUrl = seed.healthUrl?.trim() ||
+        (surfacesNeedApiRuntime(seedVerificationSurfaces)
+            ? defaultHealthUrlForFamily(seed.targetFamily)
+            : undefined);
+    const apiBaseUrl = seed.apiBaseUrl?.trim() ||
+        (surfacesNeedApiRuntime(seedVerificationSurfaces)
+            ? defaultApiBaseUrlForFamily(seed.targetFamily)
+            : undefined);
     const readyUrl = seed.readyUrl?.trim() ||
-        appUrl ||
-        healthUrl ||
-        defaultReadyUrlForFamily(seed.targetFamily);
+        (needsUrlRuntime
+            ? appUrl || healthUrl || defaultReadyUrlForFamily(seed.targetFamily)
+            : "");
     const qualityBar = uniqueList((seed.qualityBar ?? []).filter((entry) => entry.trim().length > 0));
     const finishLine = seed.finishLine?.trim() ||
         qualityBar[0] ||
@@ -360,7 +404,7 @@ export const buildBootstrapAnswersFromSeed = (seed) => {
             package_manager: packageManager,
             run_command: runCommand,
             check_command: checkCommand,
-            ready_url: readyUrl,
+            ...(readyUrl ? { ready_url: readyUrl } : {}),
             ...(appUrl ? { app_url: appUrl } : {}),
             ...(healthUrl ? { health_url: healthUrl } : {}),
             ...(apiBaseUrl ? { api_base_url: apiBaseUrl } : {}),
@@ -446,7 +490,7 @@ const completeBootstrapAnswers = (answers) => {
             package_manager: answers.packageManager,
             run_command: answers.runCommand,
             check_command: answers.checkCommand,
-            ready_url: answers.readyUrl,
+            ...(answers.readyUrl ? { ready_url: answers.readyUrl } : {}),
             ...(answers.appUrl ? { app_url: answers.appUrl } : {}),
             ...(answers.healthUrl ? { health_url: answers.healthUrl } : {}),
             ...(answers.apiBaseUrl ? { api_base_url: answers.apiBaseUrl } : {}),
@@ -466,6 +510,12 @@ const completeBootstrapAnswers = (answers) => {
 };
 const defaultStrictPortBrowserRunCommand = "npm run dev -- --host 127.0.0.1 --port 3000 --strictPort";
 export const defaultRunCommandForBootstrap = (targetFamily, projectMode) => {
+    if (targetFamily === "cli-tool") {
+        return "npm run start -- --help";
+    }
+    if (targetFamily === "command-artifact") {
+        return projectMode === "existing" ? "npm test" : "npm run start";
+    }
     if (targetFamily === "browser-app" ||
         targetFamily === "browser-editor" ||
         targetFamily === "dashboard") {
@@ -476,7 +526,10 @@ export const defaultRunCommandForBootstrap = (targetFamily, projectMode) => {
     }
     return "npm run dev";
 };
-const browserBackedFamily = (targetFamily) => !isApiOnlyFamily(targetFamily);
+const browserBackedFamily = (targetFamily) => targetFamily === "browser-app" ||
+    targetFamily === "browser-editor" ||
+    targetFamily === "fullstack-app" ||
+    targetFamily === "dashboard";
 const apiBackedFamily = (targetFamily) => isApiOnlyFamily(targetFamily) ||
     targetFamily === "fullstack-app" ||
     targetFamily === "browser-editor" ||
@@ -487,7 +540,8 @@ const targetSurfacesForFamily = (targetFamily) => uniqueList([
 ]);
 const liveVerificationModesForFamily = (targetFamily) => uniqueList([
     ...(browserBackedFamily(targetFamily) ? ["browser"] : []),
-    ...(apiBackedFamily(targetFamily) ? ["api"] : [])
+    ...(apiBackedFamily(targetFamily) ? ["api"] : []),
+    ...(isCommandOnlyFamily(targetFamily) ? ["shell"] : [])
 ]);
 const verificationSurfaceSetFor = (answers) => new Set(answers.verificationSurfaces.length > 0
     ? answers.verificationSurfaces
@@ -501,7 +555,8 @@ const targetSurfacesForAnswers = (answers) => uniqueList([
 const liveVerificationModesForAnswers = (answers) => uniqueList([
     ...(browserSurfaceRequested(answers) ? ["browser"] : []),
     ...(apiSurfaceRequested(answers) ? ["api"] : []),
-    ...(verificationSurfaceSetFor(answers).has("test") ||
+    ...(isCommandOnlyFamily(answers.targetFamily) ||
+        verificationSurfaceSetFor(answers).has("test") ||
         verificationSurfaceSetFor(answers).has("cli")
         ? ["shell"]
         : [])
@@ -843,16 +898,20 @@ const buildGeneratedCriteria = (answers, generatedCoreProbes = buildGeneratedCor
         hard: metric.required ?? true
     }));
     return uniqueCriteria([
-        {
-            criterion_id: "target_accessible",
-            assertion_id: "target_accessible",
-            quality_axis_id: "primary_flow",
-            capability: "run_checks",
-            summary: `run_checks must prove the generated target for '${answers.title}' is reachable.`,
-            operator: "contains",
-            expected_value: "HTTP ",
-            hard: true
-        },
+        ...(answers.readyUrl
+            ? [
+                {
+                    criterion_id: "target_accessible",
+                    assertion_id: "target_accessible",
+                    quality_axis_id: "primary_flow",
+                    capability: "run_checks",
+                    summary: `run_checks must prove the generated target for '${answers.title}' is reachable.`,
+                    operator: "contains",
+                    expected_value: "HTTP ",
+                    hard: true
+                }
+            ]
+            : []),
         ...(answers.checkCommand
             ? [
                 {
@@ -866,16 +925,20 @@ const buildGeneratedCriteria = (answers, generatedCoreProbes = buildGeneratedCor
                 }
             ]
             : []),
-        {
-            criterion_id: "target_accessible",
-            assertion_id: "target_accessible",
-            quality_axis_id: "primary_flow",
-            capability: "grade_round",
-            summary: "grade_round must keep target accessibility green before release.",
-            operator: "contains",
-            expected_value: "HTTP ",
-            hard: true
-        },
+        ...(answers.readyUrl
+            ? [
+                {
+                    criterion_id: "target_accessible",
+                    assertion_id: "target_accessible",
+                    quality_axis_id: "primary_flow",
+                    capability: "grade_round",
+                    summary: "grade_round must keep target accessibility green before release.",
+                    operator: "contains",
+                    expected_value: "HTTP ",
+                    hard: true
+                }
+            ]
+            : []),
         ...releaseGateProbeCriteria,
         ...subjectiveMetricCriteria
     ]);
@@ -907,6 +970,21 @@ const buildApiJsonProbe = (input) => ({
     json_path: input.jsonPath ?? "status",
     expected_value: input.expectedValue,
     expected_status: input.expectedStatus ?? 200,
+    required: true
+});
+const buildShellCommandProbe = (input) => ({
+    probe_id: input.probeId,
+    label: input.label,
+    role: "release_gate",
+    mode: "shell_command",
+    assertion_id: input.assertionId,
+    quality_axis_id: input.qualityAxisId,
+    assertion_tags: ["workflow_multi_step"],
+    semantic_level: "workflow",
+    target: input.command,
+    cwd: ".",
+    ...(input.expectedValue ? { expected_value: input.expectedValue } : {}),
+    expected_exit_code: 0,
     required: true
 });
 const buildGeneratedCoreProbes = (answers) => {
@@ -1098,6 +1176,25 @@ const buildGeneratedCoreProbes = (answers) => {
             expectedValue: check.apiHint?.expectedValue ?? "ready",
             expectedStatus: check.apiHint?.expectedStatus ?? 200,
             jsonPath: check.apiHint?.expectedJsonPath ?? "status"
+        })));
+    }
+    const shouldGenerateCommandProbes = isCommandOnlyFamily(answers.targetFamily) ||
+        requestedVerificationSurfaces.some((surface) => ["cli", "shell", "test", "package_import"].includes(surface));
+    if (shouldGenerateCommandProbes) {
+        probes.push(...featureSlugs
+            .filter(({ check }) => isCommandOnlyFamily(answers.targetFamily) ||
+            ["cli", "shell", "test", "package_import"].includes(check.surface))
+            .map(({ feature, featureSlug, axisId, check }) => buildShellCommandProbe({
+            probeId: `${titleSlug}-${featureSlug}-command`,
+            label: `Workflow command works: ${feature}`,
+            assertionId: `${titleSlug}_${featureSlug}_command_ready`,
+            qualityAxisId: axisId,
+            command: check.commandHint?.command ||
+                answers.checkCommand ||
+                answers.runCommand,
+            ...(check.commandHint?.expectedOutput
+                ? { expectedValue: check.commandHint.expectedOutput }
+                : {})
         })));
     }
     return probes;
@@ -1333,7 +1430,7 @@ const askTargetFamily = async (rl, fallback = "fullstack-app") => {
         if (targetFamily) {
             return targetFamily;
         }
-        output.write("Please choose browser-app, api-service, fullstack-app, dashboard, browser-editor, crud-api, or chat-agent.\n");
+        output.write("Please choose browser-app, api-service, fullstack-app, dashboard, browser-editor, crud-api, chat-agent, cli-tool, or command-artifact.\n");
     }
 };
 const askProjectMode = async (rl, fallback = "new") => {
@@ -1393,7 +1490,7 @@ const summarizeAnswers = (answers) => [
     `- Max rounds: ${answers.maxRounds}`,
     `- Run command: ${answers.runCommand}`,
     `- Check command: ${answers.checkCommand || "(none)"}`,
-    `- Ready URL: ${answers.readyUrl}`,
+    ...(answers.readyUrl ? [`- Ready URL: ${answers.readyUrl}`] : []),
     answers.mustNotBreak?.length
         ? `- Must not break: ${answers.mustNotBreak.join("; ")}`
         : undefined,
@@ -1502,7 +1599,7 @@ const writeIdeaMarkdown = (answers) => {
         `- Package manager: ${answers.packageManager}`,
         `- Expected run command: ${answers.runCommand}`,
         `- Expected check command: ${answers.checkCommand || "(none configured)"}`,
-        `- Ready URL: ${answers.readyUrl}`,
+        ...(answers.readyUrl ? [`- Ready URL: ${answers.readyUrl}`] : []),
         ...(answers.appUrl ? [`- App URL: ${answers.appUrl}`] : []),
         ...(answers.healthUrl ? [`- Health URL: ${answers.healthUrl}`] : []),
         ...(answers.apiBaseUrl ? [`- API base URL: ${answers.apiBaseUrl}`] : []),
@@ -1546,7 +1643,7 @@ export const scaffoldBootstrapArtifacts = async (answers, paths = defaultBootstr
         package_manager: answers.packageManager,
         run_command: answers.runCommand,
         check_command: answers.checkCommand,
-        ready_url: answers.readyUrl,
+        ...(answers.readyUrl ? { ready_url: answers.readyUrl } : {}),
         ...(answers.appUrl ? { app_url: answers.appUrl } : {}),
         ...(answers.healthUrl ? { health_url: answers.healthUrl } : {}),
         ...(answers.apiBaseUrl ? { api_base_url: answers.apiBaseUrl } : {}),
@@ -1643,19 +1740,29 @@ const collectAnswers = async () => {
             const checkCommand = projectMode === "existing"
                 ? await askText(rl, "What command should the harness use for checks? Leave blank if optional.", defaultCheckCommand)
                 : "";
-            const readyUrl = projectMode === "existing"
-                ? await askRequired(rl, "Which URL should the harness wait for after starting the target?", defaultReadyUrlForFamily(targetFamily))
-                : defaultReadyUrlForFamily(targetFamily);
-            const appUrl = projectMode === "existing"
-                ? await askText(rl, "App URL (leave blank if not relevant)", defaultAppUrlForFamily(targetFamily))
-                : defaultAppUrlForFamily(targetFamily) ?? "";
-            const healthUrl = projectMode === "existing"
-                ? await askText(rl, "Health URL (leave blank if not relevant)", defaultHealthUrlForFamily(targetFamily))
-                : defaultHealthUrlForFamily(targetFamily) ?? "";
-            const apiBaseUrl = projectMode === "existing"
-                ? await askText(rl, "API base URL (leave blank if not relevant)", defaultApiBaseUrlForFamily(targetFamily))
-                : defaultApiBaseUrlForFamily(targetFamily) ?? "";
-            const probeHints = projectMode === "existing" ? await askProbeHints(rl, targetFamily) : undefined;
+            const readyUrl = isCommandOnlyFamily(targetFamily)
+                ? ""
+                : projectMode === "existing"
+                    ? await askRequired(rl, "Which URL should the harness wait for after starting the target?", defaultReadyUrlForFamily(targetFamily))
+                    : defaultReadyUrlForFamily(targetFamily);
+            const appUrl = isCommandOnlyFamily(targetFamily)
+                ? ""
+                : projectMode === "existing"
+                    ? await askText(rl, "App URL (leave blank if not relevant)", defaultAppUrlForFamily(targetFamily))
+                    : defaultAppUrlForFamily(targetFamily) ?? "";
+            const healthUrl = isCommandOnlyFamily(targetFamily)
+                ? ""
+                : projectMode === "existing"
+                    ? await askText(rl, "Health URL (leave blank if not relevant)", defaultHealthUrlForFamily(targetFamily))
+                    : defaultHealthUrlForFamily(targetFamily) ?? "";
+            const apiBaseUrl = isCommandOnlyFamily(targetFamily)
+                ? ""
+                : projectMode === "existing"
+                    ? await askText(rl, "API base URL (leave blank if not relevant)", defaultApiBaseUrlForFamily(targetFamily))
+                    : defaultApiBaseUrlForFamily(targetFamily) ?? "";
+            const probeHints = projectMode === "existing" && !isCommandOnlyFamily(targetFamily)
+                ? await askProbeHints(rl, targetFamily)
+                : undefined;
             const customMetricBar = customQualityMetrics.map((metric) => `${metric.label} must score at least ${metric.minimumScoreOutOfTen}/10`);
             const constraints = uniqueList(nonGoals);
             const notes = "";

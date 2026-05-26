@@ -4,6 +4,12 @@ import type {
   SessionWorkflowCheck,
   VerificationSurface
 } from "./intake-schema.js";
+import {
+  evidenceSurfacesForProjectKind,
+  isCommandFirstProjectKind,
+  type EvidenceSurface,
+  type ProjectKind
+} from "./evaluation-policy.js";
 import type { TargetFamily } from "./types.js";
 
 export const generatedAdapterFiles = [
@@ -32,6 +38,14 @@ export const defaultVerificationSurfacesForFamily = (
     return ["api"];
   }
 
+  if (targetFamily === "cli-tool") {
+    return ["cli"];
+  }
+
+  if (targetFamily === "command-artifact") {
+    return ["shell", "file", "test"];
+  }
+
   if (
     targetFamily === "fullstack-app" ||
     targetFamily === "browser-editor" ||
@@ -47,6 +61,11 @@ const apiPrimaryTargetFamilies = new Set<TargetFamily>([
   "api-service",
   "crud-api",
   "chat-agent"
+]);
+
+const commandPrimaryTargetFamilies = new Set<TargetFamily>([
+  "cli-tool",
+  "command-artifact"
 ]);
 
 const browserPrimaryTargetFamilies = new Set<TargetFamily>([
@@ -73,15 +92,19 @@ export const normalizeVerificationSurfacesForFamily = (
   targetFamily: TargetFamily,
   surfaces: readonly VerificationSurface[] | undefined
 ): VerificationSurface[] => {
+  if (surfaces && surfaces.length > 0) {
+    return [...new Set(surfaces)];
+  }
+
   const uniqueSurfaces = [
-    ...new Set(
-      surfaces && surfaces.length > 0
-        ? surfaces
-        : defaultVerificationSurfacesForFamily(targetFamily)
-    )
+    ...new Set(defaultVerificationSurfacesForFamily(targetFamily))
   ];
   const primarySurface = apiPrimaryTargetFamilies.has(targetFamily)
     ? "api"
+    : commandPrimaryTargetFamilies.has(targetFamily)
+      ? targetFamily === "cli-tool"
+        ? "cli"
+        : "shell"
     : browserPrimaryTargetFamilies.has(targetFamily)
       ? "browser"
       : undefined;
@@ -99,6 +122,17 @@ export const normalizeVerificationSurfacesForFamily = (
 const defaultRuntimeStrategyForFamily = (
   targetFamily: TargetFamily
 ): SessionAdapterPlan["runtime_strategy"] => {
+  if (commandPrimaryTargetFamilies.has(targetFamily)) {
+    return targetFamily === "cli-tool"
+      ? {
+          run_command: "npm run start -- --help",
+          check_command: "npm test"
+        }
+      : {
+          check_command: "npm test"
+        };
+  }
+
   if (
     targetFamily === "api-service" ||
     targetFamily === "crud-api" ||
@@ -117,6 +151,71 @@ const defaultRuntimeStrategyForFamily = (
     check_command: "npm test",
     ready_url: "http://127.0.0.1:3000/"
   };
+};
+
+const toVerificationSurface = (surface: EvidenceSurface): VerificationSurface =>
+  surface as VerificationSurface;
+
+const surfacesFromIntake = (
+  intake: SessionIntakeSnapshot
+): VerificationSurface[] | undefined => {
+  if (intake.verification_surfaces?.length) {
+    return intake.verification_surfaces;
+  }
+  if (intake.evidence_surfaces?.length) {
+    return intake.evidence_surfaces.map(toVerificationSurface);
+  }
+  if (intake.project_kind && intake.project_kind !== "generic") {
+    return evidenceSurfacesForProjectKind(intake.project_kind).map(
+      toVerificationSurface
+    );
+  }
+  return undefined;
+};
+
+const hasBrowserRuntimeSurface = (
+  surfaces: readonly VerificationSurface[]
+): boolean =>
+  surfaces.some((surface) => surface === "browser" || surface === "screenshot");
+
+const hasApiRuntimeSurface = (surfaces: readonly VerificationSurface[]): boolean =>
+  surfaces.includes("api");
+
+const shouldUseCommandRuntime = (
+  projectKind: ProjectKind | undefined,
+  targetFamily: TargetFamily,
+  surfaces: readonly VerificationSurface[]
+): boolean =>
+  commandPrimaryTargetFamilies.has(targetFamily) ||
+  isCommandFirstProjectKind(projectKind) ||
+  (surfaces.length > 0 &&
+    !hasBrowserRuntimeSurface(surfaces) &&
+    !hasApiRuntimeSurface(surfaces));
+
+const defaultRuntimeStrategyForPlan = (input: {
+  targetFamily: TargetFamily;
+  projectKind?: ProjectKind;
+  verificationSurfaces: readonly VerificationSurface[];
+}): SessionAdapterPlan["runtime_strategy"] => {
+  if (
+    shouldUseCommandRuntime(
+      input.projectKind,
+      input.targetFamily,
+      input.verificationSurfaces
+    )
+  ) {
+    if (input.projectKind === "cli_tool" || input.targetFamily === "cli-tool") {
+      return {
+        run_command: "npm run start -- --help",
+        check_command: "npm test"
+      };
+    }
+    return {
+      check_command: "npm test"
+    };
+  }
+
+  return defaultRuntimeStrategyForFamily(input.targetFamily);
 };
 
 export const selectorHintsForWorkflow = (
@@ -359,15 +458,68 @@ export const parseWorkflowChecksAnswer = (
     .filter((check): check is SessionWorkflowCheck => Boolean(check));
 };
 
+const commandForWorkflowSurface = (
+  surface: VerificationSurface,
+  runtimeStrategy: SessionAdapterPlan["runtime_strategy"]
+): string | undefined => {
+  if (surface === "test" || surface === "package_import") {
+    return runtimeStrategy.check_command ?? runtimeStrategy.run_command;
+  }
+  return runtimeStrategy.run_command ?? runtimeStrategy.check_command;
+};
+
+const enrichCommandWorkflowChecks = (
+  checks: readonly SessionWorkflowCheck[],
+  runtimeStrategy: SessionAdapterPlan["runtime_strategy"]
+): SessionWorkflowCheck[] =>
+  checks.map((check) => {
+    if (!commandLikeSurfaces.has(check.surface)) {
+      return check;
+    }
+    const command = commandForWorkflowSurface(check.surface, runtimeStrategy);
+    if (!command) {
+      return check;
+    }
+    return {
+      ...check,
+      command_hint: {
+        ...(check.command_hint ?? {}),
+        command
+      }
+    };
+  });
+
 export const buildAdapterPlanFromIntake = (input: {
   intake: SessionIntakeSnapshot;
   targetFamily: TargetFamily;
 }): SessionAdapterPlan => {
+  const surfaceInput = surfacesFromIntake(input.intake);
   const verificationSurfaces = normalizeVerificationSurfacesForFamily(
     input.targetFamily,
-    input.intake.verification_surfaces
+    surfaceInput
   );
-  const workflowChecks =
+  const defaultRuntime = defaultRuntimeStrategyForPlan({
+    targetFamily: input.targetFamily,
+    projectKind: input.intake.project_kind,
+    verificationSurfaces
+  });
+  const runtimeStrategy: SessionAdapterPlan["runtime_strategy"] = {
+    run_command: input.intake.run_command ?? defaultRuntime.run_command,
+    check_command: input.intake.check_command ?? defaultRuntime.check_command
+  };
+  const commandRuntime = shouldUseCommandRuntime(
+    input.intake.project_kind,
+    input.targetFamily,
+    verificationSurfaces
+  );
+  if (!commandRuntime) {
+    runtimeStrategy.ready_url = input.intake.ready_url ?? defaultRuntime.ready_url;
+    runtimeStrategy.app_url = input.intake.app_url ?? defaultRuntime.app_url;
+    runtimeStrategy.api_base_url =
+      input.intake.api_base_url ?? defaultRuntime.api_base_url;
+    runtimeStrategy.health_url = input.intake.health_url ?? defaultRuntime.health_url;
+  }
+  const rawWorkflowChecks =
     input.intake.workflow_checks?.length
       ? input.intake.core_features?.length
         ? alignWorkflowChecksToCoreFeatures(
@@ -380,19 +532,15 @@ export const buildAdapterPlanFromIntake = (input: {
           input.intake.core_features ?? [],
           verificationSurfaces
         );
-  const defaultRuntime = defaultRuntimeStrategyForFamily(input.targetFamily);
+  const workflowChecks = enrichCommandWorkflowChecks(
+    rawWorkflowChecks,
+    runtimeStrategy
+  );
 
   return {
     target_family: input.targetFamily,
     verification_surfaces: verificationSurfaces,
-    runtime_strategy: {
-      run_command: input.intake.run_command ?? defaultRuntime.run_command,
-      check_command: input.intake.check_command ?? defaultRuntime.check_command,
-      ready_url: input.intake.ready_url ?? defaultRuntime.ready_url,
-      app_url: input.intake.app_url ?? defaultRuntime.app_url,
-      api_base_url: input.intake.api_base_url ?? defaultRuntime.api_base_url,
-      health_url: input.intake.health_url ?? defaultRuntime.health_url
-    },
+    runtime_strategy: runtimeStrategy,
     workflow_checks: workflowChecks,
     generated_files: [...generatedAdapterFiles],
     ...(input.intake.adapter_plan?.notes?.length

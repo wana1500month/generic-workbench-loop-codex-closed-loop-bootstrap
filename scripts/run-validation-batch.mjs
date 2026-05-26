@@ -41,8 +41,12 @@ const suites = {
     "validate:strictness-policy",
     "validate:scorecard-output",
     "validate:loop-scorecards",
+    "validate:default-scorecard-policy",
     "validate:adaptive-intake",
     "validate:non-web-target",
+    "validate:non-web-front-door-adapter-plan",
+    "validate:cli-front-door-product-detection",
+    "validate:fast-exits",
     "validate:loop-prepare",
     "validate:loop-continue",
     "validate:durable-memory"
@@ -67,6 +71,8 @@ const suites = {
     "validate:generated-verification-contract",
     "validate:release-zip",
     "validate:cli-front-door",
+    "validate:cli-front-door-product-detection",
+    "validate:non-web-front-door-adapter-plan",
     "validate:loop-prepare",
     "validate:generated-adapter-run-local",
     "validate:prepared-session-consumption-boundary"
@@ -109,8 +115,12 @@ const suites = {
     "validate:scorecard-output",
     "validate:loop-scorecards",
     "validate:scorecard-e2e-prepared-run",
+    "validate:default-scorecard-policy",
     "validate:adaptive-intake",
     "validate:non-web-target",
+    "validate:non-web-front-door-adapter-plan",
+    "validate:cli-front-door-product-detection",
+    "validate:fast-exits",
     "validate:non-web-e2e"
   ]
 };

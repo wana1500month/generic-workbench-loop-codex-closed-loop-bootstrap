@@ -234,6 +234,8 @@ const evaluatorSurfaceSignals = [
     { label: "browser-app", pattern: /\bbrowser-app\b/i },
     { label: "dashboard", pattern: /\bdashboard\b/i },
     { label: "api-service", pattern: /\bapi-service\b/i },
+    { label: "cli-tool", pattern: /\bcli-tool\b/i },
+    { label: "command-artifact", pattern: /\bcommand-artifact\b/i },
     { label: "평가기", pattern: /\uD3C9\uAC00\uAE30/u },
     { label: "보정", pattern: /\uBCF4\uC815/u },
     { label: "튜닝", pattern: /\uD29C\uB2DD/u },
@@ -577,7 +579,7 @@ const buildEvaluatorFieldStates = (request, locale, matchedEvaluatorSignals, mat
     {
         id: "calibration_focus",
         satisfied: matchedEvaluatorSignals.length >= 2 ||
-            /(?:browser-app|dashboard|api-service|chat-agent|fullstack-app|browser-editor|light lane|heavy lane)/i.test(request),
+            /(?:browser-app|dashboard|api-service|chat-agent|fullstack-app|browser-editor|cli-tool|command-artifact|light lane|heavy lane)/i.test(request),
         question: localizedQuestion({
             locale,
             en: "Which evaluator lane, family, or rubric surface needs calibration?",

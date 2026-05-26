@@ -149,7 +149,7 @@ export const scaffoldAdapterArtifacts = async (
     package_manager: answers.packageManager,
     run_command: answers.runCommand,
     check_command: answers.checkCommand,
-    ready_url: answers.readyUrl,
+    ...(answers.readyUrl ? { ready_url: answers.readyUrl } : {}),
     ...(answers.appUrl ? { app_url: answers.appUrl } : {}),
     ...(answers.healthUrl ? { health_url: answers.healthUrl } : {}),
     ...(answers.apiBaseUrl ? { api_base_url: answers.apiBaseUrl } : {}),

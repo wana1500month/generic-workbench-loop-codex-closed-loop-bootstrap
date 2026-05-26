@@ -69,6 +69,7 @@ import {
 } from "./prototype-baseline.js";
 import { defaultIdeaPath, readIdeaBrief } from "./idea-intake.js";
 import {
+  buildEvaluationPolicy,
   evaluationPolicyPathForRun,
   loadEvaluationPolicyForRun,
   writeEvaluationPolicyArtifacts,
@@ -727,13 +728,14 @@ export const runClosedLoop = async (input: {
     hydratedRubric.target_total_score =
       preparedSessionSeed.runContract.execution_controls.target_score;
   }
-  const evaluationPolicy = await loadEvaluationPolicyForRun(runDirectory);
-  if (evaluationPolicy) {
-    await writeEvaluationPolicyArtifacts({
-      runDirectory,
-      policy: evaluationPolicy
-    });
-  }
+  let evaluationPolicy = await loadEvaluationPolicyForRun(runDirectory);
+  evaluationPolicy ??= buildEvaluationPolicy({
+    explicitTargetScore: hydratedRubric.target_total_score
+  });
+  await writeEvaluationPolicyArtifacts({
+    runDirectory,
+    policy: evaluationPolicy
+  });
   if (
     input.targetScore === undefined &&
     preparedSessionSeed?.runContract.execution_controls.target_score === undefined &&

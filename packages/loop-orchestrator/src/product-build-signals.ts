@@ -23,6 +23,9 @@ const KO_PRODUCT_NOUN_HINTS = [
   "\uAD00\uB9AC\uD234",
   "\uD234",
   "\uB3C4\uAD6C",
+  "\uBD84\uC11D\uAE30",
+  "\uD30C\uC11C",
+  "\uBCC0\uD658\uAE30",
   "\uC2DC\uC2A4\uD15C",
   "\uD3EC\uD138",
   "\uC2A4\uD1A0\uB9AC\uBCF4\uB4DC"
@@ -44,7 +47,6 @@ const KO_NON_PRODUCT_WORK_HINTS = [
   "\uB85C\uB4DC\uB9F5",
   "\uC2A4\uD399",
   "\uC81C\uC548",
-  "\uBD84\uC11D",
   "\uAC10\uC0AC",
   "\uB9AC\uBDF0",
   "\uB9C8\uC774\uADF8\uB808\uC774\uC158",
@@ -75,6 +77,14 @@ const WEAK_PRODUCT_NOUN_PATTERNS: readonly PatternLabel[] = [
   { label: "platform", pattern: /\bplatform\b/i },
   { label: "portal", pattern: /\bportal\b/i },
   { label: "tool", pattern: /\btool\b/i },
+  { label: "cli", pattern: /\bcli\b/i },
+  { label: "analyzer", pattern: /\banaly[sz]er\b/i },
+  { label: "parser", pattern: /\bparser\b/i },
+  { label: "converter", pattern: /\bconverter\b/i },
+  { label: "package", pattern: /\bpackage\b/i },
+  { label: "pipeline", pattern: /\bpipeline\b/i },
+  { label: "automation", pattern: /\bautomation\b/i },
+  { label: "artifact", pattern: /\bartifact\b/i },
   { label: "agent", pattern: /\bagent\b/i },
   { label: "system", pattern: /\bsystem\b/i }
 ] as const;
@@ -105,9 +115,9 @@ const NON_PRODUCT_WORK_PATTERNS: readonly PatternLabel[] = [
   { label: "refresh", pattern: /\brefresh\b/i }
 ] as const;
 
-const PRODUCT_NOUN_SOURCE = String.raw`(?:app(?:lication)?|web\s*app|dashboard|editor|workspace|storyboard|website|api|saas|service|platform|portal|tool|agent|system)`;
+const PRODUCT_NOUN_SOURCE = String.raw`(?:app(?:lication)?|web\s*app|dashboard|editor|workspace|storyboard|website|api|saas|service|platform|portal|tool|cli|analy[sz]er|parser|converter|package|pipeline|automation|artifact|agent|system)`;
 const NON_PRODUCT_DELIVERABLE_SOURCE = String.raw`(?:docs?|documentation|spec|strategy|roadmap|copy|content|proposal|analysis|audit|review|migration(?:\s+planning|\s+plan)?|evaluation\s+spec)`;
-const PRODUCT_SURFACE_AFTER_DELIVERABLE_SOURCE = String.raw`(?:portal|site|website|app(?:lication)?|dashboard|editor|tool|workspace|system)`;
+const PRODUCT_SURFACE_AFTER_DELIVERABLE_SOURCE = String.raw`(?:portal|site|website|app(?:lication)?|dashboard|editor|tool|workspace|package|pipeline|automation|artifact|system)`;
 
 const NON_PRODUCT_DELIVERABLE_OBJECT_PATTERNS: readonly PatternLabel[] = [
   {

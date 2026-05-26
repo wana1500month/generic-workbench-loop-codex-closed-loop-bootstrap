@@ -77,7 +77,7 @@ export const validatePreparedProductSessionIntegrity = (input: {
 
     const workflowProbeLabels = (input.evaluatorProfile.core_probes ?? [])
       .filter((probe) =>
-        /^(?:Core workflow remains|Workflow works:|Workflow API works:)/.test(
+        /^(?:Core workflow remains|Workflow works:|Workflow API works:|Workflow command works:)/.test(
           probe.label
         )
       )

@@ -87,7 +87,7 @@ const main = async () => {
     const summary = await readSummary(runDirectory);
     assert.equal(summary.stop_reason, "target_reached");
     assert.equal(summary.threshold_results.target_reached_eligible, true);
-    assert.equal(summary.target_family, "api-service");
+    assert.equal(summary.target_family, "cli-tool");
 
     const persistedPolicy = await readJsonFile(
       join(runDirectory, "evaluation-policy.generated.json")

@@ -1,14 +1,18 @@
-import { existsSync } from "node:fs";
+import { cpSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import {
   needsBuild,
+  PINNED_TYPESCRIPT_VERSION,
   runCommand,
   runPinnedTypeScriptBuild
 } from "./lib/front-door-build.mjs";
 
 const resolveLocalTsc = () =>
   join(process.cwd(), "node_modules", "typescript", "bin", "tsc");
+
+const resolveLocalTscJs = () =>
+  join(process.cwd(), "node_modules", "typescript", "lib", "tsc.js");
 
 const requiredOutputs = [
   "packages/loop-orchestrator/dist/index.js",
@@ -28,6 +32,50 @@ const assertRequiredOutputs = () => {
     console.error(`Build output missing: ${relativePath}`);
   }
   return 1;
+};
+
+const runLocalTypeScriptBuildFromSafeCwd = async (extraArgs = []) => {
+  const safeCwd = process.env.TEMP ?? process.env.TMP ?? process.cwd();
+  const localTypeScriptRoot = join(process.cwd(), "node_modules", "typescript");
+  if (!existsSync(resolveLocalTscJs())) {
+    return undefined;
+  }
+  const safeTypeScriptRoot = join(
+    safeCwd,
+    `generic-workbench-typescript-${PINNED_TYPESCRIPT_VERSION}`
+  );
+  const safeTscJs = join(safeTypeScriptRoot, "lib", "tsc.js");
+  if (!existsSync(safeTscJs)) {
+    rmSync(safeTypeScriptRoot, { recursive: true, force: true });
+    cpSync(localTypeScriptRoot, safeTypeScriptRoot, { recursive: true });
+  }
+  return runCommand(safeCwd, process.execPath, [
+    safeTscJs,
+    "-b",
+    process.cwd(),
+    ...extraArgs,
+    "--pretty",
+    "false"
+  ]);
+};
+
+const runPinnedTypeScriptBuildFromSafeCwd = async (extraArgs = []) => {
+  const safeCwd = process.env.TEMP ?? process.env.TMP ?? process.cwd();
+  return runCommand(
+    safeCwd,
+    "npx",
+    [
+      "-p",
+      `typescript@${PINNED_TYPESCRIPT_VERSION}`,
+      "tsc",
+      "-b",
+      process.cwd(),
+      ...extraArgs,
+      "--pretty",
+      "false"
+    ],
+    { shell: process.platform === "win32" }
+  );
 };
 
 const distEntryPath = join(process.cwd(), "packages", "loop-orchestrator", "dist");
@@ -57,7 +105,30 @@ const main = async () => {
       "false"
     ];
     const exitCode = await runCommand(process.cwd(), process.execPath, args);
-    process.exitCode = exitCode === 0 ? assertRequiredOutputs() : exitCode;
+    if (exitCode === 0) {
+      process.exitCode = assertRequiredOutputs();
+      return;
+    }
+    const localFallbackExitCode = await runLocalTypeScriptBuildFromSafeCwd(
+      forceBuild ? ["--force"] : []
+    );
+    if (localFallbackExitCode !== undefined) {
+      process.exitCode =
+        localFallbackExitCode === 0 ? assertRequiredOutputs() : localFallbackExitCode;
+      return;
+    }
+    if (process.env.HARNESS_ALLOW_NPX_INSTALL === "1") {
+      const fallbackExitCode = await runPinnedTypeScriptBuildFromSafeCwd(
+        forceBuild ? ["--force"] : []
+      );
+      process.exitCode =
+        fallbackExitCode === 0 ? assertRequiredOutputs() : fallbackExitCode;
+      return;
+    }
+    console.error(
+      "Local TypeScript build failed and no local TypeScript JS fallback was found. Set HARNESS_ALLOW_NPX_INSTALL=1 to allow npx fallback."
+    );
+    process.exitCode = exitCode;
     return;
   }
 

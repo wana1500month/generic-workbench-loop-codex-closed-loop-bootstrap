@@ -1,0 +1,31 @@
+{
+  "profile_id": "command-artifact-profile",
+  "label": "Command Artifact Evaluator Bundle",
+  "bundle_label": "Command Artifact Evaluator Bundle",
+  "target_family": "command-artifact",
+  "validation_lane": "deterministic_semantic",
+  "required_live_verification_modes": [
+    "shell"
+  ],
+  "target_reached_requires_core_probes": true,
+  "minimum_feature_release_assertions": 1,
+  "score_policy": {
+    "proof_weights": {
+      "proof_pass_rate": 0.3,
+      "criterion_pass_rate": 0.3,
+      "threshold_verdict": 0.1,
+      "external_grade": 0.3
+    },
+    "release_weights": {
+      "control_plane_score": 0.35,
+      "proof_score": 0.65
+    }
+  },
+  "core_probes": [],
+  "criteria": [],
+  "notes": [
+    "Use this bundle for non-web command-first products such as packages, data pipelines, document artifacts, and automations.",
+    "Generated intake overlays should provide shell_command, file, package import, or test release gates from explicit workflows.",
+    "The profile intentionally has no browser, API, ready_url, or npm run dev default."
+  ]
+}

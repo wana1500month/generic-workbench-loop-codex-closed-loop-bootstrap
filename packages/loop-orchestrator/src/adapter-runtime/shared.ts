@@ -117,6 +117,8 @@ export const targetFamilies = new Set<TargetFamily>([
   "api-service",
   "crud-api",
   "chat-agent",
+  "cli-tool",
+  "command-artifact",
   "browser-app",
   "browser-editor",
   "editor-app",

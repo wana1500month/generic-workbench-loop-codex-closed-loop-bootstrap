@@ -2,7 +2,7 @@
   "profile_id": "semantic-validation-cli-profile",
   "label": "Semantic Validation CLI Profile",
   "bundle_label": "Semantic Validation CLI Profile",
-  "target_family": "api-service",
+  "target_family": "cli-tool",
   "validation_lane": "deterministic_semantic",
   "required_live_verification_modes": ["shell"],
   "target_reached_requires_core_probes": true,

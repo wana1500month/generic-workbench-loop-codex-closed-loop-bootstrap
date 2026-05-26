@@ -17,7 +17,13 @@ const main = async () => {
   const profile = await readVerificationProfile();
   const coreProbeResults = await readCoreProbeResults();
   const targetManifest = await readTargetManifest();
-  const liveProbe = await waitForUrl(config.ready_url, 15000);
+  const liveProbe = config.ready_url
+    ? await waitForUrl(config.ready_url, 15000)
+    : {
+        ok: true,
+        status: "skipped",
+        body: "No ready URL configured for command-first verification."
+      };
   const runCheckCriteria = (profile.criteria ?? []).filter(
     (criterion) => criterion.capability === "run_checks"
   );
@@ -61,7 +67,7 @@ const main = async () => {
       "provider=" + (process.env.HARNESS_PROVIDER_ID ?? "generated-codex-verifier"),
       "role=" + (process.env.HARNESS_PROVIDER_ROLE ?? "verifier"),
       "profile_id=" + (profile.profile_id ?? "generated-bootstrap-profile"),
-      "ready_url=" + config.ready_url,
+      "ready_url=" + (config.ready_url ?? "(none)"),
       "status=" + liveProbe.status,
       "reachable=" + String(liveProbe.ok),
       "release_gate_probe_count=" + releaseGateProbes.length,
@@ -122,14 +128,14 @@ const main = async () => {
     capability: "run_checks",
     mode: witnessMode,
     target_root: runtimePaths.targetRoot,
-    target_reference: config.ready_url,
+    target_reference: config.ready_url ?? runtimePaths.targetRoot,
     interaction_log_path: interactionLogPath,
     assertion_ids: runCheckCriteria.map(
       (criterion) => criterion.assertion_id ?? criterion.criterion_id
     ),
     steps: [
       {
-        action: "probe ready url",
+        action: config.ready_url ? "probe ready url" : "skip ready url probe",
         outcome: liveProbe.ok ? "pass" : "fail",
         artifact_paths: [interactionLogPath]
       },
@@ -152,11 +158,17 @@ const main = async () => {
         criterion_id: criterion.criterion_id,
         status: liveProbe.ok ? "pass" : "fail",
         summary: liveProbe.ok
-          ? "The configured ready URL responded."
+          ? config.ready_url
+            ? "The configured ready URL responded."
+            : "No ready URL was required for command-first verification."
           : "The configured ready URL did not respond successfully.",
         hard: criterion.hard ?? true,
         threshold: criterion.summary,
-        observed_value: liveProbe.ok ? "HTTP " + liveProbe.status : "No successful response",
+        observed_value: liveProbe.ok
+          ? config.ready_url
+            ? "HTTP " + liveProbe.status
+            : "command-first"
+          : "No successful response",
         evidence_paths: [interactionLogPath, witnessPath]
       };
     }

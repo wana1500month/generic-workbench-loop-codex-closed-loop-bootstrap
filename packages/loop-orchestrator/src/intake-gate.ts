@@ -18,6 +18,7 @@ import type {
 import {
   evidenceSurfacesForProjectKind,
   inferProjectKindFromText,
+  isCommandFirstProjectKind,
   type EvidenceSurface,
   type ProjectKind
 } from "./evaluation-policy.js";
@@ -250,7 +251,8 @@ const localizedQuestion = (
 
 const limitQuestions = <TFieldId extends IntakeFieldId>(
   fields: IntakeFieldState<TFieldId>[],
-  locale: "en" | "ko"
+  locale: "en" | "ko",
+  projectKind?: ProjectKind
 ): string[] =>
   fields
     .filter((field) => !field.satisfied)
@@ -264,12 +266,26 @@ const limitQuestions = <TFieldId extends IntakeFieldId>(
             "Summarize exactly what needs to be built in one sentence."
           );
         case "target_users":
+          if (projectKind === "cli_tool") {
+            return localizedQuestion(
+              locale,
+              "\uC774 CLI\uB97C \uC8FC\uB85C \uC2E4\uD589\uD560 \uC0AC\uC6A9\uC790\uB098 \uC0C1\uD669\uC744 \uC801\uC5B4\uC918.",
+              "Who will run this CLI, and in what situation?"
+            );
+          }
           return localizedQuestion(
             locale,
             "\uB204\uAC00 \uC774\uAC78 \uC8FC\uB85C \uC4F0\uB294\uC9C0 \uB9D0\uD574\uC918. \uAC00\uC7A5 \uC911\uC694\uD55C \uC0AC\uC6A9\uC790 \uD55C \uC885\uB958\uBD80\uD130 \uC801\uC5B4\uC918.",
             "Who is the primary user for the first version?"
           );
         case "core_workflows":
+          if (projectKind === "cli_tool") {
+            return localizedQuestion(
+              locale,
+              "\uB300\uD45C \uC2E4\uD589 \uBA85\uB839\uACFC \uC785\uB825 \uC608\uC2DC\uB97C 2~3\uAC1C \uC801\uC5B4\uC918.",
+              "List 2-3 representative commands with example inputs."
+            );
+          }
           return localizedQuestion(
             locale,
             "\uCCAB \uBC84\uC804\uC5D0\uC11C \uC0AC\uC6A9\uC790\uAC00 \uBC18\uB4DC\uC2DC \uD574\uC57C \uD558\uB294 \uD575\uC2EC \uC791\uC5C5 2~3\uAC1C\uB97C \uC801\uC5B4\uC918.",
@@ -282,6 +298,13 @@ const limitQuestions = <TFieldId extends IntakeFieldId>(
             "Are there reference products or visuals to follow? If not, say none."
           );
         case "finish_line":
+          if (projectKind === "cli_tool") {
+            return localizedQuestion(
+              locale,
+              "\uC131\uACF5 \uC2DC stdout/\uD30C\uC77C \uC0B0\uCD9C\uBB3C\uACFC \uBC18\uB4DC\uC2DC \uB2E4\uB904 \uC2E4\uD328 \uCF00\uC774\uC2A4\uB97C \uC801\uC5B4\uC918.",
+              "What stdout/file outputs prove success, and which failure cases must be handled?"
+            );
+          }
           return localizedQuestion(
             locale,
             "\uCCAB \uBC84\uC804\uC5D0\uC11C \uC5B4\uB514\uAE4C\uC9C0 \uB418\uBA74 \uC131\uACF5\uC778\uC9C0 \uC9E7\uAC8C \uC801\uC5B4\uC918.",
@@ -359,6 +382,17 @@ export const inferProductTargetFamily = (
 ): Exclude<TargetFamily, "generic-core" | "editor-app"> => {
   const normalizedLower = lowerText(request);
   const apiExplicitlyNegated = hasExplicitApiNegation(normalizedLower);
+  const projectKind = inferProjectKindFromText(request);
+
+  if (isCommandFirstProjectKind(projectKind)) {
+    if (projectKind === "agent_workflow") {
+      return "chat-agent";
+    }
+    if (projectKind === "cli_tool") {
+      return "cli-tool";
+    }
+    return "command-artifact";
+  }
 
   if (
     includesAny(normalizedLower, [
@@ -932,6 +966,7 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
   const locale = detectLocale(request);
   const productBuildDetection = detectProductBuildRequest(request, normalizedLower);
   const isProductBuildRequest = productBuildDetection.is_product_build;
+  const inferredProjectKind = inferProjectKindFromText(request);
 
   if (!isProductBuildRequest) {
     return {
@@ -977,7 +1012,7 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
       missing_execution_fields: [],
       missing_adapter_fields: [],
       satisfied_fields: satisfiedProductFields,
-      questions: limitQuestions(productFields, locale),
+      questions: limitQuestions(productFields, locale, inferredProjectKind),
       internal_working_hypothesis: internalWorkingHypothesis,
       extracted_summary: extractedSummary,
       extracted_project_mode: extractedProjectMode,
@@ -987,7 +1022,6 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
     };
   }
 
-  const inferredProjectKind = inferProjectKindFromText(request);
   const executionFields = buildExecutionFieldStates(
     request,
     extractedProjectMode,
@@ -1012,7 +1046,7 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
       missing_execution_fields: missingExecutionFields,
       missing_adapter_fields: [],
       satisfied_fields: [...satisfiedProductFields, ...satisfiedExecutionFields],
-      questions: limitQuestions(executionFields, locale),
+      questions: limitQuestions(executionFields, locale, inferredProjectKind),
       internal_working_hypothesis: internalWorkingHypothesis,
       extracted_summary: extractedSummary,
       extracted_project_mode: extractedProjectMode,
@@ -1066,7 +1100,7 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
         ...satisfiedExecutionFields,
         ...satisfiedAdapterFields
       ],
-      questions: limitQuestions(adapterFields, locale),
+      questions: limitQuestions(adapterFields, locale, inferredProjectKind),
       internal_working_hypothesis: internalWorkingHypothesis,
       extracted_summary: extractedSummary,
       extracted_project_mode: extractedProjectMode,

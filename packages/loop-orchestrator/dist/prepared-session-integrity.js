@@ -41,7 +41,7 @@ export const validatePreparedProductSessionIntegrity = (input) => {
             errors.push("Evaluator profile quality contract is contaminated by harness language.");
         }
         const workflowProbeLabels = (input.evaluatorProfile.core_probes ?? [])
-            .filter((probe) => /^(?:Core workflow remains|Workflow works:|Workflow API works:)/.test(probe.label))
+            .filter((probe) => /^(?:Core workflow remains|Workflow works:|Workflow API works:|Workflow command works:)/.test(probe.label))
             .map((probe) => probe.label);
         for (const workflow of input.buildBrief.product.core_workflows) {
             if (!workflowProbeLabels.some((label) => workflowNameMatches(label, workflow))) {

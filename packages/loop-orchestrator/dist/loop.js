@@ -12,7 +12,7 @@ import { detectDurableMemoryPaths, ensureDurableMemoryArtifacts, loadDurableMemo
 import { loadJson, loadJsonIfExists, nextRunId, pathExists, repoRoot, resolveRunsDirectory, writeJson, writeText } from "./file-system.js";
 import { attachedPreGeneratorBaselineWindowOpen, captureBootstrapGeneratedBaselineIfNeeded, describePrototypeBaselineSourceSemantics, hasValidPrototypeBaseline, loadPrototypeBaselineState, prototypeBaselineSourceSemanticsForPhase, prototypeBaselinePaths } from "./prototype-baseline.js";
 import { defaultIdeaPath, readIdeaBrief } from "./idea-intake.js";
-import { evaluationPolicyPathForRun, loadEvaluationPolicyForRun, writeEvaluationPolicyArtifacts, writeRoundScorecardArtifacts } from "./evaluation-policy.js";
+import { buildEvaluationPolicy, evaluationPolicyPathForRun, loadEvaluationPolicyForRun, writeEvaluationPolicyArtifacts, writeRoundScorecardArtifacts } from "./evaluation-policy.js";
 import { applyEvaluationPolicyGate } from "./loop/evaluation-policy-gate.js";
 import { defaultControllerMode, isControllerMode } from "./controller-mode.js";
 import { defaultExecutorMode, isExecutorMode } from "./executor-mode.js";
@@ -359,13 +359,14 @@ export const runClosedLoop = async (input) => {
         hydratedRubric.target_total_score =
             preparedSessionSeed.runContract.execution_controls.target_score;
     }
-    const evaluationPolicy = await loadEvaluationPolicyForRun(runDirectory);
-    if (evaluationPolicy) {
-        await writeEvaluationPolicyArtifacts({
-            runDirectory,
-            policy: evaluationPolicy
-        });
-    }
+    let evaluationPolicy = await loadEvaluationPolicyForRun(runDirectory);
+    evaluationPolicy ??= buildEvaluationPolicy({
+        explicitTargetScore: hydratedRubric.target_total_score
+    });
+    await writeEvaluationPolicyArtifacts({
+        runDirectory,
+        policy: evaluationPolicy
+    });
     if (input.targetScore === undefined &&
         preparedSessionSeed?.runContract.execution_controls.target_score === undefined &&
         evaluationPolicy) {

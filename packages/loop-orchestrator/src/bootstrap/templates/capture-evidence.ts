@@ -93,7 +93,13 @@ const main = async () => {
   const profile = await readVerificationProfile();
   const adapterPlan = adapterPlanForConfig(config);
   const workflowChecks = workflowChecksForConfig(config);
-  const probe = await waitForUrl(config.ready_url, 15000);
+  const probe = config.ready_url
+    ? await waitForUrl(config.ready_url, 15000)
+    : {
+        ok: true,
+        status: "skipped",
+        body: "No ready URL configured for command-first verification."
+      };
   const browserEvidence = await captureBrowserHomeEvidence({ config, profile });
   const workflowEvidencePath = await writeArtifactJson("workflow-evidence.json", {
     status: "planned",
@@ -115,7 +121,7 @@ const main = async () => {
     [
       "# Live evidence",
       "",
-      "Ready URL: " + config.ready_url,
+      "Ready URL: " + (config.ready_url ?? "(none)"),
       "HTTP status: " + probe.status,
       "Reachable: " + String(probe.ok),
       "",
@@ -166,7 +172,9 @@ const main = async () => {
     capability: "capture_evidence",
     ok: probe.ok,
     summary: probe.ok
-      ? "Captured live evidence from " + config.ready_url + "."
+      ? config.ready_url
+        ? "Captured live evidence from " + config.ready_url + "."
+        : "Captured command-first evidence plan."
       : "Could not capture live evidence from " + config.ready_url + ".",
     findings: [
       ...(probe.ok ? [] : ["Failed to capture evidence from " + config.ready_url + "."]),

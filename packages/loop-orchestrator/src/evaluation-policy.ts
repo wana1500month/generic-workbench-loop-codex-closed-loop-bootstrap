@@ -205,11 +205,37 @@ const projectKindForTargetFamily = (
   if (targetFamily === "chat-agent") {
     return "agent_workflow";
   }
+  if (targetFamily === "cli-tool") {
+    return "cli_tool";
+  }
+  if (targetFamily === "command-artifact") {
+    return "automation";
+  }
   return "generic";
 };
 
+export const commandFirstProjectKinds = new Set<ProjectKind>([
+  "cli_tool",
+  "library_package",
+  "data_pipeline",
+  "document_artifact",
+  "agent_workflow",
+  "automation"
+]);
+
+export const isCommandFirstProjectKind = (
+  projectKind: ProjectKind | undefined
+): boolean => Boolean(projectKind && commandFirstProjectKinds.has(projectKind));
+
 export const inferProjectKindFromText = (value: string): ProjectKind => {
   const normalized = value.normalize("NFKC").toLowerCase();
+  if (
+    /(?:analy[sz]er|parser|converter|log\s+analysis\s+tool|\uBD84\uC11D\uAE30|\uBD84\uC11D\s*(?:\uD234|\uB3C4\uAD6C)|\uD30C\uC11C|\uBCC0\uD658\uAE30)/u.test(
+      normalized
+    )
+  ) {
+    return "cli_tool";
+  }
   if (/(?:cli|command line|터미널|명령|커맨드)/u.test(normalized)) {
     return "cli_tool";
   }

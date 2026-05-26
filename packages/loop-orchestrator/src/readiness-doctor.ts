@@ -175,9 +175,14 @@ export const buildReadinessReport = async (
   const targetFamily = input.targetFamily ?? intake?.target_family;
   const targetRoot = targetRootFor(intake, input.runContract);
   const surfaces = verificationSurfacesFor(sourceIntake, intake);
+  const hasExplicitSurfaces = surfaces.length > 0;
   const needsBrowser =
-    surfaces.includes("browser") || familyNeedsBrowserEvidence(targetFamily);
-  const needsApi = surfaces.includes("api") || familyNeedsApiEvidence(targetFamily);
+    surfaces.includes("browser") ||
+    surfaces.includes("screenshot") ||
+    (!hasExplicitSurfaces && familyNeedsBrowserEvidence(targetFamily));
+  const needsApi =
+    surfaces.includes("api") ||
+    (!hasExplicitSurfaces && familyNeedsApiEvidence(targetFamily));
   const needsCliOrTest =
     surfaces.includes("cli") ||
     surfaces.includes("shell") ||
