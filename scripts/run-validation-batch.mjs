@@ -37,7 +37,8 @@ const suites = {
     "validate:evaluation-policy",
     "validate:scorecard-output",
     "validate:non-web-front-door-adapter-plan",
-    "validate:project-kind-fixtures"
+    "validate:project-kind-fixtures",
+    "validate:korean-non-product-rejection"
   ],
   fast: [
     "validate:intent-gate",
@@ -48,6 +49,7 @@ const suites = {
     "validate:scorecard-output",
     "validate:non-web-front-door-adapter-plan",
     "validate:project-kind-fixtures",
+    "validate:korean-non-product-rejection",
     "validate:loop-scorecards",
     "validate:default-scorecard-policy",
     "validate:adaptive-intake",
@@ -79,6 +81,7 @@ const suites = {
     "validate:cli-front-door-product-detection",
     "validate:non-web-front-door-adapter-plan",
     "validate:project-kind-fixtures",
+    "validate:korean-non-product-rejection",
     "validate:loop-prepare",
     "validate:generated-adapter-run-local",
     "validate:prepared-session-consumption-boundary"
@@ -128,6 +131,7 @@ const suites = {
     "validate:non-web-front-door-adapter-plan",
     "validate:cli-front-door-product-detection",
     "validate:project-kind-fixtures",
+    "validate:korean-non-product-rejection",
     "validate:fast-exits",
     "validate:non-web-e2e"
   ]

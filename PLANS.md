@@ -95,6 +95,7 @@ Acceptance:
 - Scorecard gating should have a loop-level validation that proves generated scorecards, custom-dimension target blocking, eval-report threshold updates, and CLI display stay connected end to end.
 - Intake should infer evidence surfaces for CLI tools, API services, libraries, agents, document artifacts, data pipelines, automation, and browser/mobile UI without making browser evidence the default for every target.
 - Project-kind discovery should ask first-turn product questions that match the inferred product shape, especially for libraries, agents, document artifacts, data pipelines, automation, and CLI tools.
+- Korean product detection should distinguish document-work requests such as summaries, analysis, translation, and review from product-build requests such as document generators, report generators, pipeline generators, builders, and automation tools.
 - Non-web targets should be able to close through evidence-appropriate release gates such as `shell_command`, `file_contains`, or `json_value` instead of requiring browser/API probes.
 - `loop:status` should surface the latest scorecard and required custom-dimension failures so operators do not need to inspect raw round files first.
 
@@ -118,6 +119,10 @@ Validation:
 - `npm run validate:productization`
 - `npm run validate:quick`
 - `npm run validate:project-kind-fixtures`
+- `npm run validate:korean-product-kind-fixtures`
+- `npm run validate:korean-document-artifact-detection`
+- `npm run validate:korean-data-pipeline-detection`
+- `npm run validate:korean-non-product-rejection`
 - `npm run validate:library-front-door-questions`
 - `npm run validate:agent-workflow-front-door-questions`
 - `npm run validate:document-artifact-front-door-questions`

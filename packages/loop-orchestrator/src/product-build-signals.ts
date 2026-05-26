@@ -1,3 +1,10 @@
+import {
+  koreanNonProductWorkHints,
+  koreanProductNounHints,
+  koreanProductVerbHints,
+  matchKoreanNonProductDeliverableObjects
+} from "./front-door/korean-product-detection.js";
+
 type PatternLabel = {
   label: string;
   pattern: RegExp;
@@ -10,53 +17,6 @@ export interface ProductBuildDetection {
   matched_verbs: string[];
   rejected_by: string[];
 }
-
-const KO_PRODUCT_NOUN_HINTS = [
-  "\uC571",
-  "\uC11C\uBE44\uC2A4",
-  "\uC6F9\uC571",
-  "\uC0AC\uC774\uD2B8",
-  "\uB300\uC2DC\uBCF4\uB4DC",
-  "\uC5D0\uB514\uD130",
-  "\uD3B8\uC9D1\uAE30",
-  "\uD3B8\uC9D1\uD234",
-  "\uAD00\uB9AC\uD234",
-  "\uD234",
-  "\uB3C4\uAD6C",
-  "\uBD84\uC11D\uAE30",
-  "\uAC80\uC0AC\uAE30",
-  "\uD30C\uC11C",
-  "\uBCC0\uD658\uAE30",
-  "\uC2DC\uC2A4\uD15C",
-  "\uD3EC\uD138",
-  "\uC2A4\uD1A0\uB9AC\uBCF4\uB4DC"
-] as const;
-
-const KO_PRODUCT_VERB_HINTS = [
-  "\uB9CC\uB4E4",
-  "\uAD6C\uD604",
-  "\uC124\uACC4",
-  "\uAC1C\uBC1C",
-  "\uAE30\uD68D",
-  "\uC81C\uC791",
-  "\uAD6C\uC0C1"
-] as const;
-
-const KO_NON_PRODUCT_WORK_HINTS = [
-  "\uBB38\uC11C",
-  "\uC804\uB7B5",
-  "\uB85C\uB4DC\uB9F5",
-  "\uC2A4\uD399",
-  "\uC81C\uC548",
-  "\uAC10\uC0AC",
-  "\uB9AC\uBDF0",
-  "\uB9C8\uC774\uADF8\uB808\uC774\uC158",
-  "\uB9AC\uD329\uD130",
-  "\uD328\uCE58",
-  "\uCE74\uD53C",
-  "\uCF58\uD150\uCE20",
-  "\uBB38\uAD6C"
-] as const;
 
 const STRONG_PRODUCT_NOUN_PATTERNS: readonly PatternLabel[] = [
   { label: "app", pattern: /\bapp(?:lication)?s?\b/i },
@@ -183,55 +143,6 @@ const stripAudienceTail = (value: string): string => {
   return stripped.length > 0 ? stripped : value.trim();
 };
 
-const findFirstHintIndex = (
-  value: string,
-  hints: readonly string[]
-): { hint: string; index: number } | undefined => {
-  let found: { hint: string; index: number } | undefined;
-  for (const hint of hints) {
-    const index = value.indexOf(hint);
-    if (index >= 0 && (found === undefined || index < found.index)) {
-      found = { hint, index };
-    }
-  }
-  return found;
-};
-
-const KO_PRODUCT_ORDER_HINTS = [
-  ...KO_PRODUCT_NOUN_HINTS,
-  "api"
-] as const;
-
-const KO_PRODUCT_SURFACE_AFTER_DELIVERABLE_HINTS = [
-  "\uAD00\uB9AC\uD234",
-  "\uD234",
-  "\uB3C4\uAD6C",
-  "\uC2DC\uC2A4\uD15C",
-  "\uD3EC\uD138",
-  "\uB300\uC2DC\uBCF4\uB4DC",
-  "\uC571",
-  "\uC6F9\uC571",
-  "\uC0AC\uC774\uD2B8",
-  "\uC5D0\uB514\uD130",
-  "\uD3B8\uC9D1\uAE30",
-  "\uD3B8\uC9D1\uD234"
-] as const;
-
-const matchKoNonProductDeliverableObjects = (value: string): string[] => {
-  const product = findFirstHintIndex(value, KO_PRODUCT_ORDER_HINTS);
-  const deliverable = findFirstHintIndex(value, KO_NON_PRODUCT_WORK_HINTS);
-  if (!product || !deliverable || deliverable.index <= product.index) {
-    return [];
-  }
-
-  const trailingText = value.slice(deliverable.index + deliverable.hint.length);
-  if (matchHintLabels(trailingText, KO_PRODUCT_SURFACE_AFTER_DELIVERABLE_HINTS).length > 0) {
-    return [];
-  }
-
-  return [`${product.hint} ${deliverable.hint}`];
-};
-
 export const hasExplicitProductBuildPhrase = (value: string): boolean =>
   STRONG_EXPLICIT_PRODUCT_BUILD_PHRASE.test(value) ||
   WEAK_EXPLICIT_PRODUCT_BUILD_PHRASE.test(value);
@@ -240,9 +151,9 @@ export const detectProductBuildIntent = (value: string): ProductBuildDetection =
   const strongNouns = matchPatternLabels(value, STRONG_PRODUCT_NOUN_PATTERNS);
   const contextualNouns = matchPatternLabels(value, CONTEXTUAL_PRODUCT_NOUN_PATTERNS);
   const weakNouns = matchPatternLabels(value, WEAK_PRODUCT_NOUN_PATTERNS);
-  const koNouns = matchHintLabels(value, KO_PRODUCT_NOUN_HINTS);
-  const koVerbs = matchHintLabels(value, KO_PRODUCT_VERB_HINTS);
-  const koRejectedBy = matchHintLabels(value, KO_NON_PRODUCT_WORK_HINTS);
+  const koNouns = matchHintLabels(value, koreanProductNounHints);
+  const koVerbs = matchHintLabels(value, koreanProductVerbHints);
+  const koRejectedBy = matchHintLabels(value, koreanNonProductWorkHints);
   const matchedVerbs = unique([
     ...koVerbs,
     ...matchPatternLabels(value, BUILD_VERB_PATTERNS)
@@ -270,7 +181,7 @@ export const detectProductBuildIntent = (value: string): ProductBuildDetection =
   );
   const buildObjectKoNouns = matchHintLabels(
     buildObjectCore,
-    KO_PRODUCT_NOUN_HINTS
+    koreanProductNounHints
   );
   const buildObjectSurfaceNouns = unique([
     ...buildObjectStrongNouns,
@@ -278,12 +189,12 @@ export const detectProductBuildIntent = (value: string): ProductBuildDetection =
     ...buildObjectKoNouns
   ]);
   const buildObjectRejectedBy = unique([
-    ...matchHintLabels(buildObjectCore, KO_NON_PRODUCT_WORK_HINTS),
+    ...matchHintLabels(buildObjectCore, koreanNonProductWorkHints),
     ...matchPatternLabels(buildObjectCore, NON_PRODUCT_WORK_PATTERNS)
   ]);
   const nonProductDeliverableObject = unique([
     ...matchPatternLabels(buildObjectCore, NON_PRODUCT_DELIVERABLE_OBJECT_PATTERNS),
-    ...matchKoNonProductDeliverableObjects(buildObjectCore)
+    ...matchKoreanNonProductDeliverableObjects(buildObjectCore)
   ]);
   const deliverableAsProductModifier = matchPatternLabels(
     buildObjectCore,

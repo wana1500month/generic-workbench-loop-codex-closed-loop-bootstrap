@@ -136,8 +136,148 @@ export const projectKindFixtures = [
     checkCommand: "npm test",
     readyUrl: "http://127.0.0.1:3000/health",
     apiBaseUrl: "http://127.0.0.1:3000"
+  },
+  {
+    name: "ko-cli",
+    request: "\u0043\u004C\u0049 \uB85C\uADF8 \uBD84\uC11D\uAE30 \uB9CC\uB4E4\uC5B4\uC918",
+    projectKind: "cli_tool",
+    targetFamily: "cli-tool",
+    evidenceSurfaces: ["cli", "file", "test"],
+    expectedQuestions: ["\uB300\uD45C \uC2E4\uD589", "stdout/\uD30C\uC77C"],
+    coreFeature: "parse a log file and print a stable summary",
+    runCommand: "node ./bin/log-analyzer.js sample.log",
+    checkCommand: "npm test",
+    commandFirst: true
+  },
+  {
+    name: "ko-library",
+    request:
+      "\u0054\u0079\u0070\u0065\u0053\u0063\u0072\u0069\u0070\u0074 \uB77C\uC774\uBE0C\uB7EC\uB9AC \uD328\uD0A4\uC9C0\uB97C \uB9CC\uB4E4\uC5B4\uC918",
+    projectKind: "library_package",
+    targetFamily: "command-artifact",
+    evidenceSurfaces: ["package_import", "test", "file"],
+    expectedQuestions: [
+      "\uD568\uC218/\uD074\uB798\uC2A4",
+      "\uC124\uCE58/import/\uC0AC\uC6A9"
+    ],
+    coreFeature: "publish a TypeScript package API",
+    checkCommand: "npm test",
+    commandFirst: true
+  },
+  {
+    name: "ko-agent-workflow",
+    request:
+      "\uC5D0\uC774\uC804\uD2B8 \uC6CC\uD06C\uD50C\uB85C \uD3C9\uAC00 \uB3C4\uAD6C\uB97C \uB9CC\uB4E4\uC5B4\uC918",
+    projectKind: "agent_workflow",
+    targetFamily: "chat-agent",
+    evidenceSurfaces: ["agent_conversation", "file", "test"],
+    expectedQuestions: [
+      "\uC5D0\uC774\uC804\uD2B8",
+      "\uB300\uD45C \uC785\uB825",
+      "\uC88B\uC740 \uC751\uB2F5"
+    ],
+    coreFeature: "evaluate an agent workflow from sample prompts",
+    checkCommand: "npm test",
+    commandFirst: true
+  },
+  {
+    name: "ko-document-artifact",
+    request:
+      "\u004D\u0061\u0072\u006B\u0064\u006F\u0077\u006E \uBCF4\uACE0\uC11C \uC0B0\uCD9C\uBB3C \uC0DD\uC131\uAE30\uB97C \uB9CC\uB4E4\uC5B4\uC918",
+    projectKind: "document_artifact",
+    targetFamily: "command-artifact",
+    evidenceSurfaces: ["document", "file", "manual_review"],
+    expectedQuestions: [
+      "\uCD5C\uC885 \uC0B0\uCD9C\uBB3C",
+      "\uD3EC\uD568/\uC81C\uC678"
+    ],
+    coreFeature: "generate a structured Markdown report",
+    checkCommand: "npm test",
+    commandFirst: true
+  },
+  {
+    name: "ko-document-generator",
+    request:
+      "\uBB38\uC11C \uC0B0\uCD9C\uBB3C \uC0DD\uC131\uAE30\uB97C \uB9CC\uB4E4\uC5B4\uC918",
+    projectKind: "document_artifact",
+    targetFamily: "command-artifact",
+    evidenceSurfaces: ["document", "file", "manual_review"],
+    expectedQuestions: [
+      "\uCD5C\uC885 \uC0B0\uCD9C\uBB3C",
+      "\uD3EC\uD568/\uC81C\uC678"
+    ],
+    coreFeature: "generate a document artifact",
+    checkCommand: "npm test",
+    commandFirst: true
+  },
+  {
+    name: "ko-install-guide-generator",
+    request:
+      "\uC124\uCE58 \uAC00\uC774\uB4DC \uBB38\uC11C \uC0DD\uC131\uAE30\uB97C \uB9CC\uB4E4\uC5B4\uC918",
+    projectKind: "document_artifact",
+    targetFamily: "command-artifact",
+    evidenceSurfaces: ["document", "file", "manual_review"],
+    expectedQuestions: [
+      "\uCD5C\uC885 \uC0B0\uCD9C\uBB3C",
+      "\uD3EC\uD568/\uC81C\uC678"
+    ],
+    coreFeature: "generate an installation guide document",
+    checkCommand: "npm test",
+    commandFirst: true
+  },
+  {
+    name: "ko-data-pipeline-tool",
+    request:
+      "\u0043\u0053\u0056 \uB370\uC774\uD130 \uD30C\uC774\uD504\uB77C\uC778 \uB3C4\uAD6C\uB97C \uB9CC\uB4E4\uC5B4\uC918",
+    projectKind: "data_pipeline",
+    targetFamily: "command-artifact",
+    evidenceSurfaces: ["cli", "file", "test"],
+    expectedQuestions: [
+      "\uC785\uB825 \uC18C\uC2A4",
+      "bad-row"
+    ],
+    coreFeature: "transform a CSV input into a summary file",
+    runCommand: "node ./bin/pipeline.js sample.csv",
+    checkCommand: "npm test",
+    commandFirst: true
+  },
+  {
+    name: "ko-data-pipeline-generator",
+    request:
+      "\uB370\uC774\uD130 \uD30C\uC774\uD504\uB77C\uC778 \uC0DD\uC131\uAE30 \uB9CC\uB4E4\uC5B4\uC918",
+    projectKind: "data_pipeline",
+    targetFamily: "command-artifact",
+    evidenceSurfaces: ["cli", "file", "test"],
+    expectedQuestions: [
+      "\uC785\uB825 \uC18C\uC2A4",
+      "bad-row"
+    ],
+    coreFeature: "generate a data pipeline command",
+    runCommand: "node ./bin/pipeline.js sample.csv",
+    checkCommand: "npm test",
+    commandFirst: true
+  },
+  {
+    name: "ko-automation",
+    request:
+      "\uC815\uAE30 \uC815\uB9AC \uC790\uB3D9\uD654 \uB3C4\uAD6C\uB97C \uB9CC\uB4E4\uC5B4\uC918",
+    projectKind: "automation",
+    targetFamily: "command-artifact",
+    evidenceSurfaces: ["shell", "file", "test"],
+    expectedQuestions: [
+      "\uC790\uB3D9\uD654",
+      "\uD2B8\uB9AC\uAC70",
+      "\uC2E4\uD328/\uC54C\uB9BC"
+    ],
+    coreFeature: "run scheduled cleanup and write a result log",
+    checkCommand: "npm test",
+    commandFirst: true
   }
 ];
+
+export const koreanProjectKindFixtureNames = projectKindFixtures
+  .filter((fixture) => fixture.name.startsWith("ko-"))
+  .map((fixture) => fixture.name);
 
 const lower = (value) => value.toLowerCase();
 

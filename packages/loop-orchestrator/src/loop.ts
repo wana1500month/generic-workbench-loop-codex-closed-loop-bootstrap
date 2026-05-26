@@ -77,6 +77,7 @@ import {
   applyRoundScorecardGate,
   writeOptionalRoundScorecardArtifacts
 } from "./loop/scorecard-artifacts.js";
+import { deriveSessionLoopStatus } from "./loop/status-snapshot.js";
 import {
   defaultControllerMode,
   isControllerMode
@@ -1585,58 +1586,19 @@ export const runClosedLoop = async (input: {
   let sessionLatestRound: number | undefined = restoredRun?.latestRoundSummary?.round;
   let sessionLatestStopReason: LoopRunSummary["stop_reason"] | undefined =
     currentCheckpointStopReason;
-  const sessionStatusForStopReason = (
-    stopReason: LoopRunSummary["stop_reason"] | undefined
-  ): SessionLoopStatus | undefined => {
-    switch (stopReason) {
-      case "awaiting_codex_checkpoint":
-      case "awaiting_current_thread_handoff":
-      case "awaiting_manual_generator":
-        return "running";
-      case "awaiting_human_input":
-      case "new_run_required":
-        return "needs_steering";
-      case "awaiting_external_condition":
-      case "environment_blocked":
-        return "blocked_externally";
-      case "target_reached":
-      case "contract_completed":
-      case "max_rounds_reached":
-        return "ready_for_review";
-      case "adapter_migration_rejected":
-        return "done";
-      default:
-        return undefined;
-    }
-  };
   const deriveSessionStatus = (input?: {
     override?: SessionLoopStatus;
     stopReason?: LoopRunSummary["stop_reason"];
     attentionRequired?: OperatorAttentionRequired;
     executionState?: ExecutionState;
-  }): SessionLoopStatus => {
-    if (input?.override) {
-      return input.override;
-    }
-    const stopReasonStatus = sessionStatusForStopReason(input?.stopReason);
-    if (stopReasonStatus) {
-      return stopReasonStatus;
-    }
-    const executionState = input?.executionState ?? activeExecutionState;
-    const attentionRequired = input?.attentionRequired ?? activeAttentionRequired;
-    if (executionState === "completed") {
-      return "done";
-    }
-    if (executionState === "paused") {
-      if (attentionRequired === "human") {
-        return "needs_steering";
-      }
-      if (attentionRequired === "external") {
-        return "blocked_externally";
-      }
-    }
-    return history.length > 0 ? "running" : "ready_to_start";
-  };
+  }): SessionLoopStatus =>
+    deriveSessionLoopStatus({
+      override: input?.override,
+      stopReason: input?.stopReason,
+      executionState: input?.executionState ?? activeExecutionState,
+      attentionRequired: input?.attentionRequired ?? activeAttentionRequired,
+      hasHistory: history.length > 0
+    });
   const updateSessionRefreshState = (input?: {
     currentObjective?: string;
     steeringNotes?: string[];
