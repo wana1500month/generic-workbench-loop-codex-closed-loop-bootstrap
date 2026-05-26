@@ -12,8 +12,9 @@ import { detectDurableMemoryPaths, ensureDurableMemoryArtifacts, loadDurableMemo
 import { loadJson, loadJsonIfExists, nextRunId, pathExists, repoRoot, resolveRunsDirectory, writeJson, writeText } from "./file-system.js";
 import { attachedPreGeneratorBaselineWindowOpen, captureBootstrapGeneratedBaselineIfNeeded, describePrototypeBaselineSourceSemantics, hasValidPrototypeBaseline, loadPrototypeBaselineState, prototypeBaselineSourceSemanticsForPhase, prototypeBaselinePaths } from "./prototype-baseline.js";
 import { defaultIdeaPath, readIdeaBrief } from "./idea-intake.js";
-import { buildEvaluationPolicy, evaluationPolicyPathForRun, loadEvaluationPolicyForRun, writeEvaluationPolicyArtifacts, writeRoundScorecardArtifacts } from "./evaluation-policy.js";
-import { applyEvaluationPolicyGate } from "./loop/evaluation-policy-gate.js";
+import { evaluationPolicyPathForRun } from "./evaluation-policy.js";
+import { ensureEvaluationPolicyForRun } from "./loop/default-evaluation-policy.js";
+import { applyRoundScorecardGate, writeOptionalRoundScorecardArtifacts } from "./loop/scorecard-artifacts.js";
 import { defaultControllerMode, isControllerMode } from "./controller-mode.js";
 import { defaultExecutorMode, isExecutorMode } from "./executor-mode.js";
 import { buildTransportStateArtifact, defaultTransportModeForControllerMode, isCurrentThreadTransport, isTransportMode, transportRuntimeWarningsForMode, validateTransportMode } from "./transport-mode.js";
@@ -359,13 +360,9 @@ export const runClosedLoop = async (input) => {
         hydratedRubric.target_total_score =
             preparedSessionSeed.runContract.execution_controls.target_score;
     }
-    let evaluationPolicy = await loadEvaluationPolicyForRun(runDirectory);
-    evaluationPolicy ??= buildEvaluationPolicy({
-        explicitTargetScore: hydratedRubric.target_total_score
-    });
-    await writeEvaluationPolicyArtifacts({
+    const evaluationPolicy = await ensureEvaluationPolicyForRun({
         runDirectory,
-        policy: evaluationPolicy
+        explicitTargetScore: hydratedRubric.target_total_score
     });
     if (input.targetScore === undefined &&
         preparedSessionSeed?.runContract.execution_controls.target_score === undefined &&
@@ -3427,7 +3424,7 @@ export const runClosedLoop = async (input) => {
                             evalReport.check_results.some((result) => result.check_id === "previous_patch_request_resolved" &&
                                 result.status === "pass");
                     if (evaluationPolicy) {
-                        const gatedEvaluation = applyEvaluationPolicyGate({
+                        const gatedEvaluation = applyRoundScorecardGate({
                             policy: evaluationPolicy,
                             evalReport
                         });
@@ -3570,12 +3567,10 @@ export const runClosedLoop = async (input) => {
                         adapterMigrationProposal,
                         adapterMigrationApplied
                     });
-                    if (roundScorecard) {
-                        await writeRoundScorecardArtifacts({
-                            roundDirectory,
-                            scorecard: roundScorecard
-                        });
-                    }
+                    await writeOptionalRoundScorecardArtifacts({
+                        roundDirectory,
+                        scorecard: roundScorecard
+                    });
                     await markProgress(`Evaluation artifacts saved for round ${round}.`);
                     await recordRoundPhase({
                         round,

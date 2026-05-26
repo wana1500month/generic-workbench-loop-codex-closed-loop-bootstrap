@@ -29,27 +29,32 @@ const npmInvocationFor = (scriptName) => {
 };
 
 const suites = {
+  quick: [
+    "validate:intent-gate",
+    "validate:intake-gate",
+    "validate:front-door-session",
+    "validate:readiness-doctor",
+    "validate:evaluation-policy",
+    "validate:scorecard-output",
+    "validate:non-web-front-door-adapter-plan",
+    "validate:project-kind-fixtures"
+  ],
   fast: [
     "validate:intent-gate",
     "validate:intake-gate",
     "validate:front-door-session",
-    "validate:transport-mode",
-    "validate:security-guards",
-    "validate:score-policy",
     "validate:readiness-doctor",
     "validate:evaluation-policy",
-    "validate:strictness-policy",
     "validate:scorecard-output",
+    "validate:non-web-front-door-adapter-plan",
+    "validate:project-kind-fixtures",
     "validate:loop-scorecards",
     "validate:default-scorecard-policy",
     "validate:adaptive-intake",
     "validate:non-web-target",
-    "validate:non-web-front-door-adapter-plan",
     "validate:cli-front-door-product-detection",
     "validate:fast-exits",
-    "validate:loop-prepare",
-    "validate:loop-continue",
-    "validate:durable-memory"
+    "validate:loop-prepare"
   ],
   process: [
     "validate:codex-timeout",
@@ -73,6 +78,7 @@ const suites = {
     "validate:cli-front-door",
     "validate:cli-front-door-product-detection",
     "validate:non-web-front-door-adapter-plan",
+    "validate:project-kind-fixtures",
     "validate:loop-prepare",
     "validate:generated-adapter-run-local",
     "validate:prepared-session-consumption-boundary"
@@ -85,6 +91,7 @@ const suites = {
     "validate:transport-mode",
     "validate:security-guards",
     "validate:score-policy",
+    "validate:strictness-policy",
     "validate:quality-lift",
     "validate:loop-prepare",
     "validate:prepared-session-consumption-boundary",
@@ -120,6 +127,7 @@ const suites = {
     "validate:non-web-target",
     "validate:non-web-front-door-adapter-plan",
     "validate:cli-front-door-product-detection",
+    "validate:project-kind-fixtures",
     "validate:fast-exits",
     "validate:non-web-e2e"
   ]
@@ -127,7 +135,14 @@ const suites = {
 
 const suiteName = process.argv[2] ?? "core";
 const suite = suites[suiteName];
-const stateIsolatedSuites = new Set(["app", "core", "fast", "product-front-door", "smoke"]);
+const stateIsolatedSuites = new Set([
+  "app",
+  "core",
+  "fast",
+  "product-front-door",
+  "quick",
+  "smoke"
+]);
 let batchEnv = process.env;
 
 if (!suite) {

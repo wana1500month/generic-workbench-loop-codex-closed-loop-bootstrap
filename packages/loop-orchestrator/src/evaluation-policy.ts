@@ -230,7 +230,7 @@ export const isCommandFirstProjectKind = (
 export const inferProjectKindFromText = (value: string): ProjectKind => {
   const normalized = value.normalize("NFKC").toLowerCase();
   if (
-    /(?:analy[sz]er|parser|converter|log\s+analysis\s+tool|\uBD84\uC11D\uAE30|\uBD84\uC11D\s*(?:\uD234|\uB3C4\uAD6C)|\uD30C\uC11C|\uBCC0\uD658\uAE30)/u.test(
+    /(?:analy[sz]er|checker|validator|parser|converter|log\s+analysis\s+tool|\uBD84\uC11D\uAE30|\uBD84\uC11D\s*(?:\uD234|\uB3C4\uAD6C)|\uAC80\uC0AC\uAE30|\uAC80\uC0AC\s*(?:\uD234|\uB3C4\uAD6C)|\uD30C\uC11C|\uBCC0\uD658\uAE30)/u.test(
       normalized
     )
   ) {

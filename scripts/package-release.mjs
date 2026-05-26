@@ -11,6 +11,16 @@ const installZipName = "generic-codex-workbench-CODEX-APP-INSTALL.zip";
 const zipPath = join(releaseRoot, installZipName);
 const legacyZipPath = join(releaseRoot, "generic-codex-workbench.zip");
 const requiredPackageFiles = [
+  "docs/TARGET_FAMILIES_AND_EVIDENCE_SURFACES.md",
+  "packages/loop-orchestrator/src/front-door/question-policy.ts",
+  "packages/loop-orchestrator/src/loop/default-evaluation-policy.ts",
+  "packages/loop-orchestrator/src/loop/scorecard-artifacts.ts",
+  "scripts/testing/project-kind-fixtures.mjs",
+  "scripts/validate-agent-workflow-front-door-questions.mjs",
+  "scripts/validate-data-pipeline-front-door-questions.mjs",
+  "scripts/validate-document-artifact-front-door-questions.mjs",
+  "scripts/validate-library-front-door-questions.mjs",
+  "scripts/validate-project-kind-fixtures.mjs",
   "scripts/validate-release-product-start.mjs"
 ];
 const commandTimeoutMs = Number.parseInt(

@@ -26,6 +26,10 @@ import {
   detectProductBuildIntent,
   type ProductBuildDetection
 } from "./product-build-signals.js";
+import {
+  executionQuestionFor,
+  productQuestionFor
+} from "./front-door/question-policy.js";
 import type { TargetFamily } from "./types.js";
 
 type IntakeFieldId = ProductFieldId | ExecutionFieldId | AdapterIntakeFieldId;
@@ -260,92 +264,26 @@ const limitQuestions = <TFieldId extends IntakeFieldId>(
     .map((field) => {
       switch (field.id) {
         case "product_summary":
-          return localizedQuestion(
-            locale,
-            "\uC815\uD655\uD788 \uBB50\uB97C \uB9CC\uB4DC\uB294\uC9C0 \uD55C \uBB38\uC7A5\uC73C\uB85C \uACE0\uC815\uD574\uC918.",
-            "Summarize exactly what needs to be built in one sentence."
-          );
         case "target_users":
-          if (projectKind === "cli_tool") {
-            return localizedQuestion(
-              locale,
-              "\uC774 CLI\uB97C \uC8FC\uB85C \uC2E4\uD589\uD560 \uC0AC\uC6A9\uC790\uB098 \uC0C1\uD669\uC744 \uC801\uC5B4\uC918.",
-              "Who will run this CLI, and in what situation?"
-            );
-          }
-          return localizedQuestion(
-            locale,
-            "\uB204\uAC00 \uC774\uAC78 \uC8FC\uB85C \uC4F0\uB294\uC9C0 \uB9D0\uD574\uC918. \uAC00\uC7A5 \uC911\uC694\uD55C \uC0AC\uC6A9\uC790 \uD55C \uC885\uB958\uBD80\uD130 \uC801\uC5B4\uC918.",
-            "Who is the primary user for the first version?"
-          );
         case "core_workflows":
-          if (projectKind === "cli_tool") {
-            return localizedQuestion(
-              locale,
-              "\uB300\uD45C \uC2E4\uD589 \uBA85\uB839\uACFC \uC785\uB825 \uC608\uC2DC\uB97C 2~3\uAC1C \uC801\uC5B4\uC918.",
-              "List 2-3 representative commands with example inputs."
-            );
-          }
-          return localizedQuestion(
-            locale,
-            "\uCCAB \uBC84\uC804\uC5D0\uC11C \uC0AC\uC6A9\uC790\uAC00 \uBC18\uB4DC\uC2DC \uD574\uC57C \uD558\uB294 \uD575\uC2EC \uC791\uC5C5 2~3\uAC1C\uB97C \uC801\uC5B4\uC918.",
-            "Which 2-3 core workflows must work in the first version?"
-          );
         case "references":
-          return localizedQuestion(
-            locale,
-            "\uCC38\uACE0 \uC81C\uD488\uC774\uB098 \uCC38\uACE0 \uD654\uBA74\uC774 \uC788\uB098? \uC5C6\uC73C\uBA74 \uC5C6\uB2E4\uACE0 \uC801\uC5B4\uC918.",
-            "Are there reference products or visuals to follow? If not, say none."
-          );
         case "finish_line":
-          if (projectKind === "cli_tool") {
-            return localizedQuestion(
-              locale,
-              "\uC131\uACF5 \uC2DC stdout/\uD30C\uC77C \uC0B0\uCD9C\uBB3C\uACFC \uBC18\uB4DC\uC2DC \uB2E4\uB904 \uC2E4\uD328 \uCF00\uC774\uC2A4\uB97C \uC801\uC5B4\uC918.",
-              "What stdout/file outputs prove success, and which failure cases must be handled?"
-            );
-          }
-          return localizedQuestion(
+          return productQuestionFor({
+            field: field.id,
             locale,
-            "\uCCAB \uBC84\uC804\uC5D0\uC11C \uC5B4\uB514\uAE4C\uC9C0 \uB418\uBA74 \uC131\uACF5\uC778\uC9C0 \uC9E7\uAC8C \uC801\uC5B4\uC918.",
-            "What does good enough for the first version mean?"
-          );
+            projectKind
+          }) ?? field.question;
         case "project_mode":
-          return localizedQuestion(
-            locale,
-            "\uC0C8 \uD504\uB85C\uC81D\uD2B8\uC778\uC9C0 \uAE30\uC874 \uD504\uB85C\uC81D\uD2B8\uC778\uC9C0 \uC54C\uB824\uC918.",
-            "Is this a new project or an existing project?"
-          );
         case "target_root":
-          return localizedQuestion(
-            locale,
-            "\uC791\uC5C5 \uD3F4\uB354\uAC00 \uC5B4\uB514\uC778\uC9C0 \uACBD\uB85C\uB97C \uADF8\uB300\uB85C \uC801\uC5B4\uC918.",
-            "What is the working folder path?"
-          );
         case "target_score":
-          return localizedQuestion(
-            locale,
-            "target score\uB97C 0~1 \uC0AC\uC774 \uC22B\uC790\uB85C \uC801\uC5B4\uC918. \uC608: 0.9",
-            "What target score should the loop use between 0 and 1? Example: 0.9"
-          );
         case "max_rounds":
-          return localizedQuestion(
-            locale,
-            "max rounds\uB97C \uBA87 \uBC88\uC73C\uB85C \uB458\uC9C0 \uC801\uC5B4\uC918. \uC608: 4",
-            "How many max rounds should the loop use? Example: 4"
-          );
         case "run_command":
-          return localizedQuestion(
-            locale,
-            "\uAE30\uC874 \uD504\uB85C\uC81D\uD2B8\uBA74 \uC2E4\uD589 \uBA85\uB839\uC744 \uC801\uC5B4\uC918. \uC608: npm run dev",
-            "If this is an existing project, what run command should the loop use? Example: npm run dev"
-          );
         case "ready_url":
-          return localizedQuestion(
+          return executionQuestionFor({
+            field: field.id,
             locale,
-            "\uAE30\uC874 \uD504\uB85C\uC81D\uD2B8\uBA74 \uC900\uBE44 \uC644\uB8CC\uB97C \uD655\uC778\uD560 URL\uC744 \uC801\uC5B4\uC918. \uC608: http://127.0.0.1:3000/",
-            "If this is an existing project, what ready URL should the loop check? Example: http://127.0.0.1:3000/"
-          );
+            projectKind
+          }) ?? field.question;
         case "verification_surface":
           return localizedQuestion(
             locale,
@@ -745,7 +683,9 @@ const usersExplicitlyProvided = (normalizedLower: string): boolean =>
 
 const workflowsExplicitlyProvided = (normalizedLower: string): boolean =>
   countKeywordMatches(normalizedLower, WORKFLOW_HINTS) >= 2 ||
-  /(?:핵심 작업|핵심 플로우|workflow|jobs?-to-be-done)/i.test(normalizedLower);
+  /(?:핵심 작업|핵심 플로우|core workflows?|key workflows?|jobs?-to-be-done)/i.test(
+    normalizedLower
+  );
 
 const buildProductFieldStates = (
   request: string,

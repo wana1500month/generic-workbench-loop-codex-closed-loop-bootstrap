@@ -86,7 +86,7 @@ Acceptance:
 - The repo should expose a lightweight runtime dashboard for attached monitoring through `loop:ui`.
 - Trusted environments should have a real `app-server` smoke validator in addition to the existing `codex exec` smoke, while developer hosts without a usable `codex` binary should remain `environment_blocked`.
 - The live Codex gate should keep real binary availability separate from deterministic fake-Codex auth semantics, failing before strict smoke when `codex` is missing or `HARNESS_CODEX_BIN` is misconfigured.
-- Validation acceptance should stay split into `validate:fast`, `validate:process`, `validate:core`, `validate:release`, `validate:source-archive-repro`, `validate:codex-live`, and `validate:external-adapter`, with process-control and source-archive reproducibility failures blocking release gates.
+- Validation acceptance should stay split into `validate:quick`, `validate:fast`, `validate:process`, `validate:core`, `validate:release`, `validate:source-archive-repro`, `validate:codex-live`, and `validate:external-adapter`, with process-control and source-archive reproducibility failures blocking release gates. `validate:quick` should remain the shortest front-door/productization guard, while `validate:core` owns slower loop-continuation and durable-memory coverage.
 - Source and install archive candidates must exclude TypeScript incremental metadata, and build success must be backed by required compiled-output sentinels rather than TypeScript exit code alone.
 - Operator-facing docs should present `loop:intent`, `loop:discover`, `loop:prepare`, `loop:start:codex`, `loop:continue`, and `loop:status` as the canonical path; lower-level runner, phase, family, and adapter commands remain internal, recovery, validation, or compatibility surfaces.
 - Prepare should produce a run-local `evaluation-policy.generated.json` / `.md` with `project_kind`, evidence surfaces, strictness level 1-5, target score, and required custom dimensions.
@@ -94,6 +94,7 @@ Acceptance:
 - `loop:scorecards` should read scorecards from the runtime's actual `run/round-###/` directories and the compatibility `run/rounds/round-###/` layout.
 - Scorecard gating should have a loop-level validation that proves generated scorecards, custom-dimension target blocking, eval-report threshold updates, and CLI display stay connected end to end.
 - Intake should infer evidence surfaces for CLI tools, API services, libraries, agents, document artifacts, data pipelines, automation, and browser/mobile UI without making browser evidence the default for every target.
+- Project-kind discovery should ask first-turn product questions that match the inferred product shape, especially for libraries, agents, document artifacts, data pipelines, automation, and CLI tools.
 - Non-web targets should be able to close through evidence-appropriate release gates such as `shell_command`, `file_contains`, or `json_value` instead of requiring browser/API probes.
 - `loop:status` should surface the latest scorecard and required custom-dimension failures so operators do not need to inspect raw round files first.
 
@@ -115,6 +116,12 @@ Validation:
 - `npm run validate:browser-only-no-api-probes`
 - `npm run validate:semantic-workflow-selectors`
 - `npm run validate:productization`
+- `npm run validate:quick`
+- `npm run validate:project-kind-fixtures`
+- `npm run validate:library-front-door-questions`
+- `npm run validate:agent-workflow-front-door-questions`
+- `npm run validate:document-artifact-front-door-questions`
+- `npm run validate:data-pipeline-front-door-questions`
 - `npm run validate:loop-scorecards`
 - `npm run validate:scorecard-e2e-prepared-run`
 - `npm run validate:non-web-e2e`

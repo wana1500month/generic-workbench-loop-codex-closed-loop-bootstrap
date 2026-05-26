@@ -69,14 +69,14 @@ import {
 } from "./prototype-baseline.js";
 import { defaultIdeaPath, readIdeaBrief } from "./idea-intake.js";
 import {
-  buildEvaluationPolicy,
   evaluationPolicyPathForRun,
-  loadEvaluationPolicyForRun,
-  writeEvaluationPolicyArtifacts,
-  writeRoundScorecardArtifacts,
   type RoundScorecard
 } from "./evaluation-policy.js";
-import { applyEvaluationPolicyGate } from "./loop/evaluation-policy-gate.js";
+import { ensureEvaluationPolicyForRun } from "./loop/default-evaluation-policy.js";
+import {
+  applyRoundScorecardGate,
+  writeOptionalRoundScorecardArtifacts
+} from "./loop/scorecard-artifacts.js";
 import {
   defaultControllerMode,
   isControllerMode
@@ -728,13 +728,9 @@ export const runClosedLoop = async (input: {
     hydratedRubric.target_total_score =
       preparedSessionSeed.runContract.execution_controls.target_score;
   }
-  let evaluationPolicy = await loadEvaluationPolicyForRun(runDirectory);
-  evaluationPolicy ??= buildEvaluationPolicy({
-    explicitTargetScore: hydratedRubric.target_total_score
-  });
-  await writeEvaluationPolicyArtifacts({
+  const evaluationPolicy = await ensureEvaluationPolicyForRun({
     runDirectory,
-    policy: evaluationPolicy
+    explicitTargetScore: hydratedRubric.target_total_score
   });
   if (
     input.targetScore === undefined &&
@@ -4501,7 +4497,7 @@ export const runClosedLoop = async (input: {
             result.status === "pass"
         );
       if (evaluationPolicy) {
-        const gatedEvaluation = applyEvaluationPolicyGate({
+        const gatedEvaluation = applyRoundScorecardGate({
           policy: evaluationPolicy,
           evalReport
         });
@@ -4656,12 +4652,10 @@ export const runClosedLoop = async (input: {
         adapterMigrationProposal,
         adapterMigrationApplied
       });
-      if (roundScorecard) {
-        await writeRoundScorecardArtifacts({
-          roundDirectory,
-          scorecard: roundScorecard
-        });
-      }
+      await writeOptionalRoundScorecardArtifacts({
+        roundDirectory,
+        scorecard: roundScorecard
+      });
       await markProgress(`Evaluation artifacts saved for round ${round}.`);
       await recordRoundPhase({
         round,
