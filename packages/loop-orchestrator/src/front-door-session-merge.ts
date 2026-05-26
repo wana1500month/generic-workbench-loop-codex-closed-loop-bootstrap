@@ -8,9 +8,17 @@ import {
   evaluateIntakeRequest,
   type IntakeGateResult
 } from "./intake-gate.js";
+import {
+  evidenceSurfacesForProjectKind,
+  inferProjectKindFromText,
+  type EvaluationStrictnessLevel,
+  type EvidenceSurface,
+  type ProjectKind
+} from "./evaluation-policy.js";
 import type {
   FrontDoorSessionArtifact,
   FrontDoorSessionConflict,
+  SessionCustomQualityMetric,
   SessionIntakeFieldId,
   SessionIntakeSnapshot,
   SessionWorkflowCheck,
@@ -189,6 +197,79 @@ const parseMaxRoundsAnswer = (value: string): number | undefined => {
 
   const parsed = Number(match[0]);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+};
+
+const parseStrictnessLevel = (
+  value: string
+): EvaluationStrictnessLevel | undefined => {
+  const match =
+    value.match(/(?:strictness|엄격도|까다롭|깐깐|출시\s*리뷰)[^\d]{0,12}([1-5])/iu) ??
+    value.match(/([1-5])\s*(?:단계|level)\s*(?:엄격|strict)/iu);
+  const parsed = match?.[1] ? Number(match[1]) : undefined;
+  return parsed === 1 || parsed === 2 || parsed === 3 || parsed === 4 || parsed === 5
+    ? parsed
+    : undefined;
+};
+
+const normalizeMetricId = (label: string): string =>
+  `custom.${label
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{Letter}\p{Number}]+/gu, "_")
+    .replace(/^_+|_+$/gu, "") || "metric"}`;
+
+const parseCustomQualityMetrics = (
+  value: string
+): SessionCustomQualityMetric[] | undefined => {
+  const metrics = splitAnswerLines(value)
+    .map((line): SessionCustomQualityMetric | undefined => {
+      const match =
+        line.match(
+          /^(?:추가\s*)?(?:평가\s*)?(?:기준\s*)?([^:：>=]+?)\s*[:：]\s*(?:최소\s*)?([0-9]+(?:\.[0-9]+)?)\s*(?:점|\/\s*10)?\.?\s*(.*)$/u
+        ) ??
+        line.match(
+          /^([^:：>=]+?)\s*(?:>=|이상|최소)\s*([0-9]+(?:\.[0-9]+)?)\s*(?:점|\/\s*10)?\.?\s*(.*)$/u
+        );
+      if (!match?.[1] || !match[2]) {
+        return undefined;
+      }
+      const label = normalizeInlineValue(match[1]).replace(/^[-*]\s*/u, "");
+      const score = Number(match[2]);
+      if (!label || !Number.isFinite(score)) {
+        return undefined;
+      }
+      const description =
+        normalizeInlineValue(match[3] ?? "") || `${label} quality dimension.`;
+      return {
+        metric_id: normalizeMetricId(label),
+        label,
+        description,
+        minimum_score_out_of_ten: score > 10 ? score / 10 : score,
+        required: !/optional|선택|참고/u.test(value),
+        weight: /디자인|깔끔|텍스트|문구|앱스러|visual|design|copy/u.test(label)
+          ? 2
+          : 1
+      } satisfies SessionCustomQualityMetric;
+    })
+    .filter((metric): metric is SessionCustomQualityMetric => metric !== undefined);
+
+  return metrics.length > 0 ? metrics : undefined;
+};
+
+const inferProjectKindCandidate = (value: string): ProjectKind | undefined => {
+  const projectKind = inferProjectKindFromText(value);
+  return projectKind === "generic" ? undefined : projectKind;
+};
+
+const evidenceSurfacesForCandidate = (
+  projectKind: ProjectKind | undefined,
+  explicitSurfaces: VerificationSurface[] | undefined
+): EvidenceSurface[] | undefined => {
+  const surfaces = [
+    ...(explicitSurfaces ?? []),
+    ...(projectKind ? evidenceSurfacesForProjectKind(projectKind) : [])
+  ] as EvidenceSurface[];
+  return surfaces.length > 0 ? [...new Set(surfaces)] : undefined;
 };
 
 const firstMatch = (value: string, patterns: readonly RegExp[]): string | undefined => {
@@ -807,6 +888,43 @@ const extractCandidates = (input: {
   const appUrl = extractUrl(message, "app url");
   const healthUrl = extractUrl(message, "health url");
   const apiBaseUrl = extractUrl(message, "api base url");
+  const projectKind =
+    inferProjectKindCandidate(`${sourceRequest}\n${message}`) ??
+    input.existingIntake?.project_kind;
+  const strictnessLevel =
+    parseStrictnessLevel(message) ??
+    (message === sourceRequest ? parseStrictnessLevel(sourceRequest) : undefined);
+  const customQualityMetrics = parseCustomQualityMetrics(message);
+  const rawExplicitVerificationSurfaces = parseVerificationSurfacesAnswer(message);
+  const explicitVerificationSurfaces =
+    input.existingIntake?.target_family && rawExplicitVerificationSurfaces.length
+      ? normalizeVerificationSurfacesForFamily(
+          input.existingIntake.target_family,
+          rawExplicitVerificationSurfaces
+        )
+      : rawExplicitVerificationSurfaces;
+  const candidateVerificationSurfaces =
+    acceptsAdapterAnswer && intakeResult.extracted_verification_surfaces?.length
+      ? intakeResult.extracted_verification_surfaces
+      : explicitVerificationSurfaces.length
+        ? explicitVerificationSurfaces
+        : undefined;
+  const workflowChecksFromMessage = parseWorkflowChecksAnswer(
+    message,
+    candidateVerificationSurfaces?.[0] ??
+      input.existingIntake?.verification_surfaces?.[0] ??
+      "browser"
+  );
+  const candidateWorkflowChecks =
+    acceptsAdapterAnswer && intakeResult.extracted_workflow_checks?.length
+      ? intakeResult.extracted_workflow_checks
+      : acceptsAdapterAnswer && workflowChecksFromMessage.length
+        ? workflowChecksFromMessage
+        : undefined;
+  const evidenceSurfaces = evidenceSurfacesForCandidate(
+    projectKind,
+    candidateVerificationSurfaces
+  );
 
   const regexCandidates: Partial<SessionIntakeSnapshot> = {
     ...(productTitle ? { product_title: productTitle } : {}),
@@ -848,11 +966,17 @@ const extractCandidates = (input: {
     ...(appUrl ? { app_url: appUrl } : {}),
     ...(healthUrl ? { health_url: healthUrl } : {}),
     ...(apiBaseUrl ? { api_base_url: apiBaseUrl } : {}),
-    ...(acceptsAdapterAnswer && intakeResult.extracted_verification_surfaces?.length
-      ? { verification_surfaces: intakeResult.extracted_verification_surfaces }
+    ...(projectKind ? { project_kind: projectKind } : {}),
+    ...(strictnessLevel ? { strictness_level: strictnessLevel } : {}),
+    ...(evidenceSurfaces?.length ? { evidence_surfaces: evidenceSurfaces } : {}),
+    ...(customQualityMetrics?.length
+      ? { custom_quality_metrics: customQualityMetrics }
       : {}),
-    ...(acceptsAdapterAnswer && intakeResult.extracted_workflow_checks?.length
-      ? { workflow_checks: intakeResult.extracted_workflow_checks }
+    ...(candidateVerificationSurfaces?.length
+      ? { verification_surfaces: candidateVerificationSurfaces }
+      : {}),
+    ...(candidateWorkflowChecks?.length
+      ? { workflow_checks: candidateWorkflowChecks }
       : {})
   };
 
@@ -982,6 +1106,49 @@ const applyVerificationSurfaces = (
     return;
   }
   target.verification_surfaces = [...new Set([...target.verification_surfaces, ...normalizedCandidate])];
+};
+
+const applyEvidenceSurfaces = (
+  target: SessionIntakeSnapshot,
+  candidate: EvidenceSurface[] | undefined,
+  conflicts: FrontDoorSessionConflict[],
+  options: { replace?: boolean } = {}
+): void => {
+  if (!candidate?.length) {
+    return;
+  }
+  const normalizedCandidate = [...new Set(candidate)];
+  if (!target.evidence_surfaces || options.replace) {
+    target.evidence_surfaces = normalizedCandidate;
+    removeConflictsForField(conflicts, "evidence_surfaces");
+    return;
+  }
+  target.evidence_surfaces = [
+    ...new Set([...target.evidence_surfaces, ...normalizedCandidate])
+  ];
+};
+
+const applyCustomQualityMetrics = (
+  target: SessionIntakeSnapshot,
+  candidate: SessionCustomQualityMetric[] | undefined,
+  conflicts: FrontDoorSessionConflict[],
+  options: { replace?: boolean } = {}
+): void => {
+  if (!candidate?.length) {
+    return;
+  }
+  if (!target.custom_quality_metrics || options.replace) {
+    target.custom_quality_metrics = candidate;
+    removeConflictsForField(conflicts, "custom_quality_metrics");
+    return;
+  }
+  const byId = new Map(
+    target.custom_quality_metrics.map((metric) => [metric.metric_id, metric])
+  );
+  for (const metric of candidate) {
+    byId.set(metric.metric_id, metric);
+  }
+  target.custom_quality_metrics = [...byId.values()];
 };
 
 const applyWorkflowChecks = (
@@ -1279,6 +1446,8 @@ export const mergeFrontDoorSessionTurn = (input: {
     );
   }
   applyScalarField(nextIntake, "target_family", candidates.target_family, input.turnCount, conflicts);
+  applyScalarField(nextIntake, "project_kind", candidates.project_kind, input.turnCount, conflicts);
+  applyScalarField(nextIntake, "strictness_level", candidates.strictness_level, input.turnCount, conflicts);
   applyScalarField(nextIntake, "project_mode", candidates.project_mode, input.turnCount, conflicts, {
     replace: replaceFields.has("project_mode")
   });
@@ -1308,12 +1477,26 @@ export const mergeFrontDoorSessionTurn = (input: {
   applyVerificationSurfaces(nextIntake, candidates.verification_surfaces, conflicts, {
     replace: replaceFields.has("verification_surfaces")
   });
+  applyEvidenceSurfaces(nextIntake, candidates.evidence_surfaces, conflicts);
+  applyCustomQualityMetrics(
+    nextIntake,
+    candidates.custom_quality_metrics,
+    conflicts,
+    {
+      replace: replaceFields.has("custom_quality_metrics")
+    }
+  );
   applyWorkflowChecks(nextIntake, candidates.workflow_checks, conflicts, {
     replace: replaceFields.has("workflow_checks")
   });
 
   if (!nextIntake.reference_apps) {
     nextIntake.reference_apps = [];
+  }
+  if (nextIntake.project_kind && !nextIntake.evidence_surfaces?.length) {
+    nextIntake.evidence_surfaces = evidenceSurfacesForProjectKind(
+      nextIntake.project_kind
+    );
   }
 
   const defaultTargetRoot = defaultTargetRootForNewProject(nextIntake);

@@ -23,7 +23,9 @@ Use `loop:discover` for the real same-thread UX. If it returns
 the next assistant reply should contain those questions only. If it returns
 `ready_for_prepare`, run
 `loop:prepare -- --front-door-session <path> --json`, then stop at
-`ready_to_start`.
+`ready_to_start` if readiness doctor passes, or `prepared_with_blockers` if it
+finds blocking execution/evidence issues. Do not start the loop from
+`prepared_with_blockers`; resolve `runtime/readiness-report.md` first.
 
 ## Goal
 
@@ -48,7 +50,7 @@ the model jump directly into design or implementation advice.
    - show the generated adapter plan preview
    - enter prepare mode on the same thread
    - write the session preparation artifacts, preferably through `npm run loop:prepare -- --front-door-session <path> --json` on shell/operator surfaces
-   - stop at `ready_to_start`
+   - stop at `ready_to_start`, or at `prepared_with_blockers` with a readiness report when preparation is blocked
    - wait for an explicit `루프 시작` or `start loop` before running
 
 ## Minimum intake fields
@@ -72,9 +74,11 @@ Once the product is clear, gather the execution-control fields:
 
 Once execution controls are clear, gather the adapter-design fields:
 
-- verification surface (`browser`, `api`, `test`, `cli`, `file`, or `db`)
+- project kind and verification evidence surface when not obvious. Keep `TargetFamily` internal, but capture `project_kind` such as `browser_ui`, `api_service`, `cli_tool`, `library_package`, `agent_workflow`, `document_artifact`, `data_pipeline`, `automation`, or `generic`.
+- verification evidence surface (`browser`, `screenshot`, `api`, `cli`, `test`, `file`, `db`, `shell`, `agent_conversation`, `document`, `package_import`, or `manual_review`)
 - workflow checks in action/result form, for example `add transaction -> list and monthly total update`
-- optional extra quality metrics
+- optional strictness level 1-5. Level 3 is product-level default; level 5 is release-review strict and caps scores when proof is missing.
+- optional extra quality metrics, each with label, description, minimum score out of 10, and whether it is required. Required custom dimensions below their minimum keep the loop running even if the total score passes.
 
 Target family should stay internal and be inferred during prepare mode unless the
 user explicitly wants to override it.
@@ -112,10 +116,23 @@ normal second phase is:
 5. If this is an existing project, what run/check commands and URLs should the harness use?
 
 After execution fields are clear, switch to adapter-design questions only. The
-normal third phase is:
+normal third phase should be adaptive and ask at most three high-impact
+questions. Do not ask browser URL or screenshot questions for CLI, library,
+agent, document, or data-pipeline targets unless the user added visual
+quality metrics.
 
-1. How should the loop verify the result: browser screen, API, test command, file, or DB evidence?
+1. How should the loop verify the result? Choose the relevant evidence surface, for example CLI output, file artifact, API response, package import, browser screenshot, agent transcript, document review, or DB state.
 2. For each core workflow, what action and result prove success?
+3. Are there required custom quality dimensions or a strictness level?
+
+Example custom quality input:
+
+```text
+strictness_level: 5
+custom dimensions:
+- Cleanliness: minimum 9.2. Layout, spacing, and hierarchy must be polished.
+- No noise text: minimum 9.5. Placeholder, helper, or excessive explanatory text fails.
+```
 
 ## Explicitly wrong behavior
 

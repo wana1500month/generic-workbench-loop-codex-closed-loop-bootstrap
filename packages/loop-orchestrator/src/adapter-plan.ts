@@ -57,6 +57,18 @@ const browserPrimaryTargetFamilies = new Set<TargetFamily>([
   "dashboard"
 ]);
 
+const browserLikeSurfaces = new Set<VerificationSurface>([
+  "browser",
+  "screenshot"
+]);
+
+const commandLikeSurfaces = new Set<VerificationSurface>([
+  "cli",
+  "shell",
+  "test",
+  "package_import"
+]);
+
 export const normalizeVerificationSurfacesForFamily = (
   targetFamily: TargetFamily,
   surfaces: readonly VerificationSurface[] | undefined
@@ -142,24 +154,36 @@ export const defaultWorkflowChecksFromCoreFeatures = (
   surfaces: readonly VerificationSurface[]
 ): SessionWorkflowCheck[] => {
   const surface = surfaces[0] ?? "browser";
-  return coreFeatures.slice(0, 3).map((workflow, index) => ({
-    workflow,
-    surface,
-    trigger: `${workflow} action`,
-    expected_result: `${workflow} succeeds visibly.`,
-    selector_hints: selectorHintsForWorkflow(index),
-    ...(surface === "api"
-      ? {
-          api_hint: {
-            method: "GET" as const,
-            path: `quality/features/feature-${index + 1}`,
-            expected_status: 200,
-            expected_json_path: "status",
-            expected_value: "ready"
-          }
-        }
-      : {})
-  }));
+  return coreFeatures.slice(0, 3).map((workflow, index) => {
+    const check: SessionWorkflowCheck = {
+      workflow,
+      surface,
+      trigger: `${workflow} action`,
+      expected_result:
+        surface === "browser" || surface === "screenshot"
+          ? `${workflow} succeeds visibly.`
+          : `${workflow} succeeds with inspectable evidence.`
+    };
+    if (browserLikeSurfaces.has(surface)) {
+      check.selector_hints = selectorHintsForWorkflow(index);
+    }
+    if (surface === "api") {
+      check.api_hint = {
+        method: "GET",
+        path: `quality/features/feature-${index + 1}`,
+        expected_status: 200,
+        expected_json_path: "status",
+        expected_value: "ready"
+      };
+    }
+    if (commandLikeSurfaces.has(surface)) {
+      check.command_hint = {
+        command: "npm test",
+        expected_output: workflow
+      };
+    }
+    return check;
+  });
 };
 
 export const alignWorkflowChecksToCoreFeatures = (
@@ -181,8 +205,10 @@ export const alignWorkflowChecksToCoreFeatures = (
       workflow: feature,
       surface: fallbackSurface,
       trigger: `${feature} action`,
-      expected_result: `${feature} succeeds visibly.`,
-      selector_hints: selectorHintsForWorkflow(index)
+      expected_result: `${feature} succeeds with inspectable evidence.`,
+      ...(browserLikeSurfaces.has(fallbackSurface)
+        ? { selector_hints: selectorHintsForWorkflow(index) }
+        : {})
     };
 
     if (!matched) {
@@ -194,7 +220,9 @@ export const alignWorkflowChecksToCoreFeatures = (
       workflow: feature,
       surface: fallbackSurface,
       trigger: matched.trigger ?? feature,
-      selector_hints: matched.selector_hints ?? selectorHintsForWorkflow(index)
+      ...(browserLikeSurfaces.has(fallbackSurface)
+        ? { selector_hints: matched.selector_hints ?? selectorHintsForWorkflow(index) }
+        : { selector_hints: undefined })
     };
   });
 };
@@ -230,11 +258,14 @@ export const parseVerificationSurfacesAnswer = (
   const apiExplicitlyNegated = hasExplicitApiNegation(normalized);
 
   if (
-    /(?:browser|screen|\bui\b|\uD654\uBA74|\uBE0C\uB77C\uC6B0\uC800|\uC6F9\uC571|\uD504\uB860\uD2B8\uC5D4\uB4DC)/u.test(
+    /(?:browser|\bui\b|\uD654\uBA74|\uBE0C\uB77C\uC6B0\uC800|\uC6F9\uC571|\uD504\uB860\uD2B8\uC5D4\uB4DC)/u.test(
       normalized
     )
   ) {
     surfaces.push("browser");
+  }
+  if (/(?:screenshot|screen capture|캡처|스크린샷|screen)/u.test(normalized)) {
+    surfaces.push("screenshot");
   }
   if (
     !apiExplicitlyNegated &&
@@ -254,6 +285,9 @@ export const parseVerificationSurfacesAnswer = (
   if (/(?:cli|command|\uBA85\uB839|\uCEE4\uB9E8\uB4DC)/.test(normalized)) {
     surfaces.push("cli");
   }
+  if (/(?:shell|bash|powershell|sh\b|셸)/.test(normalized)) {
+    surfaces.push("shell");
+  }
   if (/(?:\uD30C\uC77C|file)/.test(normalized)) {
     surfaces.push("file");
   }
@@ -263,6 +297,18 @@ export const parseVerificationSurfacesAnswer = (
     )
   ) {
     surfaces.push("db");
+  }
+  if (/(?:agent conversation|conversation|sample conversation|대화|에이전트 응답)/u.test(normalized)) {
+    surfaces.push("agent_conversation");
+  }
+  if (/(?:document|markdown|report|문서|보고서|기획서)/u.test(normalized)) {
+    surfaces.push("document");
+  }
+  if (/(?:package import|import test|library import|패키지 import|라이브러리)/u.test(normalized)) {
+    surfaces.push("package_import");
+  }
+  if (/(?:manual review|human review|수동 검토|사람 검토)/u.test(normalized)) {
+    surfaces.push("manual_review");
   }
 
   return [...new Set(surfaces)];

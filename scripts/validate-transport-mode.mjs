@@ -452,6 +452,7 @@ const runAttachedAppServerValidation = async (fakeAppServerPath, attempt) => {
   const recordDirectory = join(process.cwd(), ".tmp", "validate-transport-mode");
   const recordPath = join(recordDirectory, `fake-app-server-record-${attempt}.json`);
   await mkdir(recordDirectory, { recursive: true });
+  await rm(recordPath, { force: true });
   const appServerExecution = await runLoop(
     ["--single", "--controller-mode", "attached", "--transport", "app-server"],
     {

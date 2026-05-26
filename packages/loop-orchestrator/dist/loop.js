@@ -12,6 +12,7 @@ import { detectDurableMemoryPaths, ensureDurableMemoryArtifacts, loadDurableMemo
 import { loadJson, loadJsonIfExists, nextRunId, pathExists, repoRoot, resolveRunsDirectory, writeJson, writeText } from "./file-system.js";
 import { attachedPreGeneratorBaselineWindowOpen, captureBootstrapGeneratedBaselineIfNeeded, describePrototypeBaselineSourceSemantics, hasValidPrototypeBaseline, loadPrototypeBaselineState, prototypeBaselineSourceSemanticsForPhase, prototypeBaselinePaths } from "./prototype-baseline.js";
 import { defaultIdeaPath, readIdeaBrief } from "./idea-intake.js";
+import { buildRoundScorecard, evaluationPolicyPathForRun, loadEvaluationPolicyForRun, writeRoundScorecardArtifacts } from "./evaluation-policy.js";
 import { defaultControllerMode, isControllerMode } from "./controller-mode.js";
 import { defaultExecutorMode, isExecutorMode } from "./executor-mode.js";
 import { buildTransportStateArtifact, defaultTransportModeForControllerMode, isCurrentThreadTransport, isTransportMode, transportRuntimeWarningsForMode, validateTransportMode } from "./transport-mode.js";
@@ -177,7 +178,21 @@ export const runClosedLoop = async (input) => {
             : {})
         : undefined;
     if (!restoredRun && input.preparedRunId && !preparedRunCandidate) {
-        throw new Error(`Prepared run '${input.preparedRunId}' is not ready_to_start for this current-thread start.`);
+        const readinessReport = await loadJsonIfExists(runtimeStatePathsForRun(join(runsDirectory, input.preparedRunId))
+            .readinessReportPath);
+        const readinessDetails = readinessReport
+            ? [
+                `Readiness status: ${readinessReport.status ?? "unknown"}.`,
+                ...(readinessReport.blockers?.length
+                    ? [
+                        `Blockers: ${readinessReport.blockers
+                            .map((blocker) => `${blocker.code ?? "UNKNOWN"} - ${blocker.human_explanation ?? "No explanation"} Fix: ${blocker.how_to_fix ?? "No fix recorded"}`)
+                            .join("; ")}.`
+                    ]
+                    : [])
+            ].join(" ")
+            : "";
+        throw new Error(`Prepared run '${input.preparedRunId}' is not ready_to_start for this current-thread start.${readinessDetails ? ` ${readinessDetails}` : ""}`);
     }
     const runId = restoredRun?.runId ?? preparedRunCandidate?.runId ?? (await nextRunId(runsDirectory));
     const runDirectory = restoredRun?.runDirectory ??
@@ -342,6 +357,12 @@ export const runClosedLoop = async (input) => {
     else if (preparedSessionSeed?.runContract.execution_controls.target_score !== undefined) {
         hydratedRubric.target_total_score =
             preparedSessionSeed.runContract.execution_controls.target_score;
+    }
+    const evaluationPolicy = await loadEvaluationPolicyForRun(runDirectory);
+    if (input.targetScore === undefined &&
+        preparedSessionSeed?.runContract.execution_controls.target_score === undefined &&
+        evaluationPolicy) {
+        hydratedRubric.target_total_score = evaluationPolicy.target_total_score;
     }
     const executionMaxRounds = attemptBudget +
         (loadedAdapter && includeRemediationBudget
@@ -3285,6 +3306,7 @@ export const runClosedLoop = async (input) => {
             let patchRequestArtifact;
             let trajectoryDecisionArtifact;
             let roundResultArtifact;
+            let roundScorecard;
             let failureLineage;
             let adapterDriftReport;
             let adapterMigrationStopPreview;
@@ -3295,6 +3317,7 @@ export const runClosedLoop = async (input) => {
                 patchRequestArtifact = await loadJson(artifacts.patch_request_json_path);
                 trajectoryDecisionArtifact = await loadJson(artifacts.trajectory_decision_json_path);
                 roundResultArtifact = await loadJson(artifacts.round_result_json_path);
+                roundScorecard = await loadJsonIfExists(artifacts.scorecard_json_path);
                 failureLineage =
                     (await loadJsonIfExists(artifacts.failure_lineage_path)) ??
                         failureLineageForEvalReport({
@@ -3395,6 +3418,39 @@ export const runClosedLoop = async (input) => {
                         previousPatchTargetCheckIds.length === 0 ||
                             evalReport.check_results.some((result) => result.check_id === "previous_patch_request_resolved" &&
                                 result.status === "pass");
+                    if (evaluationPolicy) {
+                        roundScorecard = buildRoundScorecard({
+                            policy: evaluationPolicy,
+                            evalReport
+                        });
+                        if (roundScorecard.blocking_reasons.length > 0) {
+                            const scorecardGapDetails = roundScorecard.blocking_reasons.map((reason) => `Evaluation policy dimension '${reason.dimension_id}' scored ${reason.score} below the minimum ${reason.minimum_score}. ${reason.reason}`);
+                            evalReport = {
+                                ...evalReport,
+                                blockers: unique([
+                                    ...evalReport.blockers,
+                                    ...roundScorecard.blocking_reasons.map((reason) => `Required evaluation dimension failed: ${reason.dimension_id}`)
+                                ]),
+                                next_actions: unique([
+                                    ...roundScorecard.next_round_focus,
+                                    ...evalReport.next_actions
+                                ]).slice(0, 10),
+                                threshold_gap_details: unique([
+                                    ...evalReport.threshold_gap_details,
+                                    ...scorecardGapDetails
+                                ]),
+                                threshold_results: {
+                                    ...evalReport.threshold_results,
+                                    dimension_thresholds_met: false,
+                                    target_reached_eligible: false
+                                }
+                            };
+                            roundScorecard = buildRoundScorecard({
+                                policy: evaluationPolicy,
+                                evalReport
+                            });
+                        }
+                    }
                     evaluatorVerdictArtifact = buildEvaluatorVerdictArtifact({
                         contractArtifact,
                         evalReport
@@ -3515,7 +3571,8 @@ export const runClosedLoop = async (input) => {
                         evalReport,
                         selectedForRun: false,
                         previousPatchRequestAddressed,
-                        previousPatchRequestResolved
+                        previousPatchRequestResolved,
+                        ...(roundScorecard ? { scorecardPath: artifacts.scorecard_json_path } : {})
                     });
                     await writeRoundArtifacts({
                         roundDirectory,
@@ -3530,6 +3587,12 @@ export const runClosedLoop = async (input) => {
                         adapterMigrationProposal,
                         adapterMigrationApplied
                     });
+                    if (roundScorecard) {
+                        await writeRoundScorecardArtifacts({
+                            roundDirectory,
+                            scorecard: roundScorecard
+                        });
+                    }
                     await markProgress(`Evaluation artifacts saved for round ${round}.`);
                     await recordRoundPhase({
                         round,
@@ -3537,6 +3600,7 @@ export const runClosedLoop = async (input) => {
                         status: "completed",
                         artifacts: {
                             eval_report_path: artifacts.eval_report_path,
+                            ...(roundScorecard ? { scorecard_path: artifacts.scorecard_json_path } : {}),
                             patch_request_path: artifacts.patch_request_json_path,
                             round_result_path: artifacts.round_result_json_path,
                             ...(adapterDriftReport
@@ -3544,6 +3608,7 @@ export const runClosedLoop = async (input) => {
                                 : {})
                         }
                     });
+                    return undefined;
                 });
                 if (evaluationResult) {
                     return evaluationResult;
@@ -3604,6 +3669,7 @@ export const runClosedLoop = async (input) => {
                 quality_critique_path: artifacts.quality_critique_json_path,
                 trajectory_decision_path: artifacts.trajectory_decision_json_path,
                 eval_report_path: artifacts.eval_report_path,
+                ...(roundScorecard ? { scorecard_path: artifacts.scorecard_json_path } : {}),
                 failure_lineage_path: artifacts.failure_lineage_path,
                 ...(adapterDriftReport
                     ? { adapter_drift_report_path: artifacts.adapter_drift_report_json_path }
@@ -3899,6 +3965,9 @@ export const runClosedLoop = async (input) => {
             resumeDecisionPath,
             resumedFromRunId: input.resumeRunPath ? runId : undefined
         });
+        if (evaluationPolicy) {
+            summary.evaluation_policy_path = evaluationPolicyPathForRun(runDirectory);
+        }
         currentCheckpointStopReason = summary.stop_reason;
         await withPhaseBudget("run_finalize", async () => {
             await recordRoundPhase({

@@ -153,6 +153,8 @@ export const artifactsForRound = (roundDirectory: string): RoundArtifacts => {
     trajectory_decision_md_path: join(roundDirectory, "trajectory-decision.md"),
     round_result_json_path: join(roundDirectory, "round-result.json"),
     eval_report_path: join(roundDirectory, "eval_report.json"),
+    scorecard_json_path: join(roundDirectory, "scorecard.json"),
+    scorecard_md_path: join(roundDirectory, "scorecard.md"),
     failure_lineage_path: join(roundDirectory, "failure-lineage.json"),
     adapter_drift_report_json_path: join(roundDirectory, "adapter-drift-report.json"),
     adapter_drift_report_md_path: join(roundDirectory, "adapter-drift-report.md"),
@@ -1190,6 +1192,7 @@ export const buildRoundResultArtifact = (input: {
   selectedForRun: boolean;
   previousPatchRequestAddressed: boolean;
   previousPatchRequestResolved: boolean;
+  scorecardPath?: string;
 }): RoundResultArtifact => {
   const passed = input.evalReport.check_results.filter((result) => result.status === "pass").length;
   const total =
@@ -1219,6 +1222,14 @@ export const buildRoundResultArtifact = (input: {
       "\\",
       "/"
     ),
+    ...(input.scorecardPath
+      ? {
+          scorecard_path: relative(
+            input.roundDirectory,
+            input.scorecardPath
+          ).replaceAll("\\", "/")
+        }
+      : {}),
     evidence_paths: input.evalReport.evidence_paths,
     check_pass_rate: Number((passed / total).toFixed(3)),
     previous_patch_request_addressed: input.previousPatchRequestAddressed,

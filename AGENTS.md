@@ -49,8 +49,8 @@ The closed-loop harness is the core runtime engine, and `product_build` is only 
   - if needed for an existing target: run/check commands and ready/app/health/api URLs
 - Keep target family as an internal working hypothesis through prepare. Do not ask the user to pick a family unless they explicitly want to override it.
 - When the request obviously maps to a supported family such as `browser-editor`, `crud-api`, or `chat-agent`, keep that as an internal working hypothesis until the intake is complete. Do not lead with "this is a browser-editor family" as the primary response.
-- The desired UX is: product questions only -> execution questions only -> prepare mode -> `ready_to_start` -> explicit `루프 시작` / `start loop` -> same-thread planner/generator/evaluator loop.
-- The executable front-controller for generic request routing is `npm run loop:intent -- "<user request>"`. For product-build behavior, the operator-facing lane is `app-builder-loop`; use `loop:discover` to persist discovery state per thread. If it returns `ask_product_questions` or `ask_execution_questions`, ask those questions only; if it returns `ready_for_prepare`, run `loop:prepare -- --front-door-session <path> --json`, write the session artifacts, and stop at `ready_to_start` until the operator explicitly starts the loop.
+- The desired UX is: product questions only -> execution questions only -> adaptive evidence/custom-metric questions only when needed -> prepare mode -> readiness doctor plus `evaluation-policy.generated.json` -> `ready_to_start` -> explicit `루프 시작` / `start loop` -> same-thread planner/generator/evaluator loop. If readiness doctor finds blockers, stop at `prepared_with_blockers` and resolve `runtime/readiness-report.md` before starting.
+- The executable front-controller for generic request routing is `npm run loop:intent -- "<user request>"`. For product-build behavior, the operator-facing lane is `app-builder-loop`; use `loop:discover` to persist discovery state per thread. If it returns `ask_product_questions` or `ask_execution_questions`, ask those questions only; if it returns `ready_for_prepare`, run `loop:prepare -- --front-door-session <path> --json`, write the session artifacts, and stop at `ready_to_start` or `prepared_with_blockers`. Only `ready_to_start` may start the loop.
 - Bad first-turn behavior for this repo:
   - classifying the family immediately
   - proposing a panel layout immediately
@@ -71,6 +71,7 @@ The closed-loop harness is the core runtime engine, and `product_build` is only 
 - Planning and QA language should stay generic and adapter-aware.
 - Repository structure should optimize for understanding the harness, not for demo completeness.
 - Dimension floors in the rubric should fail closed when proof integrity or release-gate QA drops below the configured bar.
+- Required custom evaluation dimensions should fail closed through per-round `scorecard.json` / `scorecard.md`; total score alone must not mark `target_reached` when a required dimension is below its minimum.
 
 ## Evaluation expectations
 

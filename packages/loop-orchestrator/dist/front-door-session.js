@@ -15,6 +15,9 @@ const statusForPhase = (phase) => {
     if (phase === "ready_for_prepare") {
         return "ready_for_prepare";
     }
+    if (phase === "prepared_with_blockers") {
+        return "prepared_with_blockers";
+    }
     return "prepared";
 };
 const uniqueFieldIds = (values) => [...new Set(values)];
@@ -33,6 +36,9 @@ const toDiscoveryPhase = (status) => {
     }
     if (status === "prepared") {
         return "prepared";
+    }
+    if (status === "prepared_with_blockers") {
+        return "prepared_with_blockers";
     }
     return "none";
 };

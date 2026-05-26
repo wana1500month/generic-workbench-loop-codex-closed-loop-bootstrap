@@ -1,3 +1,5 @@
+import { type EvaluationPolicy } from "./evaluation-policy.js";
+import { type ReadinessReport } from "./readiness-doctor.js";
 import { type PreparedSessionSeed } from "./session-artifacts.js";
 import type { ControllerMode, OperatorWorkspaceSurface, TargetFamily, ThreadBindingState, TransportMode } from "./types.js";
 export interface PrepareSessionResult {
@@ -11,6 +13,12 @@ export interface PrepareSessionResult {
     sessionStreamPath: string;
     operatorSurfacePath: string;
     executionPlanPath: string;
+    readinessReportPath: string;
+    readinessReportMarkdownPath: string;
+    readiness: ReadinessReport;
+    evaluationPolicyPath: string;
+    evaluationPolicyMarkdownPath: string;
+    evaluationPolicy: EvaluationPolicy;
     adapterPath?: string;
     adapterPlanPath?: string;
     adapterReviewTaskPath?: string;

@@ -36,6 +36,12 @@ const suites = {
     "validate:transport-mode",
     "validate:security-guards",
     "validate:score-policy",
+    "validate:readiness-doctor",
+    "validate:evaluation-policy",
+    "validate:strictness-policy",
+    "validate:scorecard-output",
+    "validate:adaptive-intake",
+    "validate:non-web-target",
     "validate:loop-prepare",
     "validate:loop-continue",
     "validate:durable-memory"
@@ -94,6 +100,14 @@ const suites = {
   "external-adapter": [
     "validate:reference-adapter:check",
     "smoke:reference-adapter"
+  ],
+  productization: [
+    "validate:readiness-doctor",
+    "validate:evaluation-policy",
+    "validate:strictness-policy",
+    "validate:scorecard-output",
+    "validate:adaptive-intake",
+    "validate:non-web-target"
   ]
 };
 

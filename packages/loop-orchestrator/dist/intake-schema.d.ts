@@ -1,8 +1,9 @@
 import type { BuildBriefDeliveryLevel, TargetFamily } from "./types.js";
+import type { EvaluationPolicy, EvaluationStrictnessLevel, EvidenceSurface, ProjectKind } from "./evaluation-policy.js";
 export type SessionProjectMode = "new" | "existing";
 export type ProductIntakeFieldId = "product_summary" | "target_users" | "core_workflows" | "references" | "finish_line";
 export type ExecutionIntakeFieldId = "project_mode" | "target_root" | "target_score" | "max_rounds" | "run_command" | "ready_url";
-export type VerificationSurface = "browser" | "api" | "cli" | "test" | "file" | "db";
+export type VerificationSurface = "browser" | "screenshot" | "api" | "cli" | "test" | "file" | "db" | "shell" | "agent_conversation" | "document" | "package_import" | "manual_review";
 export interface SessionWorkflowCheck {
     workflow: string;
     surface: VerificationSurface;
@@ -42,8 +43,8 @@ export interface SessionAdapterPlan {
 }
 export type AdapterIntakeFieldId = "verification_surface" | "workflow_checks" | "quality_metrics";
 export type SessionIntakeFieldId = ProductIntakeFieldId | ExecutionIntakeFieldId | AdapterIntakeFieldId;
-export type DiscoveryPhase = "product" | "execution" | "adapter" | "ready_for_prepare" | "prepared";
-export type FrontDoorSessionStatus = "not_product_build_request" | "ask_product_questions" | "ask_execution_questions" | "ask_adapter_questions" | "ready_for_prepare" | "prepared";
+export type DiscoveryPhase = "product" | "execution" | "adapter" | "ready_for_prepare" | "prepared_with_blockers" | "prepared";
+export type FrontDoorSessionStatus = "not_product_build_request" | "ask_product_questions" | "ask_execution_questions" | "ask_adapter_questions" | "ready_for_prepare" | "prepared_with_blockers" | "prepared";
 export interface PreparedRunReference {
     run_id: string;
     run_directory: string;
@@ -65,6 +66,10 @@ export interface SessionIntakeSnapshot {
     reference_apps?: string[];
     finish_line?: string;
     target_family?: TargetFamily;
+    project_kind?: ProjectKind;
+    evidence_surfaces?: EvidenceSurface[];
+    strictness_level?: EvaluationStrictnessLevel;
+    evaluation_policy?: EvaluationPolicy;
     goal_level?: BuildBriefDeliveryLevel;
     target_score?: number;
     max_rounds?: number;

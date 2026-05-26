@@ -37,6 +37,16 @@ const browserPrimaryTargetFamilies = new Set([
     "fullstack-app",
     "dashboard"
 ]);
+const browserLikeSurfaces = new Set([
+    "browser",
+    "screenshot"
+]);
+const commandLikeSurfaces = new Set([
+    "cli",
+    "shell",
+    "test",
+    "package_import"
+]);
 export const normalizeVerificationSurfacesForFamily = (targetFamily, surfaces) => {
     const uniqueSurfaces = [
         ...new Set(surfaces && surfaces.length > 0
@@ -94,24 +104,35 @@ export const workflowNameMatches = (left, right) => {
 };
 export const defaultWorkflowChecksFromCoreFeatures = (coreFeatures, surfaces) => {
     const surface = surfaces[0] ?? "browser";
-    return coreFeatures.slice(0, 3).map((workflow, index) => ({
-        workflow,
-        surface,
-        trigger: `${workflow} action`,
-        expected_result: `${workflow} succeeds visibly.`,
-        selector_hints: selectorHintsForWorkflow(index),
-        ...(surface === "api"
-            ? {
-                api_hint: {
-                    method: "GET",
-                    path: `quality/features/feature-${index + 1}`,
-                    expected_status: 200,
-                    expected_json_path: "status",
-                    expected_value: "ready"
-                }
-            }
-            : {})
-    }));
+    return coreFeatures.slice(0, 3).map((workflow, index) => {
+        const check = {
+            workflow,
+            surface,
+            trigger: `${workflow} action`,
+            expected_result: surface === "browser" || surface === "screenshot"
+                ? `${workflow} succeeds visibly.`
+                : `${workflow} succeeds with inspectable evidence.`
+        };
+        if (browserLikeSurfaces.has(surface)) {
+            check.selector_hints = selectorHintsForWorkflow(index);
+        }
+        if (surface === "api") {
+            check.api_hint = {
+                method: "GET",
+                path: `quality/features/feature-${index + 1}`,
+                expected_status: 200,
+                expected_json_path: "status",
+                expected_value: "ready"
+            };
+        }
+        if (commandLikeSurfaces.has(surface)) {
+            check.command_hint = {
+                command: "npm test",
+                expected_output: workflow
+            };
+        }
+        return check;
+    });
 };
 export const alignWorkflowChecksToCoreFeatures = (coreFeatures, checks, surfaces) => {
     const fallbackSurface = surfaces[0] ?? "browser";
@@ -123,8 +144,10 @@ export const alignWorkflowChecksToCoreFeatures = (coreFeatures, checks, surfaces
             workflow: feature,
             surface: fallbackSurface,
             trigger: `${feature} action`,
-            expected_result: `${feature} succeeds visibly.`,
-            selector_hints: selectorHintsForWorkflow(index)
+            expected_result: `${feature} succeeds with inspectable evidence.`,
+            ...(browserLikeSurfaces.has(fallbackSurface)
+                ? { selector_hints: selectorHintsForWorkflow(index) }
+                : {})
         };
         if (!matched) {
             return fallback;
@@ -134,7 +157,9 @@ export const alignWorkflowChecksToCoreFeatures = (coreFeatures, checks, surfaces
             workflow: feature,
             surface: fallbackSurface,
             trigger: matched.trigger ?? feature,
-            selector_hints: matched.selector_hints ?? selectorHintsForWorkflow(index)
+            ...(browserLikeSurfaces.has(fallbackSurface)
+                ? { selector_hints: matched.selector_hints ?? selectorHintsForWorkflow(index) }
+                : { selector_hints: undefined })
         };
     });
 };
@@ -153,8 +178,11 @@ export const parseVerificationSurfacesAnswer = (value) => {
     const normalized = stripPathLikeTokens(value).normalize("NFKC").toLowerCase();
     const surfaces = [];
     const apiExplicitlyNegated = hasExplicitApiNegation(normalized);
-    if (/(?:browser|screen|\bui\b|\uD654\uBA74|\uBE0C\uB77C\uC6B0\uC800|\uC6F9\uC571|\uD504\uB860\uD2B8\uC5D4\uB4DC)/u.test(normalized)) {
+    if (/(?:browser|\bui\b|\uD654\uBA74|\uBE0C\uB77C\uC6B0\uC800|\uC6F9\uC571|\uD504\uB860\uD2B8\uC5D4\uB4DC)/u.test(normalized)) {
         surfaces.push("browser");
+    }
+    if (/(?:screenshot|screen capture|캡처|스크린샷|screen)/u.test(normalized)) {
+        surfaces.push("screenshot");
     }
     if (!apiExplicitlyNegated &&
         /(?:api|http|endpoint|\uC5D4\uB4DC\uD3EC\uC778\uD2B8|\uC751\uB2F5|json)/u.test(normalized)) {
@@ -166,11 +194,26 @@ export const parseVerificationSurfacesAnswer = (value) => {
     if (/(?:cli|command|\uBA85\uB839|\uCEE4\uB9E8\uB4DC)/.test(normalized)) {
         surfaces.push("cli");
     }
+    if (/(?:shell|bash|powershell|sh\b|셸)/.test(normalized)) {
+        surfaces.push("shell");
+    }
     if (/(?:\uD30C\uC77C|file)/.test(normalized)) {
         surfaces.push("file");
     }
     if (/(?:db|database|\uB370\uC774\uD130\uBCA0\uC774\uC2A4|sqlite|postgres|mysql)/.test(normalized)) {
         surfaces.push("db");
+    }
+    if (/(?:agent conversation|conversation|sample conversation|대화|에이전트 응답)/u.test(normalized)) {
+        surfaces.push("agent_conversation");
+    }
+    if (/(?:document|markdown|report|문서|보고서|기획서)/u.test(normalized)) {
+        surfaces.push("document");
+    }
+    if (/(?:package import|import test|library import|패키지 import|라이브러리)/u.test(normalized)) {
+        surfaces.push("package_import");
+    }
+    if (/(?:manual review|human review|수동 검토|사람 검토)/u.test(normalized)) {
+        surfaces.push("manual_review");
     }
     return [...new Set(surfaces)];
 };

@@ -68,6 +68,7 @@ export declare const buildRoundResultArtifact: (input: {
     selectedForRun: boolean;
     previousPatchRequestAddressed: boolean;
     previousPatchRequestResolved: boolean;
+    scorecardPath?: string;
 }) => RoundResultArtifact;
 export declare const writeNegotiationArtifacts: (input: {
     roundDirectory: string;

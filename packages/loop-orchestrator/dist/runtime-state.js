@@ -15,6 +15,8 @@ export const runtimeStatePathsForRun = (runDirectory) => {
         sessionStatusPath: join(runtimeDirectory, "session-status.json"),
         sessionStatusEventsPath: join(runtimeDirectory, "session-status-events.jsonl"),
         sessionStreamPath: join(runtimeDirectory, "session-stream.json"),
+        readinessReportPath: join(runtimeDirectory, "readiness-report.json"),
+        readinessReportMarkdownPath: join(runtimeDirectory, "readiness-report.md"),
         appServerSessionEventsPath: join(runtimeDirectory, "app-server-session-events.jsonl"),
         operatorSurfacePath: join(runtimeDirectory, "operator-surface.json"),
         operatorSurfaceMarkdownPath: join(runtimeDirectory, "operator-surface.md"),

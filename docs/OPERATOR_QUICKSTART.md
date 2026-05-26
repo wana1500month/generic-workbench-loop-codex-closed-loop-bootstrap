@@ -36,7 +36,10 @@ Do not expect the first product-build turn from a source archive to be zero-touc
 3. Say `가계부 앱 만들어줘` or another app/product request.
 4. Answer only the returned product, execution, and adapter-design questions.
 5. Confirm the generated adapter plan and adapter review task that prepare exposes.
-6. When Codex reports `ready_to_start`, say `루프 시작`.
+6. If Codex reports `prepared_with_blockers`, open `runtime/readiness-report.md`, resolve the listed blockers, and run prepare again.
+7. Review `evaluation-policy.generated.md` when strictness or custom quality criteria matter.
+8. When Codex reports `ready_to_start`, say `루프 시작`.
+9. During or after a run, inspect per-round scorecards with `npm run loop:scorecards -- --run-dir <evals/runs/run-id>`.
 
 ## Main Codex App Surfaces
 
@@ -55,11 +58,12 @@ Use this sequence before treating the workbench as operational:
 
 ```bash
 npm run build
+npm run validate:productization
 npm run validate:app
 npm run validate:app-release
 ```
 
-The app gates validate the Codex app foreground path and install ZIP without requiring a local `codex` binary. `npm run validate:release-gate` is an alias for the app release gate.
+The productization gate validates readiness doctor, evaluation policy, strictness, scorecard output, adaptive intake, and non-web target behavior. The app gates validate the Codex app foreground path and install ZIP without requiring a local `codex` binary. `npm run validate:release-gate` is an alias for the app release gate.
 
 For faster commit checks, run `npm run validate:fast`. For heavier deterministic coverage, run `npm test`, `npm run validate:smoke-clean`, and `npm run validate:source-archive-repro`; those are nightly or pre-broader-beta gates, not prerequisites for installing the Codex app ZIP.
 

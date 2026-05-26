@@ -40,6 +40,7 @@ export type SessionRunMode = "foreground_same_thread";
 export type SessionLoopStatus =
   | "asking"
   | "preparing"
+  | "prepared_with_blockers"
   | "ready_to_start"
   | "running"
   | "needs_steering"

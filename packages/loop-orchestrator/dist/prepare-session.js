@@ -6,6 +6,8 @@ import { appendJsonLine, loadJson, loadJsonIfExists, nextRunId, pathExists, repo
 import { defaultIdeaPath, readIdeaBrief } from "./idea-intake.js";
 import { buildOperatorSurfaceArtifact, resolveOperatorSurfaceContext, writeOperatorSurfaceArtifacts } from "./operator-surface.js";
 import { buildLoopPlan, buildScenarioFromIdea } from "./planner.js";
+import { buildEvaluationPolicy, evaluationPolicyMarkdownPathForRun, evaluationPolicyPathForRun, writeEvaluationPolicyArtifacts } from "./evaluation-policy.js";
+import { buildReadinessReport, writeReadinessReportArtifacts } from "./readiness-doctor.js";
 import { runtimeStatePathsForRun } from "./runtime-state.js";
 import { buildOperatorSurfaceSessionProjection, loadPreparedSessionSeed, writeSessionPreparationArtifacts } from "./session-artifacts.js";
 import { validatePreparedProductSessionIntegrity } from "./prepared-session-integrity.js";
@@ -110,9 +112,10 @@ const buildSessionIdeaFromIntake = (input) => {
 };
 const markFrontDoorSessionPrepared = async (input) => {
     const updatedAt = new Date().toISOString();
+    const phase = input.phase ?? "prepared";
     const preparedSession = {
         ...input.session,
-        phase: "prepared",
+        phase,
         last_question_ids: [],
         last_question_batch: [],
         prepared_run: {
@@ -129,8 +132,8 @@ const markFrontDoorSessionPrepared = async (input) => {
             session_id: preparedSession.session_id,
             thread_id: preparedSession.thread_id,
             turn_count: preparedSession.turn_count,
-            status: "prepared",
-            phase: "prepared",
+            status: phase,
+            phase,
             run_id: input.runId,
             run_directory: input.runDirectory,
             updated_at: updatedAt
@@ -346,8 +349,17 @@ export const prepareSessionRun = async (input) => {
     const durableMemory = await loadDurableMemoryContext(idea);
     await ensureDurableMemoryArtifacts(durableMemory.rootDirectory, durableMemory.context);
     let intake = await loadJsonIfExists(join(durableMemory.rootDirectory, "intake.json"));
+    const readinessSourceIntake = frontDoorSession?.artifact.intake ?? intake;
     const resolvedTargetFamily = input.targetFamily ?? intake?.target_family;
-    const targetScore = input.targetScore ?? intake?.target_score ?? durableMemory.context.targetScore;
+    let evaluationPolicy = buildEvaluationPolicy({
+        ...(intake ? { intake } : {}),
+        ...(input.targetScore !== undefined
+            ? { explicitTargetScore: input.targetScore }
+            : intake?.target_score !== undefined
+                ? { explicitTargetScore: intake.target_score }
+                : {})
+    });
+    const targetScore = input.targetScore ?? intake?.target_score ?? evaluationPolicy.target_total_score;
     const maxRounds = input.maxRounds ??
         intake?.max_rounds ??
         durableMemory.context.maxRounds ??
@@ -416,15 +428,17 @@ export const prepareSessionRun = async (input) => {
             referenceSignals: intake?.reference_signals,
             nonGoals: intake?.non_goals,
             probeHints: intake?.probe_hints,
-            customQualityMetrics: intake?.custom_quality_metrics?.map((metric) => ({
-                metricId: metric.metric_id,
-                label: metric.label,
-                description: metric.description,
-                minimumScoreOutOfTen: metric.minimum_score_out_of_ten,
-                ...(metric.required !== undefined ? { required: metric.required } : {}),
-                ...(metric.weight !== undefined ? { weight: metric.weight } : {})
+            customQualityMetrics: evaluationPolicy.dimensions
+                .filter((dimension) => dimension.source === "custom")
+                .map((dimension) => ({
+                metricId: dimension.dimension_id,
+                label: dimension.label,
+                description: dimension.description,
+                minimumScoreOutOfTen: dimension.minimum_score,
+                required: dimension.required,
+                weight: dimension.weight
             })),
-            verificationSurfaces: intake?.verification_surfaces,
+            verificationSurfaces: intake?.verification_surfaces ?? evaluationPolicy.evidence_surfaces,
             workflowChecks: intake?.workflow_checks?.map((check) => ({
                 workflow: check.workflow,
                 surface: check.surface,
@@ -480,17 +494,16 @@ export const prepareSessionRun = async (input) => {
     if (frontDoorSession) {
         const refreshedIntake = await loadJsonIfExists(join(durableMemory.rootDirectory, "intake.json"));
         intake = refreshedIntake ?? intake;
+        evaluationPolicy = buildEvaluationPolicy({
+            ...(intake ? { intake } : {}),
+            explicitTargetScore: targetScore
+        });
         if (refreshedIntake?.target_root?.trim()) {
             await writeJson(join(resolveTargetRootForIntake(refreshedIntake.target_root), "intake.json"), refreshedIntake);
         }
     }
     const rubric = await loadJson(resolvedRubricPath);
-    if (input.targetScore !== undefined) {
-        rubric.target_total_score = input.targetScore;
-    }
-    else if (intake?.target_score !== undefined) {
-        rubric.target_total_score = intake.target_score;
-    }
+    rubric.target_total_score = targetScore;
     if (bootstrapTargetFamily && !preparedValidationBundle) {
         const targetFamilySelection = resolveTargetFamilySelection(bootstrapTargetFamily);
         const [hasGeneratedAdapter, hasGeneratedProfile] = await Promise.all([
@@ -547,6 +560,32 @@ export const prepareSessionRun = async (input) => {
     const workspaceMode = input.workspaceMode && workspaceModes.has(input.workspaceMode)
         ? input.workspaceMode
         : inferWorkspaceMode(intake?.project_mode);
+    const readinessReport = await buildReadinessReport({
+        runId,
+        runDirectory,
+        ...(frontDoorSession?.artifact.session_id
+            ? { sessionId: frontDoorSession.artifact.session_id }
+            : {}),
+        isProductBuild,
+        ...(readinessSourceIntake ? { sourceIntake: readinessSourceIntake } : {}),
+        ...(intake ? { intake } : {}),
+        targetFamily: resolvedTargetFamily,
+        ...(preparedValidationBundle?.adapter_contract_path
+            ? { adapterPath: preparedValidationBundle.adapter_contract_path }
+            : {}),
+        ...(bootstrapTargetFamily ? { adapterPlanPath: resolve(bootstrapPaths.adapterPlanPath) } : {}),
+        rubricPath: resolvedRubricPath,
+        ...(preparedValidationBundle?.evaluator_profile_path
+            ? { evaluatorProfilePath: preparedValidationBundle.evaluator_profile_path }
+            : {}),
+        ...(frontDoorSession?.artifact.unresolved_conflicts.length
+            ? { unresolvedConflicts: frontDoorSession.artifact.unresolved_conflicts }
+            : {})
+    });
+    await writeEvaluationPolicyArtifacts({
+        runDirectory,
+        policy: evaluationPolicy
+    });
     const result = await writeSessionPreparationArtifacts({
         runId,
         runDirectory,
@@ -569,12 +608,25 @@ export const prepareSessionRun = async (input) => {
         plan,
         workspaceMode,
         targetFamily: resolvedTargetFamily,
+        sessionStatus: readinessReport.status === "ready_to_start"
+            ? "ready_to_start"
+            : "prepared_with_blockers",
+        ...(readinessReport.blockers.length > 0
+            ? {
+                externalBlockers: readinessReport.blockers.map((blocker) => `${blocker.code}: ${blocker.human_explanation} Fix: ${blocker.how_to_fix}`)
+            }
+            : {}),
         ...(frontDoorSession?.discoverySource
             ? { discoverySource: frontDoorSession.discoverySource }
             : {}),
         ...(preparedValidationBundle
             ? { validationBundle: preparedValidationBundle }
             : {})
+    });
+    await writeReadinessReportArtifacts({
+        report: readinessReport,
+        jsonPath: runtimePaths.readinessReportPath,
+        markdownPath: runtimePaths.readinessReportMarkdownPath
     });
     if (isProductBuild && preparedValidationBundle?.evaluator_profile_path) {
         const evaluatorProfile = await loadJson(preparedValidationBundle.evaluator_profile_path);
@@ -608,7 +660,9 @@ export const prepareSessionRun = async (input) => {
         entrypoint: sessionContext.entrypoint,
         appVisibility: sessionContext.appVisibility,
         recommendedSkill: "loop-control",
-        recommendedCommand: "npm run loop:start:codex -- --json",
+        recommendedCommand: readinessReport.ready
+            ? "npm run loop:start:codex -- --json"
+            : "npm run loop:prepare -- --json",
         ...(bootstrapTargetFamily
             ? {
                 adapterPlanPath: resolve(bootstrapPaths.adapterPlanPath),
@@ -622,13 +676,57 @@ export const prepareSessionRun = async (input) => {
             ? { evaluatorProfilePath: preparedValidationBundle.evaluator_profile_path }
             : {}),
         session: buildOperatorSurfaceSessionProjection(result.sessionStatus),
-        nextAction: "Preparation is complete. The generated adapter plan is available for review. The session is waiting at ready_to_start. Say \"루프 시작\" or \"start loop\" to begin running on the same Codex session."
+        nextAction: readinessReport.ready
+            ? "Preparation is complete. The generated adapter plan is available for review. The session is waiting at ready_to_start. Say \"start loop\" to begin running on the same Codex session."
+            : `Preparation is blocked by readiness doctor. Review ${runtimePaths.readinessReportMarkdownPath} and resolve: ${readinessReport.blockers[0]?.code ?? "UNKNOWN_BLOCKER"}.`
     });
     await writeOperatorSurfaceArtifacts({
         jsonPath: runtimePaths.operatorSurfacePath,
         markdownPath: runtimePaths.operatorSurfaceMarkdownPath,
         artifact: operatorSurface
     });
+    if (!readinessReport.ready) {
+        if (frontDoorSession) {
+            await markFrontDoorSessionPrepared({
+                sessionPath: frontDoorSession.path,
+                session: frontDoorSession.artifact,
+                runId,
+                runDirectory,
+                phase: "prepared_with_blockers"
+            });
+        }
+        return {
+            runId,
+            runDirectory,
+            buildBriefPath: runtimePaths.buildBriefPath,
+            runContractPath: runtimePaths.runContractPath,
+            openQuestionsPath: runtimePaths.openQuestionsPath,
+            sessionStatusPath: runtimePaths.sessionStatusPath,
+            sessionStatusEventsPath: runtimePaths.sessionStatusEventsPath,
+            sessionStreamPath: runtimePaths.sessionStreamPath,
+            operatorSurfacePath: runtimePaths.operatorSurfacePath,
+            executionPlanPath,
+            readinessReportPath: runtimePaths.readinessReportPath,
+            readinessReportMarkdownPath: runtimePaths.readinessReportMarkdownPath,
+            readiness: readinessReport,
+            evaluationPolicyPath: evaluationPolicyPathForRun(runDirectory),
+            evaluationPolicyMarkdownPath: evaluationPolicyMarkdownPathForRun(runDirectory),
+            evaluationPolicy,
+            ...(preparedValidationBundle?.adapter_contract_path
+                ? { adapterPath: preparedValidationBundle.adapter_contract_path }
+                : {}),
+            ...(bootstrapTargetFamily ? { adapterPlanPath: resolve(bootstrapPaths.adapterPlanPath) } : {}),
+            ...(bootstrapTargetFamily
+                ? { adapterReviewTaskPath: resolve(bootstrapPaths.adapterReviewTaskPath) }
+                : {}),
+            ...(preparedValidationBundle?.rubric_path
+                ? { rubricPath: preparedValidationBundle.rubric_path }
+                : {}),
+            ...(preparedValidationBundle?.evaluator_profile_path
+                ? { evaluatorProfilePath: preparedValidationBundle.evaluator_profile_path }
+                : {})
+        };
+    }
     await writeText(join(runDirectory, "runtime", "ready-to-start.md"), [
         "# Ready to start",
         "",
@@ -650,6 +748,10 @@ export const prepareSessionRun = async (input) => {
         "## Verification",
         "",
         `- Surface: ${(intake?.verification_surfaces ?? []).join(", ") || "default"}`,
+        `- Project kind: ${evaluationPolicy.project_kind}`,
+        `- Evidence surfaces: ${evaluationPolicy.evidence_surfaces.join(", ")}`,
+        `- Strictness: ${evaluationPolicy.strictness_level} (${evaluationPolicy.strictness_label})`,
+        `- Target score: ${evaluationPolicy.target_total_score}`,
         `- Runtime: ${intake?.run_command ?? "npm run dev"}`,
         "- Release checks:",
         ...(intake?.workflow_checks?.length
@@ -697,6 +799,12 @@ export const prepareSessionRun = async (input) => {
         sessionStreamPath: runtimePaths.sessionStreamPath,
         operatorSurfacePath: runtimePaths.operatorSurfacePath,
         executionPlanPath,
+        readinessReportPath: runtimePaths.readinessReportPath,
+        readinessReportMarkdownPath: runtimePaths.readinessReportMarkdownPath,
+        readiness: readinessReport,
+        evaluationPolicyPath: evaluationPolicyPathForRun(runDirectory),
+        evaluationPolicyMarkdownPath: evaluationPolicyMarkdownPathForRun(runDirectory),
+        evaluationPolicy,
         ...(preparedValidationBundle?.adapter_contract_path
             ? { adapterPath: preparedValidationBundle.adapter_contract_path }
             : {}),

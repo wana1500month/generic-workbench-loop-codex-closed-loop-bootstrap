@@ -89,6 +89,9 @@ Acceptance:
 - Validation acceptance should stay split into `validate:fast`, `validate:process`, `validate:core`, `validate:release`, `validate:source-archive-repro`, `validate:codex-live`, and `validate:external-adapter`, with process-control and source-archive reproducibility failures blocking release gates.
 - Source and install archive candidates must exclude TypeScript incremental metadata, and build success must be backed by required compiled-output sentinels rather than TypeScript exit code alone.
 - Operator-facing docs should present `loop:intent`, `loop:discover`, `loop:prepare`, `loop:start:codex`, `loop:continue`, and `loop:status` as the canonical path; lower-level runner, phase, family, and adapter commands remain internal, recovery, validation, or compatibility surfaces.
+- Prepare should produce a run-local `evaluation-policy.generated.json` / `.md` with `project_kind`, evidence surfaces, strictness level 1-5, target score, and required custom dimensions.
+- Each evaluated round should produce `scorecard.json` / `scorecard.md`, and required custom dimensions below their minimum should keep `target_reached` false even when total score passes.
+- Intake should infer evidence surfaces for CLI tools, API services, libraries, agents, document artifacts, data pipelines, automation, and browser/mobile UI without making browser evidence the default for every target.
 
 Validation:
 - Inspect the latest run under `evals/runs`
@@ -107,6 +110,7 @@ Validation:
 - `npm run validate:resume-smoke`
 - `npm run validate:browser-only-no-api-probes`
 - `npm run validate:semantic-workflow-selectors`
+- `npm run validate:productization`
 
 ## M3. External adapter boundary
 

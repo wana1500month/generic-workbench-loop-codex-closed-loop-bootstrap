@@ -99,6 +99,8 @@ export interface RoundArtifacts {
     trajectory_decision_md_path: string;
     round_result_json_path: string;
     eval_report_path: string;
+    scorecard_json_path: string;
+    scorecard_md_path: string;
     failure_lineage_path: string;
     adapter_drift_report_json_path: string;
     adapter_drift_report_md_path: string;
@@ -268,6 +270,7 @@ export interface RoundResultArtifact {
     selected_for_run: boolean;
     status: "advanced" | "revised" | "blocked";
     eval_report_path: string;
+    scorecard_path?: string;
     evidence_paths: string[];
     check_pass_rate: number;
     previous_patch_request_addressed: boolean;
@@ -307,6 +310,7 @@ export interface RoundSummary {
     quality_critique_path?: string;
     trajectory_decision_path: string;
     eval_report_path: string;
+    scorecard_path?: string;
     failure_lineage_path?: string;
     adapter_drift_report_path?: string;
     adapter_migration_proposal_path?: string;

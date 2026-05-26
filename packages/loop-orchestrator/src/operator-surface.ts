@@ -456,6 +456,12 @@ const defaultNextActionForTransport = (input: {
     return "Inspect the stalled phase artifacts before resuming or repairing this run.";
   }
   if (
+    input.session?.session_status === "prepared_with_blockers" &&
+    input.attentionRequired === "human"
+  ) {
+    return "Preparation is blocked by readiness doctor. Review runtime/readiness-report.md, resolve the blockers, then run prepare again.";
+  }
+  if (
     input.session?.session_status === "ready_to_start" &&
     input.attentionRequired === "human"
   ) {

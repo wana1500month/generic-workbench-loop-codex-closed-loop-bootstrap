@@ -12,6 +12,8 @@ export interface RuntimeStatePaths {
     sessionStatusPath: string;
     sessionStatusEventsPath: string;
     sessionStreamPath: string;
+    readinessReportPath: string;
+    readinessReportMarkdownPath: string;
     appServerSessionEventsPath: string;
     operatorSurfacePath: string;
     operatorSurfaceMarkdownPath: string;

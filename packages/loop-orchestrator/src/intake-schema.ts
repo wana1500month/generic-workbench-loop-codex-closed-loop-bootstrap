@@ -1,4 +1,10 @@
 import type { BuildBriefDeliveryLevel, TargetFamily } from "./types.js";
+import type {
+  EvaluationPolicy,
+  EvaluationStrictnessLevel,
+  EvidenceSurface,
+  ProjectKind
+} from "./evaluation-policy.js";
 
 export type SessionProjectMode = "new" | "existing";
 
@@ -19,11 +25,17 @@ export type ExecutionIntakeFieldId =
 
 export type VerificationSurface =
   | "browser"
+  | "screenshot"
   | "api"
   | "cli"
   | "test"
   | "file"
-  | "db";
+  | "db"
+  | "shell"
+  | "agent_conversation"
+  | "document"
+  | "package_import"
+  | "manual_review";
 
 export interface SessionWorkflowCheck {
   workflow: string;
@@ -79,6 +91,7 @@ export type DiscoveryPhase =
   | "execution"
   | "adapter"
   | "ready_for_prepare"
+  | "prepared_with_blockers"
   | "prepared";
 
 export type FrontDoorSessionStatus =
@@ -87,6 +100,7 @@ export type FrontDoorSessionStatus =
   | "ask_execution_questions"
   | "ask_adapter_questions"
   | "ready_for_prepare"
+  | "prepared_with_blockers"
   | "prepared";
 
 export interface PreparedRunReference {
@@ -112,6 +126,10 @@ export interface SessionIntakeSnapshot {
   reference_apps?: string[];
   finish_line?: string;
   target_family?: TargetFamily;
+  project_kind?: ProjectKind;
+  evidence_surfaces?: EvidenceSurface[];
+  strictness_level?: EvaluationStrictnessLevel;
+  evaluation_policy?: EvaluationPolicy;
   goal_level?: BuildBriefDeliveryLevel;
   target_score?: number;
   max_rounds?: number;

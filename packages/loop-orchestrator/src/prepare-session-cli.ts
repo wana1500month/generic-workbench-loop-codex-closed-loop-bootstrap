@@ -187,6 +187,31 @@ const main = async (): Promise<void> => {
           session_status_path: result.sessionStatusPath,
           session_status_events_path: result.sessionStatusEventsPath,
           session_stream_path: result.sessionStreamPath,
+          readiness_report_path: result.readinessReportPath,
+          readiness_report_markdown_path: result.readinessReportMarkdownPath,
+          evaluation_policy_path: result.evaluationPolicyPath,
+          evaluation_policy_markdown_path: result.evaluationPolicyMarkdownPath,
+          evaluation_policy: {
+            strictness_level: result.evaluationPolicy.strictness_level,
+            project_kind: result.evaluationPolicy.project_kind,
+            evidence_surfaces: result.evaluationPolicy.evidence_surfaces,
+            target_total_score: result.evaluationPolicy.target_total_score,
+            pass_mode: result.evaluationPolicy.pass_mode,
+            required_dimensions: result.evaluationPolicy.dimensions
+              .filter((dimension) => dimension.required)
+              .map((dimension) => ({
+                dimension_id: dimension.dimension_id,
+                minimum_score: dimension.minimum_score,
+                scale: dimension.scale
+              }))
+          },
+          readiness: {
+            ready: result.readiness.ready,
+            status: result.readiness.status,
+            blockers: result.readiness.blockers,
+            warnings: result.readiness.warnings,
+            next_action: result.readiness.next_action
+          },
           operator_surface_path: result.operatorSurfacePath,
           execution_plan_path: result.executionPlanPath,
           ...(args.frontDoorSessionPath
@@ -215,6 +240,22 @@ const main = async (): Promise<void> => {
   console.log(`Build brief: ${result.buildBriefPath}`);
   console.log(`Run contract: ${result.runContractPath}`);
   console.log(`Session status: ${result.sessionStatusPath}`);
+  console.log(`Evaluation policy: ${result.evaluationPolicyMarkdownPath}`);
+  console.log(
+    `Strictness: ${result.evaluationPolicy.strictness_level} / target ${result.evaluationPolicy.target_total_score} / project ${result.evaluationPolicy.project_kind}`
+  );
+  console.log(
+    `Readiness: ${result.readiness.status} (${result.readiness.ready ? "ready" : "not ready"})`
+  );
+  console.log(`Readiness report: ${result.readinessReportMarkdownPath}`);
+  if (result.readiness.blockers.length > 0) {
+    console.log("Blockers:");
+    for (const blocker of result.readiness.blockers) {
+      console.log(
+        `- ${blocker.code}: ${blocker.human_explanation} Fix: ${blocker.how_to_fix}`
+      );
+    }
+  }
   console.log(`Operator surface: ${result.operatorSurfacePath}`);
   console.log(`Execution plan: ${result.executionPlanPath}`);
   if (args.frontDoorSessionPath) {

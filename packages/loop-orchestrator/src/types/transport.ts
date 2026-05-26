@@ -214,6 +214,7 @@ export interface LoopRunSummary {
   planned_scenario_path?: string;
   plan_path?: string;
   codex_handoff_path?: string;
+  evaluation_policy_path?: string;
   adapter_contract_path?: string;
   adapter_id?: string;
   verification_provider_id?: string;

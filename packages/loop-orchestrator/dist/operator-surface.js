@@ -243,6 +243,10 @@ const defaultNextActionForTransport = (input) => {
     if (input.executionState === "stalled") {
         return "Inspect the stalled phase artifacts before resuming or repairing this run.";
     }
+    if (input.session?.session_status === "prepared_with_blockers" &&
+        input.attentionRequired === "human") {
+        return "Preparation is blocked by readiness doctor. Review runtime/readiness-report.md, resolve the blockers, then run prepare again.";
+    }
     if (input.session?.session_status === "ready_to_start" &&
         input.attentionRequired === "human") {
         return "Preparation is complete. The session is waiting at ready_to_start. Say '루프 시작' or 'start loop' to begin running on the same Codex thread.";

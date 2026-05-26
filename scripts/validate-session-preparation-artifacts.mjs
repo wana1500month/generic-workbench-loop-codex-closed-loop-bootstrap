@@ -187,6 +187,7 @@ const main = async () => {
       [
         "asking",
         "preparing",
+        "prepared_with_blockers",
         "ready_to_start",
         "running",
         "needs_steering",
@@ -222,6 +223,9 @@ const main = async () => {
     );
     assert.ok(
       runContract.required_prepare_artifacts.includes("runtime/session-status-events.jsonl")
+    );
+    assert.ok(
+      runContract.required_prepare_artifacts.includes("runtime/readiness-report.json")
     );
 
     assert.ok(Array.isArray(openQuestions.questions));

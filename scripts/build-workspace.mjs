@@ -1,7 +1,11 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { runCommand, runPinnedTypeScriptBuild } from "./lib/front-door-build.mjs";
+import {
+  needsBuild,
+  runCommand,
+  runPinnedTypeScriptBuild
+} from "./lib/front-door-build.mjs";
 
 const resolveLocalTsc = () =>
   join(process.cwd(), "node_modules", "typescript", "bin", "tsc");
@@ -26,11 +30,23 @@ const assertRequiredOutputs = () => {
   return 1;
 };
 
+const distEntryPath = join(process.cwd(), "packages", "loop-orchestrator", "dist");
+const buildWatchPaths = [
+  join(process.cwd(), "packages", "loop-orchestrator", "src"),
+  join(process.cwd(), "packages", "loop-orchestrator", "tsconfig.json"),
+  join(process.cwd(), "tsconfig.base.json")
+];
+
 const main = async () => {
   const localTsc = resolveLocalTsc();
   const forceBuild =
     process.env.HARNESS_FORCE_TYPESCRIPT_BUILD === "1" ||
     missingRequiredOutputs().length > 0;
+
+  if (!forceBuild && !needsBuild(distEntryPath, buildWatchPaths)) {
+    process.exitCode = assertRequiredOutputs();
+    return;
+  }
 
   if (existsSync(localTsc)) {
     const args = [

@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import readline from "node:readline";
 
@@ -26,7 +26,12 @@ const persistedState = await loadPersistedState();
 const writeAtomically = async (path, contents) => {
   const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;
   await writeFile(tempPath, contents, "utf8");
-  await rename(tempPath, path);
+  try {
+    await rename(tempPath, path);
+  } catch {
+    await writeFile(path, contents, "utf8");
+    await rm(tempPath, { force: true });
+  }
 };
 
 let currentThreadId = persistedState?.currentThreadId ?? defaultThreadId;

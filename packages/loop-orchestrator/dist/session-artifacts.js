@@ -5,6 +5,7 @@ import { validatePreparedProductSessionIntegrity } from "./prepared-session-inte
 const sessionLoopStatuses = [
     "asking",
     "preparing",
+    "prepared_with_blockers",
     "ready_to_start",
     "running",
     "needs_steering",
@@ -40,13 +41,19 @@ const requiredPrepareArtifacts = [
     "runtime/session-status.json",
     "runtime/session-status-events.jsonl",
     "runtime/session-stream.json",
+    "runtime/readiness-report.json",
+    "runtime/readiness-report.md",
+    "evaluation-policy.generated.json",
+    "evaluation-policy.generated.md",
     "docs/EXECUTION_PLAN.md"
 ];
 const derivedAttemptArtifacts = [
     "round-contract.json",
     "generator-plan.json",
     "patch-request.json",
-    "eval_report.json"
+    "eval_report.json",
+    "scorecard.json",
+    "scorecard.md"
 ];
 const repoConstraints = [
     "Keep long-running state in files, not chat history.",
@@ -172,6 +179,8 @@ const sessionReadinessForStatus = (status) => {
         case "preparing":
         case "ready_to_start":
             return "ready_to_run";
+        case "prepared_with_blockers":
+            return "blocked";
         case "running":
             return "running";
         case "blocked_externally":
@@ -187,6 +196,7 @@ const sessionAttentionForStatus = (status) => {
         case "asking":
         case "needs_steering":
             return "human";
+        case "prepared_with_blockers":
         case "ready_to_start":
             return "human";
         case "preparing":
@@ -207,6 +217,7 @@ const sessionAttentionKindForStatus = (input) => {
     switch (input.status) {
         case "asking":
         case "needs_steering":
+        case "prepared_with_blockers":
             return "steering";
         case "ready_to_start":
             return "decision";
@@ -245,6 +256,7 @@ const buildSessionBindingArtifact = (input) => {
 };
 const buildSessionActiveCheckpointArtifact = (input) => {
     if (!input.checkpointKind ||
+        input.sessionStatus === "prepared_with_blockers" ||
         input.sessionStatus === "ready_to_start" ||
         input.sessionStatus === "ready_for_review" ||
         input.sessionStatus === "done") {
@@ -447,6 +459,7 @@ const buildSessionStatusEventArtifact = async (input) => {
 };
 const sessionStartGateAuthorizedForStatus = (status) => !(status === "asking" ||
     status === "preparing" ||
+    status === "prepared_with_blockers" ||
     status === "ready_to_start");
 export const buildOperatorSurfaceSessionProjection = (artifact) => ({
     objective: artifact.objective,
@@ -598,6 +611,11 @@ const executionPlanMarkdown = (input) => [
     ...(input.openQuestions.session_status === "ready_to_start"
         ? [
             "- Start gate: preparation is complete; say \"루프 시작\" or \"start loop\" to begin running on the same Codex thread."
+        ]
+        : []),
+    ...(input.openQuestions.session_status === "prepared_with_blockers"
+        ? [
+            "- Start gate: blocked by readiness doctor; resolve runtime/readiness-report.md before starting the loop."
         ]
         : []),
     `- Objective: ${input.objective}`,

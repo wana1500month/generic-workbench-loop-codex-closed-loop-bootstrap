@@ -15,6 +15,12 @@ import type {
   VerificationSurface
 } from "./intake-schema.js";
 import {
+  evidenceSurfacesForProjectKind,
+  inferProjectKindFromText,
+  type EvidenceSurface,
+  type ProjectKind
+} from "./evaluation-policy.js";
+import {
   detectProductBuildIntent,
   type ProductBuildDetection
 } from "./product-build-signals.js";
@@ -745,7 +751,8 @@ const buildProductFieldStates = (
 
 const buildExecutionFieldStates = (
   request: string,
-  projectMode: "new" | "existing" | undefined
+  projectMode: "new" | "existing" | undefined,
+  projectKind: ProjectKind
 ): IntakeFieldState<ExecutionFieldId>[] => {
   const normalizedLower = lowerText(request);
   const targetScore = extractTargetScoreEnhanced(normalizedLower) ?? DEFAULT_TARGET_SCORE;
@@ -754,6 +761,16 @@ const buildExecutionFieldStates = (
   const runCommand = extractRunCommand(request);
   const readyUrl = extractReadyUrl(request);
   const needsLiveRuntimeHints = projectMode === "existing";
+  const needsReadyUrl =
+    needsLiveRuntimeHints &&
+    ![
+      "cli_tool",
+      "library_package",
+      "data_pipeline",
+      "agent_workflow",
+      "document_artifact",
+      "automation"
+    ].includes(projectKind);
 
   return [
     {
@@ -783,7 +800,7 @@ const buildExecutionFieldStates = (
     },
     {
       id: "ready_url",
-      satisfied: !needsLiveRuntimeHints || readyUrl !== undefined,
+      satisfied: !needsReadyUrl || readyUrl !== undefined,
       question: "기존 프로젝트면 준비 완료를 확인할 URL을 적어줘. 예: http://127.0.0.1:3000/"
     }
   ];
@@ -793,26 +810,62 @@ const buildAdapterFieldStates = (
   request: string,
   targetFamily: Exclude<TargetFamily, "generic-core" | "editor-app">
 ): IntakeFieldState<AdapterIntakeFieldId>[] => {
+  const projectKind = inferProjectKindFromText(request);
   const extractedVerificationSurfaces = parseVerificationSurfacesAnswer(request);
-  const verificationSurfaces = normalizeVerificationSurfacesForFamily(
-    targetFamily,
-    extractedVerificationSurfaces
-  );
+  const inferredSurfaces =
+    projectKind === "generic" ? [] : evidenceSurfacesForProjectKind(projectKind);
+  const verificationSurfaces = extractedVerificationSurfaces.length
+    ? normalizeVerificationSurfacesForFamily(targetFamily, extractedVerificationSurfaces)
+    : inferredSurfaces.length
+      ? (inferredSurfaces as VerificationSurface[])
+      : normalizeVerificationSurfacesForFamily(targetFamily, []);
   const defaultSurface = verificationSurfaces[0] ?? "browser";
   const workflowChecks = parseWorkflowChecksAnswer(request, defaultSurface);
+  const adaptiveVerificationQuestion = (() => {
+    switch (projectKind) {
+      case "cli_tool":
+      case "data_pipeline":
+        return "This looks command/file oriented. What CLI command, output file, or test evidence should prove success?";
+      case "library_package":
+        return "This looks like a library/package. What import example, package API, or test evidence should prove success?";
+      case "api_service":
+        return "This looks API oriented. Which endpoint response, status code, or API test should prove success?";
+      case "agent_workflow":
+        return "This looks agent oriented. Which sample conversation or task completion transcript should prove success?";
+      case "document_artifact":
+        return "This looks document oriented. What document structure, file output, or manual review evidence should prove success?";
+      case "browser_ui":
+      case "mobile_ui":
+        return "This looks visual. Should the loop verify it with browser, screenshot, or test evidence?";
+      default:
+        return "How should the loop verify this result: browser, API, CLI, test, file, DB, agent conversation, document, package import, or manual review?";
+    }
+  })();
+  const adaptiveWorkflowQuestion = (() => {
+    switch (projectKind) {
+      case "cli_tool":
+        return "Give the top CLI workflow as command -> expected stdout/file result.";
+      case "library_package":
+        return "Give the top package workflow as import/API call -> expected result.";
+      case "agent_workflow":
+        return "Give one representative user prompt -> expected agent response outcome.";
+      case "document_artifact":
+        return "Give the required document artifact -> expected sections or quality outcome.";
+      default:
+        return "For each core workflow, what action and result prove success? Example: add transaction -> list and monthly total update.";
+    }
+  })();
 
   return [
     {
       id: "verification_surface",
       satisfied: extractedVerificationSurfaces.length > 0,
-      question:
-        "How should the loop verify this result: browser, API, test command, file, or DB?"
+      question: adaptiveVerificationQuestion
     },
     {
       id: "workflow_checks",
       satisfied: workflowChecks.length > 0,
-      question:
-        "For each core workflow, what action and result prove success? Example: add transaction -> list and monthly total update."
+      question: adaptiveWorkflowQuestion
     },
     {
       id: "quality_metrics",
@@ -947,7 +1000,12 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
     };
   }
 
-  const executionFields = buildExecutionFieldStates(request, extractedProjectMode);
+  const inferredProjectKind = inferProjectKindFromText(request);
+  const executionFields = buildExecutionFieldStates(
+    request,
+    extractedProjectMode,
+    inferredProjectKind
+  );
   const missingExecutionFields = executionFields
     .filter((field) => !field.satisfied)
     .map((field) => field.id);
@@ -985,10 +1043,17 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
     .filter((field) => field.satisfied)
     .map((field) => field.id);
   const extractedVerificationSurfaces = parseVerificationSurfacesAnswer(request);
-  const defaultVerificationSurfaces = normalizeVerificationSurfacesForFamily(
-    internalWorkingHypothesis,
-    extractedVerificationSurfaces
-  );
+  const defaultVerificationSurfaces = extractedVerificationSurfaces.length
+    ? normalizeVerificationSurfacesForFamily(
+        internalWorkingHypothesis,
+        extractedVerificationSurfaces
+      )
+    : inferredProjectKind !== "generic"
+      ? (evidenceSurfacesForProjectKind(inferredProjectKind) as VerificationSurface[])
+      : normalizeVerificationSurfacesForFamily(
+          internalWorkingHypothesis,
+          extractedVerificationSurfaces
+        );
   const extractedWorkflowChecks = parseWorkflowChecksAnswer(
     request,
     defaultVerificationSurfaces[0] ?? "browser"

@@ -50,16 +50,29 @@ const parseArgs = (argv) => {
 
 const runPackageScript = async (scriptName, scriptArgs = []) =>
   new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(
-      "npm",
-      ["run", scriptName, "--silent", ...(scriptArgs.length > 0 ? ["--", ...scriptArgs] : [])],
-      {
-        cwd: repoRoot,
-        env: process.env,
-        shell: process.platform === "win32",
-        windowsHide: true
-      }
-    );
+    const args = [
+      "run",
+      scriptName,
+      "--silent",
+      ...(scriptArgs.length > 0 ? ["--", ...scriptArgs] : [])
+    ];
+    const invocation = process.env.npm_execpath
+      ? {
+          command: process.execPath,
+          args: [process.env.npm_execpath, ...args],
+          shell: false
+        }
+      : {
+          command: "npm",
+          args,
+          shell: process.platform === "win32"
+        };
+    const child = spawn(invocation.command, invocation.args, {
+      cwd: repoRoot,
+      env: process.env,
+      shell: invocation.shell,
+      windowsHide: true
+    });
 
     let stdout = "";
     let stderr = "";

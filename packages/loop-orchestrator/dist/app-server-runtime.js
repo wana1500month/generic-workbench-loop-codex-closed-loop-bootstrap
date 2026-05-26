@@ -370,6 +370,11 @@ class LiveAppServerTransport {
     }
     async stop(input) {
         if (this.closed) {
+            if (this.snapshotState.thread_id) {
+                this.snapshotState.thread_lifecycle = "closed";
+                this.snapshotState.thread_runtime_status = "notLoaded";
+            }
+            await this.persistState(undefined, input?.stopReason ? "completed" : "closed");
             return;
         }
         let explicitStatus = input?.stopReason ? "completed" : "closed";
@@ -378,22 +383,27 @@ class LiveAppServerTransport {
             if (this.snapshotState.thread_id &&
                 this.snapshotState.turn_id &&
                 this.snapshotState.turn_status === "inProgress") {
-                await this.request("turn/steer", {
-                    threadId: this.snapshotState.thread_id,
-                    input: [
-                        {
-                            type: "text",
-                            text: [
-                                `Harness run ${this.runId} is closing the live App Server transport.`,
-                                ...(input?.stopReason ? [`Stop reason: ${input.stopReason}.`] : []),
-                                ...(input?.notes?.length
-                                    ? ["Notes:", ...input.notes.map((note) => `- ${note}`)]
-                                    : [])
-                            ].join("\n")
-                        }
-                    ],
-                    expectedTurnId: this.snapshotState.turn_id
-                });
+                try {
+                    await this.request("turn/steer", {
+                        threadId: this.snapshotState.thread_id,
+                        input: [
+                            {
+                                type: "text",
+                                text: [
+                                    `Harness run ${this.runId} is closing the live App Server transport.`,
+                                    ...(input?.stopReason ? [`Stop reason: ${input.stopReason}.`] : []),
+                                    ...(input?.notes?.length
+                                        ? ["Notes:", ...input.notes.map((note) => `- ${note}`)]
+                                        : [])
+                                ].join("\n")
+                            }
+                        ],
+                        expectedTurnId: this.snapshotState.turn_id
+                    }, Math.min(this.requestTimeoutMs, 5_000));
+                }
+                catch {
+                    this.snapshotState.last_request_method = "turn/steer";
+                }
                 try {
                     await this.request("turn/interrupt", {
                         threadId: this.snapshotState.thread_id,
@@ -548,7 +558,7 @@ class LiveAppServerTransport {
         this.child.stdin.write(`${JSON.stringify(message)}\n`);
         void appendFile(this.requestsPath, `${JSON.stringify(message)}\n`, "utf8");
     }
-    async request(method, params) {
+    async request(method, params, timeoutMs = this.requestTimeoutMs) {
         if (this.closed) {
             throw new Error("App Server transport is already closed.");
         }
@@ -558,7 +568,7 @@ class LiveAppServerTransport {
             const timeout = setTimeout(() => {
                 this.pending.delete(id);
                 reject(new Error(`App Server request '${method}' timed out.`));
-            }, this.requestTimeoutMs);
+            }, timeoutMs);
             this.pending.set(id, {
                 method,
                 resolve,
