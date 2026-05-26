@@ -43,6 +43,19 @@ const subjectiveMetricSchema = {
             type: "array",
             items: { type: "string" },
             maxItems: 4
+          },
+          violations: {
+            type: "array",
+            items: { type: "string" },
+            maxItems: 6
+          },
+          evidence_quality: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              has_required_evidence: { type: "boolean" },
+              evidence_type: { type: "string" }
+            }
           }
         }
       }
@@ -386,6 +399,32 @@ const main = async () => {
           .map((entry) => entry.trim())
           .slice(0, 4)
       : [];
+    const violations = Array.isArray(reviewMetric?.violations)
+      ? [
+          ...new Set(
+            reviewMetric.violations
+              .filter((entry) => typeof entry === "string" && entry.trim().length > 0)
+              .map((entry) => entry.trim())
+          )
+        ].slice(0, 6)
+      : [];
+    const evidenceQuality =
+      reviewMetric?.evidence_quality && typeof reviewMetric.evidence_quality === "object"
+        ? {
+            ...(typeof reviewMetric.evidence_quality.has_required_evidence === "boolean"
+              ? {
+                  has_required_evidence:
+                    reviewMetric.evidence_quality.has_required_evidence
+                }
+              : {}),
+            ...(typeof reviewMetric.evidence_quality.evidence_type === "string" &&
+            reviewMetric.evidence_quality.evidence_type.trim().length > 0
+              ? {
+                  evidence_type: reviewMetric.evidence_quality.evidence_type.trim()
+                }
+              : {})
+          }
+        : undefined;
 
     return {
       metric_id: metric.metric_id,
@@ -399,6 +438,10 @@ const main = async () => {
           ? recommendedChanges
           : ["Raise this metric until it clears the requested threshold."],
       evidence_paths: [],
+      ...(violations.length > 0 ? { violations } : {}),
+      ...(evidenceQuality && Object.keys(evidenceQuality).length > 0
+        ? { evidence_quality: evidenceQuality }
+        : {}),
       quality_axis_id: metric.quality_axis_id,
       required: metric.required ?? true
     };

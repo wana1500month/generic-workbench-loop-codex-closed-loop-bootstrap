@@ -1,6 +1,6 @@
 import { buildAdapterPlanFromIntake, normalizeVerificationSurfacesForFamily, parseVerificationSurfacesAnswer, parseWorkflowChecksAnswer } from "./adapter-plan.js";
 import { evaluateIntakeRequest } from "./intake-gate.js";
-import { evidenceSurfacesForProjectKind, inferProjectKindFromText } from "./evaluation-policy.js";
+import { defaultCustomMetricMinimumForStrictness, evidenceSurfacesForProjectKind, inferProjectKindFromText } from "./evaluation-policy.js";
 const listJoinPattern = /\s*(?:,|;|\band\b|\bor\b)\s*|\s+\/\s+/i;
 const urlPattern = /https?:\/\/[^\s,;]+/gi;
 const targetUsersLabelPattern = String.raw `target users?|primary users?|주\s*사용자|대상\s*사용자|사용자|유저|주\s*유저`;
@@ -115,7 +115,67 @@ const normalizeMetricId = (label) => `custom.${label
     .toLowerCase()
     .replace(/[^\p{Letter}\p{Number}]+/gu, "_")
     .replace(/^_+|_+$/gu, "") || "metric"}`;
-const parseCustomQualityMetrics = (value) => {
+const scorelessQualityMetricDefinitions = [
+    {
+        metric_id: "design.no_noise_text",
+        label: "No noisy text",
+        description: "Unnecessary helper copy, placeholder text, dummy text, and excessive explanation should be penalized.",
+        weight: 2,
+        patterns: [
+            /(?:noisy|excessive|unnecessary|too much)\s+(?:copy|text|helper text|explanation)/iu,
+            /(?:dummy|placeholder|lorem)\s+(?:copy|text|content)/iu,
+            /\uC124\uBA85\uBB38.*\uAC10\uC810/u,
+            /\uC124\uBA85\uBB38.*(?:\uB9CE|\uACFC\uD558)/u,
+            /\uC4F8\uB370\uC5C6\uB294\s*\uD14D\uC2A4\uD2B8/u,
+            /\uB354\uBBF8\s*(?:\uD14D\uC2A4\uD2B8|\uBB38\uAD6C)/u
+        ]
+    },
+    {
+        metric_id: "design.app_like_feel",
+        label: "App-like feel",
+        description: "The surface should feel like a focused application, not a landing page, generic web page, admin template, or scaffold.",
+        weight: 1.5,
+        patterns: [
+            /app[- ]?like|feels?\s+like\s+an\s+app|not\s+(?:a\s+)?(?:landing|generic|admin|template|scaffold)/iu,
+            /\uC571\uC2A4\uB7FD/u,
+            /\uAD00\uB9AC\uC790\s*\uD398\uC774\uC9C0/u,
+            /\uB79C\uB529\s*\uD398\uC774\uC9C0/u,
+            /\uD15C\uD50C\uB9BF|\uC0D8\uD50C|\uC2A4\uCE90\uD3F4\uB4DC/u
+        ]
+    },
+    {
+        metric_id: "design.cleanliness",
+        label: "Clean visual structure",
+        description: "Spacing, alignment, hierarchy, and visual restraint should feel clean and deliberate.",
+        weight: 2,
+        patterns: [
+            /\bclean(?:liness)?\b|visual\s+polish|spacing|alignment|hierarchy/iu,
+            /\uAE54\uB054|\uD1A0\uC2A4|\uC5EC\uBC31|\uC815\uB82C|\uACC4\uCE35/u
+        ]
+    },
+    {
+        metric_id: "ux.error_message_clarity",
+        label: "Error message clarity",
+        description: "Error messages should be understandable and actionable for the intended user.",
+        weight: 1,
+        patterns: [
+            /error\s+messages?.*(?:clear|friendly|understandable|actionable|beginner)/iu,
+            /\uC5D0\uB7EC\s*\uBA54\uC2DC\uC9C0.*(?:\uCD08\uBCF4\uC790|\uC774\uD574|\uBD88\uCE5C\uC808|\uCE5C\uC808)/u
+        ]
+    },
+    {
+        metric_id: "output.consistency",
+        label: "Output consistency",
+        description: "Output format and result structure should stay stable and reproducible across runs.",
+        weight: 1,
+        patterns: [
+            /output\s+format.*(?:consistent|stable|deterministic|reproducible)/iu,
+            /\uCD9C\uB825\s*\uD3EC\uB9F7.*(?:\uB9E4\uBC88\s*\uB2EC\uB77C|\uC77C\uAD00|\uC7AC\uD604)/u
+        ]
+    }
+];
+const metricRequiredByText = (value) => !/optional|\uC120\uD0DD|\uCC38\uACE0/u.test(value);
+const parseExplicitCustomQualityMetrics = (value) => {
     const metrics = splitAnswerLines(value)
         .map((line) => {
         const match = line.match(/^(?:추가\s*)?(?:평가\s*)?(?:기준\s*)?([^:：>=]+?)\s*[:：]\s*(?:최소\s*)?([0-9]+(?:\.[0-9]+)?)\s*(?:점|\/\s*10)?\.?\s*(.*)$/u) ??
@@ -142,6 +202,34 @@ const parseCustomQualityMetrics = (value) => {
     })
         .filter((metric) => metric !== undefined);
     return metrics.length > 0 ? metrics : undefined;
+};
+const inferScorelessCustomQualityMetricLine = (line, strictnessLevel) => {
+    const minimum = defaultCustomMetricMinimumForStrictness(strictnessLevel);
+    return scorelessQualityMetricDefinitions
+        .filter((definition) => definition.patterns.some((pattern) => pattern.test(line)))
+        .map((definition) => ({
+        metric_id: definition.metric_id,
+        label: definition.label,
+        description: definition.description,
+        minimum_score_out_of_ten: minimum,
+        required: metricRequiredByText(line),
+        weight: definition.weight
+    }));
+};
+const parseCustomQualityMetrics = (value, strictnessLevel) => {
+    const byId = new Map();
+    for (const metric of parseExplicitCustomQualityMetrics(value) ?? []) {
+        byId.set(metric.metric_id, metric);
+    }
+    for (const line of splitAnswerLines(value)) {
+        if (parseExplicitCustomQualityMetrics(line)?.length) {
+            continue;
+        }
+        for (const metric of inferScorelessCustomQualityMetricLine(line, strictnessLevel)) {
+            byId.set(metric.metric_id, metric);
+        }
+    }
+    return byId.size > 0 ? [...byId.values()] : undefined;
 };
 const inferProjectKindCandidate = (value) => {
     const projectKind = inferProjectKindFromText(value);
@@ -563,7 +651,7 @@ const extractCandidates = (input) => {
         input.existingIntake?.project_kind;
     const strictnessLevel = parseStrictnessLevel(message) ??
         (message === sourceRequest ? parseStrictnessLevel(sourceRequest) : undefined);
-    const customQualityMetrics = parseCustomQualityMetrics(message);
+    const customQualityMetrics = parseCustomQualityMetrics(message, strictnessLevel ?? input.existingIntake?.strictness_level ?? 3);
     const rawExplicitVerificationSurfaces = parseVerificationSurfacesAnswer(message);
     const explicitVerificationSurfaces = input.existingIntake?.target_family && rawExplicitVerificationSurfaces.length
         ? normalizeVerificationSurfacesForFamily(input.existingIntake.target_family, rawExplicitVerificationSurfaces)

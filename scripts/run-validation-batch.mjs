@@ -40,6 +40,7 @@ const suites = {
     "validate:evaluation-policy",
     "validate:strictness-policy",
     "validate:scorecard-output",
+    "validate:loop-scorecards",
     "validate:adaptive-intake",
     "validate:non-web-target",
     "validate:loop-prepare",
@@ -106,6 +107,8 @@ const suites = {
     "validate:evaluation-policy",
     "validate:strictness-policy",
     "validate:scorecard-output",
+    "validate:loop-scorecards",
+    "validate:scorecard-e2e-prepared-run",
     "validate:adaptive-intake",
     "validate:non-web-target"
   ]

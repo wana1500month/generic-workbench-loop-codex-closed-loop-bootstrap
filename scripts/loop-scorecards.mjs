@@ -37,16 +37,33 @@ const latestRunDirectory = async () => {
 
 const readJson = async (path) => JSON.parse(await readFile(path, "utf8"));
 
-const findScorecards = async (runDirectory) => {
-  const roundsDirectory = join(runDirectory, "rounds");
-  if (!existsSync(roundsDirectory)) {
+const roundDirectoryNamePattern = /^round-\d+$/u;
+
+const collectRoundDirectories = async (parentDirectory) => {
+  if (!existsSync(parentDirectory)) {
     return [];
   }
-  const entries = await readdir(roundsDirectory, { withFileTypes: true });
-  const roundDirectories = entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => join(roundsDirectory, entry.name))
-    .sort();
+  const entries = await readdir(parentDirectory, { withFileTypes: true });
+  return entries
+    .filter(
+      (entry) =>
+        entry.isDirectory() && roundDirectoryNamePattern.test(entry.name)
+    )
+    .map((entry) => join(parentDirectory, entry.name));
+};
+
+const findRoundDirectories = async (runDirectory) => {
+  const candidates = [
+    ...(await collectRoundDirectories(runDirectory)),
+    ...(await collectRoundDirectories(join(runDirectory, "rounds")))
+  ];
+  return [...new Map(candidates.map((path) => [resolve(path), path])).values()].sort(
+    (left, right) => basename(left).localeCompare(basename(right))
+  );
+};
+
+const findScorecards = async (runDirectory) => {
+  const roundDirectories = await findRoundDirectories(runDirectory);
   const scorecards = [];
   for (const roundDirectory of roundDirectories) {
     const scorecardPath = join(roundDirectory, "scorecard.json");

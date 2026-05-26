@@ -1173,6 +1173,41 @@ export const normalizeSubjectiveMetricResults = (
       continue;
     }
 
+    const violations =
+      rawMetric.violations === undefined
+        ? undefined
+        : parseStringList(
+            rawMetric.violations,
+            `Capability 'grade_round' returned subjective metric '${metricId}' with a non-string 'violations' collection.`,
+            validationErrors
+          );
+
+    const evidenceQuality =
+      rawMetric.evidence_quality === undefined
+        ? undefined
+        : isPlainObject(rawMetric.evidence_quality)
+          ? {
+              ...(typeof rawMetric.evidence_quality.has_required_evidence === "boolean"
+                ? {
+                    has_required_evidence:
+                      rawMetric.evidence_quality.has_required_evidence
+                  }
+                : {}),
+              ...(optionalTrimmedString(rawMetric.evidence_quality.evidence_type)
+                ? {
+                    evidence_type: optionalTrimmedString(
+                      rawMetric.evidence_quality.evidence_type
+                    )
+                  }
+                : {})
+            }
+          : (() => {
+              validationErrors.push(
+                `Capability 'grade_round' returned subjective metric '${metricId}' with a non-object 'evidence_quality' field.`
+              );
+              return undefined;
+            })();
+
     const qualityAxisId =
       rawMetric.quality_axis_id === undefined
         ? undefined
@@ -1205,6 +1240,10 @@ export const normalizeSubjectiveMetricResults = (
       rationale,
       recommended_changes: recommendedChanges,
       evidence_paths: evidencePaths,
+      ...(violations?.length ? { violations } : {}),
+      ...(evidenceQuality && Object.keys(evidenceQuality).length > 0
+        ? { evidence_quality: evidenceQuality }
+        : {}),
       ...(qualityAxisId ? { quality_axis_id: qualityAxisId } : {}),
       ...(required !== undefined ? { required } : {})
     });
@@ -3196,4 +3235,3 @@ export const verificationProviderForCapability = (
     capabilitySpec: contract.capabilities[capability]
   };
 };
-

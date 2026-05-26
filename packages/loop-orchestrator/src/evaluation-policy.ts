@@ -1,4 +1,4 @@
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 import { loadJsonIfExists, writeJson, writeText } from "./file-system.js";
 import type {
@@ -455,7 +455,12 @@ export const loadEvaluationPolicyForRun = async (
   (await loadJsonIfExists<EvaluationPolicy>(evaluationPolicyPathForRun(runDirectory))) ??
   (await loadJsonIfExists<EvaluationPolicy>(
     generatedAdapterEvaluationPolicyPathForRun(runDirectory)
-  ));
+  )) ??
+  (process.env.HARNESS_EVALUATION_POLICY_PATH
+    ? await loadJsonIfExists<EvaluationPolicy>(
+        resolve(process.env.HARNESS_EVALUATION_POLICY_PATH)
+      )
+    : undefined);
 
 export const renderEvaluationPolicyMarkdown = (
   policy: EvaluationPolicy
@@ -529,10 +534,18 @@ const matchingEvalDimension = (
     (candidate) => candidate.dimension_id === dimension.dimension_id
   );
 
+interface MappedPolicyDimensionScore {
+  normalized: number;
+  detail: string;
+  evidence: string[];
+  violations?: string[];
+  hasRequiredEvidence?: boolean;
+}
+
 const scoreForPolicyDimension = (
   dimension: EvaluationDimensionPolicy,
   evalReport: EvalReport
-): { normalized: number; detail: string; evidence: string[] } => {
+): MappedPolicyDimensionScore => {
   const matched = matchingEvalDimension(dimension, evalReport);
   if (matched) {
     return {
@@ -567,7 +580,9 @@ const scoreForPolicyDimension = (
     return {
       normalized: metricResult.score_out_of_ten / 10,
       detail: metricResult.rationale ?? "Mapped from subjective metric result.",
-      evidence: metricResult.evidence_paths ?? evidenceForDimension(dimension, evalReport)
+      evidence: metricResult.evidence_paths ?? evidenceForDimension(dimension, evalReport),
+      violations: metricResult.violations,
+      hasRequiredEvidence: metricResult.evidence_quality?.has_required_evidence
     };
   }
 
@@ -582,7 +597,7 @@ const clampNormalizedByStrictnessCaps = (
   policy: EvaluationPolicy,
   dimension: EvaluationDimensionPolicy,
   evalReport: EvalReport,
-  mapped: { normalized: number; detail: string; evidence: string[] }
+  mapped: MappedPolicyDimensionScore
 ): number => {
   if (policy.strictness_level < 5) {
     return mapped.normalized;
@@ -618,13 +633,38 @@ const clampNormalizedByStrictnessCaps = (
         path.toLowerCase()
       )
     );
+  const violations = new Set(
+    (mapped.violations ?? []).map((violation) =>
+      violation.trim().toLowerCase().replace(/[\s-]+/gu, "_")
+    )
+  );
 
   let capped = mapped.normalized;
-  if (visualDimension && !hasVisualEvidence) {
+  if (
+    visualDimension &&
+    (!hasVisualEvidence ||
+      mapped.hasRequiredEvidence === false ||
+      violations.has("no_visual_evidence"))
+  ) {
     capped = Math.min(capped, 0.4);
   }
-  if (executionDimension && !hasExecutionEvidence) {
+  if (
+    executionDimension &&
+    (!hasExecutionEvidence ||
+      mapped.hasRequiredEvidence === false ||
+      violations.has("no_execution_evidence"))
+  ) {
     capped = Math.min(capped, 0.6);
+  }
+  if (
+    violations.has("dummy_text_present") ||
+    violations.has("placeholder_text") ||
+    violations.has("excessive_helper_text")
+  ) {
+    capped = Math.min(capped, 0.6);
+  }
+  if (violations.has("template_feel") || violations.has("scaffold_feel")) {
+    capped = Math.min(capped, 0.7);
   }
   if (
     /no[_-]?noise|noise[_-]?text|copy|text|쓸데없는|텍스트|문구/u.test(text) &&

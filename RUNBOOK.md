@@ -66,8 +66,10 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `npm run validate:readiness-doctor`: focused gate for readiness blocker policy, `prepared_with_blockers`, readiness report output, and fail-closed ready-session indexing.
 - `npm run validate:evaluation-policy`: focused gate for generated evaluation policy artifacts, project kind, evidence surfaces, strictness defaults, and custom dimension promotion.
 - `npm run validate:strictness-policy`: focused gate for strictness levels 1-5 and level-5 evidence caps.
-- `npm run validate:scorecard-output`: focused gate for per-round `scorecard.json` / `scorecard.md` output and required-dimension target gating.
-- `npm run validate:adaptive-intake`: focused gate for natural-language strictness/custom metrics extraction and non-browser adaptive questions.
+- `npm run validate:scorecard-output`: focused gate for per-round `scorecard.json` / `scorecard.md` output, structured violation caps, and required-dimension target gating.
+- `npm run validate:loop-scorecards`: focused gate proving `loop:scorecards` finds scorecards under both `run/round-###/` and `run/rounds/round-###/`.
+- `npm run validate:scorecard-e2e-prepared-run`: loop-level gate proving a required custom dimension miss writes `round-###/scorecard.json`, blocks `target_reached`, updates the eval report threshold eligibility, and is visible through `loop:scorecards`.
+- `npm run validate:adaptive-intake`: focused gate for natural-language strictness/custom metrics extraction, scoreless quality criteria inference, and non-browser adaptive questions.
 - `npm run validate:non-web-target`: focused gate proving CLI/file/test targets do not require browser ready URLs.
 - `npm run validate:productization`: focused productization suite covering readiness doctor, evaluation policy, strictness, scorecards, adaptive intake, and non-web target behavior.
 - `npm run validate:app`: lightweight Codex app foreground gate for build plus intent, intake, front-door, transport, generated verification contract, run-local adapter, and prepared-session consumption checks. It does not require a local `codex` binary.

@@ -12,7 +12,7 @@ import { detectDurableMemoryPaths, ensureDurableMemoryArtifacts, loadDurableMemo
 import { loadJson, loadJsonIfExists, nextRunId, pathExists, repoRoot, resolveRunsDirectory, writeJson, writeText } from "./file-system.js";
 import { attachedPreGeneratorBaselineWindowOpen, captureBootstrapGeneratedBaselineIfNeeded, describePrototypeBaselineSourceSemantics, hasValidPrototypeBaseline, loadPrototypeBaselineState, prototypeBaselineSourceSemanticsForPhase, prototypeBaselinePaths } from "./prototype-baseline.js";
 import { defaultIdeaPath, readIdeaBrief } from "./idea-intake.js";
-import { buildRoundScorecard, evaluationPolicyPathForRun, loadEvaluationPolicyForRun, writeRoundScorecardArtifacts } from "./evaluation-policy.js";
+import { buildRoundScorecard, evaluationPolicyPathForRun, loadEvaluationPolicyForRun, writeEvaluationPolicyArtifacts, writeRoundScorecardArtifacts } from "./evaluation-policy.js";
 import { defaultControllerMode, isControllerMode } from "./controller-mode.js";
 import { defaultExecutorMode, isExecutorMode } from "./executor-mode.js";
 import { buildTransportStateArtifact, defaultTransportModeForControllerMode, isCurrentThreadTransport, isTransportMode, transportRuntimeWarningsForMode, validateTransportMode } from "./transport-mode.js";
@@ -359,6 +359,12 @@ export const runClosedLoop = async (input) => {
             preparedSessionSeed.runContract.execution_controls.target_score;
     }
     const evaluationPolicy = await loadEvaluationPolicyForRun(runDirectory);
+    if (evaluationPolicy) {
+        await writeEvaluationPolicyArtifacts({
+            runDirectory,
+            policy: evaluationPolicy
+        });
+    }
     if (input.targetScore === undefined &&
         preparedSessionSeed?.runContract.execution_controls.target_score === undefined &&
         evaluationPolicy) {

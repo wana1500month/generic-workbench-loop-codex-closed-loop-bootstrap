@@ -300,6 +300,11 @@ export interface SubjectiveMetricResult {
     rationale: string;
     recommended_changes: string[];
     evidence_paths: string[];
+    violations?: string[];
+    evidence_quality?: {
+        has_required_evidence?: boolean;
+        evidence_type?: string;
+    };
     quality_axis_id?: string;
     required?: boolean;
 }

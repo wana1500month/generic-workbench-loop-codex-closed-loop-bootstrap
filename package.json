@@ -103,6 +103,8 @@
     "validate:evaluation-policy": "node ./scripts/validate-evaluation-policy.mjs",
     "validate:strictness-policy": "node ./scripts/validate-strictness-policy.mjs",
     "validate:scorecard-output": "node ./scripts/validate-scorecard-output.mjs",
+    "validate:loop-scorecards": "node ./scripts/validate-loop-scorecards.mjs",
+    "validate:scorecard-e2e-prepared-run": "node ./scripts/validate-scorecard-e2e-prepared-run.mjs",
     "validate:adaptive-intake": "node ./scripts/validate-adaptive-intake.mjs",
     "validate:non-web-target": "node ./scripts/validate-non-web-target.mjs",
     "validate:adapter-drift": "node ./scripts/validate-adapter-drift.mjs",

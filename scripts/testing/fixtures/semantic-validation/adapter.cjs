@@ -1098,5 +1098,20 @@ if (capability === "grade_round") {
       : [isLying ? path.join(proofDir, "run_checks-missing.json") : upstreamChecksPath],
     observed_value: observedValueFor(criterionId, capability)
   }));
+  if (process.env.HARNESS_SEMANTIC_SUBJECTIVE_METRIC === "fail") {
+    result.subjective_metric_results = [
+      {
+        metric_id: "design.no_noise_text",
+        label: "No noisy text",
+        score_out_of_ten: 8.7,
+        minimum_score_out_of_ten: 9.5,
+        status: "fail",
+        rationale: "The fixture intentionally leaves excessive helper text.",
+        recommended_changes: ["Remove helper copy before closing the loop."],
+        evidence_paths: [upstreamCapturePath],
+        required: true
+      }
+    ];
+  }
 }
 fs.writeFileSync(outputPath, JSON.stringify(result, null, 2));

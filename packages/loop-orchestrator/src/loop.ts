@@ -72,6 +72,7 @@ import {
   buildRoundScorecard,
   evaluationPolicyPathForRun,
   loadEvaluationPolicyForRun,
+  writeEvaluationPolicyArtifacts,
   writeRoundScorecardArtifacts,
   type RoundScorecard
 } from "./evaluation-policy.js";
@@ -727,6 +728,12 @@ export const runClosedLoop = async (input: {
       preparedSessionSeed.runContract.execution_controls.target_score;
   }
   const evaluationPolicy = await loadEvaluationPolicyForRun(runDirectory);
+  if (evaluationPolicy) {
+    await writeEvaluationPolicyArtifacts({
+      runDirectory,
+      policy: evaluationPolicy
+    });
+  }
   if (
     input.targetScore === undefined &&
     preparedSessionSeed?.runContract.execution_controls.target_score === undefined &&

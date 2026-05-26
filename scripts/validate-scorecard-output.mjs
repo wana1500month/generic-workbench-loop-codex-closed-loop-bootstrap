@@ -112,6 +112,46 @@ const main = async () => {
         (reason) => reason.dimension_id === "design.no_noise_text"
       )
     );
+    const violationEvalReport = JSON.parse(JSON.stringify(baseEvalReport));
+    const violationMetric =
+      violationEvalReport.adapter_results[0].result.subjective_metric_results[0];
+    violationMetric.score_out_of_ten = 9.8;
+    violationMetric.status = "pass";
+    violationMetric.rationale =
+      "The score is high, but the structured evaluator violation reports placeholder text.";
+    violationMetric.violations = ["placeholder_text"];
+    violationMetric.evidence_quality = {
+      has_required_evidence: true,
+      evidence_type: "screenshot"
+    };
+    const strictPolicy = buildEvaluationPolicy({
+      intake: {
+        strictness_level: 5,
+        target_score: 0.9,
+        project_kind: "browser_ui",
+        verification_surfaces: ["browser", "screenshot", "test"],
+        custom_quality_metrics: [
+          {
+            metric_id: "design.no_noise_text",
+            label: "No noise text",
+            description: "No dummy, helper, or excessive explanatory text.",
+            minimum_score_out_of_ten: 9.5,
+            required: true,
+            weight: 2
+          }
+        ]
+      }
+    });
+    const violationScorecard = buildRoundScorecard({
+      policy: strictPolicy,
+      evalReport: violationEvalReport
+    });
+    const violationDimension = violationScorecard.dimension_scores.find(
+      (dimension) => dimension.dimension_id === "design.no_noise_text"
+    );
+    assert.equal(violationDimension?.score, 6);
+    assert.equal(violationDimension?.status, "fail");
+
     const roundDirectory = join(tempRoot, "run", "round-002");
     await writeRoundScorecardArtifacts({ roundDirectory, scorecard });
     assert.equal(existsSync(join(roundDirectory, "scorecard.json")), true);

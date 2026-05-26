@@ -91,6 +91,8 @@ Acceptance:
 - Operator-facing docs should present `loop:intent`, `loop:discover`, `loop:prepare`, `loop:start:codex`, `loop:continue`, and `loop:status` as the canonical path; lower-level runner, phase, family, and adapter commands remain internal, recovery, validation, or compatibility surfaces.
 - Prepare should produce a run-local `evaluation-policy.generated.json` / `.md` with `project_kind`, evidence surfaces, strictness level 1-5, target score, and required custom dimensions.
 - Each evaluated round should produce `scorecard.json` / `scorecard.md`, and required custom dimensions below their minimum should keep `target_reached` false even when total score passes.
+- `loop:scorecards` should read scorecards from the runtime's actual `run/round-###/` directories and the compatibility `run/rounds/round-###/` layout.
+- Scorecard gating should have a loop-level validation that proves generated scorecards, custom-dimension target blocking, eval-report threshold updates, and CLI display stay connected end to end.
 - Intake should infer evidence surfaces for CLI tools, API services, libraries, agents, document artifacts, data pipelines, automation, and browser/mobile UI without making browser evidence the default for every target.
 
 Validation:
@@ -111,6 +113,8 @@ Validation:
 - `npm run validate:browser-only-no-api-probes`
 - `npm run validate:semantic-workflow-selectors`
 - `npm run validate:productization`
+- `npm run validate:loop-scorecards`
+- `npm run validate:scorecard-e2e-prepared-run`
 
 ## M3. External adapter boundary
 

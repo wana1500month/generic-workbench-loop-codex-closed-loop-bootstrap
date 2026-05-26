@@ -42,6 +42,39 @@ const main = async () => {
     cliResult.questions.every((question) => !/ready URL|127\.0\.0\.1/u.test(question)),
     `CLI adaptive intake should not ask for browser ready URL: ${cliResult.questions.join(" | ")}`
   );
+
+  const scorelessCriteriaRequest = [
+    "Build a CLI report generator.",
+    "Target users: operators.",
+    "Core workflows: generate report.md from input.json.",
+    "Good enough means the generated report is stable and readable.",
+    "Existing project. target root ./tools/reporter. target score 0.9. max rounds 3.",
+    "run command node ./bin/reporter.js input.json",
+    "Strictness level 5.",
+    "Penalize excessive helper text.",
+    "Fail if it does not feel app-like when a UI surface is present.",
+    "Output format must stay consistent across runs."
+  ].join("\n");
+  const scorelessResult = evaluateIntakeRequest(scorelessCriteriaRequest);
+  const scorelessMerged = mergeFrontDoorSessionTurn({
+    sourceRequest: scorelessCriteriaRequest,
+    message: scorelessCriteriaRequest,
+    intakeResult: scorelessResult,
+    turnCount: 1
+  });
+  const scorelessMetricIds = new Set(
+    (scorelessMerged.intake.custom_quality_metrics ?? []).map(
+      (metric) => metric.metric_id
+    )
+  );
+  assert.ok(scorelessMetricIds.has("design.no_noise_text"));
+  assert.ok(scorelessMetricIds.has("design.app_like_feel"));
+  assert.ok(scorelessMetricIds.has("output.consistency"));
+  assert.ok(
+    (scorelessMerged.intake.custom_quality_metrics ?? []).every(
+      (metric) => metric.minimum_score_out_of_ten >= 9.3
+    )
+  );
 };
 
 await main();

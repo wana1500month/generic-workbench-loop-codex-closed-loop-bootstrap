@@ -1,6 +1,7 @@
 # Status
 
 - Productization pass is underway: prepare now writes `runtime/readiness-report.*` plus `evaluation-policy.generated.*`, strictness levels 1-5 drive target score and custom dimension floors, required custom dimensions gate `target_reached` through per-round `scorecard.json` / `scorecard.md`, adaptive intake infers project kind/evidence surfaces, and non-web targets such as CLI/file/test no longer require browser URLs.
+- Scorecard visibility now covers the actual loop layout: `loop:scorecards` scans both `run/round-###/scorecard.json` and legacy `run/rounds/round-###/scorecard.json`, and `validate:scorecard-e2e-prepared-run` proves a required custom dimension miss creates a scorecard, blocks `target_reached`, and appears in the scorecard CLI.
 - Codex app validation is now split from trusted-runner transports: `validate:app` covers the foreground app path, `validate:app-release` / `validate:release-gate` cover the install ZIP path, while `validate:transport:cli` and `validate:transport:app-server` keep live Codex/App Server checks out of the app release gate.
 - The app foreground gate now uses a lighter `validate:app` batch, with `validate:app-full` retaining the older fast-plus-product-front-door sweep for deeper local runs.
 - Generated browser-only verification profiles now filter base bundle probes by requested surfaces and product intent, so browser builds no longer inherit API probes, `api_base_url`, draft/persistence, consistency, or error-recovery assertions unless intake explicitly asks for them.
