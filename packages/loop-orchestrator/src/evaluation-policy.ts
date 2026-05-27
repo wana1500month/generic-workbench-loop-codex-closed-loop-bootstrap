@@ -227,8 +227,31 @@ export const isCommandFirstProjectKind = (
   projectKind: ProjectKind | undefined
 ): boolean => Boolean(projectKind && commandFirstProjectKinds.has(projectKind));
 
+const hasBrowserProjectSurfaceIntent = (value: string): boolean =>
+  /(?:ui|browser|web\s*app|dashboard|editor|브라우저|웹앱|화면|프론트엔드|대시보드)/iu.test(
+    value
+  );
+
+const hasExplicitApiNegationForProjectKind = (value: string): boolean => {
+  const apiTerm = String.raw`(?:api|http|endpoint|엔드포인트)`;
+  const apiNegativeAfterPattern = new RegExp(
+    String.raw`${apiTerm}\s*(?:는|은|가|이|is|are)?\s*(?:아니라|아님|아니다|말고|필요\s*없|불필요|만들지\s*마|만들\s*필요\s*없|없이|제외|금지|no|not|not\s*(?:needed|required)|unneeded|unnecessary|required\s*false|do\s*not|don't|dont)`,
+    "iu"
+  );
+  const negativeApiBeforePattern = new RegExp(
+    String.raw`(?:no|not|without|do\s*not|don't|dont|필요\s*없|불필요|없이|제외|금지|만들지\s*마)[^.!?\n]{0,48}${apiTerm}`,
+    "iu"
+  );
+  return (
+    apiNegativeAfterPattern.test(value) ||
+    negativeApiBeforePattern.test(value)
+  );
+};
+
 export const inferProjectKindFromText = (value: string): ProjectKind => {
   const normalized = value.normalize("NFKC").toLowerCase();
+  const apiExplicitlyNegated = hasExplicitApiNegationForProjectKind(normalized);
+  const browserSurfaceIntent = hasBrowserProjectSurfaceIntent(normalized);
   if (
     /(?:analy[sz]er|checker|validator|parser|converter|log\s+analysis\s+tool|\uBD84\uC11D\uAE30|\uBD84\uC11D\s*(?:\uD234|\uB3C4\uAD6C)|\uAC80\uC0AC\uAE30|\uAC80\uC0AC\s*(?:\uD234|\uB3C4\uAD6C)|\uD30C\uC11C|\uBCC0\uD658\uAE30)/u.test(
       normalized
@@ -258,13 +281,16 @@ export const inferProjectKindFromText = (value: string): ProjectKind => {
   if (/(?:automation|cron|scheduled\s+job|자동화|스케줄)/u.test(normalized)) {
     return "automation";
   }
-  if (/(?:api|endpoint|backend|서버|백엔드)/u.test(normalized)) {
+  if (apiExplicitlyNegated && browserSurfaceIntent) {
+    return "browser_ui";
+  }
+  if (!apiExplicitlyNegated && /(?:api|endpoint|backend|서버|백엔드)/u.test(normalized)) {
     return "api_service";
   }
   if (/(?:mobile|ios|android|앱스토어|모바일)/u.test(normalized)) {
     return "mobile_ui";
   }
-  if (/(?:ui|browser|web app|dashboard|editor|화면|웹앱|대시보드)/u.test(normalized)) {
+  if (browserSurfaceIntent) {
     return "browser_ui";
   }
   return "generic";

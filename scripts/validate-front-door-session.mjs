@@ -382,6 +382,41 @@ const main = async () => {
     });
     assert.equal(koApiNotInsteadBrowser.intake.target_family, "browser-app");
 
+    const koApiNotInsteadReadyBrowser = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-api-not-instead-ready-ko-browser",
+      message: [
+        "\uAC1C\uC778\uC6A9 \uAC00\uACC4\uBD80\uB97C \uBE0C\uB77C\uC6B0\uC800 \uD654\uBA74\uC5D0\uC11C \uC4F0\uB294 \uC571\uC73C\uB85C \uB9CC\uB4E4\uC5B4\uC918.",
+        "API\uAC00 \uC544\uB2C8\uB77C \uBE0C\uB77C\uC6B0\uC800 \uC571\uC73C\uB85C \uD574.",
+        "\uB300\uC0C1 \uC0AC\uC6A9\uC790\uB294 \uAC1C\uC778 \uC0AC\uC6A9\uC790.",
+        "\uD575\uC2EC \uAE30\uB2A5: \uC218\uC785/\uC9C0\uCD9C \uB4F1\uB85D, \uBAA9\uB85D \uD655\uC778, \uC6D4\uBCC4 \uD569\uACC4.",
+        "\uC131\uACF5 \uAE30\uC900: \uD654\uBA74\uC5D0\uC11C \uAC70\uB798\uB97C \uCD94\uAC00\uD558\uACE0 \uC6D4\uBCC4 \uD569\uACC4\uAC00 \uAC31\uC2E0\uB418\uBA74 \uB428.",
+        "\uC0C8 \uD504\uB85C\uC81D\uD2B8. target root ./apps/budget-browser-negated-api. target score 0.9. max rounds 4.",
+        "\uC6CC\uD06C\uD50C\uB85C \uCCB4\uD06C: 1) \uAC70\uB798 \uCD94\uAC00 -> \uBAA9\uB85D\uACFC \uC6D4\uBCC4 \uD569\uACC4\uAC00 \uAC31\uC2E0\uB41C\uB2E4. 2) \uC6D4\uBCC4 \uB9AC\uD3EC\uD2B8 -> \uCD1D\uC218\uC785/\uCD1D\uC9C0\uCD9C/\uC794\uC561\uC774 \uBCF4\uC778\uB2E4."
+      ].join("\n")
+    });
+    assert.equal(koApiNotInsteadReadyBrowser.intake.target_family, "browser-app");
+    assert.equal(koApiNotInsteadReadyBrowser.intake.project_kind, "browser_ui");
+    assert.ok(
+      koApiNotInsteadReadyBrowser.intake.evidence_surfaces?.includes("browser"),
+      JSON.stringify(koApiNotInsteadReadyBrowser.intake, null, 2)
+    );
+    assert.ok(
+      koApiNotInsteadReadyBrowser.intake.adapter_plan.verification_surfaces.includes(
+        "browser"
+      ),
+      JSON.stringify(koApiNotInsteadReadyBrowser.intake.adapter_plan, null, 2)
+    );
+    assert.ok(
+      koApiNotInsteadReadyBrowser.intake.adapter_plan.workflow_checks.every(
+        (check) => check.surface !== "api"
+      ),
+      JSON.stringify(
+        koApiNotInsteadReadyBrowser.intake.adapter_plan.workflow_checks,
+        null,
+        2
+      )
+    );
+
     const koApiNotShortBrowser = await runFrontDoorDiscoveryTurn({
       threadId: "thread-api-not-short-ko-browser",
       message:
