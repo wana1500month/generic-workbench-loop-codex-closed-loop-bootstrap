@@ -86,7 +86,7 @@ Acceptance:
 - The repo should expose a lightweight runtime dashboard for attached monitoring through `loop:ui`.
 - Trusted environments should have a real `app-server` smoke validator in addition to the existing `codex exec` smoke, while developer hosts without a usable `codex` binary should remain `environment_blocked`.
 - The live Codex gate should keep real binary availability separate from deterministic fake-Codex auth semantics, failing before strict smoke when `codex` is missing or `HARNESS_CODEX_BIN` is misconfigured.
-- Validation acceptance should stay split into `validate:quick`, `validate:fast`, `validate:process`, `validate:core`, `validate:release`, `validate:source-archive-repro`, `validate:codex-live`, and `validate:external-adapter`, with process-control and source-archive reproducibility failures blocking release gates. `validate:quick` should remain the shortest front-door/productization guard, while `validate:core` owns slower loop-continuation and durable-memory coverage.
+- Validation acceptance should stay split into `validate:quick`, `validate:fast`, `validate:process`, `validate:core`, `validate:release`, `validate:source-archive-repro`, `validate:codex-live`, and `validate:external-adapter`, with process-control and source-archive reproducibility failures blocking release gates. `validate:quick` should remain the shortest front-door/productization guard, while `validate:core` owns repeat/isolation, slower loop-continuation, and durable-memory coverage.
 - Source and install archive candidates must exclude TypeScript incremental metadata, and build success must be backed by required compiled-output sentinels rather than TypeScript exit code alone.
 - Operator-facing docs should present `loop:intent`, `loop:discover`, `loop:prepare`, `loop:start:codex`, `loop:continue`, and `loop:status` as the canonical path; lower-level runner, phase, family, and adapter commands remain internal, recovery, validation, or compatibility surfaces.
 - Prepare should produce a run-local `evaluation-policy.generated.json` / `.md` with `project_kind`, evidence surfaces, strictness level 1-5, target score, and required custom dimensions.
@@ -96,7 +96,7 @@ Acceptance:
 - Intake should infer evidence surfaces for CLI tools, API services, libraries, agents, document artifacts, data pipelines, automation, and browser/mobile UI without making browser evidence the default for every target.
 - Project-kind discovery should ask first-turn product questions that match the inferred product shape, especially for libraries, agents, document artifacts, data pipelines, automation, and CLI tools.
 - Korean product detection should distinguish document-work requests such as summaries, analysis, translation, and review from product-build requests such as document generators, report generators, pipeline generators, builders, and automation tools.
-- Ambiguous Korean document creation requests should ask whether the user wants direct document authoring or a document-generation product instead of hard-rejecting or guessing the lane.
+- Ambiguous Korean document creation requests should ask whether the user wants direct document authoring or a document-generation product instead of hard-rejecting or guessing the lane, and follow-up clarification should preserve the original session context.
 - Korean phrasing validation should cover common 조사 and object-order variants such as `보고서 생성기`, `문서 템플릿`, `설치 가이드 템플릿`, `데이터 파이프라인을 생성하는 도구`, and `데이터 파이프라인 빌더`.
 - Non-web targets should be able to close through evidence-appropriate release gates such as `shell_command`, `file_contains`, or `json_value` instead of requiring browser/API probes.
 - Browser verification should fail closed when Playwright is unavailable or crashes during import, with controller-safe blocked evidence instead of an in-process crash.
@@ -126,6 +126,9 @@ Validation:
 - `npm run validate:korean-document-artifact-detection`
 - `npm run validate:korean-data-pipeline-detection`
 - `npm run validate:korean-non-product-rejection`
+- `npm run validate:korean-ambiguous-document-followup`
+- `npm run validate:front-door-session-repeat`
+- `npm run validate:validation-batch-isolation`
 - `npm run validate:korean-product-phrasing-variants`
 - `npm run validate:library-front-door-questions`
 - `npm run validate:agent-workflow-front-door-questions`

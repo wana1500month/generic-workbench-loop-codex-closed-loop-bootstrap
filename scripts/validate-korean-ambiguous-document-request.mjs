@@ -58,7 +58,8 @@ try {
     assert.equal(turn.status, "ambiguous_document_request", request);
     assert.equal(turn.phase, "clarification", request);
     assert.ok(turn.questions.length >= 1, request);
-    assert.equal(turn.turn_count, 0, request);
+    assert.equal(turn.turn_count, 1, request);
+    assert.ok(turn.front_door_session_path, request);
   }
 
   const productRequests = [

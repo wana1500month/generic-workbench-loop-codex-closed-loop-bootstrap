@@ -29,6 +29,7 @@ import { buildCheckpointSummary, isCodexCheckpointPhaseStatus, isPausedPhaseStat
 import { resolveEvaluatorBundleSelection } from "./loop/evaluator-bundle.js";
 import { PhaseBudgetExceededError, parsePhaseTimeoutOverrides, parsePositiveTimeoutMs } from "./loop/phase-timeouts.js";
 import { crashAfterCheckpointEnabled, ensureJsonFile, isImproved, roundDirectoryFor, writeRoundSummary } from "./loop/round-files.js";
+import { currentBestForRunCheckpoint } from "./loop/run-summary-finalization.js";
 import { buildRuntimeEvent, ephemeralRuntimeEventCodes, mergeRuntimeEvents, normalizeRuntimeWarnings } from "./loop/runtime-events.js";
 import { stopReasonForMissingRoundTargetDecision, stopReasonForRoundTargetDecision } from "./loop/round-target-decision.js";
 import { isResumeNoopTerminalStopReason } from "./loop/stop-reasons.js";
@@ -1496,26 +1497,18 @@ export const runClosedLoop = async (input) => {
                 writeRunCheckpoint({
                     runDirectory,
                     summary,
-                    currentBest: {
-                        round: history[history.length - 1]?.round,
-                        totalScore: history[history.length - 1]?.total_score ?? bestScore,
-                        controlPlaneScore: history[history.length - 1]?.control_plane_score ?? bestControlPlaneScore,
-                        proofScore: history[history.length - 1]?.proof_score ?? bestProofScore,
-                        releaseScore: history[history.length - 1]?.release_score ?? bestReleaseScore,
-                        thresholdResults: history[history.length - 1]?.threshold_results ?? bestThresholdResults,
-                        dimensionScores: history[history.length - 1]?.dimension_scores ?? bestDimensionScores,
-                        patchRequestPath: history[history.length - 1]?.patch_request_path ?? bestPatchRequestPath,
-                        evalReportPath: history[history.length - 1]?.eval_report_path ?? bestEvalReportPath,
-                        bestScoringRound: bestRound,
-                        bestScoringTotalScore: bestScore,
-                        bestScoringControlPlaneScore: bestControlPlaneScore,
-                        bestScoringProofScore: bestProofScore,
-                        bestScoringReleaseScore: bestReleaseScore,
-                        bestScoringThresholdResults: bestThresholdResults,
-                        bestScoringDimensionScores: bestDimensionScores,
-                        bestScoringPatchRequestPath: bestPatchRequestPath,
-                        bestScoringEvalReportPath: bestEvalReportPath
-                    }
+                    currentBest: currentBestForRunCheckpoint({
+                        history,
+                        bestRound,
+                        bestScore,
+                        bestControlPlaneScore,
+                        bestProofScore,
+                        bestReleaseScore,
+                        bestThresholdResults,
+                        bestDimensionScores,
+                        bestPatchRequestPath,
+                        bestEvalReportPath
+                    })
                 })
             ]);
             if (crashAfterCheckpointEnabled() && history.length > 0) {
@@ -3886,26 +3879,19 @@ export const runClosedLoop = async (input) => {
             await writeRunCheckpoint({
                 runDirectory,
                 summary,
-                currentBest: {
-                    round: terminalRound,
-                    totalScore: terminalRoundSummary?.total_score ?? bestScore ?? 0,
-                    controlPlaneScore: terminalRoundSummary?.control_plane_score ?? bestControlPlaneScore,
-                    proofScore: terminalRoundSummary?.proof_score ?? bestProofScore,
-                    releaseScore: terminalRoundSummary?.release_score ?? bestReleaseScore,
-                    thresholdResults: terminalRoundSummary?.threshold_results ?? bestThresholdResults,
-                    dimensionScores: terminalRoundSummary?.dimension_scores ?? bestDimensionScores,
-                    patchRequestPath: terminalRoundSummary?.patch_request_path ?? bestPatchRequestPath,
-                    evalReportPath: terminalRoundSummary?.eval_report_path ?? bestEvalReportPath,
-                    bestScoringRound: bestRound,
-                    bestScoringTotalScore: bestScore ?? 0,
-                    bestScoringControlPlaneScore: bestControlPlaneScore,
-                    bestScoringProofScore: bestProofScore,
-                    bestScoringReleaseScore: bestReleaseScore,
-                    bestScoringThresholdResults: bestThresholdResults,
-                    bestScoringDimensionScores: bestDimensionScores,
-                    bestScoringPatchRequestPath: bestPatchRequestPath,
-                    bestScoringEvalReportPath: bestEvalReportPath
-                }
+                currentBest: currentBestForRunCheckpoint({
+                    history,
+                    bestRound,
+                    bestScore,
+                    bestControlPlaneScore,
+                    bestProofScore,
+                    bestReleaseScore,
+                    bestThresholdResults,
+                    bestDimensionScores,
+                    bestPatchRequestPath,
+                    bestEvalReportPath,
+                    bestScoringTotalScoreFallback: 0
+                })
             });
             await markProgress(`Final run artifacts saved for ${runId}.`);
             replaceHeartbeatNotes();

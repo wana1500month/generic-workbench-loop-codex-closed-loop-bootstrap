@@ -316,21 +316,53 @@ export const runFrontDoorDiscoveryTurn = async (input: {
 
   const initialResult = evaluateIntakeRequest(initialAggregate);
   if (!existingSession && initialResult.status === "ambiguous_document_request") {
-    return {
-      status: "ambiguous_document_request",
+    const artifact: FrontDoorSessionArtifact = {
+      session_id: frontDoorSessionPathsForThread(input.threadId).session_id,
+      thread_id: input.threadId,
+      lane: "product_build",
+      source_request: sourceRequest,
       phase: "clarification",
-      locale: initialResult.locale,
-      questions: initialResult.questions,
+      intake: initialResult.extracted_summary
+        ? { product_summary: initialResult.extracted_summary }
+        : {},
       missing_product_fields: [],
       missing_execution_fields: [],
       missing_adapter_fields: [],
       asked_question_ids: [],
       last_question_ids: [],
-      intake: {},
+      last_question_batch: initialResult.questions,
       defaults_accepted: [],
       unresolved_conflicts: [],
-      turn_count: 0
+      turn_count: 1,
+      created_at: now,
+      updated_at: now
     };
+    const paths = await writeFrontDoorSessionArtifact(input.threadId, artifact);
+    await appendFrontDoorSessionEvent(input.threadId, {
+      type: "session_created",
+      session_id: artifact.session_id,
+      thread_id: artifact.thread_id,
+      turn_count: artifact.turn_count,
+      status: "ambiguous_document_request",
+      phase: "clarification",
+      message,
+      updated_at: now
+    });
+    await appendFrontDoorSessionEvent(input.threadId, {
+      type: "session_status",
+      session_id: artifact.session_id,
+      thread_id: artifact.thread_id,
+      turn_count: artifact.turn_count,
+      status: "ambiguous_document_request",
+      phase: "clarification",
+      updated_at: now
+    });
+    return buildArtifactResult(
+      artifact,
+      paths.session_path,
+      paths.events_path,
+      "ambiguous_document_request"
+    );
   }
   if (!existingSession && !initialResult.is_product_build_request) {
     return {

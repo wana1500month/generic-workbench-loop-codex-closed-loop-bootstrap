@@ -39,6 +39,7 @@ const suites = {
     "validate:non-web-front-door-adapter-plan",
     "validate:project-kind-fixtures",
     "validate:korean-ambiguous-document-request",
+    "validate:korean-ambiguous-document-followup",
     "validate:korean-product-phrasing-variants",
     "validate:korean-non-product-rejection"
   ],
@@ -52,6 +53,7 @@ const suites = {
     "validate:non-web-front-door-adapter-plan",
     "validate:project-kind-fixtures",
     "validate:korean-ambiguous-document-request",
+    "validate:korean-ambiguous-document-followup",
     "validate:korean-product-phrasing-variants",
     "validate:korean-non-product-rejection",
     "validate:loop-scorecards",
@@ -86,6 +88,7 @@ const suites = {
     "validate:non-web-front-door-adapter-plan",
     "validate:project-kind-fixtures",
     "validate:korean-ambiguous-document-request",
+    "validate:korean-ambiguous-document-followup",
     "validate:korean-product-phrasing-variants",
     "validate:korean-non-product-rejection",
     "validate:loop-prepare",
@@ -96,6 +99,8 @@ const suites = {
     "validate:intent-gate",
     "validate:intake-gate",
     "validate:front-door-session",
+    "validate:front-door-session-repeat",
+    "validate:validation-batch-isolation",
     "validate:lifecycle-api",
     "validate:transport-mode",
     "validate:security-guards",
@@ -115,6 +120,9 @@ const suites = {
     "validate:intake-gate",
     "validate:resume-smoke",
     "validate:attached-resume-smoke"
+  ],
+  "isolation-smoke": [
+    "validate:korean-ambiguous-document-followup"
   ],
   external: [
     "validate:reference-adapter:check",
@@ -138,6 +146,7 @@ const suites = {
     "validate:cli-front-door-product-detection",
     "validate:project-kind-fixtures",
     "validate:korean-ambiguous-document-request",
+    "validate:korean-ambiguous-document-followup",
     "validate:korean-product-phrasing-variants",
     "validate:korean-non-product-rejection",
     "validate:fast-exits",
@@ -151,7 +160,9 @@ const stateIsolatedSuites = new Set([
   "app",
   "core",
   "fast",
+  "isolation-smoke",
   "product-front-door",
+  "productization",
   "quick",
   "smoke"
 ]);

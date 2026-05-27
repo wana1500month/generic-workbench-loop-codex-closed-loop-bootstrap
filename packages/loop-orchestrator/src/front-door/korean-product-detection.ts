@@ -42,6 +42,7 @@ export const koreanProductVerbHints = [
   "\uAC1C\uBC1C",
   "\uAE30\uD68D",
   "\uC81C\uC791",
+  "\uC0DD\uC131",
   "\uAD6C\uC0C1"
 ] as const;
 
