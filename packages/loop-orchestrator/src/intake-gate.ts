@@ -30,18 +30,29 @@ import {
   executionQuestionFor,
   productQuestionFor
 } from "./front-door/question-policy.js";
+import {
+  detectKoreanAmbiguousDocumentRequest,
+  type KoreanAmbiguousDocumentRequest
+} from "./front-door/korean-document-ambiguity.js";
 import type { TargetFamily } from "./types.js";
 
 type IntakeFieldId = ProductFieldId | ExecutionFieldId | AdapterIntakeFieldId;
 
 type IntakeGateStatus =
   | "not_product_build_request"
+  | "ambiguous_document_request"
   | "ask_product_questions"
   | "ask_execution_questions"
   | "ask_adapter_questions"
   | "ready_for_prepare";
 
-type IntakePhase = "none" | "product" | "execution" | "adapter" | "prepare";
+type IntakePhase =
+  | "none"
+  | "clarification"
+  | "product"
+  | "execution"
+  | "adapter"
+  | "prepare";
 
 interface IntakeFieldState<TFieldId extends IntakeFieldId = IntakeFieldId> {
   id: TFieldId;
@@ -55,6 +66,7 @@ export interface IntakeGateResult {
   locale: "en" | "ko";
   is_product_build_request: boolean;
   product_build_detection?: ProductBuildDetection;
+  ambiguous_document_request?: KoreanAmbiguousDocumentRequest;
   missing_fields: IntakeFieldId[];
   missing_product_fields: ProductFieldId[];
   missing_execution_fields: ExecutionFieldId[];
@@ -906,7 +918,27 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
   const locale = detectLocale(request);
   const productBuildDetection = detectProductBuildRequest(request, normalizedLower);
   const isProductBuildRequest = productBuildDetection.is_product_build;
+  const ambiguousDocumentRequest =
+    !isProductBuildRequest ? detectKoreanAmbiguousDocumentRequest(request) : undefined;
   const inferredProjectKind = inferProjectKindFromText(request);
+
+  if (ambiguousDocumentRequest) {
+    return {
+      status: "ambiguous_document_request",
+      phase: "clarification",
+      locale,
+      is_product_build_request: false,
+      product_build_detection: productBuildDetection,
+      ambiguous_document_request: ambiguousDocumentRequest,
+      missing_fields: [],
+      missing_product_fields: [],
+      missing_execution_fields: [],
+      missing_adapter_fields: [],
+      satisfied_fields: [],
+      questions: ambiguousDocumentRequest.questions,
+      extracted_summary: extractSummary(normalized)
+    };
+  }
 
   if (!isProductBuildRequest) {
     return {
@@ -1110,6 +1142,7 @@ export const evaluateIntakeRequest = (request: string): IntakeGateResult => {
 
 export const renderIntakeGateResponse = (result: IntakeGateResult): string => {
   if (
+    result.status === "ambiguous_document_request" ||
     result.status === "ask_product_questions" ||
     result.status === "ask_execution_questions" ||
     result.status === "ask_adapter_questions"

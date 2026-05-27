@@ -115,6 +115,10 @@ import {
   orderedAdapterExecutions,
   runAdapterCapabilities
 } from "./loop/adapter-executions.js";
+import {
+  activeArtifactPathsFor,
+  activeCheckpointMetadataFor
+} from "./loop/active-checkpoint.js";
 import { buildCheckpointSummary, isCodexCheckpointPhaseStatus, isPausedPhaseStatus, phaseCompletedAtOrBeyond } from "./loop/checkpoints.js";
 import { resolveEvaluatorBundleSelection } from "./loop/evaluator-bundle.js";
 import { PhaseBudgetExceededError, parsePhaseTimeoutOverrides, parsePositiveTimeoutMs } from "./loop/phase-timeouts.js";
@@ -239,7 +243,6 @@ import type {
   ControllerPhaseStatus,
   ControllerRoundPhase,
   CurrentThreadCheckpointKind,
-  CurrentThreadEnhancementTaskArtifact,
   EvalReport,
   ExecutionState,
   EvaluatorVerdictArtifact,
@@ -1397,86 +1400,12 @@ export const runClosedLoop = async (input: {
       ...(notes?.length ? unique(notes) : [])
     );
   };
-  const activeArtifactPathsFor = (
-    artifacts?: Record<string, string>
-  ): {
-    activePromptPath?: string;
-    activeResponsePath?: string;
-  } => {
-    const artifactValues = artifacts
-      ? Object.values(artifacts).filter((value) => typeof value === "string")
-      : [];
-    return {
-      activePromptPath: artifactValues.find(
-        (value) => value.endsWith(".md") && /prompt/i.test(value)
-      ),
-      activeResponsePath: artifactValues.find(
-        (value) => value.endsWith(".json") && /response/i.test(value)
-      )
-    };
-  };
-  const activeCheckpointMetadataFor = async (
-    artifacts?: Record<string, string>,
-    fallback?: {
-      round: number;
-      phase: ControllerRoundPhase;
-      checkpointKind: CurrentThreadCheckpointKind;
-    }
-  ): Promise<{
-    checkpointId?: string;
-    checkpointSeq?: number;
-  }> => {
-    const artifactValues = artifacts
-      ? Object.values(artifacts).filter((value) => typeof value === "string")
-      : [];
-    const taskPath = artifactValues.find(
-      (value) => value.endsWith(".json") && /task/i.test(value)
-    );
-    if (taskPath) {
-      const taskArtifact = await loadJsonIfExists<
-        | AdapterMigrationAuthoringTaskArtifact
-        | AttachedGeneratorTaskArtifact
-        | CurrentThreadEnhancementTaskArtifact
-      >(taskPath);
-      if (taskArtifact && typeof taskArtifact === "object") {
-        const checkpointId =
-          "checkpoint_id" in taskArtifact &&
-          typeof taskArtifact.checkpoint_id === "string"
-            ? taskArtifact.checkpoint_id
-            : undefined;
-        const checkpointSeq =
-          "checkpoint_seq" in taskArtifact &&
-          typeof taskArtifact.checkpoint_seq === "number"
-            ? taskArtifact.checkpoint_seq
-            : undefined;
-        if (checkpointId || checkpointSeq !== undefined) {
-          return {
-            checkpointId,
-            checkpointSeq
-          };
-        }
-      }
-    }
-    if (!fallback) {
-      return {};
-    }
-    const checkpointSeq = Date.now();
-    return {
-      checkpointSeq,
-      checkpointId: [
-        runId,
-        `r${fallback.round}`,
-        fallback.phase,
-        fallback.checkpointKind,
-        String(checkpointSeq)
-      ].join(":")
-    };
-  };
   let { activePromptPath: activePromptArtifactPath, activeResponsePath: activeResponseArtifactPath } =
     activeArtifactPathsFor(restoredRun?.runtimeRoundPhase?.artifacts);
-  const restoredCheckpointMetadata = await activeCheckpointMetadataFor(
-    restoredRun?.runtimeRoundPhase?.artifacts
-  );
+  const restoredCheckpointMetadata = await activeCheckpointMetadataFor({
+    artifacts: restoredRun?.runtimeRoundPhase?.artifacts,
+    runId
+  });
   let activeAttentionRequired: OperatorAttentionRequired | undefined;
   let activeCheckpointKind: CurrentThreadCheckpointKind | undefined;
   let activeCheckpointId: string | undefined = restoredCheckpointMetadata.checkpointId;
@@ -2370,10 +2299,14 @@ export const runClosedLoop = async (input: {
     recommendedCommand?: string;
   }): Promise<ClosedLoopResult> => {
     const { activePromptPath, activeResponsePath } = activeArtifactPathsFor(input.artifacts);
-    const checkpointMetadata = await activeCheckpointMetadataFor(input.artifacts, {
-      round: input.round,
-      phase: input.phase,
-      checkpointKind: input.checkpointKind ?? "planner"
+    const checkpointMetadata = await activeCheckpointMetadataFor({
+      artifacts: input.artifacts,
+      runId,
+      fallback: {
+        round: input.round,
+        phase: input.phase,
+        checkpointKind: input.checkpointKind ?? "planner"
+      }
     });
     await recordRoundPhase({
       round: input.round,
@@ -2407,10 +2340,14 @@ export const runClosedLoop = async (input: {
     recommendedCommand?: string;
   }): Promise<ClosedLoopResult> => {
     const { activePromptPath, activeResponsePath } = activeArtifactPathsFor(input.artifacts);
-    const checkpointMetadata = await activeCheckpointMetadataFor(input.artifacts, {
-      round: input.round,
-      phase: input.phase,
-      checkpointKind: input.checkpointKind ?? "evaluator"
+    const checkpointMetadata = await activeCheckpointMetadataFor({
+      artifacts: input.artifacts,
+      runId,
+      fallback: {
+        round: input.round,
+        phase: input.phase,
+        checkpointKind: input.checkpointKind ?? "evaluator"
+      }
     });
     await recordRoundPhase({
       round: input.round,
@@ -2459,10 +2396,14 @@ export const runClosedLoop = async (input: {
     const { activePromptPath, activeResponsePath } = activeArtifactPathsFor(
       input.artifacts
     );
-    const checkpointMetadata = await activeCheckpointMetadataFor(input.artifacts, {
-      round: input.round,
-      phase: input.phase,
-      checkpointKind: input.checkpointKind
+    const checkpointMetadata = await activeCheckpointMetadataFor({
+      artifacts: input.artifacts,
+      runId,
+      fallback: {
+        round: input.round,
+        phase: input.phase,
+        checkpointKind: input.checkpointKind
+      }
     });
     await recordRoundPhase({
       round: input.round,

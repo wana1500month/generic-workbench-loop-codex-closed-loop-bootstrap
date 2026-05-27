@@ -41,6 +41,7 @@ export type LoopIntent =
 
 export type LoopIntentStatus =
   | "route_to_app_builder_loop"
+  | "ambiguous_document_request"
   | "ask_harness_questions"
   | "ask_run_control_questions"
   | "ask_resume_questions"
@@ -1099,6 +1100,27 @@ export const evaluateLoopIntent = (request: string): LoopIntentResult => {
     matchedHarnessChangeSignals.length === 0 &&
     matchedEvaluatorChangeSignals.length === 0;
 
+  if (intake.status === "ambiguous_document_request") {
+    return {
+      intent: "unknown",
+      status: "ambiguous_document_request",
+      phase: "intent",
+      locale,
+      confidence: 0.72,
+      route_target: "clarify",
+      questions: intake.questions,
+      missing_fields: [],
+      satisfied_fields: [],
+      rationale: [
+        "Korean document wording could mean either direct document authoring or a document-generation product."
+      ],
+      intake,
+      intake_status: intake.status,
+      intake_phase: intake.phase,
+      intake_missing_fields: intake.missing_fields
+    };
+  }
+
   if (directRunControlFastPath) {
     return buildRunControlResult({
       request: normalizedRequest,
@@ -1488,6 +1510,7 @@ export const renderLoopIntentResponse = (result: LoopIntentResult): string => {
     result.status === "ask_run_control_questions" ||
     result.status === "ask_resume_questions" ||
     result.status === "ask_evaluator_questions" ||
+    result.status === "ambiguous_document_request" ||
     result.status === "unclassified"
   ) {
     return result.questions.map((question, index) => `${index + 1}. ${question}`).join("\n");

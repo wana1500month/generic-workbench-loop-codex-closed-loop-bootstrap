@@ -153,12 +153,22 @@ for (const request of [
   "Build a dashboard strategy for operators",
   "Create website copy for a service",
   "Create API documentation for developers",
-  "API 문서 만들어줘",
   "서비스 로드맵 만들어줘",
   "대시보드 전략 작성해줘"
 ]) {
   const result = evaluateLoopIntent(request);
   assert.notEqual(result.intent, "product_build", request);
+}
+
+for (const request of [
+  "\u0041\u0050\u0049 \uBB38\uC11C \uB9CC\uB4E4\uC5B4\uC918",
+  "\uBB38\uC11C \uC791\uC131\uD574\uC918"
+]) {
+  const result = evaluateLoopIntent(request);
+  assert.equal(result.intent, "unknown", request);
+  assert.equal(result.status, "ambiguous_document_request", request);
+  assert.equal(result.route_target, "clarify", request);
+  assert.ok(result.questions.length > 0, request);
 }
 
 assert.equal(

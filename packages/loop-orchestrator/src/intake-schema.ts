@@ -87,6 +87,7 @@ export type SessionIntakeFieldId =
   | AdapterIntakeFieldId;
 
 export type DiscoveryPhase =
+  | "clarification"
   | "product"
   | "execution"
   | "adapter"
@@ -96,6 +97,7 @@ export type DiscoveryPhase =
 
 export type FrontDoorSessionStatus =
   | "not_product_build_request"
+  | "ambiguous_document_request"
   | "ask_product_questions"
   | "ask_execution_questions"
   | "ask_adapter_questions"

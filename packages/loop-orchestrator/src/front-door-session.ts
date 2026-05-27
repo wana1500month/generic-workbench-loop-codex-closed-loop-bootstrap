@@ -49,6 +49,9 @@ export interface FrontDoorSessionTurnResult {
 const statusForPhase = (
   phase: DiscoveryPhase
 ): FrontDoorSessionTurnResult["status"] => {
+  if (phase === "clarification") {
+    return "ambiguous_document_request";
+  }
   if (phase === "product") {
     return "ask_product_questions";
   }
@@ -74,6 +77,9 @@ const uniqueFieldIds = (
 const toDiscoveryPhase = (
   status: FrontDoorSessionTurnResult["status"]
 ): DiscoveryPhase | "none" => {
+  if (status === "ambiguous_document_request") {
+    return "clarification";
+  }
   if (status === "ask_product_questions") {
     return "product";
   }
@@ -309,6 +315,23 @@ export const runFrontDoorDiscoveryTurn = async (input: {
     : message;
 
   const initialResult = evaluateIntakeRequest(initialAggregate);
+  if (!existingSession && initialResult.status === "ambiguous_document_request") {
+    return {
+      status: "ambiguous_document_request",
+      phase: "clarification",
+      locale: initialResult.locale,
+      questions: initialResult.questions,
+      missing_product_fields: [],
+      missing_execution_fields: [],
+      missing_adapter_fields: [],
+      asked_question_ids: [],
+      last_question_ids: [],
+      intake: {},
+      defaults_accepted: [],
+      unresolved_conflicts: [],
+      turn_count: 0
+    };
+  }
   if (!existingSession && !initialResult.is_product_build_request) {
     return {
       status: "not_product_build_request",

@@ -143,6 +143,12 @@ const stripAudienceTail = (value: string): string => {
   return stripped.length > 0 ? stripped : value.trim();
 };
 
+const hasKoreanText = (value: string): boolean =>
+  /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/u.test(value);
+
+const koreanNonBuildActionPattern =
+  /(?:\uCD94\uCC9C|\uCC3E\uC544|\uC54C\uB824|\uBE44\uAD50|\uC124\uBA85|\uC694\uC57D|\uBD84\uC11D|\uBC88\uC5ED|\uAC80\uD1A0|\uB9AC\uBDF0)/u;
+
 export const hasExplicitProductBuildPhrase = (value: string): boolean =>
   STRONG_EXPLICIT_PRODUCT_BUILD_PHRASE.test(value) ||
   WEAK_EXPLICIT_PRODUCT_BUILD_PHRASE.test(value);
@@ -207,6 +213,12 @@ export const detectProductBuildIntent = (value: string): ProductBuildDetection =
   const hasVerb = matchedVerbs.length > 0;
   const hasStrongSurfaceNoun = strongNouns.length > 0 || koNouns.length > 0;
   const hasWeakNoun = weakNouns.length > 0;
+  const hasImplicitKoreanProductNoun =
+    !hasVerb &&
+    hasKoreanText(value) &&
+    koNouns.length > 0 &&
+    buildObjectSurfaceNouns.length > 0 &&
+    !koreanNonBuildActionPattern.test(value);
 
   if (
     nonProductDeliverableObject.length > 0 &&
@@ -240,6 +252,16 @@ export const detectProductBuildIntent = (value: string): ProductBuildDetection =
   }
 
   if (strongExplicitProductBuildPhrase || (hasVerb && hasStrongSurfaceNoun)) {
+    return {
+      is_product_build: true,
+      strength: "strong",
+      matched_nouns: matchedNouns,
+      matched_verbs: matchedVerbs,
+      rejected_by: unique([...rejectedBy, ...buildObjectRejectedBy])
+    };
+  }
+
+  if (hasImplicitKoreanProductNoun) {
     return {
       is_product_build: true,
       strength: "strong",

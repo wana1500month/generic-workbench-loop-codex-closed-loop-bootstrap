@@ -3,6 +3,7 @@ import { buildAdaptiveQuestionSet } from "./adaptive-interviewer.js";
 import { evidenceSurfacesForProjectKind, inferProjectKindFromText, isCommandFirstProjectKind } from "./evaluation-policy.js";
 import { detectProductBuildIntent } from "./product-build-signals.js";
 import { executionQuestionFor, productQuestionFor } from "./front-door/question-policy.js";
+import { detectKoreanAmbiguousDocumentRequest } from "./front-door/korean-document-ambiguity.js";
 const PRODUCT_BUILD_NOUNS = [
     "앱",
     "서비스",
@@ -647,7 +648,25 @@ export const evaluateIntakeRequest = (request) => {
     const locale = detectLocale(request);
     const productBuildDetection = detectProductBuildRequest(request, normalizedLower);
     const isProductBuildRequest = productBuildDetection.is_product_build;
+    const ambiguousDocumentRequest = !isProductBuildRequest ? detectKoreanAmbiguousDocumentRequest(request) : undefined;
     const inferredProjectKind = inferProjectKindFromText(request);
+    if (ambiguousDocumentRequest) {
+        return {
+            status: "ambiguous_document_request",
+            phase: "clarification",
+            locale,
+            is_product_build_request: false,
+            product_build_detection: productBuildDetection,
+            ambiguous_document_request: ambiguousDocumentRequest,
+            missing_fields: [],
+            missing_product_fields: [],
+            missing_execution_fields: [],
+            missing_adapter_fields: [],
+            satisfied_fields: [],
+            questions: ambiguousDocumentRequest.questions,
+            extracted_summary: extractSummary(normalized)
+        };
+    }
     if (!isProductBuildRequest) {
         return {
             status: "not_product_build_request",
@@ -827,7 +846,8 @@ export const evaluateIntakeRequest = (request) => {
     };
 };
 export const renderIntakeGateResponse = (result) => {
-    if (result.status === "ask_product_questions" ||
+    if (result.status === "ambiguous_document_request" ||
+        result.status === "ask_product_questions" ||
         result.status === "ask_execution_questions" ||
         result.status === "ask_adapter_questions") {
         return result.questions.map((question, index) => `${index + 1}. ${question}`).join("\n");

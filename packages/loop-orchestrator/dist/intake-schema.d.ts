@@ -43,8 +43,8 @@ export interface SessionAdapterPlan {
 }
 export type AdapterIntakeFieldId = "verification_surface" | "workflow_checks" | "quality_metrics";
 export type SessionIntakeFieldId = ProductIntakeFieldId | ExecutionIntakeFieldId | AdapterIntakeFieldId;
-export type DiscoveryPhase = "product" | "execution" | "adapter" | "ready_for_prepare" | "prepared_with_blockers" | "prepared";
-export type FrontDoorSessionStatus = "not_product_build_request" | "ask_product_questions" | "ask_execution_questions" | "ask_adapter_questions" | "ready_for_prepare" | "prepared_with_blockers" | "prepared";
+export type DiscoveryPhase = "clarification" | "product" | "execution" | "adapter" | "ready_for_prepare" | "prepared_with_blockers" | "prepared";
+export type FrontDoorSessionStatus = "not_product_build_request" | "ambiguous_document_request" | "ask_product_questions" | "ask_execution_questions" | "ask_adapter_questions" | "ready_for_prepare" | "prepared_with_blockers" | "prepared";
 export interface PreparedRunReference {
     run_id: string;
     run_directory: string;

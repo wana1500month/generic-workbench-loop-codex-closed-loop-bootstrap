@@ -1,15 +1,17 @@
 import type { AdapterIntakeFieldId, ExecutionIntakeFieldId as ExecutionFieldId, ProductIntakeFieldId as ProductFieldId, SessionWorkflowCheck, VerificationSurface } from "./intake-schema.js";
 import { type ProductBuildDetection } from "./product-build-signals.js";
+import { type KoreanAmbiguousDocumentRequest } from "./front-door/korean-document-ambiguity.js";
 import type { TargetFamily } from "./types.js";
 type IntakeFieldId = ProductFieldId | ExecutionFieldId | AdapterIntakeFieldId;
-type IntakeGateStatus = "not_product_build_request" | "ask_product_questions" | "ask_execution_questions" | "ask_adapter_questions" | "ready_for_prepare";
-type IntakePhase = "none" | "product" | "execution" | "adapter" | "prepare";
+type IntakeGateStatus = "not_product_build_request" | "ambiguous_document_request" | "ask_product_questions" | "ask_execution_questions" | "ask_adapter_questions" | "ready_for_prepare";
+type IntakePhase = "none" | "clarification" | "product" | "execution" | "adapter" | "prepare";
 export interface IntakeGateResult {
     status: IntakeGateStatus;
     phase: IntakePhase;
     locale: "en" | "ko";
     is_product_build_request: boolean;
     product_build_detection?: ProductBuildDetection;
+    ambiguous_document_request?: KoreanAmbiguousDocumentRequest;
     missing_fields: IntakeFieldId[];
     missing_product_fields: ProductFieldId[];
     missing_execution_fields: ExecutionFieldId[];

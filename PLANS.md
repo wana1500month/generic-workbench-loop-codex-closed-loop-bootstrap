@@ -96,6 +96,7 @@ Acceptance:
 - Intake should infer evidence surfaces for CLI tools, API services, libraries, agents, document artifacts, data pipelines, automation, and browser/mobile UI without making browser evidence the default for every target.
 - Project-kind discovery should ask first-turn product questions that match the inferred product shape, especially for libraries, agents, document artifacts, data pipelines, automation, and CLI tools.
 - Korean product detection should distinguish document-work requests such as summaries, analysis, translation, and review from product-build requests such as document generators, report generators, pipeline generators, builders, and automation tools.
+- Ambiguous Korean document creation requests should ask whether the user wants direct document authoring or a document-generation product instead of hard-rejecting or guessing the lane.
 - Korean phrasing validation should cover common 조사 and object-order variants such as `보고서 생성기`, `문서 템플릿`, `설치 가이드 템플릿`, `데이터 파이프라인을 생성하는 도구`, and `데이터 파이프라인 빌더`.
 - Non-web targets should be able to close through evidence-appropriate release gates such as `shell_command`, `file_contains`, or `json_value` instead of requiring browser/API probes.
 - Browser verification should fail closed when Playwright is unavailable or crashes during import, with controller-safe blocked evidence instead of an in-process crash.

@@ -73,6 +73,26 @@ try {
       "command-artifact"
     ],
     [
+      "\uBCF4\uACE0\uC11C \uC790\uB3D9 \uC0DD\uC131 \uB3C4\uAD6C \uB9CC\uB4E4\uC5B4\uC918",
+      "document_artifact",
+      "command-artifact"
+    ],
+    [
+      "\uB9C8\uD06C\uB2E4\uC6B4 \uB9AC\uD3EC\uD2B8 \uC0DD\uC131 \uD234 \uB9CC\uB4E4\uC5B4\uC918",
+      "document_artifact",
+      "command-artifact"
+    ],
+    [
+      "\uBB38\uC11C \uD15C\uD50C\uB9BF \uC0DD\uC131\uAE30 \uB9CC\uB4E4\uC5B4\uC918",
+      "document_artifact",
+      "command-artifact"
+    ],
+    [
+      "\uCCB4\uD06C\uB9AC\uC2A4\uD2B8 \uC0DD\uC131 \uB3C4\uAD6C \uB9CC\uB4E4\uC5B4\uC918",
+      "document_artifact",
+      "command-artifact"
+    ],
+    [
       "\uCCB4\uD06C\uB9AC\uC2A4\uD2B8 \uC790\uB3D9\uD654 \uB3C4\uAD6C \uB9CC\uB4E4\uC5B4\uC918",
       "document_artifact",
       "command-artifact"
@@ -96,6 +116,21 @@ try {
       "\u0043\u0053\u0056 \u0045\u0054\u004C \uD30C\uC774\uD504\uB77C\uC778 \uB3C4\uAD6C \uB9CC\uB4E4\uC5B4\uC918",
       "data_pipeline",
       "command-artifact"
+    ],
+    [
+      "\u0043\u0053\u0056 \uC815\uC81C \uD30C\uC774\uD504\uB77C\uC778 \uB9CC\uB4E4\uC5B4\uC918",
+      "data_pipeline",
+      "command-artifact"
+    ],
+    [
+      "\uB370\uC774\uD130 \uAC80\uC99D \uD30C\uC774\uD504\uB77C\uC778 \uB9CC\uB4E4\uC5B4\uC918",
+      "data_pipeline",
+      "command-artifact"
+    ],
+    [
+      "\uB85C\uADF8 \uD30C\uC77C \uBCC0\uD658\uAE30 \uB9CC\uB4E4\uC5B4\uC918",
+      "cli_tool",
+      "cli-tool"
     ],
     [
       "\u0043\u0053\u0056 \uBCC0\uD658\uAE30 \uB9CC\uB4E4\uC5B4\uC918",

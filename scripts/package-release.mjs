@@ -12,8 +12,10 @@ const zipPath = join(releaseRoot, installZipName);
 const legacyZipPath = join(releaseRoot, "generic-codex-workbench.zip");
 const requiredPackageFiles = [
   "docs/TARGET_FAMILIES_AND_EVIDENCE_SURFACES.md",
+  "packages/loop-orchestrator/src/front-door/korean-document-ambiguity.ts",
   "packages/loop-orchestrator/src/front-door/korean-product-detection.ts",
   "packages/loop-orchestrator/src/front-door/question-policy.ts",
+  "packages/loop-orchestrator/src/loop/active-checkpoint.ts",
   "packages/loop-orchestrator/src/loop/default-evaluation-policy.ts",
   "packages/loop-orchestrator/src/loop/round-target-decision.ts",
   "packages/loop-orchestrator/src/loop/scorecard-artifacts.ts",
@@ -25,6 +27,7 @@ const requiredPackageFiles = [
   "scripts/validate-document-artifact-front-door-questions.mjs",
   "scripts/validate-library-front-door-questions.mjs",
   "scripts/validate-korean-data-pipeline-detection.mjs",
+  "scripts/validate-korean-ambiguous-document-request.mjs",
   "scripts/validate-korean-document-artifact-detection.mjs",
   "scripts/validate-korean-non-product-rejection.mjs",
   "scripts/validate-korean-product-kind-fixtures.mjs",

@@ -8,7 +8,7 @@ type ResumeIntentFieldId = "run_reference" | "current_state" | "next_step";
 type EvaluatorIntentFieldId = "calibration_focus" | "failure_examples" | "success_criteria";
 type IntentFieldId = HarnessIntentFieldId | RunControlIntentFieldId | ResumeIntentFieldId | EvaluatorIntentFieldId;
 export type LoopIntent = "product_build" | "harness_design" | "run_control" | "run_resume" | "evaluator_tuning" | "unknown";
-export type LoopIntentStatus = "route_to_app_builder_loop" | "ask_harness_questions" | "ask_run_control_questions" | "ask_resume_questions" | "ask_evaluator_questions" | "ready_for_run_control" | "ready_for_handoff" | "unclassified";
+export type LoopIntentStatus = "route_to_app_builder_loop" | "ambiguous_document_request" | "ask_harness_questions" | "ask_run_control_questions" | "ask_resume_questions" | "ask_evaluator_questions" | "ready_for_run_control" | "ready_for_handoff" | "unclassified";
 export type LoopIntentPhase = "none" | "intent" | "handoff" | "prepare";
 export type LoopIntentRoute = "app_builder_loop" | "harness_design" | "run_control" | "run_resume" | "evaluator_tuning" | "clarify";
 export interface RunControlAutocontinuePlan {

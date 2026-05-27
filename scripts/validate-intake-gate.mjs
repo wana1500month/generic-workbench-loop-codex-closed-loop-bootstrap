@@ -114,12 +114,22 @@ for (const request of [
   "Build a dashboard strategy for operators",
   "Create website copy for a service",
   "Create API documentation for developers",
-  "API 문서 만들어줘",
   "서비스 로드맵 만들어줘",
   "대시보드 전략 작성해줘"
 ]) {
   const result = evaluateIntakeRequest(request);
   assert.equal(result.status, "not_product_build_request", request);
+}
+
+for (const request of [
+  "\u0041\u0050\u0049 \uBB38\uC11C \uB9CC\uB4E4\uC5B4\uC918",
+  "\uBB38\uC11C \uC791\uC131\uD574\uC918"
+]) {
+  const result = evaluateIntakeRequest(request);
+  assert.equal(result.status, "ambiguous_document_request", request);
+  assert.equal(result.phase, "clarification", request);
+  assert.equal(result.is_product_build_request, false, request);
+  assert.ok(result.questions.length > 0, request);
 }
 
 const productFilledRequest =
