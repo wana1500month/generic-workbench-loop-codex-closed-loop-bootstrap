@@ -236,10 +236,11 @@ const inferProjectKindCandidate = (value) => {
     return projectKind === "generic" ? undefined : projectKind;
 };
 const evidenceSurfacesForCandidate = (projectKind, explicitSurfaces) => {
-    const surfaces = [
-        ...(explicitSurfaces ?? []),
-        ...(projectKind ? evidenceSurfacesForProjectKind(projectKind) : [])
-    ];
+    const surfaces = (explicitSurfaces?.length
+        ? explicitSurfaces
+        : projectKind
+            ? evidenceSurfacesForProjectKind(projectKind)
+            : []);
     return surfaces.length > 0 ? [...new Set(surfaces)] : undefined;
 };
 const firstMatch = (value, patterns) => {
@@ -375,6 +376,18 @@ const isExecutionQuestionPair = (questionIds) => questionIds.some((fieldId) => [
 ].includes(fieldId));
 const isAdapterQuestionPair = (questionIds) => questionIds.some((fieldId) => ["verification_surface", "workflow_checks", "quality_metrics"].includes(fieldId));
 const messageExplicitlyAnswersAdapterDesign = (message) => /(?:\uAC80\uC99D\s*(?:\uBC29\uC2DD|\uC218\uB2E8|\uBC29\uBC95)|verification\s*surface|verify\s+with|browser\s+verification|screen\s+verification|\uD654\uBA74\uC73C\uB85C\s*\uAC80\uC99D|\uBE0C\uB77C\uC6B0\uC800\uB85C\s*\uAC80\uC99D|API\uB85C\s*\uAC80\uC99D|\uD14C\uC2A4\uD2B8\s*\uBA85\uB839\uC73C\uB85C\s*\uAC80\uC99D)/iu.test(message);
+const verificationSurfaceClausePattern = /(?:verification\s*(?:surfaces?|methods?|evidence)|evidence\s*(?:surfaces?|with|via)|proof\s*(?:with|via)|verify\s*(?:only\s*)?(?:with|in|via)|browser\s+verification|screen\s+verification|\uAC80\uC99D\s*(?:\uBC29\uC2DD|\uC218\uB2E8|\uBC29\uBC95|\uC99D\uAC70|\uD45C\uBA74)|\uD654\uBA74\uC73C\uB85C\s*\uAC80\uC99D|\uBE0C\uB77C\uC6B0\uC800\uB85C\s*\uAC80\uC99D|API\uB85C\s*\uAC80\uC99D|\uD14C\uC2A4\uD2B8\s*\uBA85\uB839\uC73C\uB85C\s*\uAC80\uC99D)/iu;
+const explicitVerificationSurfaceAnswerText = (message, input) => {
+    if (input.adapterQuestionPair) {
+        return message;
+    }
+    const clauses = message
+        .split(/\r?\n|(?<=[.!?])\s+|[;；]/u)
+        .map((clause) => clause.trim())
+        .filter(Boolean)
+        .filter((clause) => verificationSurfaceClausePattern.test(clause));
+    return clauses.length > 0 ? clauses.join("\n") : undefined;
+};
 const answerForField = (lines, index, isGroupedPair) => {
     if (lines[index]) {
         return lines[index];
@@ -564,6 +577,15 @@ const extractCandidatesFromQuestionOrder = (message, questionIds, existingIntake
                 break;
             }
             case "workflow_checks": {
+                const explicitSurfaceText = explicitVerificationSurfaceAnswerText(message, { adapterQuestionPair: false });
+                const messageSurfaces = explicitSurfaceText
+                    ? parseVerificationSurfacesAnswer(explicitSurfaceText)
+                    : [];
+                if (messageSurfaces.length > 0 && !result.verification_surfaces) {
+                    result.verification_surfaces = existingIntake?.target_family
+                        ? normalizeVerificationSurfacesForFamily(existingIntake.target_family, messageSurfaces)
+                        : messageSurfaces;
+                }
                 const existingSurfaces = existingIntake?.target_family
                     ? normalizeVerificationSurfacesForFamily(existingIntake.target_family, existingIntake.verification_surfaces)
                     : existingIntake?.verification_surfaces;
@@ -602,6 +624,7 @@ const extractCandidates = (input) => {
     const targetRootFromMessage = extractTargetRootFromMessage(message);
     const shouldImplicitlyParse = (field) => !hasQuestionContext || previousQuestionSet.has(field);
     const explicit = explicitFieldMentions(message);
+    const adapterQuestionPair = isAdapterQuestionPair(previousQuestionIds);
     const productTitle = extractLabeledRestOfLine(message, productTitleLabelPattern) ??
         deriveProductTitle(sourceRequest) ??
         deriveProductTitle(message);
@@ -652,12 +675,21 @@ const extractCandidates = (input) => {
     const strictnessLevel = parseStrictnessLevel(message) ??
         (message === sourceRequest ? parseStrictnessLevel(sourceRequest) : undefined);
     const customQualityMetrics = parseCustomQualityMetrics(message, strictnessLevel ?? input.existingIntake?.strictness_level ?? 3);
-    const rawExplicitVerificationSurfaces = parseVerificationSurfacesAnswer(message);
+    const explicitVerificationText = acceptsAdapterAnswer
+        ? explicitVerificationSurfaceAnswerText(message, {
+            adapterQuestionPair: adapterQuestionPair &&
+                previousQuestionSet.has("verification_surface") &&
+                previousQuestionIds.length === 1
+        })
+        : undefined;
+    const rawExplicitVerificationSurfaces = explicitVerificationText
+        ? parseVerificationSurfacesAnswer(explicitVerificationText)
+        : [];
     const explicitVerificationSurfaces = rawExplicitVerificationSurfaces;
-    const candidateVerificationSurfaces = acceptsAdapterAnswer && intakeResult.extracted_verification_surfaces?.length
-        ? intakeResult.extracted_verification_surfaces
-        : explicitVerificationSurfaces.length
-            ? explicitVerificationSurfaces
+    const candidateVerificationSurfaces = explicitVerificationSurfaces.length
+        ? explicitVerificationSurfaces
+        : adapterQuestionPair && intakeResult.extracted_verification_surfaces?.length
+            ? intakeResult.extracted_verification_surfaces
             : undefined;
     const workflowChecksFromMessage = parseWorkflowChecksAnswer(message, candidateVerificationSurfaces?.[0] ??
         input.existingIntake?.verification_surfaces?.[0] ??
@@ -1072,9 +1104,13 @@ export const mergeFrontDoorSessionTurn = (input) => {
         replace: replaceFields.has("reference_apps")
     });
     applyVerificationSurfaces(nextIntake, candidates.verification_surfaces, conflicts, {
-        replace: replaceFields.has("verification_surfaces")
+        replace: replaceFields.has("verification_surfaces") ||
+            Boolean(candidates.verification_surfaces?.length)
     });
-    applyEvidenceSurfaces(nextIntake, candidates.evidence_surfaces, conflicts);
+    applyEvidenceSurfaces(nextIntake, candidates.evidence_surfaces, conflicts, {
+        replace: replaceFields.has("verification_surfaces") ||
+            Boolean(candidates.verification_surfaces?.length)
+    });
     applyCustomQualityMetrics(nextIntake, candidates.custom_quality_metrics, conflicts, {
         replace: replaceFields.has("custom_quality_metrics")
     });

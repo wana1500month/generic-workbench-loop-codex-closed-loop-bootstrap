@@ -14,7 +14,6 @@ import { attachedPreGeneratorBaselineWindowOpen, captureBootstrapGeneratedBaseli
 import { defaultIdeaPath, readIdeaBrief } from "./idea-intake.js";
 import { evaluationPolicyPathForRun, type RoundScorecard } from "./evaluation-policy.js";
 import { ensureEvaluationPolicyForRun } from "./loop/default-evaluation-policy.js";
-import { deriveSessionLoopStatus } from "./loop/status-snapshot.js";
 import { defaultControllerMode, isControllerMode } from "./controller-mode.js";
 import { defaultExecutorMode, isExecutorMode } from "./executor-mode.js";
 import { buildTransportStateArtifact, defaultTransportModeForControllerMode, isCurrentThreadTransport, isTransportMode, transportRuntimeWarningsForMode, validateTransportMode } from "./transport-mode.js";
@@ -24,20 +23,21 @@ import { buildAttemptDirective, buildLoopPlan, buildRoundContract, buildScenario
 import { buildContractAgreementArtifact, buildContractReviewArtifact } from "./round-evaluator.js";
 import { orderedAdapterExecutions, runAdapterCapabilities } from "./loop/adapter-executions.js";
 import { activeArtifactPathsFor, activeCheckpointMetadataFor } from "./loop/active-checkpoint.js";
-import { buildCheckpointSummary, isCodexCheckpointPhaseStatus, isPausedPhaseStatus, phaseCompletedAtOrBeyond } from "./loop/checkpoints.js";
+import { isCodexCheckpointPhaseStatus, isPausedPhaseStatus, phaseCompletedAtOrBeyond } from "./loop/checkpoints.js";
+import { writeLoopCheckpointSnapshot } from "./loop/checkpoint-writer.js";
 import { checkpointForCurrentThreadWorkCheckpoint, pauseForExternalConditionCheckpoint, pauseForHumanInputCheckpoint, type CheckpointForCurrentThreadWorkInput, type PauseForExternalConditionInput, type PauseForHumanInputInput } from "./loop/checkpoint-flow.js";
 import { finalizeRunAsPausedStopWithArtifacts, finalizeRunAsTerminalDecisionStopWithArtifacts, type AttemptFinalizationDeps, type FinalizeRunAsPausedStopInput, type FinalizeRunAsTerminalDecisionStopInput } from "./loop/attempt-finalization.js";
 import { resolveEvaluatorBundleSelection } from "./loop/evaluator-bundle.js";
 import { PhaseBudgetExceededError, parsePhaseTimeoutOverrides, parsePositiveTimeoutMs } from "./loop/phase-timeouts.js";
-import { crashAfterCheckpointEnabled, ensureJsonFile, isImproved, roundDirectoryFor } from "./loop/round-files.js";
-import { writeRunCheckpoint } from "./loop/run-checkpoint.js";
-import { currentBestForRunCheckpoint } from "./loop/run-summary-finalization.js";
+import { ensureJsonFile, isImproved, roundDirectoryFor } from "./loop/round-files.js";
 import { externalBlockersFromPatchRequest, reviewFeedbackFromArtifacts, scopeGuardrailsFromPatchRequest, steeringNotesFromContractReview } from "./loop/runtime-warning-summary.js";
 import { buildRuntimeEvent, mergeRuntimeEvents, normalizeRuntimeWarnings } from "./loop/runtime-events.js";
 import { buildInitialRuntimeEventsForRun, persistentWarningsFromRestoredRun } from "./loop/run-runtime-events.js";
 import { runEvaluatorStep } from "./loop/evaluator-step.js";
 import { finalizeNoopTerminalResume } from "./loop/noop-terminal-resume.js";
 import { persistRoundPhase } from "./loop/round-phase-recorder.js";
+import { resolveRuntimeSurfaceState, writeLoopOperatorSurface, type RuntimeSurfaceWriteInput } from "./loop/runtime-surface-writer.js";
+import { createSessionPreparationRefresher, type SessionPreparationRefreshInput } from "./loop/session-preparation-refresher.js";
 import { buildAttemptRoundReport, commitAttemptRoundReport } from "./loop/attempt-reporting.js";
 import { defaultRubricPath, postVerificationCapabilities, preVerificationCapabilities } from "./loop/run-defaults.js";
 import { assertActivePhaseBudget, markLoopProgress, withActivePhaseBudget } from "./loop/progress-budget.js";
@@ -52,7 +52,7 @@ import { buildResumeIdentityState, compareResumeIdentity, loadResumeIdentityArti
 import { buildRemediationHistory, restoreRunState, scoreDeltasForHistory } from "./resume-state.js";
 import { runtimeStatePathsForRun, startRuntimeHeartbeat, writeRuntimeRoundPhaseArtifact, writeTransportStateArtifact } from "./runtime-state.js";
 import { buildOperatorSurfaceArtifact, resolveOperatorSurfaceContext, writeOperatorSurfaceArtifacts } from "./operator-surface.js";
-import { buildOperatorSurfaceSessionProjection, writeSessionPreparationArtifacts } from "./session-artifacts.js";
+import { buildOperatorSurfaceSessionProjection } from "./session-artifacts.js";
 import { clearReadyToStartSessionMarker, findLatestPreparedRunAwaitingStart, loadPreparedSessionSeedForRun } from "./prepare-session.js";
 import { applyGeneratedLocalAdapterMigration, buildAdapterMigrationProposal, decisionOptionsForAdapterMigrationProposal, generatedAdapterRuntimeConfigPath, isAuthorizedAdapterMigration, loadAdapterMigrationResponse, loadAuthorizedAdapterMigration } from "./adapter-migration.js";
 import { readAdapterMigrationAuthoringResponse, writeAdapterMigrationAuthoringTask } from "./adapter-migration-authoring.js";
@@ -909,76 +909,12 @@ export const runClosedLoop = async (input: RunClosedLoopInput): Promise<ClosedLo
   const defaultSessionObjective = durableMemory.context.finishLine
     ? `Ship a reviewable build that reaches: ${durableMemory.context.finishLine}`
     : `Ship a reviewable build for ${durableMemory.context.title} without leaving the current Codex thread.`;
-  let sessionCurrentObjective =
-    previousRoundSummary?.objective ?? defaultSessionObjective;
-  let sessionSteeringNotes: string[] = [];
-  let sessionReviewFeedback = reviewFeedbackFromArtifacts({
-    patchRequestArtifact: previousPatchRequest,
-    evalReport: latestEvalReport
-  });
-  let sessionExternalBlockers = externalBlockersFromPatchRequest(previousPatchRequest);
-  let sessionScopeGuardrails = scopeGuardrailsFromPatchRequest(previousPatchRequest);
   let latestSessionStatusArtifact: SessionStatusArtifact | undefined;
-  let sessionLatestRound: number | undefined = restoredRun?.latestRoundSummary?.round;
-  let sessionLatestStopReason: LoopRunSummary["stop_reason"] | undefined =
-    currentCheckpointStopReason;
-  const updateSessionRefreshState = (input?: {
-    currentObjective?: string;
-    steeringNotes?: string[];
-    reviewFeedback?: string[];
-    externalBlockers?: string[];
-    scopeGuardrails?: string[];
-    latestRound?: number;
-    latestStopReason?: LoopRunSummary["stop_reason"];
-  }): void => {
-    if (!input) {
-      return;
-    }
-    if (input.currentObjective !== undefined) {
-      sessionCurrentObjective = input.currentObjective;
-    }
-    if (input.steeringNotes !== undefined) {
-      sessionSteeringNotes = unique(input.steeringNotes);
-    }
-    if (input.reviewFeedback !== undefined) {
-      sessionReviewFeedback = unique(input.reviewFeedback);
-    }
-    if (input.externalBlockers !== undefined) {
-      sessionExternalBlockers = unique(input.externalBlockers);
-    }
-    if (input.scopeGuardrails !== undefined) {
-      sessionScopeGuardrails = unique(input.scopeGuardrails);
-    }
-    if (input.latestRound !== undefined) {
-      sessionLatestRound = input.latestRound;
-    }
-    if (input.latestStopReason !== undefined) {
-      sessionLatestStopReason = input.latestStopReason;
-    }
-  };
-  const refreshSessionPreparationArtifacts = async (input?: {
-    status?: SessionLoopStatus;
-    stopReason?: LoopRunSummary["stop_reason"];
-    attentionRequired?: OperatorAttentionRequired;
-    executionState?: ExecutionState;
-    checkpointKind?: CurrentThreadCheckpointKind;
-    checkpointId?: string;
-    activePromptPath?: string;
-    activeResponsePath?: string;
-    recommendedSkill?: OperatorRecommendedSkill;
-    decisionOptions?: AdapterMigrationDecision[];
-  }): Promise<void> => {
-    const snapshot = appServerTransport?.snapshot();
-    const sessionContext = resolveOperatorSurfaceContext({
-      controllerMode,
-      transportMode,
-      threadId: snapshot?.thread_id,
-      threadName: snapshot?.thread_name
-    });
-    const result = await writeSessionPreparationArtifacts({
-      runId,
-      runDirectory,
-      rootDirectory: durableMemory.rootDirectory,
+  const sessionPreparationRefresher = createSessionPreparationRefresher({
+    controllerMode,
+    transportMode,
+    artifactInput: {
+      runId, runDirectory, rootDirectory: durableMemory.rootDirectory,
       buildBriefPath: runtimeStatePaths.buildBriefPath,
       runContractPath: runtimeStatePaths.runContractPath,
       openQuestionsPath: runtimeStatePaths.openQuestionsPath,
@@ -986,12 +922,8 @@ export const runClosedLoop = async (input: RunClosedLoopInput): Promise<ClosedLo
       sessionStatusEventsPath: runtimeStatePaths.sessionStatusEventsPath,
       sessionStreamPath: runtimeStatePaths.sessionStreamPath,
       operatorSurfacePath: runtimeStatePaths.operatorSurfacePath,
-      executionPlanPath,
-      transportMode,
+      executionPlanPath, transportMode,
       appServerSessionEventsPath: runtimeStatePaths.appServerSessionEventsPath,
-      threadBindingState: sessionContext.threadBindingState,
-      threadId: sessionContext.threadId,
-      turnId: snapshot?.turn_id,
       idea,
       durableMemory: durableMemory.context,
       scenario,
@@ -1000,30 +932,34 @@ export const runClosedLoop = async (input: RunClosedLoopInput): Promise<ClosedLo
       targetFamily: resolvedTargetFamily,
       ...(resolvedSessionValidationBundle
         ? { validationBundle: resolvedSessionValidationBundle }
-        : {}),
-      sessionStatus: deriveSessionLoopStatus({
-        override: input?.status,
-        stopReason: input?.stopReason ?? sessionLatestStopReason,
-        executionState: input?.executionState ?? activeExecutionState,
-        attentionRequired: input?.attentionRequired ?? activeAttentionRequired,
-        hasHistory: history.length > 0
-      }),
-      currentObjective: sessionCurrentObjective,
-      steeringNotes: sessionSteeringNotes,
-      reviewFeedback: sessionReviewFeedback,
-      externalBlockers: sessionExternalBlockers,
-      scopeGuardrails: sessionScopeGuardrails,
-      latestRound: sessionLatestRound,
-      latestStopReason: input?.stopReason ?? sessionLatestStopReason,
-      checkpointKind: input?.checkpointKind ?? activeCheckpointKind,
-      checkpointId: input?.checkpointId ?? activeCheckpointId,
-      checkpointPromptPath: input?.activePromptPath ?? activePromptArtifactPath,
-      checkpointResponsePath:
-        input?.activeResponsePath ?? activeResponseArtifactPath,
-      checkpointSkill: input?.recommendedSkill ?? activeRecommendedSkill,
-      decisionOptions: input?.decisionOptions ?? activeDecisionOptions
-    });
-    latestSessionStatusArtifact = result.sessionStatus;
+        : {})
+    },
+    getTransportSnapshot: () => appServerTransport?.snapshot(),
+    getRuntimeState: () => ({
+      executionState: activeExecutionState,
+      attentionRequired: activeAttentionRequired,
+      checkpointKind: activeCheckpointKind,
+      checkpointId: activeCheckpointId,
+      activePromptPath: activePromptArtifactPath,
+      activeResponsePath: activeResponseArtifactPath,
+      recommendedSkill: activeRecommendedSkill,
+      decisionOptions: activeDecisionOptions,
+      historyLength: history.length
+    }),
+    initialState: {
+      currentObjective: previousRoundSummary?.objective ?? defaultSessionObjective,
+      steeringNotes: [],
+      reviewFeedback: reviewFeedbackFromArtifacts({ patchRequestArtifact: previousPatchRequest, evalReport: latestEvalReport }),
+      externalBlockers: externalBlockersFromPatchRequest(previousPatchRequest),
+      scopeGuardrails: scopeGuardrailsFromPatchRequest(previousPatchRequest),
+      latestStopReason: currentCheckpointStopReason
+    }
+  });
+  const updateSessionRefreshState = sessionPreparationRefresher.updateState;
+  const refreshSessionPreparationArtifacts = async (
+    input?: SessionPreparationRefreshInput
+  ): Promise<void> => {
+    latestSessionStatusArtifact = await sessionPreparationRefresher.refresh(input);
   };
   const assertPhaseBudget = (): void => {
     assertActivePhaseBudget({
@@ -1060,128 +996,41 @@ export const runClosedLoop = async (input: RunClosedLoopInput): Promise<ClosedLo
       ]
     });
   };
-  const writeOperatorSurface = async (input?: {
-    round?: number;
-    phase?: ControllerRoundPhase;
-    phaseStatus?: ControllerPhaseStatus;
-    executionState?: ExecutionState | "configured";
-    attentionRequired?: OperatorAttentionRequired;
-    checkpointKind?: CurrentThreadCheckpointKind;
-    checkpointId?: string;
-    checkpointSeq?: number;
-    autoResumeEligible?: boolean;
-    userVisiblePause?: boolean;
-    decisionOptions?: AdapterMigrationDecision[];
-    recommendedSkill?: OperatorRecommendedSkill;
-    recommendedCommand?: string;
-    nextAction?: string;
-    activePromptPath?: string;
-    activeResponsePath?: string;
-    notes?: string[];
-  }): Promise<void> => {
+  const writeOperatorSurface = async (
+    input?: RuntimeSurfaceWriteInput
+  ): Promise<void> => {
     const snapshot = appServerTransport?.snapshot();
-    if (input?.activePromptPath !== undefined) {
-      activePromptArtifactPath = input.activePromptPath;
-    }
-    if (input?.activeResponsePath !== undefined) {
-      activeResponseArtifactPath = input.activeResponsePath;
-    }
-    if (input?.attentionRequired !== undefined) {
-      activeAttentionRequired = input.attentionRequired;
-    }
-    if (input?.checkpointKind !== undefined) {
-      activeCheckpointKind = input.checkpointKind;
-    }
-    if (input?.checkpointId !== undefined) {
-      activeCheckpointId = input.checkpointId;
-    }
-    if (input?.checkpointSeq !== undefined) {
-      activeCheckpointSeq = input.checkpointSeq;
-    }
-    if (input?.autoResumeEligible !== undefined) {
-      activeAutoResumeEligible = input.autoResumeEligible;
-    }
-    if (input?.userVisiblePause !== undefined) {
-      activeUserVisiblePause = input.userVisiblePause;
-    }
-    if (input?.decisionOptions !== undefined) {
-      activeDecisionOptions =
-        input.decisionOptions.length > 0 ? input.decisionOptions : undefined;
-    }
-    if (input?.recommendedSkill !== undefined) {
-      activeRecommendedSkill = input.recommendedSkill;
-    }
-    if (input?.recommendedCommand !== undefined) {
-      activeRecommendedCommand = input.recommendedCommand;
-    }
-    if (transportMode !== "app-server") {
-      await writeTransportStateArtifact(
-        runtimeStatePaths.transportStatePath,
-        buildTransportStateArtifact({
-          runId,
-          controllerMode,
-          transportMode,
-          executorMode,
-          summaryPath,
-          protocolPath: transportProtocolCurrentPath,
-          dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
-          sessionStatusPath: runtimeStatePaths.sessionStatusPath,
-          sessionStatusEventsPath: runtimeStatePaths.sessionStatusEventsPath,
-          sessionStreamPath: runtimeStatePaths.sessionStreamPath,
-          ...(latestSessionStatusArtifact
-            ? {
-                session:
-                  buildOperatorSurfaceSessionProjection(latestSessionStatusArtifact)
-              }
-            : {}),
-          status: "configured",
-          notes: transportRuntimeWarningsForMode({
-            controllerMode,
-            transportMode
-          })
-        })
-      );
-    }
-    await writeOperatorSurfaceArtifacts({
-      jsonPath: runtimeStatePaths.operatorSurfacePath,
-      markdownPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
-      artifact: buildOperatorSurfaceArtifact({
-        runId,
-        controllerMode,
-        transportMode,
-        executionState: input?.executionState ?? activeExecutionState,
-        round: input?.round ?? activeHeartbeatRound,
-        phase: input?.phase ?? activeHeartbeatPhase,
-        phaseStatus: input?.phaseStatus ?? activeHeartbeatPhaseStatus,
-        attentionRequired: input?.attentionRequired ?? activeAttentionRequired,
-        checkpointKind: input?.checkpointKind ?? activeCheckpointKind,
-        checkpointId: input?.checkpointId ?? activeCheckpointId,
-        checkpointSeq: input?.checkpointSeq ?? activeCheckpointSeq,
-        autoResumeEligible:
-          input?.autoResumeEligible ?? activeAutoResumeEligible,
-        userVisiblePause: input?.userVisiblePause ?? activeUserVisiblePause,
-        decisionOptions: input?.decisionOptions ?? activeDecisionOptions,
-        summaryPath,
-        transportStatePath: runtimeStatePaths.transportStatePath,
-        transportProtocolPath: transportProtocolCurrentPath,
-        sessionStatusPath: runtimeStatePaths.sessionStatusPath,
-        sessionStatusEventsPath: runtimeStatePaths.sessionStatusEventsPath,
-        sessionStreamPath: runtimeStatePaths.sessionStreamPath,
-        activePromptPath: input?.activePromptPath ?? activePromptArtifactPath,
-        activeResponsePath:
-          input?.activeResponsePath ?? activeResponseArtifactPath,
-        dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
-        threadId: snapshot?.thread_id,
-        threadName: snapshot?.thread_name,
-        recommendedSkill: input?.recommendedSkill ?? activeRecommendedSkill,
-        recommendedCommand:
-          input?.recommendedCommand ?? activeRecommendedCommand,
-        session: latestSessionStatusArtifact
-          ? buildOperatorSurfaceSessionProjection(latestSessionStatusArtifact)
-          : undefined,
-        nextAction: input?.nextAction,
-        notes: input?.notes ?? heartbeatNotes
-      })
+    const surfaceState = resolveRuntimeSurfaceState(
+      {
+        activeExecutionState, activeHeartbeatRound, activeHeartbeatPhase, activeHeartbeatPhaseStatus,
+        activePromptPath: activePromptArtifactPath,
+        activeResponsePath: activeResponseArtifactPath,
+        attentionRequired: activeAttentionRequired, checkpointKind: activeCheckpointKind,
+        checkpointId: activeCheckpointId, checkpointSeq: activeCheckpointSeq,
+        autoResumeEligible: activeAutoResumeEligible, userVisiblePause: activeUserVisiblePause,
+        decisionOptions: activeDecisionOptions, recommendedSkill: activeRecommendedSkill,
+        recommendedCommand: activeRecommendedCommand
+      },
+      input
+    );
+    activePromptArtifactPath = surfaceState.activePromptPath; activeResponseArtifactPath = surfaceState.activeResponsePath;
+    activeAttentionRequired = surfaceState.attentionRequired; activeCheckpointKind = surfaceState.checkpointKind;
+    activeCheckpointId = surfaceState.checkpointId; activeCheckpointSeq = surfaceState.checkpointSeq;
+    activeAutoResumeEligible = surfaceState.autoResumeEligible; activeUserVisiblePause = surfaceState.userVisiblePause;
+    activeDecisionOptions = surfaceState.decisionOptions; activeRecommendedSkill = surfaceState.recommendedSkill;
+    activeRecommendedCommand = surfaceState.recommendedCommand;
+    await writeLoopOperatorSurface({
+      state: surfaceState, writeInput: input, runId, controllerMode, transportMode, executorMode, summaryPath,
+      transportStatePath: runtimeStatePaths.transportStatePath,
+      transportProtocolPath: transportProtocolCurrentPath,
+      dashboardPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
+      sessionStatusPath: runtimeStatePaths.sessionStatusPath,
+      sessionStatusEventsPath: runtimeStatePaths.sessionStatusEventsPath,
+      sessionStreamPath: runtimeStatePaths.sessionStreamPath,
+      operatorSurfacePath: runtimeStatePaths.operatorSurfacePath,
+      operatorSurfaceMarkdownPath: runtimeStatePaths.operatorSurfaceMarkdownPath,
+      latestSessionStatusArtifact, threadId: snapshot?.thread_id,
+      threadName: snapshot?.thread_name, heartbeatNotes
     });
   };
   await refreshSessionPreparationArtifacts({
@@ -1382,35 +1231,23 @@ export const runClosedLoop = async (input: RunClosedLoopInput): Promise<ClosedLo
   const writeCheckpoint = async (
     stopReason: LoopRunSummary["stop_reason"] | undefined
   ): Promise<LoopRunSummary> => {
-    const summary = buildCheckpointSummary({
-      runId,
-      scenarioId: scenario.scenario_id,
-      rubricId: hydratedRubric.rubric_id,
-      controllerMode,
-      transportMode,
-      executorMode,
-      targetFamily: resolvedTargetFamily,
-      validationLane: resolvedValidationLane,
+    const summary = await writeLoopCheckpointSnapshot({
+      runId, scenarioId: scenario.scenario_id, runDirectory, rubric: hydratedRubric,
+      controllerMode, transportMode, executorMode,
+      targetFamily: resolvedTargetFamily, validationLane: resolvedValidationLane,
       evaluatorProfilePath: bundleSelection.evaluatorProfilePath,
       adapterContractSha256: currentResumeIdentity.adapter_contract_sha256,
       evaluatorBundleSha256: currentResumeIdentity.evaluator_bundle_sha256,
       rubricSha256: currentResumeIdentity.rubric_sha256,
-      plannerBriefPath,
-      plannedScenarioPath,
-      planPath,
+      plannerBriefPath, plannedScenarioPath, planPath,
       ideaPath: defaultIdeaPath,
       featureListPath: durableMemoryPaths.feature_list_path,
       progressPath: durableMemoryPaths.progress_path,
       progressLogPath: durableMemoryPaths.progress_log_path,
       doneWhenPath: durableMemoryPaths.done_when_path,
       initScriptPath: durableMemoryPaths.init_script_path,
-      adapterContractPath: loadedAdapter?.contract_path,
-      adapterId: loadedAdapter?.contract.adapter_id,
-      verificationProviderId:
-        loadedAdapter?.contract.verification_provider?.provider_id,
-      adapterAttached: Boolean(loadedAdapter),
-      codexSessionRegistryPath,
-      resumeIdentityPath: currentResumeIdentityPath,
+      loadedAdapter, codexSessionRegistryPath, currentResumeIdentityPath,
+      runtimeDirectory: runtimeStatePaths.runtimeDirectory,
       runtimeLiveStatePath: runtimeStatePaths.liveStatePath,
       runtimeRoundPhasePath: runtimeStatePaths.roundPhasePath,
       controllerLeasePath: runtimeStatePaths.controllerLeasePath,
@@ -1420,59 +1257,14 @@ export const runClosedLoop = async (input: RunClosedLoopInput): Promise<ClosedLo
       sessionStatusPath: runtimeStatePaths.sessionStatusPath,
       sessionStatusEventsPath: runtimeStatePaths.sessionStatusEventsPath,
       sessionStreamPath: runtimeStatePaths.sessionStreamPath,
-      stopReason,
-      bestRound,
-      bestScore,
-      bestControlPlaneScore,
-      bestProofScore,
-      bestReleaseScore,
-      bestThresholdResults,
-      bestDimensionScores,
-      history,
+      stopReason, bestRound, bestScore, bestControlPlaneScore, bestProofScore,
+      bestReleaseScore, bestThresholdResults, bestDimensionScores, history,
       runtimeEvents: currentRuntimeEvents,
-      runtimeWarnings,
-      resumeMigrationPath,
-      previousBundleFingerprint,
-      newBundleFingerprint,
+      runtimeWarnings, resumeMigrationPath, previousBundleFingerprint, newBundleFingerprint,
       adapterMigrationAppliedPath: latestAdapterMigrationAppliedPath,
-      resumeDecisionPath: undefined,
-      resumedFromRunId: input.resumeRunPath ? runId : undefined
+      resumedFromRunId: input.resumeRunPath ? runId : undefined,
+      currentResumeIdentity, bestPatchRequestPath, bestEvalReportPath
     });
-
-    await Promise.all([
-      writeJson(currentResumeIdentityPath, currentResumeIdentity),
-      writeRunCheckpoint({
-        runDirectory,
-        summary,
-        currentBest: currentBestForRunCheckpoint({
-          history,
-          bestRound,
-          bestScore,
-          bestControlPlaneScore,
-          bestProofScore,
-          bestReleaseScore,
-          bestThresholdResults,
-          bestDimensionScores,
-          bestPatchRequestPath,
-          bestEvalReportPath
-        })
-      })
-    ]);
-    if (crashAfterCheckpointEnabled() && history.length > 0) {
-      const crashMarkerPath = join(
-        runtimeStatePaths.runtimeDirectory,
-        "test-crash-after-checkpoint.marker"
-      );
-      if (!(await pathExists(crashMarkerPath))) {
-        await writeText(
-          crashMarkerPath,
-          `Triggered after round ${history[history.length - 1]?.round ?? 0}.\n`
-        );
-        throw new Error(
-          `HARNESS_TEST_CRASH_AFTER_CHECKPOINT_ONCE triggered after round ${history[history.length - 1]?.round ?? 0}.`
-        );
-      }
-    }
     currentCheckpointStopReason = summary.stop_reason;
     updateSessionRefreshState({
       latestStopReason: summary.stop_reason,
@@ -1491,16 +1283,11 @@ export const runClosedLoop = async (input: RunClosedLoopInput): Promise<ClosedLo
   };
 
   const clearActiveCheckpointSurface = (): void => {
-    activeAttentionRequired = undefined;
-    activeCheckpointKind = undefined;
-    activeCheckpointId = undefined;
-    activeCheckpointSeq = undefined;
-    activeAutoResumeEligible = undefined;
-    activeUserVisiblePause = undefined;
-    activeDecisionOptions = undefined;
-    activeRecommendedSkill = undefined;
-    activeRecommendedCommand = undefined;
-    activePromptArtifactPath = undefined;
+    activeAttentionRequired = undefined; activeCheckpointKind = undefined;
+    activeCheckpointId = undefined; activeCheckpointSeq = undefined;
+    activeAutoResumeEligible = undefined; activeUserVisiblePause = undefined;
+    activeDecisionOptions = undefined; activeRecommendedSkill = undefined;
+    activeRecommendedCommand = undefined; activePromptArtifactPath = undefined;
     activeResponseArtifactPath = undefined;
   };
 
@@ -1509,23 +1296,13 @@ export const runClosedLoop = async (input: RunClosedLoopInput): Promise<ClosedLo
     runDirectory,
     plannedScenarioPath,
     getRuntimeWarnings: () => runtimeWarnings,
-    setRuntimeWarnings: (warnings) => {
-      runtimeWarnings = warnings;
-    },
+    setRuntimeWarnings: (warnings) => { runtimeWarnings = warnings; },
     getHeartbeatNotes: () => heartbeatNotes,
-    replaceHeartbeatNotes,
-    updateSessionRefreshState,
-    refreshSessionPreparationArtifacts,
-    writeLiveTransportProtocol,
-    writeOperatorSurface,
-    writeCheckpoint,
+    replaceHeartbeatNotes, updateSessionRefreshState, refreshSessionPreparationArtifacts,
+    writeLiveTransportProtocol, writeOperatorSurface, writeCheckpoint,
     getCurrentRuntimeEvents: () => currentRuntimeEvents,
-    setCurrentRuntimeEvents: (events) => {
-      currentRuntimeEvents = events;
-    },
-    recordRoundPhase,
-    clearActiveCheckpointSurface,
-    setExecutionState
+    setCurrentRuntimeEvents: (events) => { currentRuntimeEvents = events; },
+    recordRoundPhase, clearActiveCheckpointSurface, setExecutionState
   };
   const finalizeRunAsPausedStop = (
     input: FinalizeRunAsPausedStopInput
@@ -1535,11 +1312,7 @@ export const runClosedLoop = async (input: RunClosedLoopInput): Promise<ClosedLo
     input: FinalizeRunAsTerminalDecisionStopInput
   ): Promise<ClosedLoopResult> =>
     finalizeRunAsTerminalDecisionStopWithArtifacts(attemptFinalizationDeps, input);
-  const checkpointFlowDeps = {
-    runId,
-    recordRoundPhase,
-    finalizeRunAsPausedStop
-  };
+  const checkpointFlowDeps = { runId, recordRoundPhase, finalizeRunAsPausedStop };
   const pauseForHumanInput = (
     input: PauseForHumanInputInput
   ): Promise<ClosedLoopResult> =>
@@ -1551,13 +1324,7 @@ export const runClosedLoop = async (input: RunClosedLoopInput): Promise<ClosedLo
   const checkpointForCurrentThreadWork = (
     input: CheckpointForCurrentThreadWorkInput
   ): Promise<ClosedLoopResult> =>
-    checkpointForCurrentThreadWorkCheckpoint(
-      {
-        ...checkpointFlowDeps,
-        manualCurrentThreadProtocol
-      },
-      input
-    );
+    checkpointForCurrentThreadWorkCheckpoint({ ...checkpointFlowDeps, manualCurrentThreadProtocol }, input);
   const applyAuthorizedGeneratedLocalMigrationForRound = async (input: {
     round: number;
     artifacts: RoundArtifacts;
@@ -3655,7 +3422,7 @@ export const runClosedLoop = async (input: RunClosedLoopInput): Promise<ClosedLo
       ? evaluationPolicyPathForRun(runDirectory)
       : undefined,
     summaryPath,
-    sessionCurrentObjective,
+    sessionCurrentObjective: sessionPreparationRefresher.getState().currentObjective,
     withPhaseBudget,
     recordRoundPhase,
     markProgress,

@@ -129,6 +129,7 @@
     "validate:intake-gate": "node ./scripts/validate-intake-gate.mjs",
     "validate:front-door-session": "node ./scripts/validate-front-door-session.mjs",
     "validate:front-door-session-repeat": "node ./scripts/validate-front-door-session-repeat.mjs",
+    "validate:front-door-session-repeat-stress": "node ./scripts/validate-front-door-session-repeat-stress.mjs",
     "validate:validation-batch-isolation": "node ./scripts/validate-validation-batch-isolation.mjs",
     "validate:durable-memory": "node ./scripts/validate-durable-memory.mjs",
     "validate:baseline-validity": "node ./scripts/validate-baseline-validity.mjs",

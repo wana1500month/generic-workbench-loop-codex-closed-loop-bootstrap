@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 
 import {
@@ -13,11 +13,179 @@ import {
   runCommand
 } from "./testing/bootstrap-validator-helpers.mjs";
 
+const expectedBrowserOnlySummaries = [
+  {
+    fixture: "ko-api-negated-browser-verification",
+    expected: {
+      target_family: "browser-app",
+      verification_surfaces: ["browser"],
+      evidence_surfaces: ["browser"]
+    }
+  },
+  {
+    fixture: "browser-only-db-noise-merge",
+    expected: {
+      target_family: "browser-app",
+      verification_surfaces: ["browser"],
+      evidence_surfaces: ["browser"]
+    }
+  },
+  {
+    fixture: "ko-budget-browser-verification",
+    expected: {
+      verification_surfaces: ["browser"],
+      evidence_surfaces: ["browser"]
+    }
+  }
+];
+
+const tryReadJson = async (path) => {
+  try {
+    return JSON.parse(await readFile(path, "utf8"));
+  } catch {
+    return undefined;
+  }
+};
+
+const collectJsonFiles = async (root, limit = 120) => {
+  if (!root || !existsSync(root) || limit <= 0) {
+    return [];
+  }
+  const results = [];
+  const walk = async (directory) => {
+    if (results.length >= limit) {
+      return;
+    }
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await walk(path);
+      } else if (entry.isFile() && entry.name.endsWith(".json")) {
+        const value = await tryReadJson(path);
+        if (value !== undefined) {
+          results.push({ path, value });
+        }
+      }
+      if (results.length >= limit) {
+        return;
+      }
+    }
+  };
+  await walk(root);
+  return results;
+};
+
+const surfaceSummaryFromJson = ({ path, value }) => {
+  const intake = value?.intake ?? value?.front_door_session?.intake;
+  const adapterPlan = intake?.adapter_plan ?? value?.adapter_plan;
+  return {
+    path,
+    status: value?.status,
+    phase: value?.phase,
+    project_kind: intake?.project_kind ?? value?.project_kind,
+    target_family:
+      intake?.target_family ?? adapterPlan?.target_family ?? value?.target_family,
+    evidence_surfaces:
+      intake?.evidence_surfaces ?? adapterPlan?.evidence_surfaces ?? value?.evidence_surfaces,
+    verification_surfaces:
+      intake?.verification_surfaces ??
+      adapterPlan?.verification_surfaces ??
+      value?.verification_surfaces,
+    adapter_plan: adapterPlan
+  };
+};
+
+const writeFrontDoorSessionFailureArtifacts = async (input) => {
+  const artifactRoot = process.env.HARNESS_FRONT_DOOR_SESSION_FAILURE_ARTIFACT_DIR;
+  if (!artifactRoot) {
+    return;
+  }
+  await mkdir(artifactRoot, { recursive: true });
+  const jsonFiles = [
+    ...(await collectJsonFiles(input.sessionsDirectory)),
+    ...(await collectJsonFiles(input.runsDirectory))
+  ];
+  const surfaceSummary = jsonFiles
+    .map(surfaceSummaryFromJson)
+    .filter(
+      (summary) =>
+        summary.project_kind ||
+        summary.target_family ||
+        summary.evidence_surfaces ||
+        summary.verification_surfaces ||
+        summary.adapter_plan
+    );
+  await Promise.all([
+    writeFile(
+      join(artifactRoot, "fixture-input.json"),
+      JSON.stringify(
+        {
+          validator: "validate:front-door-session",
+          temp_root: input.tempRoot,
+          sessions_directory: input.sessionsDirectory,
+          runs_directory: input.runsDirectory,
+          workspace_root: input.workspaceRoot,
+          target_root: input.targetRoot,
+          browser_only_fixtures: expectedBrowserOnlySummaries.map(
+            (entry) => entry.fixture
+          )
+        },
+        null,
+        2
+      ) + "\n",
+      "utf8"
+    ),
+    writeFile(
+      join(artifactRoot, "expected-summary.json"),
+      JSON.stringify(
+        {
+          validator_status: "pass",
+          browser_only_fixtures: expectedBrowserOnlySummaries
+        },
+        null,
+        2
+      ) + "\n",
+      "utf8"
+    ),
+    writeFile(
+      join(artifactRoot, "actual-summary.json"),
+      JSON.stringify(
+        {
+          error:
+            input.error instanceof Error
+              ? { name: input.error.name, message: input.error.message, stack: input.error.stack }
+              : { message: String(input.error) },
+          json_file_count: jsonFiles.length,
+          summaries: surfaceSummary
+        },
+        null,
+        2
+      ) + "\n",
+      "utf8"
+    ),
+    writeFile(
+      join(artifactRoot, "surface-summary.json"),
+      JSON.stringify(surfaceSummary, null, 2) + "\n",
+      "utf8"
+    )
+  ]);
+};
+
 const main = async () => {
-  await ensureBuild();
-  const tempRoot = await createTempRoot("validate-front-door-session");
-  const sessionsDirectory = join(tempRoot, "front-door-sessions");
-  const runsDirectory = join(tempRoot, "runs");
+  if (process.env.HARNESS_VALIDATE_FRONT_DOOR_SESSION_SKIP_BUILD !== "1") {
+    await ensureBuild();
+  }
+  const configuredTempRoot =
+    process.env.HARNESS_FRONT_DOOR_SESSION_VALIDATE_TEMP_ROOT?.trim();
+  const tempRoot = configuredTempRoot
+    ? resolve(configuredTempRoot)
+    : await createTempRoot("validate-front-door-session");
+  await mkdir(tempRoot, { recursive: true });
+  const sessionsDirectory =
+    process.env.HARNESS_FRONT_DOOR_SESSIONS_DIRECTORY?.trim() ||
+    join(tempRoot, "front-door-sessions");
+  const runsDirectory =
+    process.env.HARNESS_RUNS_DIRECTORY?.trim() || join(tempRoot, "runs");
   const workspaceRoot = join(tempRoot, "workspace");
   const targetRootRelative = `tmp-targets/${basename(tempRoot)}-target-app`;
   const targetRoot = resolve(repoRoot, targetRootRelative);
@@ -64,12 +232,14 @@ const main = async () => {
       { getFrontDoorSessionStatus, runFrontDoorDiscoveryTurn },
       { prepareSessionRun },
       { parseVerificationSurfacesAnswer, parseWorkflowChecksAnswer },
-      { inferProductTargetFamily }
+      { evaluateIntakeRequest, inferProductTargetFamily },
+      { mergeFrontDoorSessionTurn }
     ] = await Promise.all([
       importDist("front-door-session.js"),
       importDist("prepare-session.js"),
       importDist("adapter-plan.js"),
-      importDist("intake-gate.js")
+      importDist("intake-gate.js"),
+      importDist("front-door-session-merge.js")
     ]);
 
     assert.deepEqual(
@@ -85,6 +255,40 @@ const main = async () => {
     assert.equal(
       inferProductTargetFamily("Budget browser app. No API needed."),
       "browser-app"
+    );
+    const browserOnlyDbNoiseMerge = mergeFrontDoorSessionTurn({
+      existingSession: {
+        intake: {
+          product_title: "Budget Browser App",
+          product_summary: "Budget browser app. No API needed.",
+          target_family: "browser-app",
+          project_kind: "browser_ui",
+          evidence_surfaces: ["browser"],
+          verification_surfaces: ["browser"],
+          core_features: ["add transaction"]
+        },
+        last_question_ids: ["workflow_checks"],
+        unresolved_conflicts: [],
+        defaults_accepted: []
+      },
+      sourceRequest: "Budget browser app. No API needed.",
+      message: [
+        "Verify with browser.",
+        "Postgres database details are an implementation note.",
+        "add transaction -> transaction appears in the list."
+      ].join("\n"),
+      intakeResult: evaluateIntakeRequest(
+        "Budget browser app. No API needed.\nVerify with browser."
+      ),
+      turnCount: 2
+    });
+    assert.deepEqual(
+      browserOnlyDbNoiseMerge.intake.verification_surfaces,
+      ["browser"]
+    );
+    assert.deepEqual(
+      browserOnlyDbNoiseMerge.intake.evidence_surfaces,
+      ["browser"]
     );
 
     const koWorkflowHeaderChecks = parseWorkflowChecksAnswer(
@@ -201,6 +405,11 @@ const main = async () => {
     assert.equal(readyTurn.status, "ready_for_prepare");
     assert.equal(readyTurn.phase, "ready_for_prepare");
     assert.deepEqual(readyTurn.intake.verification_surfaces, ["browser"]);
+    assert.deepEqual(readyTurn.intake.evidence_surfaces, ["browser"]);
+    assert.deepEqual(
+      readyTurn.intake.adapter_plan.verification_surfaces,
+      ["browser"]
+    );
     assert.ok((readyTurn.intake.workflow_checks ?? []).length >= 3);
     assert.deepEqual(fourthTurn.defaults_accepted, [
       "max_rounds",
@@ -1071,6 +1280,16 @@ const main = async () => {
     assert.equal(parsedCliResult.status, "ask_product_questions");
     assert.equal(parsedCliResult.phase, "product");
     assert.ok(parsedCliResult.front_door_session_path.endsWith("session-thread-cli.json"));
+  } catch (error) {
+    await writeFrontDoorSessionFailureArtifacts({
+      error,
+      tempRoot,
+      sessionsDirectory,
+      runsDirectory,
+      workspaceRoot,
+      targetRoot
+    });
+    throw error;
   } finally {
     for (const [key, value] of Object.entries(previousEnv)) {
       if (value === undefined) {
