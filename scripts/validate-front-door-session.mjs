@@ -375,6 +375,29 @@ const main = async () => {
       ["browser"]
     );
 
+    const koApiNotInsteadBrowser = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-api-not-instead-ko-browser",
+      message:
+        "\uAC00\uACC4\uBD80\uB294 API\uAC00 \uC544\uB2C8\uB77C \uBE0C\uB77C\uC6B0\uC800 \uC571\uC73C\uB85C \uB9CC\uB4E4\uC5B4\uC918."
+    });
+    assert.equal(koApiNotInsteadBrowser.intake.target_family, "browser-app");
+
+    const koApiNotShortBrowser = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-api-not-short-ko-browser",
+      message:
+        "API \uC544\uB2D8. \uAC00\uACC4\uBD80\uB97C \uBE0C\uB77C\uC6B0\uC800\uC5D0\uC11C \uAC80\uC99D\uD558\uB294 \uC571\uC73C\uB85C \uB9CC\uB4E4\uC5B4\uC918."
+    });
+    assert.equal(koApiNotShortBrowser.intake.target_family, "browser-app");
+
+    assert.equal(
+      inferProductTargetFamily("CRUD\uB294 \uD654\uBA74 \uC548 \uAE30\uB2A5\uC774\uACE0 API\uB294 \uB9CC\uB4E4\uC9C0 \uB9C8."),
+      "browser-app"
+    );
+    assert.equal(
+      inferProductTargetFamily("API \uB9D0\uACE0 \uBE0C\uB77C\uC6B0\uC800 \uC571\uC73C\uB85C \uAC80\uC99D"),
+      "browser-app"
+    );
+
     const enApiNegatedBrowser = await runFrontDoorDiscoveryTurn({
       threadId: "thread-api-negated-en-browser",
       message: "Build a budget browser app. No API needed."

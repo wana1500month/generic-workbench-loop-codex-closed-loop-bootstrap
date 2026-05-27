@@ -297,11 +297,10 @@ const metricRequiredByText = (value: string): boolean =>
 const parseExplicitCustomQualityMetrics = (
   value: string
 ): SessionCustomQualityMetric[] | undefined => {
+  const workflowMetricLabelPattern =
+    /^(?:workflow\s+checks?|workflow\s+probes?|workflows?|\uC6CC\uD06C\uD50C\uB85C\s*\uCCB4\uD06C|\uC6CC\uD06C\uD50C\uB85C)$/iu;
   const metrics = splitAnswerLines(value)
     .map((line): SessionCustomQualityMetric | undefined => {
-      if (isWorkflowCheckCandidateLine(line)) {
-        return undefined;
-      }
       const match =
         line.match(
           /^(?:추가\s*)?(?:평가\s*)?(?:기준\s*)?([^:：>=]+?)\s*[:：]\s*(?:최소\s*)?([0-9]+(?:\.[0-9]+)?)\s*(?:점|\/\s*10)?\.?\s*(.*)$/u
@@ -313,6 +312,9 @@ const parseExplicitCustomQualityMetrics = (
         return undefined;
       }
       const label = normalizeInlineValue(match[1]).replace(/^[-*]\s*/u, "");
+      if (workflowMetricLabelPattern.test(label) && /^\s*[.)]/u.test(match[3] ?? "")) {
+        return undefined;
+      }
       const score = Number(match[2]);
       if (!label || !Number.isFinite(score)) {
         return undefined;
@@ -363,10 +365,10 @@ const parseCustomQualityMetrics = (
     byId.set(metric.metric_id, metric);
   }
   for (const line of splitAnswerLines(value)) {
-    if (isWorkflowCheckCandidateLine(line)) {
+    if (parseExplicitCustomQualityMetrics(line)?.length) {
       continue;
     }
-    if (parseExplicitCustomQualityMetrics(line)?.length) {
+    if (isWorkflowCheckCandidateLine(line)) {
       continue;
     }
     for (const metric of inferScorelessCustomQualityMetricLine(line, strictnessLevel)) {

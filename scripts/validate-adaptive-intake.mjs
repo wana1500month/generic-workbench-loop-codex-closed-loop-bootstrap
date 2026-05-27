@@ -29,6 +29,21 @@ const main = async () => {
   assert.equal(merged.intake.project_kind, "browser_ui");
   assert.ok(merged.intake.evidence_surfaces?.includes("browser"));
   assert.ok((merged.intake.custom_quality_metrics ?? []).length >= 2);
+  const explicitMetricById = new Map(
+    (merged.intake.custom_quality_metrics ?? []).map((metric) => [
+      metric.metric_id,
+      metric
+    ])
+  );
+  assert.equal(
+    explicitMetricById.get("custom.\uAE54\uB054\uD568")?.minimum_score_out_of_ten,
+    9.2
+  );
+  assert.equal(
+    explicitMetricById.get("custom.\uC4F8\uB370\uC5C6\uB294_\uD14D\uC2A4\uD2B8_\uC5C6\uC74C")
+      ?.minimum_score_out_of_ten,
+    9.5
+  );
 
   const cliRequest = [
     "CLI 로그 분석기를 만들어줘.",

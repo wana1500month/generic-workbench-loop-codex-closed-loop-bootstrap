@@ -249,7 +249,7 @@ export const isWorkflowCheckCandidateLine = (value) => {
 export const hasExplicitApiNegation = (value) => {
     const normalized = value.normalize("NFKC").toLowerCase();
     const apiTerm = String.raw `(?:api|http|endpoint|\uC5D4\uB4DC\uD3EC\uC778\uD2B8)`;
-    const apiNegativeAfterPattern = new RegExp(String.raw `${apiTerm}\s*(?:\uB294|\uC740|is|are)?\s*(?:\uD544\uC694\s*\uC5C6|\uBD88\uD544\uC694|\uB9CC\uB4E4\uC9C0\s*\uB9C8|\uB9CC\uB4E4\s*\uD544\uC694\s*\uC5C6|\uC5C6\uC774|\uC81C\uC678|\uAE08\uC9C0|no|not|not\s*(?:needed|required)|unneeded|unnecessary|required\s*false|do\s*not|don't|dont)`, "iu");
+    const apiNegativeAfterPattern = new RegExp(String.raw `${apiTerm}\s*(?:\uB294|\uC740|\uAC00|\uC774|is|are)?\s*(?:\uC544\uB2C8\uB77C|\uC544\uB2D8|\uC544\uB2C8\uB2E4|\uB9D0\uACE0|\uD544\uC694\s*\uC5C6|\uBD88\uD544\uC694|\uB9CC\uB4E4\uC9C0\s*\uB9C8|\uB9CC\uB4E4\s*\uD544\uC694\s*\uC5C6|\uC5C6\uC774|\uC81C\uC678|\uAE08\uC9C0|no|not|not\s*(?:needed|required)|unneeded|unnecessary|required\s*false|do\s*not|don't|dont)`, "iu");
     const negativeApiBeforePattern = new RegExp(String.raw `(?:no|not|without|do\s*not|don't|dont|\uD544\uC694\s*\uC5C6|\uBD88\uD544\uC694|\uC5C6\uC774|\uC81C\uC678|\uAE08\uC9C0|\uB9CC\uB4E4\uC9C0\s*\uB9C8)[^.!?\n]{0,48}${apiTerm}`, "iu");
     return (apiNegativeAfterPattern.test(normalized) ||
         negativeApiBeforePattern.test(normalized));
