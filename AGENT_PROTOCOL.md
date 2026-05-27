@@ -26,6 +26,7 @@ This document defines the V2 file protocol for the harness core. The protocol st
 - `round-result.json`
 - `round_summary.json`
 - `eval_report.json`
+- `carry-forward-gate.json`
 - `failure-lineage.json`
 
 Initial build attempts and explicit recontract attempts treat `round-contract`, `contract-review`, `contract-agreement`, and `generator-plan` as the load-bearing negotiation surface. Patch-only remediation attempts stay centered on `patch-request.json` plus QA feedback; clean remediation attempts may omit `contract-review.*` and `contract-agreement.*` on disk, and when those artifacts are rewritten they should mirror carried scope rather than reintroduce sprint decomposition.
@@ -37,9 +38,18 @@ Initial build attempts and explicit recontract attempts treat `round-contract`, 
 3. Controller either blocks or locks the negotiated contract in `contract-agreement.*`, then keeps the agreed frame active across patch-only repairs.
 4. Generator commits to a concrete implementation plan for the current attempt in `generator-plan.*`.
 5. Adapter capabilities run only after the in-memory contract reaches agreement. On patch-only remediation attempts that agreement may stay synthetic and unpersisted unless carried checks explicitly require the review/agreement files.
-6. Evaluator writes a verdict and eval report in `evaluator-verdict.*` and `eval_report.json`.
-7. Evaluator writes the next-step request in `patch-request.*`.
-8. Controller records the attempt outcome in `round-result.json`.
+6. Evaluator runs as a fresh read-only Codex judge for the current round, then writes a verdict and eval report in `evaluator-verdict.*` and `eval_report.json`.
+7. Core computes previous patch request closure in `carry-forward-gate.json`; this is separate from evaluator scoring.
+8. Evaluator writes the next-step request in `patch-request.*`.
+9. Controller records the attempt outcome in `round-result.json`.
+
+## Per-Round Blind Evaluator
+
+Evaluator scoring is blind per round. Every evaluated round must start a fresh read-only Codex command with no resume session and no write permissions. The evaluator prompt must identify the role as a "fresh independent evaluator" and may include only current-round inputs such as the idea summary, round contract, generator plan, current deterministic eval report subset, adapter execution summary, current core probe summary, and current target manifest.
+
+The evaluator prompt must not include previous-round evaluator responses, scorecards, `eval_report.json`, `patch-request.json`, or `quality-critique.json`. Round 2 scoring must not know Round 1 score, verdict, or evaluator judgment. The controller, trajectory policy, and `failure-lineage.json` may still inspect historical rounds to decide whether to patch, recontract, pivot, or stop, but that historical context must stay out of the blind scorecard calculation.
+
+Previous patch request resolution is not an evaluator check. The runtime computes it through `carry-forward-gate.json` after the blind eval report exists, using the carried target check ids and the current-round check results. Current-thread evaluator enhancement is disabled in blind mode; attached/current-thread or App Server runs must use the same fresh read-only judge exception rather than resuming an evaluator turn.
 
 When an adapter is attached, skeptical evaluation now also expects criterion-level proof manifests, a core-owned evaluator profile selected by the rubric, CLI, or `--target-family`, an independent verification provider, verifier provenance attestation, at least one live interaction artifact, at least one structured `verification-witness` manifest that points back to that live proof, and evaluator-owned core probe results before `target_reached` can be claimed. Those core probes now split into `release_gate` and `supporting` roles. Supporting probes may point at target-root files, target JSON, `http`, `browser`, or `shell_command` diagnostics. Required `release_gate` probes must use `http_json` or `browser_journey`, carry `assertion_id`, may carry `assertion_tags`, stay at `semantic_level: "feature"` or `"workflow"`, and resolve through `target_manifest_key`. Verification profiles may also require a minimum number of distinct passing release assertions, tagged coverage counts, and bundle-owned `score_policy` weights before `target_reached` is eligible. Adapter-authored `verification_profile_path` remains schema-only compatibility metadata and is ignored by the runtime, but it now triggers a runtime warning so compatibility fields do not masquerade as authoritative policy. `run_target` may publish `target_manifest` URLs so the core can resolve those release-gate probes without trusting adapter-authored status text. `run_checks` and `grade_round` should describe which criteria passed or failed, which evidence grounded those claims, which `observed_value` was measured, whether the round-level threshold actually passed, and which release assertions their witnesses covered.
 
@@ -51,7 +61,8 @@ When an adapter is attached, skeptical evaluation now also expects criterion-lev
 | `patch-request.json` | remediation authority | evaluator/core | default continuation surface |
 | `quality-critique.json` | evaluator-owned quality steering | evaluator/core | explains refine vs tighten vs pivot |
 | `trajectory-decision.json` | controller-owned trajectory policy | controller/core | decides restart anchor and pivot-vs-parallel-pivot execution |
-| `eval_report.json` | evidence and threshold rationale | evaluator/core | load-bearing for reopen decisions |
+| `eval_report.json` | blind evidence and threshold rationale | evaluator/core | current-round scoring only; no previous evaluator context |
+| `carry-forward-gate.json` | carried patch closure | core | computes previous patch resolution outside evaluator scoring |
 | `failure-lineage.json` | persisted failure explanation | evaluator/core | drives recontract, environment, and regression interpretation |
 | `contract-review.json` | negotiation diagnostic | evaluator | omitted in clean patch-only rounds |
 | `contract-agreement.json` | negotiated authority | evaluator | initial and recontract rounds only |
@@ -385,6 +396,7 @@ Example:
   "selected_for_run": true,
   "status": "revised",
   "eval_report_path": "eval_report.json",
+  "carry_forward_gate_path": "carry-forward-gate.json",
   "check_pass_rate": 0.667,
   "previous_patch_request_addressed": true,
   "previous_patch_request_resolved": false,
@@ -418,6 +430,7 @@ The protocol is healthy when these files are not just written, but treated as th
 - `evaluator-verdict.json` records what happened.
 - `patch-request.json` drives the next follow-up through explicit `target_check_ids`.
 - `eval_report.json` is the richer evidence and rationale bundle.
+- `carry-forward-gate.json` computes whether carried patch targets were addressed and resolved after scoring, without adding previous patch checks to `eval_report.json`.
 - adapter-specific runtime failures should be normalized into evaluator-known continuation checks before they are carried into the next contract.
 - adapter result payloads should be schema-valid and point at evidence files that actually exist before the evaluator trusts them.
 - proof capabilities should execute through a verification provider whose trust domain is distinct from the target-mutating adapter boundary.
@@ -433,7 +446,7 @@ The protocol is healthy when these files are not just written, but treated as th
 - adapter-owned criteria should also match a core-owned evaluator profile, so the core can compare observed values against external expectations instead of trusting adapter-authored status strings.
 - `contract_completed` and `target_reached` are different controller outcomes: the first closes the current attempt honestly, the second also clears rubric thresholds.
 - run-level summaries should use the terminal round as the top-level state and keep best-scoring data in separate fields so downstream tooling does not confuse the final state with the earliest high score.
-- round-result and handoff artifacts should record previous-patch addressed/resolved state explicitly rather than inferring failure from missing checks.
+- round-result and handoff artifacts should record previous-patch addressed/resolved state explicitly from `carry-forward-gate.json` rather than inferring it from blind evaluator scoring.
 
 Checks ending in `_surface_reserved` only prove that the placeholder-or-final output path exists. They do not claim that final evaluator or controller content was already written at evaluation time.
 

@@ -72,6 +72,9 @@ The closed-loop harness is the core runtime engine, and `product_build` is only 
 - Repository structure should optimize for understanding the harness, not for demo completeness.
 - Dimension floors in the rubric should fail closed when proof integrity or release-gate QA drops below the configured bar.
 - Required custom evaluation dimensions should fail closed through per-round `scorecard.json` / `scorecard.md`; total score alone must not mark `target_reached` when a required dimension is below its minimum.
+- Evaluator scoring is per-round blind: every evaluator pass must run as a fresh read-only Codex judge, without `codex exec resume`, previous evaluator responses, prior scorecards, prior `eval_report.json`, prior `patch-request.json`, or prior `quality-critique.json` in the prompt.
+- Previous patch request closure belongs to `carry-forward-gate.json`, not evaluator scoring. Trajectory, failure-lineage, and controller policy may inspect historical rounds, but blind scorecard computation must not receive prior evaluator context.
+- Current-thread evaluator enhancement is disabled in blind mode; attached/current-thread runs must use the fresh read-only judge exception instead of resuming evaluator work on the same thread.
 
 ## Evaluation expectations
 

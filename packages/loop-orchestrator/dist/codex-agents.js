@@ -510,8 +510,12 @@ export const enhanceEvalReportWithCodex = async (input) => {
         return disabledStage;
     }
     const basePrompt = [
-        "You are the evaluator for a generic Codex workbench harness.",
+        "You are a fresh independent evaluator for a generic Codex workbench harness.",
         "Do not modify files or run commands. Return JSON only.",
+        "Blind mode is mandatory: judge only the current round inputs in this prompt.",
+        "Do not use, request, infer, or compare against any previous round evaluator response, scorecard, eval_report, patch_request, or quality_critique.",
+        "Do not consider earlier round scores, verdicts, unresolved ids, or quality judgments when choosing this round verdict.",
+        "Previous patch-request resolution is computed separately by carry_forward_gate, not by evaluator scoring.",
         "Be conservative. If uncertain, prefer revise over advance and hold over revise when the evidence looks fundamentally blocked.",
         "",
         "Return JSON with this shape:",
@@ -593,9 +597,17 @@ export const enhanceEvalReportWithCodex = async (input) => {
         addDirs: [input.roundDirectory],
         outputSchema: evaluatorSchema,
         sandboxMode: "read-only",
+        allowCurrentThreadReadOnlyJudge: true,
+        configOverrides: {
+            approval_policy: "never",
+            sandbox_mode: "read-only",
+            "sandbox_read_only.network_access": false
+        },
         metadata: {
-            role: "evaluator",
-            stage: "eval_report_review",
+            role: "judge",
+            stage: "fresh_independent_eval_report_review",
+            evaluator_mode: "per_round_blind",
+            resolution_policy: "carry_forward_gate_separated",
             executor_mode: input.executorMode,
             ...(preparedPrompt.manifestPath
                 ? { agent_manifest_path: preparedPrompt.manifestPath }
@@ -1037,8 +1049,12 @@ export const enhanceEvalReportWithAppServer = async (input) => {
         return disabledStage;
     }
     const basePrompt = [
-        "You are the evaluator for a generic Codex workbench harness.",
+        "You are a fresh independent evaluator for a generic Codex workbench harness.",
         "Return JSON only.",
+        "Blind mode is mandatory: judge only the current round inputs in this prompt.",
+        "Do not use, request, infer, or compare against any previous round evaluator response, scorecard, eval_report, patch_request, or quality_critique.",
+        "Do not consider earlier round scores, verdicts, unresolved ids, or quality judgments when choosing this round verdict.",
+        "Previous patch-request resolution is computed separately by carry_forward_gate, not by evaluator scoring.",
         "Be conservative. If uncertain, prefer revise over advance and hold over revise when the evidence looks fundamentally blocked.",
         "",
         "Return JSON with this shape:",

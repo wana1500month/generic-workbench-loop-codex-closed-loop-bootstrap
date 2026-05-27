@@ -85,6 +85,7 @@ export const artifactsForRound = (roundDirectory) => {
         eval_report_path: join(roundDirectory, "eval_report.json"),
         scorecard_json_path: join(roundDirectory, "scorecard.json"),
         scorecard_md_path: join(roundDirectory, "scorecard.md"),
+        carry_forward_gate_path: join(roundDirectory, "carry-forward-gate.json"),
         failure_lineage_path: join(roundDirectory, "failure-lineage.json"),
         adapter_drift_report_json_path: join(roundDirectory, "adapter-drift-report.json"),
         adapter_drift_report_md_path: join(roundDirectory, "adapter-drift-report.md"),
@@ -887,6 +888,11 @@ export const buildRoundResultArtifact = (input) => {
         check_pass_rate: Number((passed / total).toFixed(3)),
         previous_patch_request_addressed: input.previousPatchRequestAddressed,
         previous_patch_request_resolved: input.previousPatchRequestResolved,
+        ...(input.carryForwardGatePath
+            ? {
+                carry_forward_gate_path: relative(input.roundDirectory, input.carryForwardGatePath).replaceAll("\\", "/")
+            }
+            : {}),
         resolved_check_ids: input.evalReport.resolved_check_ids,
         unresolved_check_ids: input.evalReport.unresolved_check_ids,
         threshold_results: input.evalReport.threshold_results
@@ -1058,6 +1064,12 @@ export const writeRoundEvaluationPlaceholders = async (input) => {
             pending_phase: "evaluation",
             created_at: createdAt,
             generated_by: "writeRoundEvaluationPlaceholders"
+        }),
+        writeJson(artifacts.carry_forward_gate_path, {
+            status: "pending",
+            pending_phase: "evaluation",
+            created_at: createdAt,
+            generated_by: "writeRoundEvaluationPlaceholders"
         })
     ]);
     return artifacts;
@@ -1097,6 +1109,7 @@ export const writeRoundArtifacts = async (input) => {
         writeText(artifacts.trajectory_decision_md_path, `# Trajectory Decision\n\n## Mode\n\n${input.trajectoryDecisionArtifact.mode}\n\n## Restart From\n\n${input.trajectoryDecisionArtifact.restart_from}\n\n## Frontier\n\n- Current head: ${input.trajectoryDecisionArtifact.frontier.current_head}\n- Last stable: ${input.trajectoryDecisionArtifact.frontier.last_stable ?? "none"}\n- Best passing: ${input.trajectoryDecisionArtifact.frontier.best_passing ?? "none"}\n\n## Preserve Signals\n\n${bulletList(input.trajectoryDecisionArtifact.preserve_signals)}\n\n## Discardable Surface\n\n${bulletList(input.trajectoryDecisionArtifact.discardable_surface)}\n\n## Novelty Target\n\n${input.trajectoryDecisionArtifact.novelty_target.toFixed(2)}\n\n## Reason\n\n${input.trajectoryDecisionArtifact.reason}\n\n## Anchor Reason\n\n${input.trajectoryDecisionArtifact.anchor_reason}\n`),
         writeJson(artifacts.round_result_json_path, input.roundResultArtifact),
         writeJson(artifacts.eval_report_path, input.evalReport),
+        writeJson(artifacts.carry_forward_gate_path, input.carryForwardGateArtifact),
         ...(input.failureLineage
             ? [writeJson(artifacts.failure_lineage_path, input.failureLineage)]
             : []),

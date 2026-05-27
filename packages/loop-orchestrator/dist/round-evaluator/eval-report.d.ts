@@ -12,7 +12,5 @@ export declare const buildEvalReport: (input: {
     adapterExecutions: AdapterCapabilityExecution[];
     coreProbeResults: CoreVerificationProbeExecution[];
     targetManifest?: TargetManifest;
-    previousPatchTargetCheckIds: string[];
-    previousPatchRequestAddressed: boolean;
 }) => EvalReport;
 //# sourceMappingURL=eval-report.d.ts.map

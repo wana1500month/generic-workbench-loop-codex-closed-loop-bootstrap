@@ -113,6 +113,21 @@ export interface EvalReport {
   core_probe_results: CoreVerificationProbeExecution[];
 }
 
+export interface CarryForwardGateArtifact {
+  schema_version: string;
+  artifact_type: "carry_forward_gate";
+  generated_at: string;
+  round: number;
+  previous_patch_target_check_ids: string[];
+  actionable_target_check_ids: string[];
+  addressed: boolean;
+  resolved: boolean;
+  resolution_source: "carry_forward_gate";
+  target_results: RoundCheckResult[];
+  missing_target_check_ids: string[];
+  notes: string[];
+}
+
 export interface RoundArtifacts {
   round_directory: string;
   runtime_directory: string;
@@ -136,6 +151,7 @@ export interface RoundArtifacts {
   eval_report_path: string;
   scorecard_json_path: string;
   scorecard_md_path: string;
+  carry_forward_gate_path: string;
   failure_lineage_path: string;
   adapter_drift_report_json_path: string;
   adapter_drift_report_md_path: string;
@@ -320,6 +336,7 @@ export interface RoundResultArtifact {
   check_pass_rate: number;
   previous_patch_request_addressed: boolean;
   previous_patch_request_resolved: boolean;
+  carry_forward_gate_path?: string;
   resolved_check_ids: string[];
   unresolved_check_ids: string[];
   threshold_results: ReleaseThresholdResults;
@@ -368,6 +385,7 @@ export interface RoundSummary {
   evidence_paths: string[];
   previous_patch_request_addressed: boolean;
   previous_patch_request_resolved: boolean;
+  carry_forward_gate_path?: string;
   resolved_check_ids: string[];
   unresolved_check_ids: string[];
   threshold_results: ReleaseThresholdResults;

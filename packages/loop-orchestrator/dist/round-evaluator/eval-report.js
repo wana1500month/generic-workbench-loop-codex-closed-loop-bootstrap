@@ -1,10 +1,9 @@
 import { existsSync } from "node:fs";
 import { describePrototypeBaselineSourceSemantics, isPrototypeBaselineSourceSemantics, prototypeBaselineSourceSemanticsForPhase } from "../prototype-baseline.js";
-import { adapterContractDocPath, adapterExamplePath, adapterHonestyCheck, adapterCriteriaGroundingCheck, adapterMeaningfulEvidenceCheck, adapterRuntimePath, artifactOnlyChecks, checkResult, evaluateVerificationProfile, expectedTargetSurfacesFor, fileSurfaceReservedCheck, fileWrittenCheck, independentTargetProbeCheck, isFailingCheck, isKnownCheck, isPassingCheck, isSatisfiedCheck, isVisualEvidencePath, liveVerificationPresentCheck, nonCarryForwardDerivedChecks, nonScoringDerivedChecks, pathExists, proofBoundaryIndependenceCheck, proofEvaluatorChecks, proofProvenanceAttestationCheck, proofScoreWeightsFor, releaseScoreWeightsFor, scoreFromResults, strictPartialCreditScore, successfulGradeRoundExecutionFor, unique } from "./shared.js";
+import { adapterContractDocPath, adapterExamplePath, adapterHonestyCheck, adapterCriteriaGroundingCheck, adapterMeaningfulEvidenceCheck, adapterRuntimePath, artifactOnlyChecks, checkResult, evaluateVerificationProfile, expectedTargetSurfacesFor, fileSurfaceReservedCheck, fileWrittenCheck, independentTargetProbeCheck, isFailingCheck, isKnownCheck, isPassingCheck, isSatisfiedCheck, isVisualEvidencePath, liveVerificationPresentCheck, nonScoringDerivedChecks, pathExists, proofBoundaryIndependenceCheck, proofEvaluatorChecks, proofProvenanceAttestationCheck, proofScoreWeightsFor, releaseScoreWeightsFor, scoreFromResults, strictPartialCreditScore, successfulGradeRoundExecutionFor, unique } from "./shared.js";
 const staticCheckLookup = (input) => {
     const hasMeaningfulCheck = input.contractArtifact.acceptance_checks.some((checkId) => !artifactOnlyChecks.has(checkId));
     const allChecksKnown = input.contractArtifact.acceptance_checks.every((checkId) => isKnownCheck(checkId));
-    const carriedChecksAccepted = input.contractArtifact.carry_over_check_ids.every((checkId) => input.contractArtifact.acceptance_checks.includes(checkId));
     const roundContractHasReleaseScope = input.contractArtifact.release_gate_check_ids.length > 0 &&
         input.contractArtifact.proof_plan.length > 0 &&
         input.contractArtifact.pivot_triggers.length > 0;
@@ -12,9 +11,9 @@ const staticCheckLookup = (input) => {
         planner_brief_written: fileWrittenCheck("planner_brief_written", input.plannerBriefPath, "Planner brief"),
         plan_written: fileWrittenCheck("plan_written", input.planPath, "Run-local plan"),
         round_contract_written: fileWrittenCheck("round_contract_written", input.artifacts.contract_json_path, "Round contract artifact"),
-        round_contract_is_testable: checkResult("round_contract_is_testable", hasMeaningfulCheck && allChecksKnown && carriedChecksAccepted ? "pass" : "fail", hasMeaningfulCheck && allChecksKnown && carriedChecksAccepted
-            ? "The round contract includes evaluator-known checks and keeps carried issues explicit."
-            : "The round contract is missing meaningful checks, known check ids, or carried issue coverage."),
+        round_contract_is_testable: checkResult("round_contract_is_testable", hasMeaningfulCheck && allChecksKnown ? "pass" : "fail", hasMeaningfulCheck && allChecksKnown
+            ? "The round contract includes evaluator-known checks."
+            : "The round contract is missing meaningful checks or known check ids."),
         contract_review_written: fileWrittenCheck("contract_review_written", input.artifacts.contract_review_json_path, "Contract review artifact"),
         contract_review_quality: checkResult("contract_review_quality", input.contractReviewArtifact.decision === "revise"
             ? input.contractReviewArtifact.required_changes.length > 0
@@ -42,19 +41,11 @@ const staticCheckLookup = (input) => {
         handoff_is_resumable: checkResult("handoff_is_resumable", pathExists(input.artifacts.planner_context_path) &&
             pathExists(input.artifacts.generator_brief_path) &&
             pathExists(input.artifacts.qa_review_path) &&
-            pathExists(input.artifacts.controller_decision_path) &&
-            (input.previousPatchTargetCheckIds.length === 0 || input.previousPatchRequestAddressed)
+            pathExists(input.artifacts.controller_decision_path)
             ? "pass"
-            : "fail", "The round keeps the full handoff surface and does not drop carried patch context."),
+            : "fail", "The round keeps the full handoff surface."),
         evaluator_verdict_surface_reserved: fileSurfaceReservedCheck("evaluator_verdict_surface_reserved", input.artifacts.evaluator_verdict_json_path, "Evaluator verdict artifact"),
         patch_request_surface_reserved: fileSurfaceReservedCheck("patch_request_surface_reserved", input.artifacts.patch_request_json_path, "Patch request artifact"),
-        previous_patch_request_addressed: checkResult("previous_patch_request_addressed", input.previousPatchTargetCheckIds.length === 0 || input.previousPatchRequestAddressed
-            ? "pass"
-            : "fail", input.previousPatchTargetCheckIds.length === 0
-            ? "No previous patch request required carry-forward."
-            : input.previousPatchRequestAddressed
-                ? `The current contract explicitly carries forward ${input.previousPatchTargetCheckIds.join(", ")}.`
-                : `The current contract does not explicitly carry forward ${input.previousPatchTargetCheckIds.join(", ")}.`),
         eval_report_surface_reserved: fileSurfaceReservedCheck("eval_report_surface_reserved", input.artifacts.eval_report_path, "Eval report"),
         controller_decision_surface_reserved: fileSurfaceReservedCheck("controller_decision_surface_reserved", input.artifacts.controller_decision_path, "Controller decision handoff"),
         adapter_boundary_documented: checkResult("adapter_boundary_documented", existsSync(adapterContractDocPath) ? "pass" : "fail", existsSync(adapterContractDocPath)
@@ -151,9 +142,9 @@ const targetSignalBlockingFailures = (input) => {
     });
 };
 export const buildEvalReport = (input) => {
-    const evaluationCheckIds = input.contractAgreementArtifact.acceptance_checks.length > 0
+    const evaluationCheckIds = (input.contractAgreementArtifact.acceptance_checks.length > 0
         ? input.contractAgreementArtifact.acceptance_checks
-        : input.contractArtifact.acceptance_checks;
+        : input.contractArtifact.acceptance_checks).filter((checkId) => !nonScoringDerivedChecks.has(checkId));
     const thresholdAcceptanceCheckIds = evaluationCheckIds.filter((checkId) => checkId !== "target_signal_thresholds_met");
     const adapterResults = input.adapterExecutions.map((execution) => checkResult(`adapter_${execution.capability}`, execution.result.ok ? "pass" : "fail", execution.result.summary));
     const adapterResultCheckIds = new Set(adapterResults.map((result) => result.check_id));
@@ -170,11 +161,8 @@ export const buildEvalReport = (input) => {
         contractAgreementArtifact: input.contractAgreementArtifact,
         artifacts: input.artifacts,
         plannerBriefPath: input.plannerBriefPath,
-        planPath: input.planPath,
-        previousPatchTargetCheckIds: input.previousPatchTargetCheckIds,
-        previousPatchRequestAddressed: input.previousPatchRequestAddressed
+        planPath: input.planPath
     });
-    const actionablePreviousPatchTargetCheckIds = input.previousPatchTargetCheckIds.filter((checkId) => !nonCarryForwardDerivedChecks.has(checkId));
     lookup.adapter_claims_are_honest = adapterHonestyCheck({
         loadedAdapter: input.loadedAdapter,
         adapterExecutions: input.adapterExecutions
@@ -442,25 +430,11 @@ export const buildEvalReport = (input) => {
         failedAdapterResults.length > 0
         ? "Release blockers were captured from failed checks, adapter failures, or blocked negotiation."
         : "No release blockers were necessary because the round contract passed.");
-    const previousPatchResolved = actionablePreviousPatchTargetCheckIds.length === 0
-        ? input.previousPatchTargetCheckIds.length === 0 || input.previousPatchRequestAddressed
-        : actionablePreviousPatchTargetCheckIds.every((checkId) => {
-            const targetResult = lookup[checkId] ??
-                checkResult(checkId, "fail", `No evaluator rule is defined for carried check '${checkId}'.`);
-            return isPassingCheck(targetResult);
-        });
-    lookup.previous_patch_request_resolved = checkResult("previous_patch_request_resolved", previousPatchResolved ? "pass" : "fail", actionablePreviousPatchTargetCheckIds.length === 0
-        ? "No previous patch request required resolution."
-        : previousPatchResolved
-            ? `Every carried check now passes: ${actionablePreviousPatchTargetCheckIds.join(", ")}.`
-            : `At least one carried check is still unresolved: ${actionablePreviousPatchTargetCheckIds.join(", ")}.`);
     const acceptanceResultsWithoutThresholdCarry = thresholdAcceptanceCheckIds.map((checkId) => lookup[checkId] ??
         checkResult(checkId, "fail", `No evaluator rule is defined for check '${checkId}'.`));
     let check_results = unique([
         ...acceptanceResultsWithoutThresholdCarry.map((result) => result.check_id),
         "release_blockers_recorded",
-        "previous_patch_request_addressed",
-        "previous_patch_request_resolved",
         ...Array.from(proofEvaluatorChecks),
         "target_signal_thresholds_met",
         ...adapterResults.map((result) => result.check_id)
@@ -690,21 +664,6 @@ export const buildEvalReport = (input) => {
                 : "Round contract is not complete yet, so target signaling thresholds are not ready.");
     check_results = check_results.map((result) => result.check_id === "target_signal_thresholds_met"
         ? lookup.target_signal_thresholds_met
-        : result);
-    const recomputedPreviousPatchResolved = actionablePreviousPatchTargetCheckIds.length === 0
-        ? input.previousPatchTargetCheckIds.length === 0 || input.previousPatchRequestAddressed
-        : actionablePreviousPatchTargetCheckIds.every((checkId) => {
-            const targetResult = lookup[checkId] ??
-                checkResult(checkId, "fail", `No evaluator rule is defined for carried check '${checkId}'.`);
-            return isPassingCheck(targetResult);
-        });
-    lookup.previous_patch_request_resolved = checkResult("previous_patch_request_resolved", recomputedPreviousPatchResolved ? "pass" : "fail", actionablePreviousPatchTargetCheckIds.length === 0
-        ? "No previous patch request required resolution."
-        : recomputedPreviousPatchResolved
-            ? `Every carried check now passes: ${actionablePreviousPatchTargetCheckIds.join(", ")}.`
-            : `At least one carried check is still unresolved: ${actionablePreviousPatchTargetCheckIds.join(", ")}.`);
-    check_results = check_results.map((result) => result.check_id === "previous_patch_request_resolved"
-        ? lookup.previous_patch_request_resolved
         : result);
     ({
         dimension_scores,

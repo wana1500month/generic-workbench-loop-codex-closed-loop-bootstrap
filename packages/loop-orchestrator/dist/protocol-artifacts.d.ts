@@ -1,4 +1,4 @@
-import type { AdapterMigrationApplied, AdapterMigrationProposal, AdapterMigrationResponse, AdapterDriftReport, ContractAgreementArtifact, ContractReviewArtifact, BuildBriefArtifact, EvalReport, EvaluatorVerdictArtifact, FailureLineage, GeneratorPlanArtifact, LoadedAdapterContract, LoopRubric, PatchRequestArtifact, QualityCritiqueArtifact, TrajectoryDecisionArtifact, RoundArtifacts, RoundContractArtifact, RoundResultArtifact } from "./types.js";
+import type { AdapterMigrationApplied, AdapterMigrationProposal, AdapterMigrationResponse, AdapterDriftReport, CarryForwardGateArtifact, ContractAgreementArtifact, ContractReviewArtifact, BuildBriefArtifact, EvalReport, EvaluatorVerdictArtifact, FailureLineage, GeneratorPlanArtifact, LoadedAdapterContract, LoopRubric, PatchRequestArtifact, QualityCritiqueArtifact, TrajectoryDecisionArtifact, RoundArtifacts, RoundContractArtifact, RoundResultArtifact } from "./types.js";
 export declare const PROTOCOL_ARTIFACT_SCHEMA_VERSION = "2026-05-08";
 export declare const artifactsForRound: (roundDirectory: string) => RoundArtifacts;
 export declare const buildRoundContractArtifact: (input: {
@@ -68,6 +68,7 @@ export declare const buildRoundResultArtifact: (input: {
     selectedForRun: boolean;
     previousPatchRequestAddressed: boolean;
     previousPatchRequestResolved: boolean;
+    carryForwardGatePath?: string;
     scorecardPath?: string;
 }) => RoundResultArtifact;
 export declare const writeNegotiationArtifacts: (input: {
@@ -95,6 +96,7 @@ export declare const writeRoundArtifacts: (input: {
     trajectoryDecisionArtifact: TrajectoryDecisionArtifact;
     roundResultArtifact: RoundResultArtifact;
     evalReport: EvalReport;
+    carryForwardGateArtifact: CarryForwardGateArtifact;
     failureLineage?: FailureLineage;
     adapterDriftReport?: AdapterDriftReport;
     adapterMigrationProposal?: AdapterMigrationProposal;

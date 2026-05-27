@@ -148,6 +148,7 @@ export const buildAttemptRoundReport = (input: {
       input.roundResultArtifact.previous_patch_request_addressed,
     previous_patch_request_resolved:
       input.roundResultArtifact.previous_patch_request_resolved,
+    carry_forward_gate_path: input.artifacts.carry_forward_gate_path,
     resolved_check_ids: input.roundResultArtifact.resolved_check_ids,
     unresolved_check_ids: input.roundResultArtifact.unresolved_check_ids,
     threshold_results: input.evalReport.threshold_results,

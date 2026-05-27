@@ -145,7 +145,8 @@ const isCurrentThreadReadOnlyJudge = (input: CodexCommandInput): boolean =>
   input.allowCurrentThreadReadOnlyJudge === true &&
   input.metadata?.role === "judge" &&
   input.configOverrides?.approval_policy === "never" &&
-  input.configOverrides?.sandbox_mode === "read-only";
+  input.configOverrides?.sandbox_mode === "read-only" &&
+  input.configOverrides?.["sandbox_read_only.network_access"] === false;
 
 const tomlLiteral = (value: string | number | boolean): string => {
   if (typeof value === "string") {
@@ -483,6 +484,9 @@ export const runCodexCommand = async (
       typeof input.configOverrides?.["sandbox_workspace_write.network_access"] ===
       "boolean"
         ? input.configOverrides["sandbox_workspace_write.network_access"]
+        : typeof input.configOverrides?.["sandbox_read_only.network_access"] ===
+            "boolean"
+          ? input.configOverrides["sandbox_read_only.network_access"]
         : null,
     output_schema_requested: Boolean(input.outputSchema),
     output_schema_passed_to_cli: Boolean(schemaPath && !usesResume),

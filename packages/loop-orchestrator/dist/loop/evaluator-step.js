@@ -1,7 +1,7 @@
-import { enhanceEvalReportWithAppServer, enhanceEvalReportWithCodex } from "../codex-agents.js";
-import { enhanceEvalReportWithCurrentThread } from "../current-thread-enhancement.js";
+import { enhanceEvalReportWithCodex } from "../codex-agents.js";
 import { buildAdapterDriftReport } from "../adapter-drift.js";
 import { buildAdapterMigrationProposal } from "../adapter-migration.js";
+import { buildCarryForwardGateArtifact } from "../carry-forward-gate.js";
 import { applyFailureLineagePolicySnapshot } from "../failure-lineage.js";
 import { loadJson, loadJsonIfExists } from "../file-system.js";
 import { buildEvaluatorVerdictArtifact, buildPatchRequestArtifact, buildQualityCritiqueArtifact, buildRoundResultArtifact, writeRoundArtifacts } from "../protocol-artifacts.js";
@@ -56,68 +56,27 @@ export const runEvaluatorStep = async (input) => {
             loadedAdapter: input.loadedAdapter,
             adapterExecutions: input.adapterExecutions,
             coreProbeResults: input.coreProbeResults,
-            targetManifest: input.targetManifest,
-            previousPatchTargetCheckIds: input.previousPatchTargetCheckIds,
-            previousPatchRequestAddressed: input.previousPatchRequestAddressed
+            targetManifest: input.targetManifest
         });
-        const evalEnhancement = input.transportMode === "current-thread"
-            ? await enhanceEvalReportWithCurrentThread({
-                runId: input.runId,
-                round: input.round,
-                transportProtocolPath: input.transportProtocolCurrentPath,
-                artifacts: input.artifacts,
-                idea: input.idea,
-                contractArtifact: input.contractArtifact,
-                generatorPlanArtifact: input.generatorPlanArtifact,
-                evalReport: baseEvalReport,
-                adapterExecutions: input.adapterExecutions,
-                coreProbeResults: input.coreProbeResults,
-                targetManifest: input.targetManifest,
-                executorMode: input.executorMode
-            })
-            : undefined;
-        if (evalEnhancement?.kind === "checkpoint") {
-            return input.checkpointForCurrentThreadWork({
-                round: input.round,
-                phase: "evaluation",
-                checkpointKind: evalEnhancement.checkpointKind,
-                artifacts: evalEnhancement.artifacts,
-                notes: evalEnhancement.notes
-            });
-        }
-        const resolvedEvalEnhancement = input.transportMode === "app-server" && input.appServerTransport
-            ? await enhanceEvalReportWithAppServer({
-                transport: input.appServerTransport,
-                round: input.round,
-                idea: input.idea,
-                contractArtifact: input.contractArtifact,
-                generatorPlanArtifact: input.generatorPlanArtifact,
-                evalReport: baseEvalReport,
-                adapterExecutions: input.adapterExecutions,
-                coreProbeResults: input.coreProbeResults,
-                targetManifest: input.targetManifest,
-                executorMode: input.executorMode
-            })
-            : evalEnhancement
-                ? {
-                    value: evalEnhancement.value,
-                    runtimeWarnings: evalEnhancement.runtimeWarnings
-                }
-                : await enhanceEvalReportWithCodex({
-                    roundDirectory: input.roundDirectory,
-                    idea: input.idea,
-                    contractArtifact: input.contractArtifact,
-                    generatorPlanArtifact: input.generatorPlanArtifact,
-                    evalReport: baseEvalReport,
-                    adapterExecutions: input.adapterExecutions,
-                    coreProbeResults: input.coreProbeResults,
-                    targetManifest: input.targetManifest,
-                    executorMode: input.executorMode
-                });
+        const resolvedEvalEnhancement = await enhanceEvalReportWithCodex({
+            roundDirectory: input.roundDirectory,
+            idea: input.idea,
+            contractArtifact: input.contractArtifact,
+            generatorPlanArtifact: input.generatorPlanArtifact,
+            evalReport: baseEvalReport,
+            adapterExecutions: input.adapterExecutions,
+            coreProbeResults: input.coreProbeResults,
+            targetManifest: input.targetManifest,
+            executorMode: input.executorMode
+        });
         let evalReport = resolvedEvalEnhancement.value;
-        const previousPatchRequestResolved = input.previousPatchTargetCheckIds.length === 0 ||
-            evalReport.check_results.some((result) => result.check_id === "previous_patch_request_resolved" &&
-                result.status === "pass");
+        const carryForwardGateArtifact = buildCarryForwardGateArtifact({
+            round: input.round,
+            previousPatchTargetCheckIds: input.previousPatchTargetCheckIds,
+            previousPatchRequestAddressed: input.previousPatchRequestAddressed,
+            evalReport
+        });
+        const previousPatchRequestResolved = carryForwardGateArtifact.resolved;
         let roundScorecard;
         if (input.evaluationPolicy) {
             const gatedEvaluation = applyRoundScorecardGate({
@@ -248,6 +207,7 @@ export const runEvaluatorStep = async (input) => {
             selectedForRun: false,
             previousPatchRequestAddressed: input.previousPatchRequestAddressed,
             previousPatchRequestResolved,
+            carryForwardGatePath: input.artifacts.carry_forward_gate_path,
             ...(roundScorecard
                 ? { scorecardPath: input.artifacts.scorecard_json_path }
                 : {})
@@ -260,6 +220,7 @@ export const runEvaluatorStep = async (input) => {
             trajectoryDecisionArtifact,
             roundResultArtifact,
             evalReport,
+            carryForwardGateArtifact,
             failureLineage,
             adapterDriftReport,
             adapterMigrationProposal: input.adapterMigrationProposal,
@@ -276,6 +237,7 @@ export const runEvaluatorStep = async (input) => {
             status: "completed",
             artifacts: {
                 eval_report_path: input.artifacts.eval_report_path,
+                carry_forward_gate_path: input.artifacts.carry_forward_gate_path,
                 ...(roundScorecard
                     ? { scorecard_path: input.artifacts.scorecard_json_path }
                     : {}),

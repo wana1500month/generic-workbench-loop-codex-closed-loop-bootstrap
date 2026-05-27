@@ -91,6 +91,8 @@ Acceptance:
 - Operator-facing docs should present `loop:intent`, `loop:discover`, `loop:prepare`, `loop:start:codex`, `loop:continue`, and `loop:status` as the canonical path; lower-level runner, phase, family, and adapter commands remain internal, recovery, validation, or compatibility surfaces.
 - Prepare should produce a run-local `evaluation-policy.generated.json` / `.md` with `project_kind`, evidence surfaces, strictness level 1-5, target score, and required custom dimensions.
 - Each evaluated round should produce `scorecard.json` / `scorecard.md`, and required custom dimensions below their minimum should keep `target_reached` false even when total score passes.
+- Evaluator scoring should be per-round blind: each round uses a fresh read-only Codex judge command, never `codex exec resume`, and the prompt excludes previous evaluator responses, prior scorecards, prior eval reports, prior patch requests, and prior quality critiques.
+- Previous patch request resolution should be calculated by `carry-forward-gate.json` after blind scoring, while trajectory, failure-lineage, and controller policy remain free to inspect historical rounds outside scorecard computation.
 - `loop:scorecards` should read scorecards from the runtime's actual `run/round-###/` directories and the compatibility `run/rounds/round-###/` layout.
 - Scorecard gating should have a loop-level validation that proves generated scorecards, custom-dimension target blocking, eval-report threshold updates, and CLI display stay connected end to end.
 - Intake should infer evidence surfaces for CLI tools, API services, libraries, agents, document artifacts, data pipelines, automation, and browser/mobile UI without making browser evidence the default for every target.
@@ -136,6 +138,10 @@ Validation:
 - `npm run validate:data-pipeline-front-door-questions`
 - `npm run validate:loop-scorecards`
 - `npm run validate:scorecard-e2e-prepared-run`
+- `npm run validate:evaluator-freshness`
+- `npm run validate:evaluator-blind-context`
+- `npm run validate:no-evaluator-resume`
+- `npm run validate:carry-forward-gate-separated`
 - `npm run validate:non-web-e2e`
 
 ## M3. External adapter boundary

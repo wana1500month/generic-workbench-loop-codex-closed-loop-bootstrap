@@ -48,7 +48,8 @@ This repository is a generic Codex workbench for closed-loop harness work. The c
 - `intent gate`: classifies whether the next request should go through product intake, harness design, run resume, or evaluator calibration
 - `intake`: keeps product questions separate from execution-control questions and ends at a prepare-ready gate before session preparation artifacts are written
 - `generator`: takes a long build attempt against the negotiated attempt contract
-- `evaluator`: reviews the contract before build, then writes the verdict, eval report, and patch request after each build attempt
+- `evaluator`: reviews the contract before build, then runs each round's scoring as a fresh independent read-only Codex judge with no resume session and no previous evaluator context in the prompt before writing the verdict, eval report, and patch request
+- `carry-forward gate`: computes whether the previous patch request was addressed and resolved after blind scoring, using `carry-forward-gate.json` instead of adding previous-patch checks to evaluator scoring
 - `quality critique`: turns threshold gaps, failed dimensions, and failed release-gate probes into structured quality findings while keeping patch authority carry-forward-safe
 - `trajectory controller`: turns critique, patch, and failure-lineage signals into explicit continuation policy for the next attempt
 - `subjective judge`: optional bootstrap-owned grading path inside generated `grade_round` that scores user-defined quality metrics from captured evidence, fails closed when review evidence is unavailable, and publishes structured metric results
@@ -81,6 +82,10 @@ Live Codex validation gates exercise trusted external surfaces such as the real 
 - `npm run validate:scorecard-output`: focused gate for per-round `scorecard.json` / `scorecard.md` output, structured violation caps, and required-dimension target gating.
 - `npm run validate:loop-scorecards`: focused gate proving `loop:scorecards` finds scorecards under both `run/round-###/` and `run/rounds/round-###/`.
 - `npm run validate:scorecard-e2e-prepared-run`: loop-level gate proving a required custom dimension miss writes `round-###/scorecard.json`, blocks `target_reached`, updates the eval report threshold eligibility, and is visible through `loop:scorecards`.
+- `npm run validate:evaluator-freshness`: focused gate proving evaluator scoring invokes one fresh read-only Codex judge command with no resume and explicit blind metadata.
+- `npm run validate:evaluator-blind-context`: focused gate proving the evaluator prompt states the fresh independent evaluator rule and does not receive previous evaluator responses, scorecards, eval reports, patch requests, or quality critiques.
+- `npm run validate:no-evaluator-resume`: focused gate proving current-thread/app-server evaluator scoring does not resume a same-thread evaluator enhancement and instead uses the fresh read-only judge exception.
+- `npm run validate:carry-forward-gate-separated`: focused gate proving previous patch request resolution is computed by `carry-forward-gate.json` outside evaluator scoring.
 - `npm run validate:default-scorecard-policy`: loop-level gate proving runs without an explicit evaluation policy still write a default policy plus per-round scorecard artifacts.
 - `npm run validate:adaptive-intake`: focused gate for natural-language strictness/custom metrics extraction, scoreless quality criteria inference, and non-browser adaptive questions.
 - `npm run validate:non-web-target`: focused gate proving CLI/file/test targets do not require browser ready URLs.
@@ -647,6 +652,7 @@ For concurrency validation, launch `loop:single` multiple times in parallel and 
 - `round_history[].target_family` and `round_history[].validation_lane`: per-attempt machine-readable bundle semantics for audit, resume migration review, and validator assertions
 - `round_history[].round_stop_reason`: per-attempt machine-readable terminal outcome (`continue`, `target_reached`, `contract_completed`, `environment_blocked`, `adapter_contract_invalid`, or other honest controller stops)
 - `round_history[].decision_source`: whether the controller followed `policy_snapshot`, a hard rule, or default patch authority for that attempt
+- `round_history[].carry_forward_gate_path`: the per-round artifact proving previous patch request closure was calculated outside blind evaluator scoring
 - `round_history[].trajectory` and `round_history[].trajectory_decision_path`: the persisted next-lineage choice and its artifact path for each attempt
 - `adapter_contract_sha256`, `evaluator_bundle_sha256`, and `rubric_sha256`: the persisted resume identity for this run
 - `resume_identity_path`: the authoritative run-level identity artifact used for fail-closed resume checks

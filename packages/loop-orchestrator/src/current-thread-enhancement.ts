@@ -705,8 +705,12 @@ const buildEvalEnhancementPrompt = async (input: {
   executorMode: ExecutorMode;
 }): Promise<PreparedEnhancementPrompt> => {
   const basePrompt = [
-    "You are the evaluator for a generic Codex workbench harness.",
+    "You are a fresh independent evaluator for a generic Codex workbench harness.",
     "Do not modify files or run commands. Return JSON only.",
+    "Blind mode is mandatory: judge only the current round inputs in this prompt.",
+    "Do not use, request, infer, or compare against any previous round evaluator response, scorecard, eval_report, patch_request, or quality_critique.",
+    "Do not consider earlier round scores, verdicts, unresolved ids, or quality judgments when choosing this round verdict.",
+    "Previous patch-request resolution is computed separately by carry_forward_gate, not by evaluator scoring.",
     "Be conservative. If uncertain, prefer revise over advance and hold over revise when the evidence looks fundamentally blocked.",
     "",
     "Return JSON with this shape:",
@@ -1198,89 +1202,11 @@ export const enhanceEvalReportWithCurrentThread = async (input: {
   targetManifest?: TargetManifest;
   executorMode: ExecutorMode;
 }): Promise<CurrentThreadEnhancementOutcome<EvalReport>> => {
-  const preparedPrompt = await buildEvalEnhancementPrompt({
-    idea: input.idea,
-    contractArtifact: input.contractArtifact,
-    generatorPlanArtifact: input.generatorPlanArtifact,
-    evalReport: input.evalReport,
-    adapterExecutions: input.adapterExecutions,
-    coreProbeResults: input.coreProbeResults,
-    targetManifest: input.targetManifest,
-    executorMode: input.executorMode
-  });
-  const existingTask = await loadJsonIfExists<CurrentThreadEnhancementTaskArtifact>(
-    input.artifacts.eval_enhancement_task_path
-  );
-  const rawResponse = await readTextIfExists(input.artifacts.eval_enhancement_response_path);
-  if (rawResponse !== undefined) {
-    const applied = applyEvalEnhancementResponse({
-      evalReport: input.evalReport,
-      responseText: rawResponse,
-      expectedCheckpointId: existingTask?.checkpoint_id,
-      warning: preparedPrompt.warning
-    });
-    if (applied.usedResponse) {
-      return {
-        kind: "completed",
-        value: applied.value,
-        runtimeWarnings: [
-          ...applied.runtimeWarnings,
-          `Current-thread evaluator enhancement completed for round ${input.round} from ${input.artifacts.eval_enhancement_response_path}.`
-        ]
-      };
-    }
-  }
-
-  const invalidResponse = rawResponse !== undefined;
-  const checkpointId =
-    existingTask?.checkpoint_id ??
-    buildCheckpointId({
-      runId: input.runId,
-      round: input.round,
-      phase: "evaluation",
-      stage: "evaluator",
-      checkpointSeq: existingTask?.checkpoint_seq ?? checkpointSeqForNewTask()
-    });
-  const checkpointSeq =
-    existingTask?.checkpoint_seq ?? Number(checkpointId.split(":").at(-1));
-  const notes = checkpointNotesFor({
-    round: input.round,
-    stageLabel: "evaluator enhancement",
-    checkpointId,
-    promptPath: rel(input.artifacts.eval_enhancement_prompt_path),
-    responsePath: rel(input.artifacts.eval_enhancement_response_path),
-    invalidResponse
-  });
-  await writeCurrentThreadEnhancementTask({
-    runId: input.runId,
-    round: input.round,
-    phase: "evaluation",
-    stage: "evaluator",
-    checkpointId,
-    checkpointSeq,
-    taskPath: input.artifacts.eval_enhancement_task_path,
-    promptPath: input.artifacts.eval_enhancement_prompt_path,
-    responsePath: input.artifacts.eval_enhancement_response_path,
-    preparedPrompt,
-    transportProtocolPath: input.transportProtocolPath,
-    summary: "Review the deterministic eval report and write a JSON patch response for the round verdict.",
-    contextPaths: {
-      round_contract_path: input.artifacts.contract_json_path,
-      generator_plan_path: input.artifacts.generator_plan_json_path,
-      eval_report_path: input.artifacts.eval_report_path
-    },
-    notes
-  });
   return {
-    kind: "checkpoint",
-    consumer: "codex",
-    checkpointKind: "evaluator",
-    autoResumeEligible: true,
-    notes,
-    artifacts: {
-      eval_enhancement_task_path: input.artifacts.eval_enhancement_task_path,
-      eval_enhancement_prompt_path: input.artifacts.eval_enhancement_prompt_path,
-      eval_enhancement_response_path: input.artifacts.eval_enhancement_response_path
-    }
+    kind: "completed",
+    value: input.evalReport,
+    runtimeWarnings: [
+      `Current-thread evaluator enhancement is disabled in per-round blind evaluator mode for round ${input.round}; use the fresh read-only judge path instead.`
+    ]
   };
 };

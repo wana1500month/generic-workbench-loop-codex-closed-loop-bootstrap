@@ -37,7 +37,8 @@ const codexSensitiveValuesForRedaction = () => [
 const isCurrentThreadReadOnlyJudge = (input) => input.allowCurrentThreadReadOnlyJudge === true &&
     input.metadata?.role === "judge" &&
     input.configOverrides?.approval_policy === "never" &&
-    input.configOverrides?.sandbox_mode === "read-only";
+    input.configOverrides?.sandbox_mode === "read-only" &&
+    input.configOverrides?.["sandbox_read_only.network_access"] === false;
 const tomlLiteral = (value) => {
     if (typeof value === "string") {
         return JSON.stringify(value);
@@ -302,7 +303,10 @@ export const runCodexCommand = async (input) => {
         network_access: typeof input.configOverrides?.["sandbox_workspace_write.network_access"] ===
             "boolean"
             ? input.configOverrides["sandbox_workspace_write.network_access"]
-            : null,
+            : typeof input.configOverrides?.["sandbox_read_only.network_access"] ===
+                "boolean"
+                ? input.configOverrides["sandbox_read_only.network_access"]
+                : null,
         output_schema_requested: Boolean(input.outputSchema),
         output_schema_passed_to_cli: Boolean(schemaPath && !usesResume),
         add_dirs: unique(input.addDirs ?? [])
