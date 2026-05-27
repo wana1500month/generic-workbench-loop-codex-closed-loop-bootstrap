@@ -6,6 +6,7 @@ import {
   createTempRoot,
   ensureBuild,
   importDist,
+  repoRoot,
   runCommand
 } from "./testing/bootstrap-validator-helpers.mjs";
 
@@ -24,9 +25,36 @@ const assert = (condition, message) => {
 };
 
 const strictMode = process.env.HARNESS_APP_SERVER_REAL_SMOKE_STRICT === "1";
+const latestResultPath = join(
+  repoRoot,
+  ".tmp",
+  "codex-real-smoke",
+  "app-server-latest-result.json"
+);
+
+const writeLatestResult = async (result) => {
+  await mkdir(join(repoRoot, ".tmp", "codex-real-smoke"), { recursive: true });
+  await writeFile(
+    latestResultPath,
+    JSON.stringify(
+      {
+        validated_at: new Date().toISOString(),
+        strict_mode: strictMode,
+        ...result
+      },
+      null,
+      2
+    ) + "\n",
+    "utf8"
+  );
+};
 
 const main = async () => {
   if (process.env.HARNESS_DISABLE_CODEX_AGENTS === "1") {
+    await writeLatestResult({
+      status: "environment_blocked",
+      reason: "HARNESS_DISABLE_CODEX_AGENTS=1 prevents real Codex execution."
+    });
     if (strictMode) {
       throw new Error(
         "App Server real smoke strict mode failed: HARNESS_DISABLE_CODEX_AGENTS=1 prevents real Codex execution."
@@ -59,6 +87,17 @@ const main = async () => {
   });
   if (!authPreflight.ok) {
     const reason = authPreflight.blockedReason ?? "Codex auth preflight failed.";
+    await writeLatestResult({
+      status: "environment_blocked",
+      reason,
+      auth_preflight: {
+        mode: authPreflight.mode,
+        auth_file_present: authPreflight.authFilePresent,
+        has_refresh_token: authPreflight.hasRefreshToken,
+        file_backed: authPreflight.fileBacked,
+        timed_out: authPreflight.timedOut === true
+      }
+    });
     if (strictMode) {
       throw new Error(`App Server real smoke strict mode failed: ${reason}`);
     }
@@ -70,6 +109,11 @@ const main = async () => {
     shell: false
   }).catch(() => ({ code: 1, stdout: "", stderr: "" }));
   if (codexVersion.code !== 0) {
+    await writeLatestResult({
+      status: "environment_blocked",
+      reason: "could not read Codex version after auth preflight",
+      codex_version_stderr: codexVersion.stderr
+    });
     if (strictMode) {
       throw new Error(
         `App Server real smoke strict mode failed: could not read Codex version.\n${codexVersion.stderr}`
@@ -84,6 +128,11 @@ const main = async () => {
     shell: false
   }).catch(() => ({ code: 1, stdout: "", stderr: "" }));
   if (helpCheck.code !== 0) {
+    await writeLatestResult({
+      status: "environment_blocked",
+      reason: "could not launch codex app-server",
+      app_server_stderr: helpCheck.stderr
+    });
     if (strictMode) {
       throw new Error(
         `App Server real smoke strict mode failed: could not launch codex app-server --help.\n${helpCheck.stderr}`
@@ -236,30 +285,28 @@ const main = async () => {
       "Expected App Server smoke target file to contain the requested content."
     );
 
+    const result = {
+      status: "passed",
+      codex_version: codexVersion.stdout.trim() || codexVersion.stderr.trim(),
+      auth_preflight: {
+        mode: authPreflight.mode,
+        auth_file_present: authPreflight.authFilePresent,
+        has_refresh_token: authPreflight.hasRefreshToken,
+        file_backed: authPreflight.fileBacked
+      },
+      thread_id: transportState.app_server?.thread_id,
+      turn_id: transportState.app_server?.turn_id,
+      event_cursor: transportState.app_server?.event_cursor,
+      transport_state_path: transportStatePath,
+      response_path: responsePath,
+      target_file_path: targetFilePath
+    };
     await writeFile(
       join(tempRoot, "app-server-real-smoke-result.json"),
-      JSON.stringify(
-        {
-          validated_at: new Date().toISOString(),
-          codex_version: codexVersion.stdout.trim() || codexVersion.stderr.trim(),
-          auth_preflight: {
-            mode: authPreflight.mode,
-            auth_file_present: authPreflight.authFilePresent,
-            has_refresh_token: authPreflight.hasRefreshToken,
-            file_backed: authPreflight.fileBacked
-          },
-          thread_id: transportState.app_server?.thread_id,
-          turn_id: transportState.app_server?.turn_id,
-          event_cursor: transportState.app_server?.event_cursor,
-          transport_state_path: transportStatePath,
-          response_path: responsePath,
-          target_file_path: targetFilePath
-        },
-        null,
-        2
-      ) + "\n",
+      JSON.stringify(result, null, 2) + "\n",
       "utf8"
     );
+    await writeLatestResult(result);
 
     console.log(`Validated real App Server smoke in ${tempRoot}.`);
   } finally {
@@ -269,8 +316,12 @@ const main = async () => {
   }
 };
 
-main().catch((error) => {
+main().catch(async (error) => {
   console.error("App Server real smoke failed.");
   console.error(error);
+  await writeLatestResult({
+    status: "failed",
+    reason: error instanceof Error ? error.message : String(error)
+  });
   process.exitCode = 1;
 });

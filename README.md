@@ -78,6 +78,7 @@ Product-build discovery collects product, execution, and adapter-design intake. 
 - `npm run validate:codex-binary-preflight`: trusted-runner check that fails fast when `codex` is not executable; install Codex CLI or set `HARNESS_CODEX_BIN`
 - `npm run validate:codex-auth-preflight:fake`: deterministic fake-Codex auth semantics check; `validate:codex-auth-preflight` remains a compatibility alias
 - `npm run validate:codex-live`: trusted-runner-only live Codex and App Server gate, starting with the real binary preflight
+- `npm run validate:live-smoke-results`: checks the persisted live smoke artifacts under `.tmp/codex-real-smoke/`
 
 Trusted live smoke sequence:
 
@@ -87,9 +88,10 @@ npm run validate:codex-binary-preflight
 npm run validate:transport:cli
 npm run validate:transport:app-server
 npm run release:preflight-live
+npm run validate:live-smoke-results
 ```
 
-Run the live sequence only on a host with an authenticated Codex CLI/App Server environment. Treat auth or host preflight failures as environment blockers, not deterministic harness regressions.
+Run the live sequence only on a host with an authenticated Codex CLI/App Server environment. Treat auth or host preflight failures as environment blockers, not deterministic harness regressions. A live smoke pass must leave `.tmp/codex-real-smoke/live-smoke-summary.json`.
 
 `validate:reference-adapter:check` expects `REFERENCE_ADAPTER_CONTRACT` to be set. Without an attached adapter, external validation should fail closed.
 

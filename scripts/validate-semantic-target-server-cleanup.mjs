@@ -16,24 +16,22 @@ const timeoutMs = () => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 900000;
 };
 
-const npmInvocationFor = (scriptName) => {
-  if (process.env.npm_execpath) {
-    return {
-      command: process.execPath,
-      args: [process.env.npm_execpath, "run", scriptName, "--silent"],
-      shell: false
-    };
-  }
-  return {
-    command: "npm",
-    args: ["run", scriptName, "--silent"],
-    shell: process.platform === "win32"
+const nodeInvocationFor = (scriptName) => {
+  const invocations = {
+    "validate:quality-lift": ["./scripts/validate-quality-lift.mjs"],
+    "validate:productization": ["./scripts/run-validation-batch.mjs", "productization"],
+    "validate:smoke-clean": ["./scripts/validate-clean-smoke.mjs"]
   };
+  const args = invocations[scriptName];
+  if (!args) {
+    throw new Error(`No direct validation invocation registered for ${scriptName}.`);
+  }
+  return { command: process.execPath, args, shell: false };
 };
 
-const runNpmScript = async (scriptName) =>
+const runValidationScript = async (scriptName) =>
   new Promise((resolvePromise, rejectPromise) => {
-    const invocation = npmInvocationFor(scriptName);
+    const invocation = nodeInvocationFor(scriptName);
     const child = spawn(invocation.command, invocation.args, {
       cwd: repoRoot,
       stdio: "inherit",
@@ -90,7 +88,7 @@ await assertNoSemanticTargetServers("before cleanup validation");
 
 for (const scriptName of validations) {
   console.log(`[validate-semantic-target-server-cleanup] running ${scriptName}`);
-  const code = await runNpmScript(scriptName);
+  const code = await runValidationScript(scriptName);
   if (code !== 0) {
     throw new Error(`${scriptName} failed with exit code ${code}`);
   }

@@ -1,18 +1,42 @@
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { stopProcessTree } from "./process-tree.mjs";
 
 const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const packageJson = JSON.parse(
+  await readFile(join(repoRoot, "package.json"), "utf8")
+);
 
 const validationTimeoutMs = () => {
   const parsed = Number(process.env.HARNESS_VALIDATION_TIMEOUT_MS);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 300000;
 };
 
+const splitCommand = (command) =>
+  command.match(/"[^"]*"|'[^']*'|[^\s]+/g)?.map((token) =>
+    token.replace(/^["']|["']$/g, "")
+  ) ?? [];
+
+const directNodeInvocationFor = (scriptName) => {
+  const command = packageJson.scripts?.[scriptName];
+  if (!command || /(?:^|\s)(?:&&|\|\||[|<>;])(?:\s|$)/.test(command)) {
+    return undefined;
+  }
+  const tokens = splitCommand(command);
+  if (tokens[0] !== "node" || tokens.length < 2) {
+    return undefined;
+  }
+  return { command: process.execPath, args: tokens.slice(1), shell: false };
+};
+
 const npmInvocationFor = (scriptName) => {
+  const directNodeInvocation = directNodeInvocationFor(scriptName);
+  if (directNodeInvocation) {
+    return directNodeInvocation;
+  }
   if (process.env.npm_execpath) {
     return {
       command: process.execPath,

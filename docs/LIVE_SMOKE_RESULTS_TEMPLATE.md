@@ -30,7 +30,16 @@ npm run validate:codex-auth-preflight:fake
 npm run validate:transport:cli
 npm run validate:transport:app-server
 npm run release:preflight-live
+npm run validate:live-smoke-results
 ```
+
+Persisted machine-readable proof after `release:preflight-live`:
+
+- `.tmp/codex-real-smoke/binary-preflight-result.json`
+- `.tmp/codex-real-smoke/latest-result.json`
+- `.tmp/codex-real-smoke/app-server-latest-result.json`
+- `.tmp/codex-real-smoke/live-smoke-summary.json`
+- `.tmp/codex-real-smoke/live-smoke-results.md`
 
 ## Results
 
@@ -42,6 +51,7 @@ npm run release:preflight-live
 | validate:transport:cli |  |  |  |  |
 | validate:transport:app-server |  |  |  |  |
 | release:preflight-live |  |  |  |  |
+| validate:live-smoke-results |  |  | `.tmp/codex-real-smoke/live-smoke-summary.json` |  |
 
 ## Foreground Loop Smoke
 

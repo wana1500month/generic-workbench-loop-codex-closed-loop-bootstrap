@@ -26,15 +26,23 @@ const assert = (condition, message) => {
 };
 
 const main = async () => {
-  await ensureSemanticValidationFixtures({ clean: true });
   await ensureBuild();
   const tempRoot = await createTempRoot("validate-quality-lift");
+  const semanticRoot = join(tempRoot, "semantic-validation");
+  await ensureSemanticValidationFixtures({
+    clean: true,
+    runtimeRoot: semanticRoot
+  });
 
   try {
+    const lowScoreAdapterPath = join(semanticRoot, "low-score", "adapter.json");
+    const patchOnlySuccessAdapterPath = join(
+      semanticRoot,
+      "patch-only-success",
+      "adapter.json"
+    );
     const lenientProfilePath = join(
-      repoRoot,
-      ".tmp",
-      "semantic-validation",
+      semanticRoot,
       "verification-profile-score-policy-lenient.json"
     );
     const strictLanePath = join(tempRoot, "external-quality-lane.json");
@@ -60,7 +68,7 @@ const main = async () => {
     const baselineResult = await runLoop([
       "--single",
       "--adapter",
-      "./.tmp/semantic-validation/low-score/adapter.json",
+      lowScoreAdapterPath,
       "--evaluator-profile",
       lenientProfilePath
     ]);
@@ -78,7 +86,7 @@ const main = async () => {
     const strictResult = await runLoop([
       "--single",
       "--adapter",
-      "./.tmp/semantic-validation/low-score/adapter.json",
+      lowScoreAdapterPath,
       "--evaluator-profile",
       strictLanePath
     ]);
@@ -189,7 +197,7 @@ const main = async () => {
     );
     const critiqueRun = await runLoop([
       "--adapter",
-      "./.tmp/semantic-validation/patch-only-success/adapter.json",
+      patchOnlySuccessAdapterPath,
       "--target-family",
       "api-service",
       "--max-rounds",

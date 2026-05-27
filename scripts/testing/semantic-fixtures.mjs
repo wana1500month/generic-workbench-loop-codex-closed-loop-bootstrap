@@ -61,13 +61,36 @@ const walkDirectories = async (root, predicate) => {
   return matches;
 };
 
-export const cleanSemanticValidationRuntimeState = async () => {
+const removeRuntimeRoot = async (root) => {
+  let lastError;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await rm(root, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (error?.code !== "EBUSY" && error?.code !== "EPERM") {
+        throw error;
+      }
+      await new Promise((resolvePromise) =>
+        setTimeout(resolvePromise, 250 * (attempt + 1))
+      );
+    }
+  }
+  if (lastError) {
+    throw lastError;
+  }
+};
+
+export const cleanSemanticValidationRuntimeState = async ({
+  runtimeRoot = runtimeFixtureRoot
+} = {}) => {
   await stopSemanticTargetServers();
-  if (!(await pathExists(runtimeFixtureRoot))) {
+  if (!(await pathExists(runtimeRoot))) {
     return [];
   }
   const runtimeDirectories = await walkDirectories(
-    runtimeFixtureRoot,
+    runtimeRoot,
     (name) => name === "target-state" || name === ".reference-state"
   );
   await Promise.all(
@@ -76,7 +99,10 @@ export const cleanSemanticValidationRuntimeState = async () => {
   return runtimeDirectories;
 };
 
-export const ensureSemanticValidationFixtures = async ({ clean = false } = {}) => {
+export const ensureSemanticValidationFixtures = async ({
+  clean = false,
+  runtimeRoot = runtimeFixtureRoot
+} = {}) => {
   const missing = [];
   for (const relativePath of requiredFixturePaths) {
     const absolutePath = join(sourceFixtureRoot, relativePath);
@@ -94,17 +120,20 @@ export const ensureSemanticValidationFixtures = async ({ clean = false } = {}) =
     );
   }
 
-  await mkdir(runtimeFixtureRoot, { recursive: true });
-  await cp(sourceFixtureRoot, runtimeFixtureRoot, {
+  if (clean) {
+    if (resolve(runtimeRoot) === resolve(runtimeFixtureRoot)) {
+      await stopSemanticTargetServers();
+    }
+    await removeRuntimeRoot(runtimeRoot);
+  }
+
+  await mkdir(runtimeRoot, { recursive: true });
+  await cp(sourceFixtureRoot, runtimeRoot, {
     recursive: true,
     force: true
   });
 
-  if (clean) {
-    await cleanSemanticValidationRuntimeState();
-  }
-
-  return runtimeFixtureRoot;
+  return runtimeRoot;
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

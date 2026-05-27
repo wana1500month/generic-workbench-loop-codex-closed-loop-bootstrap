@@ -29,6 +29,14 @@ Primary deterministic suites:
 - `release:zip`: build and package the installable ZIP only.
 - `validate:release`: build, quality-lift, package, ZIP-structure validation, and release-start validation.
 
+Semantic fixture cleanup is intentionally stronger for clean runs: `ensureSemanticValidationFixtures({ clean: true })`
+stops repo-owned semantic target servers and recreates `.tmp/semantic-validation`
+from tracked fixtures before validation. This prevents stale generated profiles,
+target-state directories, or manifests from changing batch results.
+`validate:quality-lift` uses its own `.tmp/validate-quality-lift-*/semantic-validation`
+fixture copy so the quality-lift score-policy check cannot inherit shared
+semantic fixture state from `core-long`, `release`, or cleanup batches.
+
 ## Live Codex Validation
 
 Live Codex validation checks integration with an installed Codex binary or the
@@ -41,10 +49,20 @@ Examples:
 - `validate:transport:cli`
 - `validate:transport:app-server`
 - `validate:codex-live`
+- `validate:live-smoke-results`
 - `release:preflight-live`
 
 Live checks may prove transport compatibility, but they are not required to make
 a deterministic front-door or loop-state regression reproducible.
+
+When `release:preflight-live` passes, the live run leaves durable proof in
+`.tmp/codex-real-smoke/`:
+
+- `binary-preflight-result.json`
+- `latest-result.json`
+- `app-server-latest-result.json`
+- `live-smoke-summary.json`
+- `live-smoke-results.md`
 
 ## Live Smoke Checklist
 
@@ -60,6 +78,7 @@ npm run validate:codex-auth-preflight:fake
 npm run validate:transport:cli
 npm run validate:transport:app-server
 npm run release:preflight-live
+npm run validate:live-smoke-results
 ```
 
 Checklist:
@@ -68,6 +87,7 @@ Checklist:
 - Run the sequence from an authenticated trusted host; do not use it as a deterministic CI gate on unauthenticated workers.
 - Keep deterministic auth semantics separate with `validate:codex-auth-preflight:fake`.
 - Run App Server smoke only on hosts that support the Codex app/App Server transport.
+- Require `validate:live-smoke-results` before claiming a live smoke pass; it fails unless binary, Codex exec, and App Server result artifacts all have `status: "passed"`.
 - Record auth, binary, or host capability failures as environment-blocked live preflight outcomes, not deterministic regressions.
 
 ## Front-Door Isolation Checks

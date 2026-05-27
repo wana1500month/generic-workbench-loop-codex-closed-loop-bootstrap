@@ -8,21 +8,9 @@ import {
 await ensureSemanticValidationFixtures();
 await cleanSemanticValidationRuntimeState();
 
-const invocation = process.env.npm_execpath
-  ? {
-      command: process.execPath,
-      args: [process.env.npm_execpath, "run", "smoke"],
-      shell: false
-    }
-  : {
-      command: "npm",
-      args: ["run", "smoke"],
-      shell: process.platform === "win32"
-    };
-
-const child = spawn(invocation.command, invocation.args, {
+const child = spawn(process.execPath, ["./scripts/run-validation-batch.mjs", "smoke"], {
   stdio: "inherit",
-  shell: invocation.shell,
+  shell: false,
   windowsHide: true
 });
 
