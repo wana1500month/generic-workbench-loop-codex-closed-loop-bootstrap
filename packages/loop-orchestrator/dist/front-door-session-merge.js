@@ -1,4 +1,4 @@
-import { buildAdapterPlanFromIntake, normalizeVerificationSurfacesForFamily, parseVerificationSurfacesAnswer, parseWorkflowChecksAnswer } from "./adapter-plan.js";
+import { buildAdapterPlanFromIntake, isWorkflowCheckCandidateLine, normalizeVerificationSurfacesForFamily, parseVerificationSurfacesAnswer, parseWorkflowChecksAnswer } from "./adapter-plan.js";
 import { evaluateIntakeRequest } from "./intake-gate.js";
 import { defaultCustomMetricMinimumForStrictness, evidenceSurfacesForProjectKind, inferProjectKindFromText } from "./evaluation-policy.js";
 const listJoinPattern = /\s*(?:,|;|\band\b|\bor\b)\s*|\s+\/\s+/i;
@@ -178,6 +178,9 @@ const metricRequiredByText = (value) => !/optional|\uC120\uD0DD|\uCC38\uACE0/u.t
 const parseExplicitCustomQualityMetrics = (value) => {
     const metrics = splitAnswerLines(value)
         .map((line) => {
+        if (isWorkflowCheckCandidateLine(line)) {
+            return undefined;
+        }
         const match = line.match(/^(?:추가\s*)?(?:평가\s*)?(?:기준\s*)?([^:：>=]+?)\s*[:：]\s*(?:최소\s*)?([0-9]+(?:\.[0-9]+)?)\s*(?:점|\/\s*10)?\.?\s*(.*)$/u) ??
             line.match(/^([^:：>=]+?)\s*(?:>=|이상|최소)\s*([0-9]+(?:\.[0-9]+)?)\s*(?:점|\/\s*10)?\.?\s*(.*)$/u);
         if (!match?.[1] || !match[2]) {
@@ -222,6 +225,9 @@ const parseCustomQualityMetrics = (value, strictnessLevel) => {
         byId.set(metric.metric_id, metric);
     }
     for (const line of splitAnswerLines(value)) {
+        if (isWorkflowCheckCandidateLine(line)) {
+            continue;
+        }
         if (parseExplicitCustomQualityMetrics(line)?.length) {
             continue;
         }
@@ -699,6 +705,9 @@ const extractCandidates = (input) => {
         : acceptsAdapterAnswer && workflowChecksFromMessage.length
             ? workflowChecksFromMessage
             : undefined;
+    const candidateTargetFamily = acceptsAdapterAnswer && input.existingIntake?.target_family
+        ? undefined
+        : intakeResult.internal_working_hypothesis;
     const evidenceSurfaces = evidenceSurfacesForCandidate(projectKind, candidateVerificationSurfaces);
     const regexCandidates = {
         ...(productTitle ? { product_title: productTitle } : {}),
@@ -707,8 +716,8 @@ const extractCandidates = (input) => {
         ...(coreFeatures ? { core_features: coreFeatures } : {}),
         ...(referenceApps ? { reference_apps: referenceApps } : {}),
         ...(finishLine ? { finish_line: finishLine } : {}),
-        ...(intakeResult.internal_working_hypothesis
-            ? { target_family: intakeResult.internal_working_hypothesis }
+        ...(candidateTargetFamily
+            ? { target_family: candidateTargetFamily }
             : {}),
         ...(messageOnlyIntakeResult.extracted_project_mode ??
             intakeResult.extracted_project_mode
@@ -786,6 +795,7 @@ const applyScalarField = (target, field, candidate, sourceTurn, conflicts, optio
         return;
     }
     if (existing === candidate) {
+        removeConflictsForField(conflicts, field);
         return;
     }
     conflicts.push({
@@ -1067,6 +1077,8 @@ export const mergeFrontDoorSessionTurn = (input) => {
     });
     const previousQuestionIds = input.existingSession?.last_question_ids ?? [];
     const replaceFields = replaceFieldsForTurn(input.message, previousQuestionIds);
+    const resolvingTargetFamilyConflict = candidates.target_family !== undefined &&
+        conflicts.some((conflict) => conflict.field === "target_family");
     const candidateOverridesDefaultTargetRoot = candidates.target_root !== undefined &&
         (input.existingSession?.defaults_accepted?.includes("target_root") ||
             nextIntake.target_root?.startsWith("./apps/"));
@@ -1074,7 +1086,9 @@ export const mergeFrontDoorSessionTurn = (input) => {
     if (!nextIntake.product_summary || replaceFields.has("product_summary")) {
         applyScalarField(nextIntake, "product_summary", candidates.product_summary, input.turnCount, conflicts, { replace: replaceFields.has("product_summary") });
     }
-    applyScalarField(nextIntake, "target_family", candidates.target_family, input.turnCount, conflicts);
+    applyScalarField(nextIntake, "target_family", candidates.target_family, input.turnCount, conflicts, {
+        replace: resolvingTargetFamilyConflict
+    });
     applyScalarField(nextIntake, "project_kind", candidates.project_kind, input.turnCount, conflicts);
     applyScalarField(nextIntake, "strictness_level", candidates.strictness_level, input.turnCount, conflicts);
     applyScalarField(nextIntake, "project_mode", candidates.project_mode, input.turnCount, conflicts, {

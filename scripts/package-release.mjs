@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { constants } from "node:fs";
+import { constants, existsSync } from "node:fs";
 import { access, chmod, cp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -111,6 +111,10 @@ const ignoredPackagePath = (relativePath) =>
   relativePath.startsWith("node_modules/") ||
   relativePath === ".tmp" ||
   relativePath.startsWith(".tmp/") ||
+  relativePath === "tmp-targets" ||
+  relativePath.startsWith("tmp-targets/") ||
+  relativePath === "CODEX_APP_INSTALL.md" ||
+  relativePath === "release-manifest.json" ||
   relativePath === "SOURCE_ARCHIVE_NOT_CODEX_APP_INSTALL.md" ||
   relativePath === "VALIDATION_STATUS.md" ||
   relativePath.endsWith(".tsbuildinfo") ||
@@ -157,7 +161,7 @@ const trackedFiles = async () => {
 };
 
 const shouldPackageTrackedFile = (relativePath) =>
-  !ignoredPackagePath(relativePath);
+  !ignoredPackagePath(relativePath) && existsSync(join(repoRoot, relativePath));
 
 const copyPath = async (source, destination) => {
   await mkdir(dirname(destination), { recursive: true });

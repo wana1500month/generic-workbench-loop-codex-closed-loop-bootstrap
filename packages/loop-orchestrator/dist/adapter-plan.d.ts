@@ -8,6 +8,7 @@ export declare const normalizeWorkflowName: (value: string) => string;
 export declare const workflowNameMatches: (left: string, right: string) => boolean;
 export declare const defaultWorkflowChecksFromCoreFeatures: (coreFeatures: readonly string[], surfaces: readonly VerificationSurface[]) => SessionWorkflowCheck[];
 export declare const alignWorkflowChecksToCoreFeatures: (coreFeatures: readonly string[], checks: readonly SessionWorkflowCheck[], surfaces: readonly VerificationSurface[]) => SessionWorkflowCheck[];
+export declare const isWorkflowCheckCandidateLine: (value: string) => boolean;
 export declare const hasExplicitApiNegation: (value: string) => boolean;
 export declare const parseVerificationSurfacesAnswer: (value: string) => VerificationSurface[];
 export declare const parseWorkflowChecksAnswer: (value: string, defaultSurface?: VerificationSurface) => SessionWorkflowCheck[];

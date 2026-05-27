@@ -18,8 +18,11 @@ intake and execution sessions.
 5. When `loop:discover` returns `ask_adapter_questions`, ask only those
    adapter-design questions. Do not start prepare until the verification
    surface and workflow checks are captured or defaulted by discovery.
-6. When `loop:discover` returns `ready_for_prepare`, switch to prepare mode.
-7. Before heavy implementation, create or update:
+6. When `loop:discover` returns `ask_conflict_resolution`, ask only those
+   conflict-resolution questions. Do not start prepare until discovery clears
+   `unresolved_conflicts`.
+7. When `loop:discover` returns `ready_for_prepare`, switch to prepare mode.
+8. Before heavy implementation, create or update:
    - Prefer `npm run loop:prepare -- --front-door-session <path> --json` after `loop:discover` reaches `ready_for_prepare`; same-thread skill flows may call the same prepare writer internally.
    - `runtime/build-brief.json`
    - `runtime/run-contract.json`
@@ -35,10 +38,10 @@ intake and execution sessions.
    - `generated-adapter/rubric.generated.json`
    - `generated-adapter/verification-profile.generated.json`
    - `generated-adapter/codex-adapter/adapter-review-task.md`
-8. After prepare mode, show the generated adapter plan/review task and stop at `ready_to_start` on the same thread.
-9. Start running only when the operator explicitly says `루프 시작` or `start loop`.
-10. After start, continue in running mode on the same thread.
-11. Use review boundaries and steering turns instead of resetting the session.
+9. After prepare mode, show the generated adapter plan/review task and stop at `ready_to_start` on the same thread.
+10. Start running only when the operator explicitly says `루프 시작` or `start loop`.
+11. After start, continue in running mode on the same thread.
+12. Use review boundaries and steering turns instead of resetting the session.
 
 ## Hard rules
 
@@ -46,6 +49,8 @@ intake and execution sessions.
 - Treat `loop:intake` as the stateless parser and `loop:discover` as the stateful same-thread discovery front door.
 - Preserve `front_door_session_path`, `front_door_session_id`, and `run_id` from discovery/prepare outputs. Pass `--front-door-session <path>` to prepare and prefer `--run-id <run-id>` on start when multiple prepared runs could exist.
 - Once a discovery session is prepared, treat it as immutable; use `loop:start:codex` rather than reopening discovery.
+- Never run prepare from a discovery response that still has
+  `unresolved_conflicts` or status `ask_conflict_resolution`.
 - Keep the first phase product-first. Do not jump straight into layout, stack,
   adapter, or validation plans until the product is concrete enough.
 - The adapter-design phase is explicit but narrow: capture verification surface

@@ -10,11 +10,11 @@ Use the generated release artifact, not the repository source archive, for Codex
 npm run release:zip
 ```
 
-Install `.tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip`. It includes `packages/loop-orchestrator/dist`, keeps `node_modules` out, includes `CODEX_APP_INSTALL.md` plus `release-manifest.json`, and lets `loop:intent`, `loop:discover`, `loop:prepare`, and `loop:start:codex` run before `npm ci`. Use `npm run validate:release` when you also need ZIP validation and release-start proof.
+Install `.tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip`. It includes `packages/loop-orchestrator/dist`, keeps `node_modules` out, includes release-owned `CODEX_APP_INSTALL.md` plus `release-manifest.json`, and lets `loop:intent`, `loop:discover`, `loop:prepare`, and `loop:start:codex` run before `npm ci`. Use `npm run validate:release` when you also need ZIP validation and release-start proof.
 
 ## First Run From A Source ZIP
 
-If `packages/loop-orchestrator/dist` is missing or `SOURCE_ARCHIVE_NOT_CODEX_APP_INSTALL.md` is present, the folder is a source archive, not the installable Codex app artifact. Prefer installing `.tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip`. If you intentionally use a source archive and accept local npm bootstrap, run one bootstrap command before using plugin skills:
+If `packages/loop-orchestrator/dist` is missing or `SOURCE_ARCHIVE_NOT_CODEX_APP_INSTALL.md` is present, the folder is a source archive, not the installable Codex app artifact. Source checkouts and source archives should not contain `CODEX_APP_INSTALL.md` or `release-manifest.json`. Prefer installing `.tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip`. If you intentionally use a source archive and accept local npm bootstrap, run one bootstrap command before using plugin skills:
 
 ```bash
 bash ./init.sh
@@ -35,7 +35,7 @@ Do not expect the first product-build turn from a source archive to be zero-touc
 2. Open that folder in the Codex app.
 3. Say `가계부 앱 만들어줘` or another app/product request.
 4. Answer only the returned product, execution, and adapter-design questions.
-5. Confirm the generated adapter plan and adapter review task that prepare exposes.
+5. Resolve `ask_conflict_resolution` questions before prepare if Codex reports a product-family or scope conflict, then confirm the generated adapter plan and adapter review task that prepare exposes.
 6. If Codex reports `prepared_with_blockers`, open `runtime/readiness-report.md`, resolve the listed blockers, and run prepare again.
 7. Review `evaluation-policy.generated.md` when strictness or custom quality criteria matter.
 8. When Codex reports `ready_to_start`, say `루프 시작`.
@@ -63,7 +63,7 @@ npm run validate:app
 npm run validate:app-release
 ```
 
-The productization gate validates readiness doctor, evaluation policy, strictness, scorecard output, adaptive intake, and non-web target behavior. The app gates validate the Codex app foreground path and install ZIP without requiring a local `codex` binary. `npm run validate:release-gate` is an alias for the app release gate.
+The productization gate validates readiness doctor, evaluation policy, strictness, scorecard output, adaptive intake, and non-web target behavior. The app gates validate the Codex app foreground path and install ZIP without requiring a local `codex` binary. `npm run validate:release-gate` is the stricter release gate: it adds source/install identity and source-archive reproducibility before validating the install ZIP path.
 
 For faster commit checks, run `npm run validate:fast`. For heavier deterministic coverage, run `npm test`, `npm run validate:smoke-clean`, and `npm run validate:source-archive-repro`; those are nightly or pre-broader-beta gates, not prerequisites for installing the Codex app ZIP.
 

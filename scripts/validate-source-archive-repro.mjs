@@ -191,6 +191,8 @@ const explicitIgnore = (relativePath) =>
   relativePath.startsWith(".git/") ||
   relativePath === "node_modules" ||
   relativePath.startsWith("node_modules/") ||
+  relativePath === "tmp-targets" ||
+  relativePath.startsWith("tmp-targets/") ||
   relativePath.endsWith(".tsbuildinfo");
 
 const shouldInclude = (relativePath, patterns) =>

@@ -18,5 +18,6 @@ npm-debug.log
 # Generated eval artifacts
 evals/runs/*
 !evals/runs/.gitkeep
+tmp-targets/
 
 .tmp/*

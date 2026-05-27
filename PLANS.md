@@ -77,6 +77,7 @@ Acceptance:
 - The repo should expose phase-oriented foreground entrypoints such as `loop:status`, `loop:resume`, and `loop:phase`, so Codex app operators can inspect or re-enter a persisted run without memorizing raw `--resume-run` and `--resume-phase` flag combinations.
 - Foreground entrypoints such as `loop:start:codex`, `loop:resume`, `loop:phase`, `loop:status`, and `--help` should reuse a bundled `dist/` build in installable ZIPs instead of forcing `npm ci` or TypeScript rebuilds before start, resume, phase re-entry, or inspection.
 - Installable release ZIPs should be the documented Codex app artifact, with source archives treated as bootstrap-required developer inputs rather than zero-touch installs.
+- Source checkouts and source archives should carry `SOURCE_ARCHIVE_NOT_CODEX_APP_INSTALL.md` and must not carry install-only `CODEX_APP_INSTALL.md` or `release-manifest.json`; release packaging must create those install markers only inside the install ZIP.
 - Dist-missing source archives should not trigger local npm bootstrap from skill helpers or front-door wrappers unless the operator explicitly opts in.
 - Product-build attached generator task artifacts should expose product-facing deliverables and release-gate selector requirements, not internal harness control-plane checks.
 - Product-build generated verification profiles should preserve the requested product surface: browser-only builds must not inherit API probes, draft/persistence probes, or error-recovery probes unless intake explicitly asks for those surfaces or behaviors, and generated workflow selectors should be semantic-first with legacy selectors as fallbacks.
@@ -86,9 +87,10 @@ Acceptance:
 - The repo should expose a lightweight runtime dashboard for attached monitoring through `loop:ui`.
 - Trusted environments should have a real `app-server` smoke validator in addition to the existing `codex exec` smoke, while developer hosts without a usable `codex` binary should remain `environment_blocked`.
 - The live Codex gate should keep real binary availability separate from deterministic fake-Codex auth semantics, failing before strict smoke when `codex` is missing or `HARNESS_CODEX_BIN` is misconfigured.
-- Validation acceptance should stay split into `validate:quick`, `validate:fast`, `validate:product-front-door`, `validate:productization`, `validate:process`, `validate:core`, `validate:core-long`, `validate:release`, `validate:source-archive-repro`, `validate:codex-live`, and `validate:external-adapter`, with process-control and source-archive reproducibility failures blocking release gates. `validate:product-front-door` should remain front-door/product only, `validate:productization` should own readiness/evaluation/scorecard/non-web closure, `validate:core` should remain fast deterministic integration, and release ZIP generation should stay distinct from release validation through `release:package`, `release:zip`, and `validate:release`.
+- Validation acceptance should stay split into `validate:quick`, `validate:fast`, `validate:product-front-door`, `validate:productization`, `validate:process`, `validate:core`, `validate:core-long`, `validate:release`, `validate:source-release-identity`, `validate:source-archive-repro`, `validate:codex-live`, and `validate:external-adapter`, with process-control, source/install identity, and source-archive reproducibility failures blocking release gates. `validate:product-front-door` should remain front-door/product only, `validate:productization` should own readiness/evaluation/scorecard/non-web closure, `validate:core` should remain fast deterministic integration, and release ZIP generation should stay distinct from release validation through `release:package`, `release:zip`, and `validate:release`.
 - Source and install archive candidates must exclude TypeScript incremental metadata, and build success must be backed by required compiled-output sentinels rather than TypeScript exit code alone.
 - Operator-facing docs should present `loop:intent`, `loop:discover`, `loop:prepare`, `loop:start:codex`, `loop:continue`, and `loop:status` as the canonical path; lower-level runner, phase, family, and adapter commands remain internal, recovery, validation, or compatibility surfaces.
+- Product discovery should return `ask_conflict_resolution` when unresolved conflicts remain; `ready_for_prepare` is only valid once those conflicts are cleared.
 - Prepare should produce a run-local `evaluation-policy.generated.json` / `.md` with `project_kind`, evidence surfaces, strictness level 1-5, target score, and required custom dimensions.
 - Each evaluated round should produce `scorecard.json` / `scorecard.md`, and required custom dimensions below their minimum should keep `target_reached` false even when total score passes.
 - Evaluator scoring should be per-round blind: each round uses a fresh read-only Codex judge command, never `codex exec resume`, and the prompt excludes previous evaluator responses, prior scorecards, prior eval reports, prior patch requests, and prior quality critiques.
@@ -109,6 +111,7 @@ Validation:
 - `npm run validate:process`
 - `npm test`
 - `npm run validate:release`
+- `npm run validate:source-release-identity`
 - `npm run validate:source-archive-repro`
 - `npm run validate:transport-mode`
 - `npm run validate:attached-resume-smoke`

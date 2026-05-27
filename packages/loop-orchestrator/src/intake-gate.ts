@@ -327,14 +327,25 @@ const countKeywordMatches = (value: string, keywords: readonly string[]): number
 
 const roundScore = (value: number): number => Number(value.toFixed(3));
 
+const hasBrowserSurfaceIntent = (value: string): boolean =>
+  /(?:browser|web\s*app|web\s*ui|frontend|\bui\b|\uBE0C\uB77C\uC6B0\uC800|\uC6F9\uC571|\uD654\uBA74|\uD504\uB860\uD2B8\uC5D4\uB4DC)/iu.test(
+    value
+  );
+
+const hasExplicitCrudApiIntent = (value: string): boolean =>
+  /(?:crud\s*(?:api|service|endpoints?)|resource\s*(?:api|service|endpoints?)|canonical\s+crud|\uC5D4\uB4DC\uD3EC\uC778\uD2B8\s*crud|\uBC31\uC5D4\uB4DC\s*crud)/iu.test(
+    value
+  );
+
 export const inferProductTargetFamily = (
   request: string
 ): Exclude<TargetFamily, "generic-core" | "editor-app"> => {
   const normalizedLower = lowerText(request);
   const apiExplicitlyNegated = hasExplicitApiNegation(normalizedLower);
   const projectKind = inferProjectKindFromText(request);
+  const browserSurfaceIntent = hasBrowserSurfaceIntent(normalizedLower);
 
-  if (isCommandFirstProjectKind(projectKind)) {
+  if (isCommandFirstProjectKind(projectKind) && !browserSurfaceIntent) {
     if (projectKind === "agent_workflow") {
       return "chat-agent";
     }
@@ -360,9 +371,14 @@ export const inferProductTargetFamily = (
     return "browser-editor";
   }
 
+  if (!apiExplicitlyNegated && hasExplicitCrudApiIntent(normalizedLower)) {
+    return "crud-api";
+  }
+
   if (
     !apiExplicitlyNegated &&
-    includesAny(normalizedLower, ["crud", "rest api", "resource", "백오피스 api"])
+    !browserSurfaceIntent &&
+    includesAny(normalizedLower, ["crud", "resource", "백오피스 api"])
   ) {
     return "crud-api";
   }

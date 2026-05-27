@@ -727,7 +727,7 @@ export const buildBootstrapAnswersFromSeed = (
           verificationSurfaces
         ).map(toBootstrapWorkflowCheck);
   const workflowChecks =
-    coreFeatures.length > 0
+    !seed.workflowChecks?.length && coreFeatures.length > 0
       ? alignWorkflowChecksToCoreFeatures(
           coreFeatures,
           rawWorkflowChecks.map(toSessionWorkflowCheck),
@@ -827,7 +827,7 @@ const completeBootstrapAnswers = (answers: BootstrapAnswers): BootstrapAnswers =
           verificationSurfaces
         ).map(toBootstrapWorkflowCheck);
   const workflowChecks =
-    answers.coreFeatures.length > 0
+    !answers.workflowChecks?.length && answers.coreFeatures.length > 0
       ? alignWorkflowChecksToCoreFeatures(
           answers.coreFeatures,
           rawWorkflowChecks.map(toSessionWorkflowCheck),

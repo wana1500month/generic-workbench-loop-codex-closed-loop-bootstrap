@@ -198,8 +198,7 @@ export const alignWorkflowChecksToCoreFeatures = (coreFeatures, checks, surfaces
     const fallbackSurface = surfaces[0] ?? "browser";
     const fallbackChecks = defaultWorkflowChecksFromCoreFeatures(coreFeatures, surfaces);
     return coreFeatures.slice(0, 5).map((feature, index) => {
-        const matched = checks.find((check) => workflowNameMatches(check.workflow, feature)) ??
-            checks[index];
+        const matched = checks.find((check) => workflowNameMatches(check.workflow, feature));
         const fallback = fallbackChecks[index] ?? {
             workflow: feature,
             surface: fallbackSurface,
@@ -226,6 +225,27 @@ export const alignWorkflowChecksToCoreFeatures = (coreFeatures, checks, surfaces
 const stripPathLikeTokens = (value) => value
     .replace(/(?:^|[\s:=])https?:\/\/[^\s,;]+/gi, " ")
     .replace(/(?:^|[\s:=])(?:\/|\.\/|\.\.\/|[A-Za-z]:\\)[^\s,;]+/g, " ");
+const workflowCheckHeaderPattern = /^(?:workflow\s+checks?|workflow\s+probes?|workflows?|verification\s+checks?|\uC6CC\uD06C\uD50C\uB85C\s*\uCCB4\uD06C|\uC6CC\uD06C\uD50C\uB85C|\uD575\uC2EC\s*\uC791\uC5C5\uBCC4\s*(?:\uC2E4\uC81C\s*)?(?:\uB3D9\uC791|\uAC80\uC99D|\uC131\uACF5\s*\uC870\uAC74)?|\uC791\uC5C5\uBCC4\s*(?:\uC2E4\uC81C\s*)?(?:\uB3D9\uC791|\uAC80\uC99D|\uC131\uACF5\s*\uC870\uAC74)?)\s*[:\uFF1A-]?\s*/iu;
+const splitWorkflowCandidateItems = (line) => {
+    const normalized = line.replace(/\\n/g, "\n");
+    return normalized
+        .split(/\r?\n/u)
+        .flatMap((entry) => entry
+        .replace(/\s+(?=\d+[.)]\s*\S)/gu, "\n")
+        .split(/\n+/u))
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+};
+const stripWorkflowListPrefix = (line) => line.replace(/^\s*(?:[-*]\s*)?(?:\d+[.)]\s*)?/, "").trim();
+const stripWorkflowHeaderPrefix = (line) => line.replace(workflowCheckHeaderPattern, "").trim();
+const workflowDelimiter = /\s*(?:->|=>|\u2192|:|\uFF1A)\s*/;
+export const isWorkflowCheckCandidateLine = (value) => {
+    const normalized = stripWorkflowListPrefix(stripWorkflowHeaderPrefix(value));
+    if (!normalized || workflowCheckHeaderPattern.test(normalized)) {
+        return false;
+    }
+    return workflowDelimiter.test(normalized);
+};
 export const hasExplicitApiNegation = (value) => {
     const normalized = value.normalize("NFKC").toLowerCase();
     const apiTerm = String.raw `(?:api|http|endpoint|\uC5D4\uB4DC\uD3EC\uC778\uD2B8)`;
@@ -266,7 +286,7 @@ export const parseVerificationSurfacesAnswer = (value) => {
     if (/(?:agent conversation|conversation|sample conversation|대화|에이전트 응답)/u.test(normalized)) {
         surfaces.push("agent_conversation");
     }
-    if (/(?:document|markdown|report|문서|보고서|기획서)/u.test(normalized)) {
+    if (/(?:document|markdown|pdf|written\s+report|document\s+report|문서|보고서|기획서)/u.test(normalized)) {
         surfaces.push("document");
     }
     if (/(?:package import|import test|library import|패키지 import|라이브러리)/u.test(normalized)) {
@@ -278,13 +298,12 @@ export const parseVerificationSurfacesAnswer = (value) => {
     return [...new Set(surfaces)];
 };
 export const parseWorkflowChecksAnswer = (value, defaultSurface = "browser") => {
-    const workflowDelimiter = /\s*(?:->|=>|\u2192|:|\uFF1A)\s*/;
     const metadataLabelPattern = /(?:\b(?:product title|product summary|target users?|primary users?|core workflows?|core features?|references?|good enough|finish line|target root|target score|max rounds?|run command|check command|ready url|app url|health url|api base url|verification surfaces?)\b|\uC81C\uD488\s*\uC81C\uBAA9|\uC81C\uD488\s*\uC694\uC57D|\uB300\uC0C1\s*\uC0AC\uC6A9\uC790|\uC8FC\s*\uC0AC\uC6A9\uC790|\uD575\uC2EC\s*\uC791\uC5C5|\uD575\uC2EC\s*\uC791\uC5C5\uBCC4\s*\uC2E4\uC81C\s*\uB3D9\uC791|\uC791\uC5C5\uBCC4\s*\uC2E4\uC81C\s*\uB3D9\uC791|\uC6CC\uD06C\uD50C\uB85C|\uC131\uACF5\s*\uAE30\uC900|\uC644\uB8CC\s*\uAE30\uC900|\uC791\uC5C5\s*\uD3F4\uB354|\uB300\uC0C1\s*\uD3F4\uB354|\uAC80\uC99D\s*\uBC29\uC2DD|\uAC80\uC99D\s*\uD45C\uBA74)/iu;
     const workflowHeaderOnlyPattern = /^(?:\uD575\uC2EC\s*)?(?:\uC791\uC5C5|\uC6CC\uD06C\uD50C\uB85C)(?:\uBCC4)?\s*(?:\uC2E4\uC81C\s*)?(?:\uB3D9\uC791|\uAC80\uC99D|\uC131\uACF5\s*\uC870\uAC74)?\s*[:\uFF1A]?$/u;
-    const candidateLines = value
-        .split(/\r?\n|\\n/)
+    const candidateLines = splitWorkflowCandidateItems(value)
         .flatMap((line) => line.split(/(?<=[.!?])\s+(?=[^.!?\n]+(?:->|=>|\u2192|:|\uFF1A))/u))
-        .map((line) => line.replace(/^\s*(?:[-*]|\d+[.)])\s*/, "").trim())
+        .flatMap((line) => splitWorkflowCandidateItems(line))
+        .map((line) => stripWorkflowListPrefix(stripWorkflowHeaderPrefix(line)))
         .filter(Boolean)
         .filter((line) => !workflowHeaderOnlyPattern.test(line))
         .filter((line) => workflowDelimiter.test(line))
@@ -353,9 +372,7 @@ export const buildAdapterPlanFromIntake = (input) => {
         runtimeStrategy.health_url = input.intake.health_url ?? defaultRuntime.health_url;
     }
     const rawWorkflowChecks = input.intake.workflow_checks?.length
-        ? input.intake.core_features?.length
-            ? alignWorkflowChecksToCoreFeatures(input.intake.core_features, input.intake.workflow_checks, verificationSurfaces)
-            : input.intake.workflow_checks
+        ? input.intake.workflow_checks
         : defaultWorkflowChecksFromCoreFeatures(input.intake.core_features ?? [], verificationSurfaces);
     const workflowChecks = enrichCommandWorkflowChecks(rawWorkflowChecks, runtimeStrategy);
     return {

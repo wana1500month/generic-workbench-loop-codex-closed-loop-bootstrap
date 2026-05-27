@@ -385,7 +385,7 @@ export const buildBootstrapAnswersFromSeed = (seed) => {
     const rawWorkflowChecks = seed.workflowChecks?.length
         ? seed.workflowChecks
         : defaultWorkflowChecksFromCoreFeatures(coreFeatures, verificationSurfaces).map(toBootstrapWorkflowCheck);
-    const workflowChecks = coreFeatures.length > 0
+    const workflowChecks = !seed.workflowChecks?.length && coreFeatures.length > 0
         ? alignWorkflowChecksToCoreFeatures(coreFeatures, rawWorkflowChecks.map(toSessionWorkflowCheck), verificationSurfaces).map(toBootstrapWorkflowCheck)
         : rawWorkflowChecks;
     const adapterPlan = buildAdapterPlanFromIntake({
@@ -471,7 +471,7 @@ const completeBootstrapAnswers = (answers) => {
     const rawWorkflowChecks = answers.workflowChecks?.length
         ? answers.workflowChecks
         : defaultWorkflowChecksFromCoreFeatures(answers.coreFeatures, verificationSurfaces).map(toBootstrapWorkflowCheck);
-    const workflowChecks = answers.coreFeatures.length > 0
+    const workflowChecks = !answers.workflowChecks?.length && answers.coreFeatures.length > 0
         ? alignWorkflowChecksToCoreFeatures(answers.coreFeatures, rawWorkflowChecks.map(toSessionWorkflowCheck), verificationSurfaces).map(toBootstrapWorkflowCheck)
         : rawWorkflowChecks;
     const adapterPlan = buildAdapterPlanFromIntake({

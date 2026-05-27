@@ -194,11 +194,14 @@ const limitQuestions = (fields, locale, projectKind) => fields
 const includesAny = (value, keywords) => keywords.some((keyword) => value.includes(keyword));
 const countKeywordMatches = (value, keywords) => keywords.filter((keyword) => value.includes(keyword)).length;
 const roundScore = (value) => Number(value.toFixed(3));
+const hasBrowserSurfaceIntent = (value) => /(?:browser|web\s*app|web\s*ui|frontend|\bui\b|\uBE0C\uB77C\uC6B0\uC800|\uC6F9\uC571|\uD654\uBA74|\uD504\uB860\uD2B8\uC5D4\uB4DC)/iu.test(value);
+const hasExplicitCrudApiIntent = (value) => /(?:crud\s*(?:api|service|endpoints?)|resource\s*(?:api|service|endpoints?)|canonical\s+crud|\uC5D4\uB4DC\uD3EC\uC778\uD2B8\s*crud|\uBC31\uC5D4\uB4DC\s*crud)/iu.test(value);
 export const inferProductTargetFamily = (request) => {
     const normalizedLower = lowerText(request);
     const apiExplicitlyNegated = hasExplicitApiNegation(normalizedLower);
     const projectKind = inferProjectKindFromText(request);
-    if (isCommandFirstProjectKind(projectKind)) {
+    const browserSurfaceIntent = hasBrowserSurfaceIntent(normalizedLower);
+    if (isCommandFirstProjectKind(projectKind) && !browserSurfaceIntent) {
         if (projectKind === "agent_workflow") {
             return "chat-agent";
         }
@@ -220,8 +223,12 @@ export const inferProductTargetFamily = (request) => {
     ])) {
         return "browser-editor";
     }
+    if (!apiExplicitlyNegated && hasExplicitCrudApiIntent(normalizedLower)) {
+        return "crud-api";
+    }
     if (!apiExplicitlyNegated &&
-        includesAny(normalizedLower, ["crud", "rest api", "resource", "백오피스 api"])) {
+        !browserSurfaceIntent &&
+        includesAny(normalizedLower, ["crud", "resource", "백오피스 api"])) {
         return "crud-api";
     }
     if (includesAny(normalizedLower, ["chat agent", "에이전트", "tool use", "툴 사용"])) {

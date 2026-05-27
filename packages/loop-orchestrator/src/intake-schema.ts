@@ -91,6 +91,7 @@ export type DiscoveryPhase =
   | "product"
   | "execution"
   | "adapter"
+  | "conflict_resolution"
   | "ready_for_prepare"
   | "prepared_with_blockers"
   | "prepared";
@@ -101,6 +102,7 @@ export type FrontDoorSessionStatus =
   | "ask_product_questions"
   | "ask_execution_questions"
   | "ask_adapter_questions"
+  | "ask_conflict_resolution"
   | "ready_for_prepare"
   | "prepared_with_blockers"
   | "prepared";

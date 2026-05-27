@@ -61,6 +61,9 @@ const statusForPhase = (
   if (phase === "adapter") {
     return "ask_adapter_questions";
   }
+  if (phase === "conflict_resolution") {
+    return "ask_conflict_resolution";
+  }
   if (phase === "ready_for_prepare") {
     return "ready_for_prepare";
   }
@@ -88,6 +91,9 @@ const toDiscoveryPhase = (
   }
   if (status === "ask_adapter_questions") {
     return "adapter";
+  }
+  if (status === "ask_conflict_resolution") {
+    return "conflict_resolution";
   }
   if (status === "ready_for_prepare") {
     return "ready_for_prepare";
@@ -221,6 +227,41 @@ const productQuestionForField = (
     case "finish_line":
       return "What does good enough for the first version mean?";
   }
+};
+
+const stringifyConflictValue = (value: unknown): string => {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => stringifyConflictValue(entry)).join(", ");
+  }
+  return JSON.stringify(value);
+};
+
+const conflictQuestionFor = (
+  conflict: FrontDoorSessionArtifact["unresolved_conflicts"][number],
+  locale: SessionLocale
+): string => {
+  if (conflict.field === "target_family") {
+    return locale === "ko"
+      ? "\uBE0C\uB77C\uC6B0\uC800 \uC571 \uC548\uC5D0 CRUD \uAE30\uB2A5\uC774 \uC788\uB294 \uD615\uD0DC\uC778\uAC00\uC694, \uC544\uB2C8\uBA74 \uB3C5\uB9BD REST API \uC11C\uBE44\uC2A4\uAC00 \uBAA9\uD45C\uC778\uAC00\uC694?"
+      : "Is this a browser app with CRUD behavior, or an independent REST API service?";
+  }
+
+  const existing = stringifyConflictValue(conflict.existing_value);
+  const candidate = stringifyConflictValue(conflict.candidate_value);
+  return locale === "ko"
+    ? `${String(conflict.field)} \uAC12\uC774 \uCDA9\uB3CC\uD569\uB2C8\uB2E4. \uAE30\uC874 '${existing}'\uC640 \uC0C8 \uAC12 '${candidate}' \uC911 \uC5B4\uB290 \uCABD\uC774 \uB9DE\uB098\uC694?`
+    : `${String(conflict.field)} has conflicting values. Should it be '${existing}' or '${candidate}'?`;
+};
+
+const conflictQuestionsFor = (
+  conflicts: FrontDoorSessionArtifact["unresolved_conflicts"],
+  locale: SessionLocale
+): string[] => {
+  const questions = conflicts.map((conflict) => conflictQuestionFor(conflict, locale));
+  return [...new Set(questions)].slice(0, 3);
 };
 
 const buildArtifactResult = (
@@ -399,9 +440,15 @@ export const runFrontDoorDiscoveryTurn = async (input: {
     resolvedResult.status === "ask_product_questions"
       ? []
       : missingProductFieldsFromSnapshot(mergeResult.intake);
+  const readyWithConflicts =
+    snapshotMissingProductFields.length === 0 &&
+    resolvedResult.status === "ready_for_prepare" &&
+    mergeResult.unresolvedConflicts.length > 0;
   const status =
     snapshotMissingProductFields.length > 0
       ? "ask_product_questions"
+      : readyWithConflicts
+        ? "ask_conflict_resolution"
       : resolvedResult.status;
   const phase = toDiscoveryPhase(status);
   if (phase === "none") {
@@ -413,11 +460,11 @@ export const runFrontDoorDiscoveryTurn = async (input: {
       ? snapshotMissingProductFields
       : resolvedResult.missing_product_fields;
   const missingExecutionFields =
-    snapshotMissingProductFields.length > 0
+    readyWithConflicts || snapshotMissingProductFields.length > 0
       ? []
       : resolvedResult.missing_execution_fields;
   const missingAdapterFields =
-    snapshotMissingProductFields.length > 0
+    readyWithConflicts || snapshotMissingProductFields.length > 0
       ? []
       : resolvedResult.missing_adapter_fields;
   const questions =
@@ -425,10 +472,14 @@ export const runFrontDoorDiscoveryTurn = async (input: {
       ? snapshotMissingProductFields
           .slice(0, 3)
           .map((field) => productQuestionForField(field, resolvedResult.locale))
+      : readyWithConflicts
+        ? conflictQuestionsFor(mergeResult.unresolvedConflicts, resolvedResult.locale)
       : resolvedResult.questions;
   const questionIds =
     snapshotMissingProductFields.length > 0
       ? snapshotMissingProductFields.slice(0, questions.length)
+      : readyWithConflicts
+        ? []
       : questionIdsForIntakeResult(resolvedResult);
   const artifact: FrontDoorSessionArtifact = {
     session_id: frontDoorSessionPathsForThread(input.threadId).session_id,

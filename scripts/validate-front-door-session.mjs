@@ -231,7 +231,11 @@ const main = async () => {
     const [
       { getFrontDoorSessionStatus, runFrontDoorDiscoveryTurn },
       { prepareSessionRun },
-      { parseVerificationSurfacesAnswer, parseWorkflowChecksAnswer },
+      {
+        buildAdapterPlanFromIntake,
+        parseVerificationSurfacesAnswer,
+        parseWorkflowChecksAnswer
+      },
       { evaluateIntakeRequest, inferProductTargetFamily },
       { mergeFrontDoorSessionTurn }
     ] = await Promise.all([
@@ -312,6 +316,47 @@ const main = async () => {
     assert.match(koWorkflowHeaderChecks[1].selector_hints.root, /workflow-2/);
     assert.match(koWorkflowHeaderChecks[2].selector_hints.root, /workflow-3/);
 
+    const koInlineWorkflowChecks = parseWorkflowChecksAnswer(
+      "워크플로 체크: 1) 거래 추가 -> 목록에 새 거래가 보이고 월별 합계가 갱신된다. 2) 월별 리포트 확인 -> 총수입/총지출/잔액이 표시된다. 3) 카테고리 필터 -> 선택한 카테고리 거래만 표시된다.",
+      "browser"
+    );
+    assert.deepEqual(
+      koInlineWorkflowChecks.map((check) => check.workflow),
+      ["거래 추가", "월별 리포트 확인", "카테고리 필터"]
+    );
+    assert.match(koInlineWorkflowChecks[0].expected_result, /월별 합계/);
+
+    const explicitWorkflowPlan = buildAdapterPlanFromIntake({
+      targetFamily: "browser-app",
+      intake: {
+        core_features: ["수입/지출 등록", "월별 리포트 확인", "카테고리별 필터"],
+        verification_surfaces: ["browser"],
+        workflow_checks: koInlineWorkflowChecks
+      }
+    });
+    assert.deepEqual(
+      explicitWorkflowPlan.workflow_checks.map((check) => check.workflow),
+      ["거래 추가", "월별 리포트 확인", "카테고리 필터"]
+    );
+    assert.equal(explicitWorkflowPlan.workflow_checks[0].trigger, "거래 추가");
+    assert.match(
+      explicitWorkflowPlan.workflow_checks[2].expected_result,
+      /선택한 카테고리/
+    );
+
+    assert.equal(
+      inferProductTargetFamily("가계부 브라우저 앱 안에 CRUD와 월별 합계가 보이는 형태"),
+      "browser-app"
+    );
+    assert.equal(
+      inferProductTargetFamily("가계부 REST API 서비스"),
+      "api-service"
+    );
+    assert.equal(
+      inferProductTargetFamily("가계부 CRUD API 서비스"),
+      "crud-api"
+    );
+
     const koApiNegatedBrowser = await runFrontDoorDiscoveryTurn({
       threadId: "thread-api-negated-ko-browser",
       message:
@@ -340,7 +385,69 @@ const main = async () => {
       threadId: "thread-rest-api-budget-service",
       message: "Build a REST API budget service."
     });
-    assert.equal(restApiBudget.intake.target_family, "crud-api");
+    assert.equal(restApiBudget.intake.target_family, "api-service");
+
+    const crudApiBudget = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-crud-api-budget-service",
+      message: "Build a CRUD API budget service."
+    });
+    assert.equal(crudApiBudget.intake.target_family, "crud-api");
+
+    const conflictReady = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-target-family-conflict",
+      message: [
+        "Build a budget browser app for personal users.",
+        "Core workflows are add transaction, monthly report, category filter.",
+        "Good enough means transactions and monthly totals are visible.",
+        "This is a new project and the target root is ./apps/budget-browser.",
+        "Verify with browser.",
+        "add transaction -> list and monthly total update.",
+        "monthly report -> income, expenses, and balance are visible.",
+        "category filter -> only selected category transactions are visible."
+      ].join("\n")
+    });
+    assert.equal(conflictReady.status, "ready_for_prepare");
+    assert.equal(conflictReady.intake.target_family, "browser-app");
+
+    const conflictTurn = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-target-family-conflict",
+      message: "Actually make it a REST API service with CRUD endpoints."
+    });
+    assert.equal(conflictTurn.status, "ask_conflict_resolution");
+    assert.equal(conflictTurn.phase, "conflict_resolution");
+    assert.ok(
+      conflictTurn.unresolved_conflicts.some(
+        (conflict) => conflict.field === "target_family"
+      ),
+      JSON.stringify(conflictTurn, null, 2)
+    );
+    assert.match(conflictTurn.questions[0], /browser app|브라우저/);
+
+    const conflictResolved = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-target-family-conflict",
+      message: "Use the CRUD API service target."
+    });
+    assert.equal(conflictResolved.status, "ready_for_prepare");
+    assert.equal(conflictResolved.intake.target_family, "crud-api");
+    assert.deepEqual(conflictResolved.unresolved_conflicts, []);
+
+    const workflowMetricGuard = await runFrontDoorDiscoveryTurn({
+      threadId: "thread-workflow-metric-guard",
+      message: [
+        "Build a budget browser app for personal users.",
+        "Core workflows are add transaction, monthly report, category filter.",
+        "Good enough means transactions and monthly totals are visible.",
+        "This is a new project and the target root is ./apps/budget-workflows.",
+        "Verify with browser.",
+        "Workflow checks: 1) add transaction -> list and monthly total update. 2) monthly report -> income, expenses, and balance are visible. 3) category filter -> only selected category transactions are visible."
+      ].join("\n")
+    });
+    assert.equal(workflowMetricGuard.status, "ready_for_prepare");
+    assert.equal(workflowMetricGuard.intake.custom_quality_metrics, undefined);
+    assert.deepEqual(
+      workflowMetricGuard.intake.workflow_checks.map((check) => check.workflow),
+      ["add transaction", "monthly report", "category filter"]
+    );
 
     const firstTurn = await runFrontDoorDiscoveryTurn({
       threadId: "thread-123",
@@ -1004,13 +1111,13 @@ const main = async () => {
     assert.equal(koNaturalAdapterPlan.runtime_strategy.ready_url, "http://127.0.0.1:3000/");
     assert.ok(
       koNaturalAdapterPlan.workflow_checks.some(
-        (check) => check.workflow === "\uC6D4\uBCC4 \uD1B5\uACC4 \uBCF4\uAE30"
+        (check) => check.workflow === "\uC6D4\uBCC4 \uD1B5\uACC4"
       ),
       JSON.stringify(koNaturalAdapterPlan.workflow_checks, null, 2)
     );
     assert.ok(
       koNaturalVerificationProfile.core_probes.some((probe) =>
-        probe.label.includes("\uC6D4\uBCC4 \uD1B5\uACC4 \uBCF4\uAE30")
+        probe.label.includes("\uC6D4\uBCC4 \uD1B5\uACC4")
       ),
       JSON.stringify(koNaturalVerificationProfile.core_probes, null, 2)
     );

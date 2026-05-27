@@ -1,5 +1,6 @@
 import {
   buildAdapterPlanFromIntake,
+  isWorkflowCheckCandidateLine,
   normalizeVerificationSurfacesForFamily,
   parseVerificationSurfacesAnswer,
   parseWorkflowChecksAnswer
@@ -298,6 +299,9 @@ const parseExplicitCustomQualityMetrics = (
 ): SessionCustomQualityMetric[] | undefined => {
   const metrics = splitAnswerLines(value)
     .map((line): SessionCustomQualityMetric | undefined => {
+      if (isWorkflowCheckCandidateLine(line)) {
+        return undefined;
+      }
       const match =
         line.match(
           /^(?:추가\s*)?(?:평가\s*)?(?:기준\s*)?([^:：>=]+?)\s*[:：]\s*(?:최소\s*)?([0-9]+(?:\.[0-9]+)?)\s*(?:점|\/\s*10)?\.?\s*(.*)$/u
@@ -359,6 +363,9 @@ const parseCustomQualityMetrics = (
     byId.set(metric.metric_id, metric);
   }
   for (const line of splitAnswerLines(value)) {
+    if (isWorkflowCheckCandidateLine(line)) {
+      continue;
+    }
     if (parseExplicitCustomQualityMetrics(line)?.length) {
       continue;
     }
@@ -1077,6 +1084,10 @@ const extractCandidates = (input: {
       : acceptsAdapterAnswer && workflowChecksFromMessage.length
         ? workflowChecksFromMessage
         : undefined;
+  const candidateTargetFamily =
+    acceptsAdapterAnswer && input.existingIntake?.target_family
+      ? undefined
+      : intakeResult.internal_working_hypothesis;
   const evidenceSurfaces = evidenceSurfacesForCandidate(
     projectKind,
     candidateVerificationSurfaces
@@ -1089,8 +1100,8 @@ const extractCandidates = (input: {
     ...(coreFeatures ? { core_features: coreFeatures } : {}),
     ...(referenceApps ? { reference_apps: referenceApps } : {}),
     ...(finishLine ? { finish_line: finishLine } : {}),
-    ...(intakeResult.internal_working_hypothesis
-      ? { target_family: intakeResult.internal_working_hypothesis }
+    ...(candidateTargetFamily
+      ? { target_family: candidateTargetFamily }
       : {}),
     ...(messageOnlyIntakeResult.extracted_project_mode ??
     intakeResult.extracted_project_mode
@@ -1193,6 +1204,7 @@ const applyScalarField = (
     return;
   }
   if (existing === candidate) {
+    removeConflictsForField(conflicts, field);
     return;
   }
   conflicts.push({
@@ -1585,6 +1597,9 @@ export const mergeFrontDoorSessionTurn = (input: {
   });
   const previousQuestionIds = input.existingSession?.last_question_ids ?? [];
   const replaceFields = replaceFieldsForTurn(input.message, previousQuestionIds);
+  const resolvingTargetFamilyConflict =
+    candidates.target_family !== undefined &&
+    conflicts.some((conflict) => conflict.field === "target_family");
   const candidateOverridesDefaultTargetRoot =
     candidates.target_root !== undefined &&
     (input.existingSession?.defaults_accepted?.includes("target_root") ||
@@ -1601,7 +1616,9 @@ export const mergeFrontDoorSessionTurn = (input: {
       { replace: replaceFields.has("product_summary") }
     );
   }
-  applyScalarField(nextIntake, "target_family", candidates.target_family, input.turnCount, conflicts);
+  applyScalarField(nextIntake, "target_family", candidates.target_family, input.turnCount, conflicts, {
+    replace: resolvingTargetFamilyConflict
+  });
   applyScalarField(nextIntake, "project_kind", candidates.project_kind, input.turnCount, conflicts);
   applyScalarField(nextIntake, "strictness_level", candidates.strictness_level, input.turnCount, conflicts);
   applyScalarField(nextIntake, "project_mode", candidates.project_mode, input.turnCount, conflicts, {
