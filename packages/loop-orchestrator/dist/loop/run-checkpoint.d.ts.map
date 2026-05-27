@@ -1,0 +1,1 @@
+{"version":3,"file":"run-checkpoint.d.ts","sourceRoot":"","sources":["../../src/loop/run-checkpoint.ts"],"names":[],"mappings":"AAIA,OAAO,KAAK,EAAE,cAAc,EAAE,MAAM,aAAa,CAAC;AAClD,OAAO,KAAK,EAAE,wBAAwB,EAAE,MAAM,+BAA+B,CAAC;AAE9E,eAAO,MAAM,kBAAkB,GAAU,OAAO;IAC9C,YAAY,EAAE,MAAM,CAAC;IACrB,OAAO,EAAE,cAAc,CAAC;IACxB,WAAW,EAAE,wBAAwB,CAAC;CACvC,KAAG,OAAO,CAAC,IAAI,CA0Ef,CAAC"}

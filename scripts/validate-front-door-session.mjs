@@ -183,7 +183,7 @@ const main = async () => {
     assert.equal(fourthTurn.intake.project_mode, "new");
     assert.equal(fourthTurn.intake.target_root, targetRootRelative);
     assert.ok(
-      fourthTurn.missing_adapter_fields.includes("verification_surface"),
+      fourthTurn.missing_adapter_fields.includes("workflow_checks"),
       JSON.stringify(fourthTurn, null, 2)
     );
     assert.equal(fourthTurn.turn_count, 4);

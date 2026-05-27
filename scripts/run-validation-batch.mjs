@@ -81,8 +81,6 @@ const suites = {
     "validate:intent-gate",
     "validate:intake-gate",
     "validate:front-door-session",
-    "validate:generated-verification-contract",
-    "validate:release-zip",
     "validate:cli-front-door",
     "validate:cli-front-door-product-detection",
     "validate:non-web-front-door-adapter-plan",
@@ -90,10 +88,7 @@ const suites = {
     "validate:korean-ambiguous-document-request",
     "validate:korean-ambiguous-document-followup",
     "validate:korean-product-phrasing-variants",
-    "validate:korean-non-product-rejection",
-    "validate:loop-prepare",
-    "validate:generated-adapter-run-local",
-    "validate:prepared-session-consumption-boundary"
+    "validate:korean-non-product-rejection"
   ],
   core: [
     "validate:intent-gate",
@@ -142,14 +137,6 @@ const suites = {
     "validate:default-scorecard-policy",
     "validate:adaptive-intake",
     "validate:non-web-target",
-    "validate:non-web-front-door-adapter-plan",
-    "validate:cli-front-door-product-detection",
-    "validate:project-kind-fixtures",
-    "validate:korean-ambiguous-document-request",
-    "validate:korean-ambiguous-document-followup",
-    "validate:korean-product-phrasing-variants",
-    "validate:korean-non-product-rejection",
-    "validate:fast-exits",
     "validate:non-web-e2e"
   ]
 };
