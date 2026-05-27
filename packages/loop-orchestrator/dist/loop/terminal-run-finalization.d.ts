@@ -1,0 +1,92 @@
+import type { LoopPlan, LoopScenario } from "../types/bootstrap.js";
+import type { ResumeIdentityState } from "../resume-identity.js";
+import type { ClosedLoopResult, ControllerMode, ExecutionState, ExecutorMode, LoadedAdapterContract, LoopRubric, LoopRunSummary, ReleaseThresholdResults, RoundSummary, RuntimeEvent, TransportMode, ValidationLane } from "../types.js";
+type RecordRunFinalizePhase = (input: {
+    round: number;
+    phase: "run_finalize";
+    status: "in_progress" | "completed";
+    artifacts?: Record<string, string>;
+}) => Promise<void>;
+export interface FinalizeTerminalRunInput {
+    runId: string;
+    runDirectory: string;
+    scenario: LoopScenario;
+    plan: LoopPlan;
+    hydratedRubric: LoopRubric;
+    controllerMode: ControllerMode;
+    transportMode: TransportMode;
+    executorMode: ExecutorMode;
+    targetFamily?: LoopRunSummary["target_family"];
+    validationLane?: ValidationLane;
+    evaluatorProfilePath?: string;
+    loadedAdapter?: LoadedAdapterContract;
+    currentResumeIdentity: ResumeIdentityState;
+    currentResumeIdentityPath: string;
+    codexSessionRegistryPath: string;
+    runtimeStatePaths: {
+        liveStatePath: string;
+        roundPhasePath: string;
+        controllerLeasePath: string;
+        transportStatePath: string;
+        operatorSurfacePath: string;
+        sessionStatusPath: string;
+        sessionStatusEventsPath: string;
+        sessionStreamPath: string;
+    };
+    transportProtocolCurrentPath?: string;
+    plannerBriefPath?: string;
+    plannedScenarioPath: string;
+    planPath: string;
+    durableMemoryPaths: {
+        feature_list_path?: string;
+        progress_path?: string;
+        progress_log_path?: string;
+        done_when_path?: string;
+        init_script_path?: string;
+    };
+    finalStopReason?: LoopRunSummary["stop_reason"];
+    resolvedStopReason: LoopRunSummary["stop_reason"];
+    bestRound?: number;
+    bestScore?: number;
+    bestControlPlaneScore?: number;
+    bestProofScore?: number;
+    bestReleaseScore?: number;
+    bestThresholdResults?: ReleaseThresholdResults;
+    bestDimensionScores?: LoopRunSummary["dimension_scores"];
+    bestPatchRequestPath?: string;
+    bestEvalReportPath?: string;
+    history: RoundSummary[];
+    runtimeWarnings: string[];
+    currentRuntimeEvents: RuntimeEvent[];
+    restored: boolean;
+    forceReopenTerminal: boolean;
+    restoredStopReason?: LoopRunSummary["stop_reason"];
+    resumeDecisionPath?: string;
+    allowResumeMigration: boolean;
+    resumeIdentityMismatches: string[];
+    resumeMigrationPath?: string;
+    previousBundleFingerprint?: string;
+    newBundleFingerprint?: string;
+    latestAdapterMigrationAppliedPath?: string;
+    evaluationPolicyPath?: string;
+    summaryPath: string;
+    terminalObjective?: string;
+    sessionCurrentObjective?: string;
+    withPhaseBudget: (phase: "run_finalize", work: () => Promise<void>) => Promise<void>;
+    recordRoundPhase: RecordRunFinalizePhase;
+    markProgress: (message: string) => Promise<void>;
+    replaceHeartbeatNotes: () => void;
+    setExecutionState: (state: ExecutionState) => void;
+    updateSessionRefreshState: (input: {
+        currentObjective?: string;
+        latestRound?: number;
+        latestStopReason?: LoopRunSummary["stop_reason"];
+    }) => void;
+    refreshSessionPreparationArtifacts: (input: {
+        stopReason?: LoopRunSummary["stop_reason"];
+        executionState?: ExecutionState;
+    }) => Promise<void>;
+}
+export declare const finalizeTerminalRun: (input: FinalizeTerminalRunInput) => Promise<ClosedLoopResult>;
+export {};
+//# sourceMappingURL=terminal-run-finalization.d.ts.map

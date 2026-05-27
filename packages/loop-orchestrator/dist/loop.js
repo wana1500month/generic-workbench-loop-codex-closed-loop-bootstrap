@@ -1,14 +1,13 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { buildActiveContractFrame, decideAttemptLifecycle } from "./attempt-lifecycle.js";
-import { writeRoundHandoffPlaceholders, writeRunControllerSummary, writeRunPlannerBrief } from "./agent-handoff.js";
+import { writeRoundHandoffPlaceholders, writeRunPlannerBrief } from "./agent-handoff.js";
 import { enhanceContractReviewWithCodex, enhanceContractReviewWithAppServer, enhanceGeneratorPlanWithCodex, enhanceGeneratorPlanWithAppServer, enhancePlanWithCodex, enhancePlanWithAppServer, experimentalExecutorRuntimeWarning } from "./codex-agents.js";
 import { loadAdapterContract, restoreAdapterCapabilityExecutions, loadVerificationProfile } from "./adapter-runtime.js";
 import { resolvedAdapterTargetRoot } from "./adapter-paths.js";
 import { isAttachedGeneratorTransport, isBootstrapGeneratedAdapter, readAttachedGeneratorResponse, writeAttachedGeneratorTask } from "./attached-generator.js";
 import { executeCoreVerificationProbes, restoreCoreVerificationProbeExecutions } from "./core-verifier.js";
-import { writeRunCodexHandoff } from "./codex-handoff.js";
-import { detectDurableMemoryPaths, ensureDurableMemoryArtifacts, loadDurableMemoryContext } from "./durable-memory.js";
+import { ensureDurableMemoryArtifacts, loadDurableMemoryContext } from "./durable-memory.js";
 import { loadJson, loadJsonIfExists, nextRunId, pathExists, resolveRunsDirectory, writeJson, writeText } from "./file-system.js";
 import { attachedPreGeneratorBaselineWindowOpen, captureBootstrapGeneratedBaselineIfNeeded, describePrototypeBaselineSourceSemantics, hasValidPrototypeBaseline, loadPrototypeBaselineState, prototypeBaselineSourceSemanticsForPhase, prototypeBaselinePaths } from "./prototype-baseline.js";
 import { defaultIdeaPath, readIdeaBrief } from "./idea-intake.js";
@@ -34,11 +33,14 @@ import { writeRunCheckpoint } from "./loop/run-checkpoint.js";
 import { currentBestForRunCheckpoint } from "./loop/run-summary-finalization.js";
 import { externalBlockersFromPatchRequest, reviewFeedbackFromArtifacts, scopeGuardrailsFromPatchRequest, steeringNotesFromContractReview } from "./loop/runtime-warning-summary.js";
 import { buildRuntimeEvent, mergeRuntimeEvents, normalizeRuntimeWarnings } from "./loop/runtime-events.js";
-import { buildFinalRuntimeEventsForRun, buildInitialRuntimeEventsForRun, persistentWarningsFromRestoredRun } from "./loop/run-runtime-events.js";
+import { buildInitialRuntimeEventsForRun, persistentWarningsFromRestoredRun } from "./loop/run-runtime-events.js";
 import { runEvaluatorStep } from "./loop/evaluator-step.js";
+import { finalizeNoopTerminalResume } from "./loop/noop-terminal-resume.js";
+import { persistRoundPhase } from "./loop/round-phase-recorder.js";
 import { buildAttemptRoundReport, commitAttemptRoundReport } from "./loop/attempt-reporting.js";
 import { defaultRubricPath, postVerificationCapabilities, preVerificationCapabilities } from "./loop/run-defaults.js";
-import { markLoopProgress, withActivePhaseBudget } from "./loop/progress-budget.js";
+import { assertActivePhaseBudget, markLoopProgress, withActivePhaseBudget } from "./loop/progress-budget.js";
+import { finalizeTerminalRun } from "./loop/terminal-run-finalization.js";
 import { stopReasonForMissingRoundTargetDecision, stopReasonForRoundTargetDecision } from "./loop/round-target-decision.js";
 import { isResumeNoopTerminalStopReason } from "./loop/stop-reasons.js";
 import { artifactsForRound, buildGeneratorPlanArtifact, buildRoundContractArtifact, writeAdapterMigrationProposalArtifacts, writeNegotiationArtifacts, writeRoundEvaluationPlaceholders } from "./protocol-artifacts.js";
@@ -455,125 +457,31 @@ export const runClosedLoop = async (input) => {
         !input.forceReopenTerminal &&
         resumeIdentityMismatches.length === 0 &&
         isResumeNoopTerminalStopReason(restoredStopReason)) {
-        const noopTransportProtocolPath = await writeTransportProtocol({
+        return finalizeNoopTerminalResume({
+            runId,
             runDirectory,
+            restoredRun,
+            restoredStopReason,
+            controllerMode,
             transportMode,
-            summary: {
-                run_id: runId,
-                controller_mode: controllerMode,
-                transport_mode: transportMode,
-                transport_state_path: runtimeStatePaths.transportStatePath,
-                resume_identity_path: currentResumeIdentityPath,
-                runtime_round_phase_path: runtimeStatePaths.roundPhasePath
-            },
-            activeRound: restoredRun.interruptedRound?.round,
-            activePhase: input.resumePhase ?? restoredRun.interruptedRound?.resumeFromPhase,
-            activeStatus: restoredRun.interruptedRound?.phaseStatus,
-            latestPatchRequestPath: restoredRun.previousPatchRequestPath,
-            latestRoundContractPath: restoredRun.latestRoundSummary?.contract_path,
-            notes: [
-                ...restoredRun.repairNotes,
-                ...(transportMode === "current-thread"
-                    ? [
-                        "Keep the current thread as the generator/controller surface. $loop-control owns the same-thread autocontinue chain; use $attached-loop only if this foreground thread needs recovery after interruption."
-                    ]
-                    : [])
-            ]
+            executorMode,
+            runtimeStatePaths,
+            currentResumeIdentityPath,
+            currentResumeIdentity,
+            currentRuntimeEvents,
+            previousPersistentWarnings,
+            bundleRuntimeWarnings: bundleSelection.runtimeWarnings,
+            adapterRuntimeWarnings: loadedAdapter?.runtime_warnings,
+            resumeDecisionPath,
+            resumeIdentityMismatches,
+            forceReopenTerminal: Boolean(input.forceReopenTerminal),
+            allowResumeMigration: Boolean(input.allowResumeMigration),
+            resumePhase: input.resumePhase,
+            resolvedTargetFamily,
+            resolvedValidationLane,
+            evaluatorProfilePath: bundleSelection.evaluatorProfilePath,
+            loadedAdapter
         });
-        const noopRuntimeEvents = mergeRuntimeEvents([
-            ...currentRuntimeEvents,
-            buildRuntimeEvent("resume.noop_terminal", `Run '${runId}' already ended with terminal stop reason '${restoredStopReason}'. Resume returned without opening a new round. Re-run with --force-reopen-terminal to override this default.`, {
-                stop_reason: restoredStopReason ?? null,
-                resumed_run_id: runId
-            })
-        ]);
-        runtimeWarnings = unique([
-            ...previousPersistentWarnings,
-            ...(bundleSelection.runtimeWarnings ?? []),
-            ...(loadedAdapter?.runtime_warnings ?? []),
-            ...noopRuntimeEvents.map((event) => event.message)
-        ]);
-        const resumeDecisionArtifact = resumeDecisionPath
-            ? {
-                run_id: runId,
-                decided_at: new Date().toISOString(),
-                decision: "noop_terminal",
-                previous_stop_reason: restoredStopReason,
-                force_reopen_terminal: Boolean(input.forceReopenTerminal),
-                allow_resume_migration: Boolean(input.allowResumeMigration),
-                mismatches: resumeIdentityMismatches,
-                runtime_event_codes: noopRuntimeEvents.map((event) => event.code)
-            }
-            : undefined;
-        const summary = {
-            ...restoredRun.summary,
-            controller_mode: controllerMode,
-            transport_mode: transportMode,
-            executor_mode: executorMode,
-            ...(resolvedTargetFamily ? { target_family: resolvedTargetFamily } : {}),
-            ...(resolvedValidationLane
-                ? { validation_lane: resolvedValidationLane }
-                : {}),
-            ...(bundleSelection.evaluatorProfilePath
-                ? { evaluator_profile_path: bundleSelection.evaluatorProfilePath }
-                : {}),
-            ...(currentResumeIdentity.adapter_contract_sha256
-                ? { adapter_contract_sha256: currentResumeIdentity.adapter_contract_sha256 }
-                : {}),
-            ...(currentResumeIdentity.evaluator_bundle_sha256
-                ? { evaluator_bundle_sha256: currentResumeIdentity.evaluator_bundle_sha256 }
-                : {}),
-            ...(currentResumeIdentity.rubric_sha256
-                ? { rubric_sha256: currentResumeIdentity.rubric_sha256 }
-                : {}),
-            planner_brief_path: restoredRun.plannerBriefPath,
-            planned_scenario_path: restoredRun.plannedScenarioPath,
-            plan_path: restoredRun.planPath,
-            ...(await detectDurableMemoryPaths(dirname(restoredRun.summary.idea_path ?? defaultIdeaPath))),
-            codex_handoff_path: undefined,
-            adapter_contract_path: loadedAdapter?.contract_path ?? restoredRun.summary.adapter_contract_path,
-            adapter_id: loadedAdapter?.contract.adapter_id ?? restoredRun.summary.adapter_id,
-            verification_provider_id: loadedAdapter?.contract.verification_provider?.provider_id ??
-                restoredRun.summary.verification_provider_id,
-            adapter_attached: Boolean(loadedAdapter),
-            resume_identity_path: currentResumeIdentityPath,
-            runtime_live_state_path: runtimeStatePaths.liveStatePath,
-            runtime_round_phase_path: runtimeStatePaths.roundPhasePath,
-            controller_lease_path: runtimeStatePaths.controllerLeasePath,
-            transport_state_path: runtimeStatePaths.transportStatePath,
-            transport_protocol_path: noopTransportProtocolPath,
-            session_status_path: runtimeStatePaths.sessionStatusPath,
-            session_status_events_path: runtimeStatePaths.sessionStatusEventsPath,
-            session_stream_path: runtimeStatePaths.sessionStreamPath,
-            runtime_events: noopRuntimeEvents,
-            ...(resumeDecisionPath ? { resume_decision_path: resumeDecisionPath } : {}),
-            ...(runtimeWarnings.length > 0 ? { runtime_warnings: runtimeWarnings } : {}),
-            resumed_from_run_id: runId
-        };
-        const codexHandoffPath = await writeRunCodexHandoff({
-            runDirectory,
-            summary,
-            plan: restoredRun.plan,
-            scenario: restoredRun.scenario
-        });
-        summary.codex_handoff_path = codexHandoffPath;
-        await Promise.all([
-            writeJson(currentResumeIdentityPath, currentResumeIdentity),
-            ...(resumeDecisionArtifact && resumeDecisionPath
-                ? [writeJson(resumeDecisionPath, resumeDecisionArtifact)]
-                : []),
-            writeJson(join(runDirectory, "summary.json"), summary),
-            writeRunControllerSummary({
-                runDirectory,
-                summary
-            })
-        ]);
-        return {
-            plan: restoredRun.plan,
-            summary,
-            runDirectory,
-            plannedScenarioPath: restoredRun.plannedScenarioPath
-        };
     }
     const idea = preparedSessionSeed?.idea ?? await readIdeaBrief(defaultIdeaPath);
     const durableMemory = preparedSessionSeed !== undefined
@@ -861,13 +769,6 @@ export const runClosedLoop = async (input) => {
     let latestSessionStatusArtifact;
     let sessionLatestRound = restoredRun?.latestRoundSummary?.round;
     let sessionLatestStopReason = currentCheckpointStopReason;
-    const deriveSessionStatus = (input) => deriveSessionLoopStatus({
-        override: input?.override,
-        stopReason: input?.stopReason,
-        executionState: input?.executionState ?? activeExecutionState,
-        attentionRequired: input?.attentionRequired ?? activeAttentionRequired,
-        hasHistory: history.length > 0
-    });
     const updateSessionRefreshState = (input) => {
         if (!input) {
             return;
@@ -928,11 +829,12 @@ export const runClosedLoop = async (input) => {
             ...(resolvedSessionValidationBundle
                 ? { validationBundle: resolvedSessionValidationBundle }
                 : {}),
-            sessionStatus: deriveSessionStatus({
+            sessionStatus: deriveSessionLoopStatus({
                 override: input?.status,
                 stopReason: input?.stopReason ?? sessionLatestStopReason,
-                attentionRequired: input?.attentionRequired,
-                executionState: input?.executionState
+                executionState: input?.executionState ?? activeExecutionState,
+                attentionRequired: input?.attentionRequired ?? activeAttentionRequired,
+                hasHistory: history.length > 0
             }),
             currentObjective: sessionCurrentObjective,
             steeringNotes: sessionSteeringNotes,
@@ -951,19 +853,12 @@ export const runClosedLoop = async (input) => {
         latestSessionStatusArtifact = result.sessionStatus;
     };
     const assertPhaseBudget = () => {
-        if (!activeHeartbeatPhase ||
-            activeHeartbeatPhaseStatus !== "in_progress" ||
-            activePhaseTimeoutMs === undefined ||
-            !activeHeartbeatPhaseStartedAt) {
-            return;
-        }
-        const phaseStartedAt = Date.parse(activeHeartbeatPhaseStartedAt);
-        if (Number.isNaN(phaseStartedAt)) {
-            return;
-        }
-        if (Date.now() - phaseStartedAt > activePhaseTimeoutMs) {
-            throw new PhaseBudgetExceededError(activeHeartbeatPhase, activePhaseTimeoutMs);
-        }
+        assertActivePhaseBudget({
+            activeHeartbeatPhase,
+            activeHeartbeatPhaseStatus,
+            activePhaseTimeoutMs,
+            activeHeartbeatPhaseStartedAt
+        });
     };
     const writeLiveTransportProtocol = async () => {
         transportProtocolCurrentPath = await writeTransportProtocol({
@@ -1250,58 +1145,31 @@ export const runClosedLoop = async (input) => {
                 inputPhase.status === "completed") {
                 replaceHeartbeatNotes();
             }
-            await writeRuntimeRoundPhaseArtifact(runtimeStatePaths.roundPhasePath, {
-                run_id: runId,
+            const activeArtifacts = await persistRoundPhase({
+                runId,
+                roundPhasePath: runtimeStatePaths.roundPhasePath,
+                controllerMode,
+                transportMode,
+                executorMode,
                 round: inputPhase.round,
-                controller_mode: controllerMode,
-                transport_mode: transportMode,
-                executor_mode: executorMode,
                 phase: inputPhase.phase,
                 status: inputPhase.status,
-                updated_at: now,
-                heartbeat_at: now,
-                ...(lastProgressAt ? { last_progress_at: lastProgressAt } : {}),
-                ...(lastProgressNote ? { last_progress_note: lastProgressNote } : {}),
-                ...(activePhaseTimeoutMs !== undefined
-                    ? { phase_timeout_ms: activePhaseTimeoutMs }
-                    : {}),
-                ...(activeStallThresholdMs !== undefined
-                    ? { stall_threshold_ms: activeStallThresholdMs }
-                    : {}),
-                owner_pid: process.pid,
-                ...(activeHeartbeatPhaseStartedAt
-                    ? { phase_started_at: activeHeartbeatPhaseStartedAt }
-                    : {}),
-                ...(inputPhase.status === "completed"
-                    ? { phase_completed_at: now }
-                    : {}),
-                ...(appServerTransport?.snapshot().thread_id
-                    ? { session: { thread_id: appServerTransport.snapshot().thread_id } }
-                    : {}),
-                ...(inputPhase.artifacts ? { artifacts: inputPhase.artifacts } : {}),
-                ...(heartbeatNotes.length > 0 ? { notes: heartbeatNotes } : {})
+                updatedAt: now,
+                lastProgressAt,
+                lastProgressNote,
+                activePhaseTimeoutMs,
+                activeStallThresholdMs,
+                activeHeartbeatPhaseStartedAt,
+                appServerThreadId: appServerTransport?.snapshot().thread_id,
+                artifacts: inputPhase.artifacts,
+                heartbeatNotes,
+                writeLiveTransportProtocol,
+                writeOperatorSurface,
+                syncAppServerPhase: appServerTransport?.syncPhase.bind(appServerTransport),
+                tickHeartbeat: () => heartbeat.tick()
             });
-            await writeLiveTransportProtocol();
-            const { activePromptPath, activeResponsePath } = activeArtifactPathsFor(inputPhase.artifacts);
-            activePromptArtifactPath = activePromptPath;
-            activeResponseArtifactPath = activeResponsePath;
-            await writeOperatorSurface({
-                round: inputPhase.round,
-                phase: inputPhase.phase,
-                phaseStatus: inputPhase.status,
-                activePromptPath,
-                activeResponsePath,
-                notes: heartbeatNotes
-            });
-            if (appServerTransport) {
-                await appServerTransport.syncPhase({
-                    round: inputPhase.round,
-                    phase: inputPhase.phase,
-                    status: inputPhase.status,
-                    notes: heartbeatNotes
-                });
-            }
-            await heartbeat.tick();
+            activePromptArtifactPath = activeArtifacts.activePromptPath;
+            activeResponseArtifactPath = activeArtifacts.activeResponsePath;
         };
         const writeCheckpoint = async (stopReason) => {
             const summary = buildCheckpointSummary({
@@ -3145,166 +3013,67 @@ export const runClosedLoop = async (input) => {
             completedRounds: history.length,
             maxRounds: executionMaxRounds
         }) ?? "max_rounds_reached";
-        const terminalRoundSummary = history[history.length - 1];
-        const terminalRound = terminalRoundSummary?.round ?? bestRound;
-        const terminalTotalScore = terminalRoundSummary?.total_score ?? bestScore ?? 0;
-        const terminalControlPlaneScore = terminalRoundSummary?.control_plane_score ?? bestControlPlaneScore;
-        const terminalProofScore = terminalRoundSummary?.proof_score ?? bestProofScore;
-        const terminalReleaseScore = terminalRoundSummary?.release_score ?? bestReleaseScore;
-        const terminalThresholdResults = terminalRoundSummary?.threshold_results ?? bestThresholdResults;
-        const terminalDimensionScores = terminalRoundSummary?.dimension_scores ?? bestDimensionScores;
-        const finalRuntimeEvents = buildFinalRuntimeEventsForRun({
-            currentRuntimeEvents,
-            restored: Boolean(restoredRun),
-            forceReopenTerminal: Boolean(input.forceReopenTerminal),
-            resumeNoopTerminal: isResumeNoopTerminalStopReason(restoredStopReason),
-            restoredStopReason,
-            runId
-        });
-        runtimeWarnings = normalizeRuntimeWarnings([
-            ...runtimeWarnings,
-            ...finalRuntimeEvents.map((event) => event.message)
-        ]);
-        const resumeDecisionArtifact = resumeDecisionPath
-            ? {
-                run_id: runId,
-                decided_at: new Date().toISOString(),
-                decision: input.forceReopenTerminal &&
-                    isResumeNoopTerminalStopReason(restoredStopReason)
-                    ? "reopened_terminal"
-                    : "continue",
-                previous_stop_reason: restoredStopReason,
-                force_reopen_terminal: Boolean(input.forceReopenTerminal),
-                allow_resume_migration: Boolean(input.allowResumeMigration),
-                mismatches: resumeIdentityMismatches,
-                runtime_event_codes: finalRuntimeEvents.map((event) => event.code)
-            }
-            : undefined;
-        let summary = buildCheckpointSummary({
+        const finalResult = await finalizeTerminalRun({
             runId,
-            scenarioId: scenario.scenario_id,
-            rubricId: hydratedRubric.rubric_id,
+            runDirectory,
+            scenario,
+            plan,
+            hydratedRubric,
             controllerMode,
             transportMode,
             executorMode,
             targetFamily: resolvedTargetFamily,
             validationLane: resolvedValidationLane,
             evaluatorProfilePath: bundleSelection.evaluatorProfilePath,
-            adapterContractSha256: currentResumeIdentity.adapter_contract_sha256,
-            evaluatorBundleSha256: currentResumeIdentity.evaluator_bundle_sha256,
-            rubricSha256: currentResumeIdentity.rubric_sha256,
+            loadedAdapter,
+            currentResumeIdentity,
+            currentResumeIdentityPath,
+            codexSessionRegistryPath,
+            runtimeStatePaths,
+            transportProtocolCurrentPath,
             plannerBriefPath,
             plannedScenarioPath,
             planPath,
-            ideaPath: defaultIdeaPath,
-            featureListPath: durableMemoryPaths.feature_list_path,
-            progressPath: durableMemoryPaths.progress_path,
-            progressLogPath: durableMemoryPaths.progress_log_path,
-            doneWhenPath: durableMemoryPaths.done_when_path,
-            initScriptPath: durableMemoryPaths.init_script_path,
-            adapterContractPath: loadedAdapter?.contract_path,
-            adapterId: loadedAdapter?.contract.adapter_id,
-            verificationProviderId: loadedAdapter?.contract.verification_provider?.provider_id,
-            adapterAttached: Boolean(loadedAdapter),
-            codexSessionRegistryPath,
-            resumeIdentityPath: currentResumeIdentityPath,
-            runtimeLiveStatePath: runtimeStatePaths.liveStatePath,
-            runtimeRoundPhasePath: runtimeStatePaths.roundPhasePath,
-            controllerLeasePath: runtimeStatePaths.controllerLeasePath,
-            transportStatePath: runtimeStatePaths.transportStatePath,
-            transportProtocolPath: transportProtocolCurrentPath,
-            sessionStatusPath: runtimeStatePaths.sessionStatusPath,
-            sessionStatusEventsPath: runtimeStatePaths.sessionStatusEventsPath,
-            sessionStreamPath: runtimeStatePaths.sessionStreamPath,
-            stopReason: finalStopReason ?? resolvedStopReason,
+            durableMemoryPaths,
+            finalStopReason,
+            resolvedStopReason,
             bestRound,
-            bestScore: bestScore ?? terminalTotalScore,
+            bestScore,
             bestControlPlaneScore,
             bestProofScore,
             bestReleaseScore,
-            bestThresholdResults: bestThresholdResults ?? terminalThresholdResults,
+            bestThresholdResults,
             bestDimensionScores,
+            bestPatchRequestPath,
+            bestEvalReportPath,
             history,
-            runtimeEvents: finalRuntimeEvents,
             runtimeWarnings,
+            currentRuntimeEvents,
+            restored: Boolean(input.resumeRunPath),
+            forceReopenTerminal: Boolean(input.forceReopenTerminal),
+            restoredStopReason,
+            resumeDecisionPath,
+            allowResumeMigration: Boolean(input.allowResumeMigration),
+            resumeIdentityMismatches,
             resumeMigrationPath,
             previousBundleFingerprint,
             newBundleFingerprint,
-            adapterMigrationAppliedPath: latestAdapterMigrationAppliedPath,
-            resumeDecisionPath,
-            resumedFromRunId: input.resumeRunPath ? runId : undefined
+            latestAdapterMigrationAppliedPath,
+            evaluationPolicyPath: evaluationPolicy
+                ? evaluationPolicyPathForRun(runDirectory)
+                : undefined,
+            summaryPath,
+            sessionCurrentObjective,
+            withPhaseBudget,
+            recordRoundPhase,
+            markProgress,
+            replaceHeartbeatNotes,
+            setExecutionState,
+            updateSessionRefreshState,
+            refreshSessionPreparationArtifacts
         });
-        if (evaluationPolicy) {
-            summary.evaluation_policy_path = evaluationPolicyPathForRun(runDirectory);
-        }
-        currentCheckpointStopReason = summary.stop_reason;
-        await withPhaseBudget("run_finalize", async () => {
-            await recordRoundPhase({
-                round: terminalRound ?? 0,
-                phase: "run_finalize",
-                status: "in_progress",
-                artifacts: {
-                    summary_path: summaryPath
-                }
-            });
-            const codexHandoffPath = await writeRunCodexHandoff({
-                runDirectory,
-                summary,
-                plan,
-                scenario
-            });
-            summary.codex_handoff_path = codexHandoffPath;
-            await Promise.all([
-                writeJson(currentResumeIdentityPath, currentResumeIdentity),
-                ...(resumeDecisionArtifact && resumeDecisionPath
-                    ? [writeJson(resumeDecisionPath, resumeDecisionArtifact)]
-                    : [])
-            ]);
-            await writeRunCheckpoint({
-                runDirectory,
-                summary,
-                currentBest: currentBestForRunCheckpoint({
-                    history,
-                    bestRound,
-                    bestScore,
-                    bestControlPlaneScore,
-                    bestProofScore,
-                    bestReleaseScore,
-                    bestThresholdResults,
-                    bestDimensionScores,
-                    bestPatchRequestPath,
-                    bestEvalReportPath,
-                    bestScoringTotalScoreFallback: 0
-                })
-            });
-            await markProgress(`Final run artifacts saved for ${runId}.`);
-            replaceHeartbeatNotes();
-            setExecutionState("completed");
-            updateSessionRefreshState({
-                currentObjective: terminalRoundSummary?.objective ?? sessionCurrentObjective,
-                latestRound: terminalRound,
-                latestStopReason: summary.stop_reason
-            });
-            await refreshSessionPreparationArtifacts({
-                stopReason: summary.stop_reason,
-                executionState: "completed"
-            });
-            await recordRoundPhase({
-                round: terminalRound ?? 0,
-                phase: "run_finalize",
-                status: "completed",
-                artifacts: {
-                    summary_path: summaryPath,
-                    codex_handoff_path: codexHandoffPath
-                }
-            });
-        });
-        return {
-            plan,
-            summary,
-            runDirectory,
-            plannedScenarioPath
-        };
+        currentCheckpointStopReason = finalResult.summary.stop_reason;
+        return finalResult;
     }
     catch (error) {
         const message = error instanceof Error ? error.message : String(error);

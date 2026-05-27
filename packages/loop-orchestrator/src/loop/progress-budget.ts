@@ -1,7 +1,35 @@
 import type {
+  ControllerPhaseStatus,
   ControllerRoundPhase,
   ExecutionState
 } from "../types.js";
+import { PhaseBudgetExceededError } from "./phase-timeouts.js";
+
+export const assertActivePhaseBudget = (input: {
+  activeHeartbeatPhase?: ControllerRoundPhase;
+  activeHeartbeatPhaseStatus?: ControllerPhaseStatus;
+  activePhaseTimeoutMs?: number;
+  activeHeartbeatPhaseStartedAt?: string;
+}): void => {
+  if (
+    !input.activeHeartbeatPhase ||
+    input.activeHeartbeatPhaseStatus !== "in_progress" ||
+    input.activePhaseTimeoutMs === undefined ||
+    !input.activeHeartbeatPhaseStartedAt
+  ) {
+    return;
+  }
+  const phaseStartedAt = Date.parse(input.activeHeartbeatPhaseStartedAt);
+  if (Number.isNaN(phaseStartedAt)) {
+    return;
+  }
+  if (Date.now() - phaseStartedAt > input.activePhaseTimeoutMs) {
+    throw new PhaseBudgetExceededError(
+      input.activeHeartbeatPhase,
+      input.activePhaseTimeoutMs
+    );
+  }
+};
 
 export const markLoopProgress = async (input: {
   note: string;

@@ -510,6 +510,7 @@ server.listen(0, "127.0.0.1", () => {
     manifestPath,
     JSON.stringify(
       {
+        target_server_pid: process.pid,
         health_url: `http://127.0.0.1:${address.port}/healthz`,
         app_url: `http://127.0.0.1:${address.port}/`,
         api_base_url: `http://127.0.0.1:${address.port}/api/`

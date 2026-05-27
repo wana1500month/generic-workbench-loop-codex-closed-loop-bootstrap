@@ -1,4 +1,10 @@
-import type { ControllerRoundPhase, ExecutionState } from "../types.js";
+import type { ControllerPhaseStatus, ControllerRoundPhase, ExecutionState } from "../types.js";
+export declare const assertActivePhaseBudget: (input: {
+    activeHeartbeatPhase?: ControllerRoundPhase;
+    activeHeartbeatPhaseStatus?: ControllerPhaseStatus;
+    activePhaseTimeoutMs?: number;
+    activeHeartbeatPhaseStartedAt?: string;
+}) => void;
 export declare const markLoopProgress: (input: {
     note: string;
     assertPhaseBudget(): void;

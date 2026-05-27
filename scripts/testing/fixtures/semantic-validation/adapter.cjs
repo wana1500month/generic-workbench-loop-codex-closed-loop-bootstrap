@@ -948,6 +948,12 @@ const result = {
 };
 if (capability === "run_target" && targetManifest) {
   result.target_manifest = targetManifest;
+  if (Number.isInteger(targetManifest.target_server_pid)) {
+    result.metadata = {
+      ...(result.metadata || {}),
+      target_server_pid: targetManifest.target_server_pid
+    };
+  }
 }
 if (capability === "capture_evidence" && includeLiveVerification) {
   result.evidence_items.push({

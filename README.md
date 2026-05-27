@@ -68,6 +68,7 @@ Product-build discovery collects product, execution, and adapter-design intake. 
 - `npm run validate:core`: adapter-free deterministic integration gate
 - `npm run validate:core-long`: longer lifecycle, quality-lift, continuation, and durable-memory integration gate
 - `npm run validate:smoke-clean`: hydrates `.tmp/semantic-validation` from `scripts/testing/fixtures/semantic-validation`, clears runtime state, and proves smoke is self-contained
+- `npm run validate:semantic-target-server-cleanup`: runs quality-lift, productization, and smoke-clean, then asserts no semantic `target-server.cjs` Node process remains
 - `npm run validate:release`: builds the installable Codex app ZIP and validates release startup
 - `npm run release:zip`: builds and packages the installable ZIP without running release validators
 - `npm run validate:source-archive-repro`: stages a clean source archive candidate without `.tmp`, compiled `dist`, or `*.tsbuildinfo`, then force-builds and runs `npm ci`, `build`, `npm test`, `smoke-clean`, and `release`
@@ -77,6 +78,18 @@ Product-build discovery collects product, execution, and adapter-design intake. 
 - `npm run validate:codex-binary-preflight`: trusted-runner check that fails fast when `codex` is not executable; install Codex CLI or set `HARNESS_CODEX_BIN`
 - `npm run validate:codex-auth-preflight:fake`: deterministic fake-Codex auth semantics check; `validate:codex-auth-preflight` remains a compatibility alias
 - `npm run validate:codex-live`: trusted-runner-only live Codex and App Server gate, starting with the real binary preflight
+
+Trusted live smoke sequence:
+
+```bash
+npm run validate:release
+npm run validate:codex-binary-preflight
+npm run validate:transport:cli
+npm run validate:transport:app-server
+npm run release:preflight-live
+```
+
+Run the live sequence only on a host with an authenticated Codex CLI/App Server environment. Treat auth or host preflight failures as environment blockers, not deterministic harness regressions.
 
 `validate:reference-adapter:check` expects `REFERENCE_ADAPTER_CONTRACT` to be set. Without an attached adapter, external validation should fail closed.
 

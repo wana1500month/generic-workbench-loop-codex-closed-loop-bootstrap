@@ -62,7 +62,7 @@ export const runLoop = async (args, options = {}) =>
     });
     child.on("close", async (code) => {
       clearTimeout(timer);
-      if (timedOut && runDirectory) {
+      if (runDirectory) {
         await cleanupReferenceTargetServers(runDirectory).catch(() => []);
       }
       resolvePromise({

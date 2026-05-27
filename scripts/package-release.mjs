@@ -22,7 +22,9 @@ const requiredPackageFiles = [
   "packages/loop-orchestrator/src/loop/checkpoint-flow.ts",
   "packages/loop-orchestrator/src/loop/default-evaluation-policy.ts",
   "packages/loop-orchestrator/src/loop/evaluator-step.ts",
+  "packages/loop-orchestrator/src/loop/noop-terminal-resume.ts",
   "packages/loop-orchestrator/src/loop/progress-budget.ts",
+  "packages/loop-orchestrator/src/loop/round-phase-recorder.ts",
   "packages/loop-orchestrator/src/loop/round-target-decision.ts",
   "packages/loop-orchestrator/src/loop/run-defaults.ts",
   "packages/loop-orchestrator/src/loop/run-checkpoint.ts",
@@ -32,7 +34,9 @@ const requiredPackageFiles = [
   "packages/loop-orchestrator/src/loop/runtime-warning-summary.ts",
   "packages/loop-orchestrator/src/loop/scorecard-artifacts.ts",
   "packages/loop-orchestrator/src/loop/status-snapshot.ts",
+  "packages/loop-orchestrator/src/loop/terminal-run-finalization.ts",
   "packages/loop-orchestrator/src/playwright-availability.ts",
+  "scripts/semantic-target-processes.mjs",
   "scripts/testing/project-kind-fixtures.mjs",
   "scripts/validate-agent-workflow-front-door-questions.mjs",
   "scripts/validate-data-pipeline-front-door-questions.mjs",
@@ -48,7 +52,8 @@ const requiredPackageFiles = [
   "scripts/validate-front-door-session-repeat.mjs",
   "scripts/validate-validation-batch-isolation.mjs",
   "scripts/validate-project-kind-fixtures.mjs",
-  "scripts/validate-release-product-start.mjs"
+  "scripts/validate-release-product-start.mjs",
+  "scripts/validate-semantic-target-server-cleanup.mjs"
 ];
 const commandTimeoutMs = Number.parseInt(
   process.env.HARNESS_RELEASE_COMMAND_TIMEOUT_MS ?? "300000",

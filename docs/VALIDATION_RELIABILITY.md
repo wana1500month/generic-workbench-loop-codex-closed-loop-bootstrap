@@ -22,6 +22,8 @@ Primary deterministic suites:
 - `validate:fast`: `quick` plus lightweight loop preparation and scorecard regressions.
 - `validate:core`: deterministic integration core for routing, repeatability, isolation, transport/security policy, score/strictness policy, prepare, foreground ownership, and baseline validity.
 - `validate:core-long`: `core` plus longer lifecycle matrix, quality-lift, loop-continuation, and durable-memory checks.
+- `validate:nightly`: `validate:core-long` followed by `validate:smoke-clean`; use it for the heavier deterministic sweep.
+- `validate:semantic-target-server-cleanup`: explicit process-leak check for the semantic validation fixture. It runs `validate:quality-lift`, `validate:productization`, and `validate:smoke-clean`, then fails if any repo-owned `node ... target-server.cjs` process remains.
 - `validate:product-front-door`: front-door/product routing only. It intentionally excludes release ZIP packaging, prepare consumption, and generated adapter run-local checks.
 - `validate:productization`: readiness, evaluation, strictness, scorecard, adaptive intake, and non-web loop closure checks.
 - `release:zip`: build and package the installable ZIP only.
@@ -49,15 +51,24 @@ a deterministic front-door or loop-state regression reproducible.
 Run live smoke only on a trusted host that is expected to have Codex installed
 and authenticated.
 
+Commands:
+
+```bash
+npm run validate:release
+npm run validate:codex-binary-preflight
+npm run validate:codex-auth-preflight:fake
+npm run validate:transport:cli
+npm run validate:transport:app-server
+npm run release:preflight-live
+```
+
 Checklist:
 
-- Resolve the binary with `npm run validate:codex-binary-preflight` or set `HARNESS_CODEX_BIN`.
-- Keep deterministic auth semantics separate with `npm run validate:codex-auth-preflight:fake`.
-- Run CLI transport smoke with `npm run validate:transport:cli`.
-- Run App Server smoke with `npm run validate:transport:app-server` when the host supports it.
-- For operational release confidence, run `npm run release:preflight-live` after `npm run validate:release`.
-- A full trusted-host sequence is `npm run validate:codex-binary-preflight`, `npm run validate:transport:cli`, `npm run validate:transport:app-server`, then `npm run release:preflight-live`.
-- Record environment-blocked results as host preflight outcomes, not deterministic regressions.
+- Set `HARNESS_CODEX_BIN` when the `codex` binary is not on `PATH`.
+- Run the sequence from an authenticated trusted host; do not use it as a deterministic CI gate on unauthenticated workers.
+- Keep deterministic auth semantics separate with `validate:codex-auth-preflight:fake`.
+- Run App Server smoke only on hosts that support the Codex app/App Server transport.
+- Record auth, binary, or host capability failures as environment-blocked live preflight outcomes, not deterministic regressions.
 
 ## Front-Door Isolation Checks
 

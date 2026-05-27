@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -189,6 +189,7 @@ if (previousExternalTargetRoot === undefined) {
 }
 
 const shellMarkerPath = join(workspace, "shell-redirection-marker.txt");
+await rm(shellMarkerPath, { force: true });
 const directNoShell = await execCommand({
   command: `node -e "process.stdout.write('ok')" > "${shellMarkerPath}"`,
   cwd: repoRoot,
@@ -209,6 +210,7 @@ assert.equal(explicitShell.code, 0);
 assert.equal((await readFile(shellMarkerPath, "utf8")).trim(), "shell-ok");
 
 const coreShellMarkerPath = join(workspace, "core-shell-redirection-marker.txt");
+await rm(coreShellMarkerPath, { force: true });
 const coreProbeProfile = normalizeVerificationProfile(
   {
     profile_id: "core-probe-direct-spawn-guard",

@@ -23,6 +23,7 @@
     "validate:external": "node ./scripts/run-validation-batch.mjs external",
     "validate:external-adapter": "node ./scripts/run-validation-batch.mjs external-adapter",
     "validate:smoke-clean": "node ./scripts/validate-clean-smoke.mjs",
+    "validate:semantic-target-server-cleanup": "node ./scripts/validate-semantic-target-server-cleanup.mjs",
     "validate:release": "npm run build && npm run validate:quality-lift && npm run release:package && npm run validate:release-zip -- --zip .tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip && npm run validate:release-product-start -- --zip .tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip",
     "validate:source-archive-repro": "node ./scripts/validate-source-archive-repro.mjs",
     "validate:app": "npm run build && node ./scripts/run-validation-batch.mjs app",

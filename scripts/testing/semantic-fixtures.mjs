@@ -2,6 +2,8 @@ import { access, cp, mkdir, readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { stopSemanticTargetServers } from "../semantic-target-processes.mjs";
+
 const repoRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sourceFixtureRoot = join(
   repoRoot,
@@ -60,6 +62,7 @@ const walkDirectories = async (root, predicate) => {
 };
 
 export const cleanSemanticValidationRuntimeState = async () => {
+  await stopSemanticTargetServers();
   if (!(await pathExists(runtimeFixtureRoot))) {
     return [];
   }
