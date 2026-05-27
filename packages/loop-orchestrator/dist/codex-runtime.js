@@ -10,6 +10,17 @@ import { redactText } from "./redaction.js";
 import { defaultTransportModeForControllerMode, isCurrentThreadTransport, isTransportMode } from "./transport-mode.js";
 const unique = (values) => [...new Set(values)];
 const currentThreadTransportBlockedReason = "Current-thread transports forbid nested Codex command execution. Use the active Codex thread or App Server turn as the operator surface instead of spawning codex exec.";
+const codexProfileFallbackOverrides = (profile) => {
+    if (profile === "readonly_agent") {
+        return {
+            approval_policy: "never",
+            sandbox_mode: "read-only"
+        };
+    }
+    return undefined;
+};
+const missingCodexProfilePattern = /config profile [`'"]?([^`'"\s]+)[`'"]? not found/i;
+const missingCodexProfileName = (execution) => missingCodexProfilePattern.exec(`${execution.stderr}\n${execution.error ?? ""}`)?.[1];
 const positiveIntegerEnv = (key, fallback) => {
     const parsed = Number(process.env[key]);
     return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
@@ -403,7 +414,21 @@ export const runCodexCommand = async (input) => {
         ...(input.sandboxMode ? { sandbox_mode: input.sandboxMode } : {}),
         ...(input.configOverrides ?? {})
     });
-    const args = usesResume
+    const freshArgsFor = (profileArgs, freshConfigArgs) => [
+        ...codexLaunch.args,
+        "exec",
+        ...profileArgs,
+        ...freshConfigArgs,
+        "--json",
+        "--skip-git-repo-check",
+        ...(input.sandboxMode ? ["-s", input.sandboxMode] : []),
+        ...unique(input.addDirs ?? []).flatMap((dir) => ["--add-dir", dir]),
+        ...(schemaPath ? ["--output-schema", schemaPath] : []),
+        "--output-last-message",
+        responsePath,
+        "-"
+    ];
+    let args = usesResume
         ? [
             ...codexLaunch.args,
             "exec",
@@ -416,21 +441,8 @@ export const runCodexCommand = async (input) => {
             ...(input.resumeLast ? ["--last"] : [input.sessionId ?? ""]),
             "-"
         ]
-        : [
-            ...codexLaunch.args,
-            "exec",
-            ...baseArgs,
-            ...configArgs,
-            "--json",
-            "--skip-git-repo-check",
-            ...(input.sandboxMode ? ["-s", input.sandboxMode] : []),
-            ...unique(input.addDirs ?? []).flatMap((dir) => ["--add-dir", dir]),
-            ...(schemaPath ? ["--output-schema", schemaPath] : []),
-            "--output-last-message",
-            responsePath,
-            "-"
-        ];
-    const execution = await new Promise((resolvePromise) => {
+        : freshArgsFor(baseArgs, configArgs);
+    const runCodexProcess = async (executionArgs) => new Promise((resolvePromise) => {
         const startedAt = Date.now();
         const timeoutMs = input.timeoutMs ?? codexCommandTimeoutMs();
         const staleOutputTimeoutMs = input.staleOutputTimeoutMs ?? codexStaleOutputTimeoutMs();
@@ -515,7 +527,7 @@ export const runCodexCommand = async (input) => {
             refreshStaleTimer();
         };
         try {
-            child = spawn(command, args, {
+            child = spawn(command, executionArgs, {
                 cwd: input.cwd,
                 env: process.env,
                 shell: false,
@@ -565,6 +577,22 @@ export const runCodexCommand = async (input) => {
         child.stdin.write(input.prompt);
         child.stdin.end();
     });
+    let execution = await runCodexProcess(args);
+    const missingProfile = !usesResume ? missingCodexProfileName(execution) : undefined;
+    let profileFallbackUsed = false;
+    let profileFallbackReason;
+    if (input.profile && missingProfile === input.profile) {
+        const fallbackOverrides = codexProfileFallbackOverrides(input.profile);
+        if (fallbackOverrides) {
+            profileFallbackUsed = true;
+            profileFallbackReason = `Codex profile '${input.profile}' was not configured; retried with equivalent explicit config overrides.`;
+            args = freshArgsFor([], configArgsFor({
+                ...fallbackOverrides,
+                ...(input.configOverrides ?? {})
+            }));
+            execution = await runCodexProcess(args);
+        }
+    }
     const codexSensitiveValues = codexSensitiveValuesForRedaction();
     const stdoutRedaction = redactText(execution.stdout, codexSensitiveValues);
     const stderrRedaction = redactText(execution.stderr, codexSensitiveValues);
@@ -637,6 +665,8 @@ export const runCodexCommand = async (input) => {
         stderr_path: stderrPath,
         events_path: eventsPath,
         response_written: responseWritten,
+        profile_fallback_used: profileFallbackUsed,
+        ...(profileFallbackReason ? { profile_fallback_reason: profileFallbackReason } : {}),
         codex_command: command,
         duration_ms: execution.durationMs,
         timed_out: execution.timedOut === true,

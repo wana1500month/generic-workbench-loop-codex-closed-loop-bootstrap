@@ -325,6 +325,62 @@ const main = async () => {
       "runtime resume metadata must record intentionally omitted output schema"
     );
 
+    const fallbackRecordPath = join(tempRoot, "runtime-profile-fallback-record.json");
+    process.env.FAKE_CODEX_RECORD_PATH = fallbackRecordPath;
+    process.env.FAKE_CODEX_FAIL_MISSING_PROFILE = "readonly_agent";
+    const fallbackRuntimeCall = await runCodexCommand({
+      name: "runtime-profile-fallback",
+      prompt: 'Respond with {"status":"ok"}',
+      cwd: repoRoot,
+      artifactDirectory: join(tempRoot, "runtime-profile-fallback-artifacts"),
+      profile: "readonly_agent",
+      outputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          status: { type: "string", const: "ok" }
+        },
+        required: ["status"]
+      },
+      sandboxMode: "read-only"
+    });
+    delete process.env.FAKE_CODEX_FAIL_MISSING_PROFILE;
+    assert(
+      fallbackRuntimeCall.code === 0 && fallbackRuntimeCall.responseWritten,
+      "direct runtime call must retry when readonly_agent profile is missing"
+    );
+    const fallbackRecords = await readJsonFile(fallbackRecordPath);
+    assert(
+      Array.isArray(fallbackRecords) && fallbackRecords.length === 2,
+      "profile fallback should record one failed profile call and one retried call"
+    );
+    assert(
+      fallbackRecords[0].argv.includes("--profile") &&
+        fallbackRecords[0].argv.includes("readonly_agent"),
+      "profile fallback first call must try the requested profile"
+    );
+    assert(
+      !fallbackRecords[1].argv.includes("--profile") &&
+        fallbackRecords[1].argv.includes("-c") &&
+        fallbackRecords[1].argv.includes('approval_policy="never"') &&
+        fallbackRecords[1].argv.includes('sandbox_mode="read-only"'),
+      "profile fallback retry must use explicit read-only config overrides"
+    );
+    const fallbackMetadata = JSON.parse(
+      await readFile(
+        join(
+          tempRoot,
+          "runtime-profile-fallback-artifacts",
+          "runtime-profile-fallback-metadata.json"
+        ),
+        "utf8"
+      )
+    );
+    assert(
+      fallbackMetadata.profile_fallback_used === true,
+      "profile fallback metadata must record fallback usage"
+    );
+
     console.log("Validated Codex profile wiring.");
   } finally {
     await cleanupTempRoot(tempRoot);

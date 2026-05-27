@@ -112,6 +112,7 @@ Live Codex validation gates exercise trusted external surfaces such as the real 
 - `npm run validate:codex:live-matrix`: trusted-runner real Codex CLI matrix for strict `codex exec` fresh/resume behavior. It is intentionally separate from `release:zip` so packaging still works on hosts without a local Codex binary.
 - `npm run release:preflight-live`: operational release preflight that runs the strict Codex live matrix and strict App Server live smoke.
 - `npm run validate:codex-strict-gate`: compatibility alias for `validate:codex-live`.
+- Real read-only Codex agent calls try the `readonly_agent` profile first. If Codex reports that profile is missing, the runtime retries the initial non-resume call with equivalent explicit overrides: `approval_policy = never` and `sandbox_mode = read-only`. This keeps live smoke and planner/evaluator enhancement usable on authenticated hosts that do not carry repo-specific Codex profiles, while `validate:codex-profile-wiring` still proves the preferred profile path is attempted.
 
 ## Security guards
 
