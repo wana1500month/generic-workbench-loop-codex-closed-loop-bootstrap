@@ -20,10 +20,12 @@ Primary deterministic suites:
 
 - `validate:quick`: fast routing, intake, front-door, readiness, scorecard, and project-kind checks.
 - `validate:fast`: `quick` plus lightweight loop preparation and scorecard regressions.
-- `validate:core`: heavier lifecycle, repeatability, batch isolation, continuation, and durable-memory checks.
+- `validate:core`: deterministic integration core for routing, repeatability, isolation, transport/security policy, score/strictness policy, prepare, foreground ownership, and baseline validity.
+- `validate:core-long`: `core` plus longer lifecycle matrix, quality-lift, loop-continuation, and durable-memory checks.
 - `validate:product-front-door`: front-door/product routing only. It intentionally excludes release ZIP packaging, prepare consumption, and generated adapter run-local checks.
 - `validate:productization`: readiness, evaluation, strictness, scorecard, adaptive intake, and non-web loop closure checks.
-- `validate:release`: install ZIP packaging and release startup checks.
+- `release:zip`: build and package the installable ZIP only.
+- `validate:release`: build, quality-lift, package, ZIP-structure validation, and release-start validation.
 
 ## Live Codex Validation
 
@@ -54,6 +56,7 @@ Checklist:
 - Run CLI transport smoke with `npm run validate:transport:cli`.
 - Run App Server smoke with `npm run validate:transport:app-server` when the host supports it.
 - For operational release confidence, run `npm run release:preflight-live` after `npm run validate:release`.
+- A full trusted-host sequence is `npm run validate:codex-binary-preflight`, `npm run validate:transport:cli`, `npm run validate:transport:app-server`, then `npm run release:preflight-live`.
 - Record environment-blocked results as host preflight outcomes, not deterministic regressions.
 
 ## Front-Door Isolation Checks

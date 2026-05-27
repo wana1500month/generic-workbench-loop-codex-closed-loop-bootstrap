@@ -28,6 +28,23 @@ const npmInvocationFor = (scriptName) => {
   };
 };
 
+const coreSuite = [
+  "validate:intent-gate",
+  "validate:intake-gate",
+  "validate:front-door-session",
+  "validate:front-door-session-repeat",
+  "validate:validation-batch-isolation",
+  "validate:transport-mode",
+  "validate:security-guards",
+  "validate:score-policy",
+  "validate:strictness-policy",
+  "validate:loop-prepare",
+  "validate:prepared-session-consumption-boundary",
+  "validate:canonical-foreground-worker",
+  "validate:no-foreground-handoff-language",
+  "validate:baseline-validity"
+];
+
 const suites = {
   quick: [
     "validate:intent-gate",
@@ -90,25 +107,13 @@ const suites = {
     "validate:korean-product-phrasing-variants",
     "validate:korean-non-product-rejection"
   ],
-  core: [
-    "validate:intent-gate",
-    "validate:intake-gate",
-    "validate:front-door-session",
-    "validate:front-door-session-repeat",
-    "validate:validation-batch-isolation",
+  core: coreSuite,
+  "core-long": [
+    ...coreSuite,
     "validate:lifecycle-api",
-    "validate:transport-mode",
-    "validate:security-guards",
-    "validate:score-policy",
-    "validate:strictness-policy",
     "validate:quality-lift",
-    "validate:loop-prepare",
-    "validate:prepared-session-consumption-boundary",
-    "validate:canonical-foreground-worker",
     "validate:loop-continue",
-    "validate:no-foreground-handoff-language",
-    "validate:durable-memory",
-    "validate:baseline-validity"
+    "validate:durable-memory"
   ],
   smoke: [
     "validate:intent-gate",
@@ -146,6 +151,7 @@ const suite = suites[suiteName];
 const stateIsolatedSuites = new Set([
   "app",
   "core",
+  "core-long",
   "fast",
   "isolation-smoke",
   "product-front-door",

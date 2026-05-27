@@ -66,8 +66,10 @@ Product-build discovery collects product, execution, and adapter-design intake. 
 - `npm run validate:app-release` / `npm run validate:release-gate`: Codex app install ZIP gate; packages the release ZIP and validates release startup without requiring a `codex` binary
 - `npm run validate:process`: process timeout, stale-output, and supervisor cleanup gate
 - `npm run validate:core`: adapter-free deterministic integration gate
+- `npm run validate:core-long`: longer lifecycle, quality-lift, continuation, and durable-memory integration gate
 - `npm run validate:smoke-clean`: hydrates `.tmp/semantic-validation` from `scripts/testing/fixtures/semantic-validation`, clears runtime state, and proves smoke is self-contained
 - `npm run validate:release`: builds the installable Codex app ZIP and validates release startup
+- `npm run release:zip`: builds and packages the installable ZIP without running release validators
 - `npm run validate:source-archive-repro`: stages a clean source archive candidate without `.tmp`, compiled `dist`, or `*.tsbuildinfo`, then force-builds and runs `npm ci`, `build`, `npm test`, `smoke-clean`, and `release`
 - `npm run validate:nightly`: heavier deterministic core plus smoke-clean lane
 - `npm run validate:transport:cli`: trusted-runner Codex CLI transport lane

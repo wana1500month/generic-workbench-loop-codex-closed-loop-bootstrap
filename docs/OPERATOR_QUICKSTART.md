@@ -10,7 +10,7 @@ Use the generated release artifact, not the repository source archive, for Codex
 npm run release:zip
 ```
 
-Install `.tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip`. It includes `packages/loop-orchestrator/dist`, keeps `node_modules` out, includes `CODEX_APP_INSTALL.md` plus `release-manifest.json`, and lets `loop:intent`, `loop:discover`, `loop:prepare`, and `loop:start:codex` run before `npm ci`.
+Install `.tmp/release/generic-codex-workbench-CODEX-APP-INSTALL.zip`. It includes `packages/loop-orchestrator/dist`, keeps `node_modules` out, includes `CODEX_APP_INSTALL.md` plus `release-manifest.json`, and lets `loop:intent`, `loop:discover`, `loop:prepare`, and `loop:start:codex` run before `npm ci`. Use `npm run validate:release` when you also need ZIP validation and release-start proof.
 
 ## First Run From A Source ZIP
 
@@ -72,6 +72,7 @@ Real Codex and App Server smoke checks still require a trusted host with a usabl
 ```bash
 npm run validate:transport:cli
 npm run validate:transport:app-server
+npm run release:preflight-live
 ```
 
 ## Security Defaults

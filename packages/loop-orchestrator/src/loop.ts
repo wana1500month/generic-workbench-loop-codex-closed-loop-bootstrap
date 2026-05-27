@@ -1,9 +1,9 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 
-import { buildActiveContractFrame, decideAttemptLifecycle, targetCheckIdsFromPatchRequest, unresolvedSignatureFor } from "./attempt-lifecycle.js";
-import { writeRoundHandoffPlaceholders, writeRoundHandoff, writeRunControllerSummary, writeRunPlannerBrief } from "./agent-handoff.js";
-import { enhanceContractReviewWithCodex, enhanceContractReviewWithAppServer, enhanceEvalReportWithCodex, enhanceEvalReportWithAppServer, enhanceGeneratorPlanWithCodex, enhanceGeneratorPlanWithAppServer, enhancePlanWithCodex, enhancePlanWithAppServer, experimentalExecutorRuntimeWarning } from "./codex-agents.js";
+import { buildActiveContractFrame, decideAttemptLifecycle } from "./attempt-lifecycle.js";
+import { writeRoundHandoffPlaceholders, writeRunControllerSummary, writeRunPlannerBrief } from "./agent-handoff.js";
+import { enhanceContractReviewWithCodex, enhanceContractReviewWithAppServer, enhanceGeneratorPlanWithCodex, enhanceGeneratorPlanWithAppServer, enhancePlanWithCodex, enhancePlanWithAppServer, experimentalExecutorRuntimeWarning } from "./codex-agents.js";
 import { executeAdapterCapability, loadAdapterContract, restoreAdapterCapabilityExecutions, loadVerificationProfile } from "./adapter-runtime.js";
 import { resolvedAdapterTargetRoot } from "./adapter-paths.js";
 import { isAttachedGeneratorTransport, isBootstrapGeneratedAdapter, readAttachedGeneratorResponse, writeAttachedGeneratorTask } from "./attached-generator.js";
@@ -15,7 +15,6 @@ import { attachedPreGeneratorBaselineWindowOpen, captureBootstrapGeneratedBaseli
 import { defaultIdeaPath, readIdeaBrief } from "./idea-intake.js";
 import { evaluationPolicyPathForRun, type RoundScorecard } from "./evaluation-policy.js";
 import { ensureEvaluationPolicyForRun } from "./loop/default-evaluation-policy.js";
-import { applyRoundScorecardGate, writeOptionalRoundScorecardArtifacts } from "./loop/scorecard-artifacts.js";
 import { deriveSessionLoopStatus } from "./loop/status-snapshot.js";
 import { defaultControllerMode, isControllerMode } from "./controller-mode.js";
 import { defaultExecutorMode, isExecutorMode } from "./executor-mode.js";
@@ -23,7 +22,7 @@ import { buildTransportStateArtifact, defaultTransportModeForControllerMode, isC
 import { startAppServerTransport, type AppServerTransportController } from "./app-server-runtime.js";
 import { buildPatchCarryForwardContract, buildSyntheticPatchCarryForwardAgreement, buildSyntheticPatchCarryForwardReview } from "./patch-carry-forward.js";
 import { buildAttemptDirective, buildLoopPlan, buildRoundContract, buildScenarioFromIdea } from "./planner.js";
-import { buildContractAgreementArtifact, buildContractReviewArtifact, buildEvalReport } from "./round-evaluator.js";
+import { buildContractAgreementArtifact, buildContractReviewArtifact } from "./round-evaluator.js";
 import { orderedAdapterExecutions, runAdapterCapabilities } from "./loop/adapter-executions.js";
 import { activeArtifactPathsFor, activeCheckpointMetadataFor } from "./loop/active-checkpoint.js";
 import { buildCheckpointSummary, isCodexCheckpointPhaseStatus, isPausedPhaseStatus, phaseCompletedAtOrBeyond } from "./loop/checkpoints.js";
@@ -31,87 +30,42 @@ import { checkpointForCurrentThreadWorkCheckpoint, pauseForExternalConditionChec
 import { finalizeRunAsPausedStopWithArtifacts, finalizeRunAsTerminalDecisionStopWithArtifacts, type AttemptFinalizationDeps, type FinalizeRunAsPausedStopInput, type FinalizeRunAsTerminalDecisionStopInput } from "./loop/attempt-finalization.js";
 import { resolveEvaluatorBundleSelection } from "./loop/evaluator-bundle.js";
 import { PhaseBudgetExceededError, parsePhaseTimeoutOverrides, parsePositiveTimeoutMs } from "./loop/phase-timeouts.js";
-import { crashAfterCheckpointEnabled, ensureJsonFile, isImproved, roundDirectoryFor, writeRoundSummary } from "./loop/round-files.js";
+import { crashAfterCheckpointEnabled, ensureJsonFile, isImproved, roundDirectoryFor } from "./loop/round-files.js";
 import { writeRunCheckpoint } from "./loop/run-checkpoint.js";
 import { currentBestForRunCheckpoint } from "./loop/run-summary-finalization.js";
 import { externalBlockersFromPatchRequest, reviewFeedbackFromArtifacts, scopeGuardrailsFromPatchRequest, steeringNotesFromContractReview } from "./loop/runtime-warning-summary.js";
 import { buildRuntimeEvent, mergeRuntimeEvents, normalizeRuntimeWarnings } from "./loop/runtime-events.js";
 import { buildFinalRuntimeEventsForRun, buildInitialRuntimeEventsForRun, persistentWarningsFromRestoredRun } from "./loop/run-runtime-events.js";
+import { runEvaluatorStep } from "./loop/evaluator-step.js";
+import { buildAttemptRoundReport, commitAttemptRoundReport } from "./loop/attempt-reporting.js";
+import { defaultRubricPath, postVerificationCapabilities, preVerificationCapabilities } from "./loop/run-defaults.js";
+import { markLoopProgress, withActivePhaseBudget } from "./loop/progress-budget.js";
+import type { RunClosedLoopInput } from "./loop/run-input.js";
 import { stopReasonForMissingRoundTargetDecision, stopReasonForRoundTargetDecision, type RoundTargetDecisionState } from "./loop/round-target-decision.js";
 import { isResumeNoopTerminalStopReason } from "./loop/stop-reasons.js";
-import { artifactsForRound, buildEvaluatorVerdictArtifact, buildGeneratorPlanArtifact, buildPatchRequestArtifact, buildQualityCritiqueArtifact, buildRoundContractArtifact, buildRoundResultArtifact, writeAdapterMigrationProposalArtifacts, writeNegotiationArtifacts, writeRoundEvaluationPlaceholders, writeRoundArtifacts } from "./protocol-artifacts.js";
+import { artifactsForRound, buildGeneratorPlanArtifact, buildRoundContractArtifact, writeAdapterMigrationProposalArtifacts, writeNegotiationArtifacts, writeRoundEvaluationPlaceholders } from "./protocol-artifacts.js";
 import { resolveTargetFamilySelection } from "./profile-selection.js";
-import { applyFailureLineagePolicySnapshot, isPureEnvironmentBlockedLineage } from "./failure-lineage.js";
+import { isPureEnvironmentBlockedLineage } from "./failure-lineage.js";
 import { buildResumeIdentityState, compareResumeIdentity, loadResumeIdentityArtifact, resumeIdentityArtifactPath, resumeIdentityFingerprint, summaryResumeIdentity } from "./resume-identity.js";
-import { buildRemediationHistory, failureLineageForEvalReport, restoreRunState, scoreDeltasForHistory } from "./resume-state.js";
+import { buildRemediationHistory, restoreRunState, scoreDeltasForHistory } from "./resume-state.js";
 import { runtimeStatePathsForRun, startRuntimeHeartbeat, writeRuntimeRoundPhaseArtifact, writeTransportStateArtifact } from "./runtime-state.js";
 import { buildOperatorSurfaceArtifact, resolveOperatorSurfaceContext, writeOperatorSurfaceArtifacts } from "./operator-surface.js";
 import { buildOperatorSurfaceSessionProjection, writeSessionPreparationArtifacts } from "./session-artifacts.js";
 import { clearReadyToStartSessionMarker, findLatestPreparedRunAwaitingStart, loadPreparedSessionSeedForRun } from "./prepare-session.js";
-import { buildAdapterDriftReport } from "./adapter-drift.js";
 import { applyGeneratedLocalAdapterMigration, buildAdapterMigrationProposal, decisionOptionsForAdapterMigrationProposal, generatedAdapterRuntimeConfigPath, isAuthorizedAdapterMigration, loadAdapterMigrationResponse, loadAuthorizedAdapterMigration } from "./adapter-migration.js";
 import { readAdapterMigrationAuthoringResponse, writeAdapterMigrationAuthoringTask } from "./adapter-migration-authoring.js";
-import { enhancePlanWithCurrentThread, enhanceContractReviewWithCurrentThread, enhanceEvalReportWithCurrentThread, enhanceGeneratorPlanWithCurrentThread } from "./current-thread-enhancement.js";
+import { enhancePlanWithCurrentThread, enhanceContractReviewWithCurrentThread, enhanceGeneratorPlanWithCurrentThread } from "./current-thread-enhancement.js";
 import { contractReviewRequiresHumanDecision } from "./current-thread-boundaries.js";
 import { pausedStopReasons, phaseBudgetToStallThresholdMs } from "./runtime-health.js";
 import { isCurrentThreadCheckpointStopReason, normalizeRunStopReason } from "./stop-reason.js";
 import { transportProtocolPathForRun, writeTransportProtocol } from "./transport-protocol.js";
-import { buildTrajectoryDecisionArtifact } from "./trajectory-controller.js";
-import type {
-  AdapterCapabilityExecution, AdapterCapabilityName, AdapterDriftReport, AdapterMigrationAuthoringTaskArtifact, AdapterMigrationApplied, AdapterMigrationDecision, AdapterMigrationProposal, ActiveContractFrame, AttachedGeneratorTaskArtifact, ClosedLoopResult, ContractAgreementArtifact,
-  ContractReviewArtifact, CoreVerificationProbeExecution, ControllerMode, ControllerPhaseStatus, ControllerRoundPhase, CurrentThreadCheckpointKind, EvalReport, ExecutionState, EvaluatorVerdictArtifact, FailureLineage, GeneratorPlanArtifact,
-  LoadedAdapterContract, LoopRubric, LoopRunSummary, OperatorAttentionRequired, OperatorRecommendedSkill, PatchRequestArtifact, QualityCritiqueArtifact, ReleaseThresholdResults, RemediationHistory, ResumeDecisionArtifact,
-  RoundArtifacts, RoundContractArtifact, RoundResultArtifact, RoundSummary, SessionStatusArtifact, SessionLoopStatus, TransportMode, RuntimeEvent, RuntimeEventCode, TargetManifest, TrajectoryDecisionArtifact, ValidationLane
-} from "./types.js";
-
-const defaultRubricPath = join(
-  repoRoot,
-  "evals",
-  "rubrics",
-  "generic-harness-rubric.json"
-);
-const preVerificationCapabilities: AdapterCapabilityName[] = [
-  "prepare_target",
-  "apply_change",
-  "run_target",
-  "capture_evidence"
-];
-
-const postVerificationCapabilities: AdapterCapabilityName[] = [
-  "run_checks",
-  "grade_round"
-];
+import type { AdapterCapabilityExecution, AdapterDriftReport, AdapterMigrationAuthoringTaskArtifact, AdapterMigrationApplied, AdapterMigrationDecision, AdapterMigrationProposal, ActiveContractFrame, AttachedGeneratorTaskArtifact, ClosedLoopResult, ContractAgreementArtifact, ContractReviewArtifact, CoreVerificationProbeExecution, ControllerMode, ControllerPhaseStatus, ControllerRoundPhase, CurrentThreadCheckpointKind, EvalReport, ExecutionState, EvaluatorVerdictArtifact, FailureLineage, GeneratorPlanArtifact, LoadedAdapterContract, LoopRubric, LoopRunSummary, OperatorAttentionRequired, OperatorRecommendedSkill, PatchRequestArtifact, QualityCritiqueArtifact, ReleaseThresholdResults, RemediationHistory, ResumeDecisionArtifact, RoundArtifacts, RoundContractArtifact, RoundResultArtifact, RoundSummary, SessionStatusArtifact, SessionLoopStatus, TransportMode, RuntimeEvent, RuntimeEventCode, TargetManifest, TrajectoryDecisionArtifact, ValidationLane } from "./types.js";
 
 const unique = <T>(values: readonly T[]): T[] => [...new Set(values)];
-
-export const runClosedLoop = async (input: {
-  adapterPath?: string;
-  rubricPath?: string;
-  evaluatorProfilePath?: string;
-  targetFamily?: string;
-  preparedRunId?: string;
-  resumeRunPath?: string;
-  allowResumeMigration?: boolean;
-  forceReopenTerminal?: boolean;
-  maxRounds?: number;
-  targetScore?: number;
-  includeRemediationBudget?: boolean;
-  controllerMode?: ControllerMode;
-  transportMode?: TransportMode;
-  repairOnly?: boolean;
-  resumePhase?: ControllerRoundPhase;
-  executorMode?: "harness" | "subagents-experimental";
-  phaseTimeouts?: Partial<Record<ControllerRoundPhase, number>>;
-  appServerTaskTimeoutMs?: number;
-  appServerRequestTimeoutMs?: number;
-}): Promise<ClosedLoopResult> => {
+export const runClosedLoop = async (input: RunClosedLoopInput): Promise<ClosedLoopResult> => {
   const includeRemediationBudget = input.includeRemediationBudget ?? true;
-  const restoredRun = input.resumeRunPath
-    ? await restoreRunState(input.resumeRunPath)
-    : undefined;
-  if (input.repairOnly && !restoredRun) {
-    throw new Error("Repair mode requires --resume-run so the controller can restore persisted state.");
-  }
+  const restoredRun = input.resumeRunPath ? await restoreRunState(input.resumeRunPath) : undefined;
+  if (input.repairOnly && !restoredRun) throw new Error("Repair mode requires --resume-run so the controller can restore persisted state.");
   const controllerMode =
     input.controllerMode ??
     (isControllerMode(process.env.HARNESS_CONTROLLER_MODE)
@@ -126,13 +80,8 @@ export const runClosedLoop = async (input: {
       : undefined) ??
     restoredRun?.summary.transport_mode ??
     defaultTransportModeForControllerMode(controllerMode);
-  const transportValidationError = validateTransportMode({
-    controllerMode,
-    transportMode
-  });
-  if (transportValidationError) {
-    throw new Error(transportValidationError);
-  }
+  const transportValidationError = validateTransportMode({ controllerMode, transportMode });
+  if (transportValidationError) throw new Error(transportValidationError);
   const currentThreadTransport = isCurrentThreadTransport(transportMode);
   let appServerTransport: AppServerTransportController | undefined;
   const phaseTimeouts = {
@@ -1481,30 +1430,22 @@ export const runClosedLoop = async (input: {
       ...(heartbeatNotes.length > 0 ? { notes: heartbeatNotes } : {})
     })
   });
-  const markProgress = async (note: string): Promise<void> => {
-    assertPhaseBudget();
-    lastProgressAt = new Date().toISOString();
-    lastProgressNote = note;
-    if (
-      activeExecutionState !== "paused" &&
-      activeExecutionState !== "stalled" &&
-      activeExecutionState !== "failed" &&
-      activeExecutionState !== "completed"
-    ) {
-      setExecutionState("running");
-    }
-    await heartbeat!.tick();
-  };
-  const withPhaseBudget = async <T>(
-    phase: ControllerRoundPhase,
-    work: () => Promise<T>
-  ): Promise<T> => {
-    const result = await work();
-    if (activeHeartbeatPhase === phase) {
-      assertPhaseBudget();
-    }
-    return result;
-  };
+  const markProgress = async (note: string): Promise<void> =>
+    markLoopProgress({
+      note,
+      assertPhaseBudget,
+      getActiveExecutionState: () => activeExecutionState,
+      setExecutionState,
+      setLastProgress: (at, progressNote) => { lastProgressAt = at; lastProgressNote = progressNote; },
+      heartbeatTick: () => heartbeat!.tick()
+    });
+  const withPhaseBudget = async <T>(phase: ControllerRoundPhase, work: () => Promise<T>): Promise<T> =>
+    withActivePhaseBudget({
+      phase,
+      work,
+      getActiveHeartbeatPhase: () => activeHeartbeatPhase,
+      assertPhaseBudget
+    });
   const recordRoundPhase = async (inputPhase: {
     round: number;
     phase: ControllerRoundPhase;
@@ -3606,318 +3547,63 @@ export const runClosedLoop = async (input: {
     let adapterDriftReport: AdapterDriftReport | undefined;
     let adapterMigrationStopPreview: AdapterMigrationProposal | undefined;
 
-    if (phaseCompletedAtOrBeyond(resumedRoundPhase, "evaluation")) {
-      evalReport = await loadJson<EvalReport>(artifacts.eval_report_path);
-      evaluatorVerdictArtifact = await loadJson<EvaluatorVerdictArtifact>(
-        artifacts.evaluator_verdict_json_path
-      );
-      qualityCritiqueArtifact = await loadJson<QualityCritiqueArtifact>(
-        artifacts.quality_critique_json_path
-      );
-      patchRequestArtifact = await loadJson<PatchRequestArtifact>(
-        artifacts.patch_request_json_path
-      );
-      trajectoryDecisionArtifact = await loadJson<TrajectoryDecisionArtifact>(
-        artifacts.trajectory_decision_json_path
-      );
-      roundResultArtifact = await loadJson<RoundResultArtifact>(
-        artifacts.round_result_json_path
-      );
-      roundScorecard = await loadJsonIfExists<RoundScorecard>(
-        artifacts.scorecard_json_path
-      );
-      failureLineage =
-        (await loadJsonIfExists<FailureLineage>(artifacts.failure_lineage_path)) ??
-        failureLineageForEvalReport({
-          evalReport,
-          loadedAdapter,
-          previousRoundSummary
-        });
-      adapterDriftReport = await loadJsonIfExists<AdapterDriftReport>(
-        artifacts.adapter_drift_report_json_path
-      );
-      adapterMigrationStopPreview =
-        adapterMigrationProposal ??
-        (await loadJsonIfExists<AdapterMigrationProposal>(
-          artifacts.adapter_migration_proposal_json_path
-        ));
-      previousPatchRequestResolved =
-        roundResultArtifact.previous_patch_request_resolved;
-    } else {
-      const evaluationResult = await withPhaseBudget(
-        "evaluation",
-        async (): Promise<ClosedLoopResult | undefined> => {
-      await recordRoundPhase({
-        round,
-        phase: "evaluation",
-        status: "in_progress"
-      });
-      const baseEvalReport = buildEvalReport({
-        round,
-        rubric: hydratedRubric,
-        contractArtifact,
-        contractReviewArtifact,
-        contractAgreementArtifact,
-        artifacts,
-        plannerBriefPath,
-        planPath,
-        loadedAdapter,
-        adapterExecutions,
-        coreProbeResults,
-        targetManifest,
-        previousPatchTargetCheckIds,
-        previousPatchRequestAddressed
-      });
-      const evalEnhancement =
-        transportMode === "current-thread"
-          ? await enhanceEvalReportWithCurrentThread({
-              runId,
-              round,
-              transportProtocolPath: transportProtocolCurrentPath,
-              artifacts,
-              idea,
-              contractArtifact,
-              generatorPlanArtifact,
-              evalReport: baseEvalReport,
-              adapterExecutions,
-              coreProbeResults,
-              targetManifest,
-              executorMode
-            })
-          : undefined;
-      if (evalEnhancement?.kind === "checkpoint") {
-        return checkpointForCurrentThreadWork({
-          round,
-          phase: "evaluation",
-          checkpointKind: evalEnhancement.checkpointKind,
-          artifacts: evalEnhancement.artifacts,
-          notes: evalEnhancement.notes
-        });
-      }
-      const resolvedEvalEnhancement =
-        transportMode === "app-server" && appServerTransport
-          ? await enhanceEvalReportWithAppServer({
-              transport: appServerTransport,
-              round,
-              idea,
-              contractArtifact,
-              generatorPlanArtifact,
-              evalReport: baseEvalReport,
-              adapterExecutions,
-              coreProbeResults,
-              targetManifest,
-              executorMode
-            })
-          : evalEnhancement
-            ? {
-                value: evalEnhancement.value,
-                runtimeWarnings: evalEnhancement.runtimeWarnings
-              }
-            : await enhanceEvalReportWithCodex({
-                roundDirectory,
-                idea,
-                contractArtifact,
-                generatorPlanArtifact,
-                evalReport: baseEvalReport,
-                adapterExecutions,
-                coreProbeResults,
-                targetManifest,
-                executorMode
-              });
-      runtimeWarnings = unique([
-        ...runtimeWarnings,
-        ...resolvedEvalEnhancement.runtimeWarnings
-      ]);
-      evalReport = resolvedEvalEnhancement.value;
-      previousPatchRequestResolved =
-        previousPatchTargetCheckIds.length === 0 ||
-        evalReport.check_results.some(
-          (result) =>
-            result.check_id === "previous_patch_request_resolved" &&
-            result.status === "pass"
-        );
-      if (evaluationPolicy) {
-        const gatedEvaluation = applyRoundScorecardGate({
-          policy: evaluationPolicy,
-          evalReport
-        });
-        evalReport = gatedEvaluation.evalReport;
-        roundScorecard = gatedEvaluation.scorecard;
-      }
-      evaluatorVerdictArtifact = buildEvaluatorVerdictArtifact({
-        contractArtifact,
-        evalReport
-      });
-      const rawFailureLineage = failureLineageForEvalReport({
-        evalReport,
-        loadedAdapter,
-        previousRoundSummary
-      });
-      const provisionalPatchRequestArtifact = buildPatchRequestArtifact({
-        round,
-        evalReport,
-        evaluatorVerdictArtifact,
-        qualityCritiqueArtifact: {
-          critique_id: `${contractArtifact.contract_id}-quality-critique-provisional`,
-          contract_id: contractArtifact.contract_id,
-          round,
-          remediation_strategy: evalReport.threshold_results.contract_completed
-            ? "refine"
-            : "tighten",
-          quality_focus: [],
-          preserve_signals: [],
-          findings: [],
-          notes: []
-        },
-        adapterAttached: Boolean(loadedAdapter),
-        staticContractBlockers: contractReviewArtifact.static_blockers,
-        failureLineage: rawFailureLineage
-      });
-      const allowedCheckIds = new Set([
-        ...(activeContractFrame?.acceptance_checks ??
-          contractAgreementArtifact.acceptance_checks),
-        ...evalReport.unresolved_check_ids,
-        "target_signal_thresholds_met",
-        "adapter_execution_healthy",
-        "release_blockers_recorded"
-      ]);
-      const currentScopeDrift = targetCheckIdsFromPatchRequest(
-        provisionalPatchRequestArtifact
-      ).some((checkId) => !allowedCheckIds.has(checkId));
-      const projectedScoreDeltas =
-        history.length > 0
-          ? [
-              ...scoreDeltas,
-              Number(
-                (
-                  evalReport.total_score - history[history.length - 1].total_score
-                ).toFixed(3)
-              )
-            ].slice(-6)
-          : scoreDeltas.slice(-6);
-      const projectedPlateauCount = isImproved(evalReport.total_score, bestScore)
-        ? 0
-        : plateauCount + 1;
-      failureLineage = rawFailureLineage
-        ? applyFailureLineagePolicySnapshot({
-            history,
-            failureLineage: rawFailureLineage,
-            scoreDeltas: projectedScoreDeltas,
-            scopeDriftDetected: currentScopeDrift,
-            patchEntropy: Number(
-              (
-                provisionalPatchRequestArtifact.must_fix.length > 0
-                  ? provisionalPatchRequestArtifact.must_fix.length
-                  : targetCheckIdsFromPatchRequest(provisionalPatchRequestArtifact).length
-              ).toFixed(3)
-            ),
-            projectedPlateauCount,
-            plateauLimit: hydratedRubric.stop_after_plateau_rounds
-          })
-        : undefined;
-      adapterDriftReport = buildAdapterDriftReport({
-        contractId: contractArtifact.contract_id,
-        round,
-        contractReviewArtifact,
-        failureLineage
-      });
-      adapterMigrationStopPreview =
-        adapterDriftReport && loadedAdapter
-          ? await buildAdapterMigrationProposal({
-              runId,
-              round: round + 1,
-              sourceAdapterDriftReportPath: artifacts.adapter_drift_report_json_path,
-              loadedAdapter,
-              adapterDriftReport
-            })
-          : undefined;
-      qualityCritiqueArtifact = buildQualityCritiqueArtifact({
-        round,
-        contractArtifact,
-        evalReport,
-        loadedAdapter,
-        failureLineage
-      });
-      patchRequestArtifact = buildPatchRequestArtifact({
-        round,
-        evalReport,
-        evaluatorVerdictArtifact,
-        qualityCritiqueArtifact,
-        adapterAttached: Boolean(loadedAdapter),
-        staticContractBlockers: contractReviewArtifact.static_blockers,
-        failureLineage,
-        adapterDriftReport
-      });
-      trajectoryDecisionArtifact = buildTrajectoryDecisionArtifact({
-        round,
-        contractId: contractArtifact.contract_id,
-        history,
-        currentRound: {
-          round,
-          total_score: evalReport.total_score,
-          release_score: evalReport.release_score,
-          overall_verdict: evalReport.overall_verdict,
-          previous_patch_request_resolved: previousPatchRequestResolved,
-          threshold_results: evalReport.threshold_results
-        },
-        patchRequest: patchRequestArtifact,
-        qualityCritique: qualityCritiqueArtifact,
-        failureLineage
-      });
-      roundResultArtifact = buildRoundResultArtifact({
-        roundDirectory,
-        round,
-        contractAgreementArtifact,
-        generatorPlanArtifact,
-        evaluatorVerdictArtifact,
-        patchRequestArtifact,
-        qualityCritiqueArtifact,
-        evalReport,
-        selectedForRun: false,
-        previousPatchRequestAddressed,
-        previousPatchRequestResolved,
-        ...(roundScorecard ? { scorecardPath: artifacts.scorecard_json_path } : {})
-      });
-
-      await writeRoundArtifacts({
-        roundDirectory,
-        evaluatorVerdictArtifact,
-        patchRequestArtifact,
-        qualityCritiqueArtifact,
-        trajectoryDecisionArtifact,
-        roundResultArtifact,
-        evalReport,
-        failureLineage,
-        adapterDriftReport,
-        adapterMigrationProposal,
-        adapterMigrationApplied
-      });
-      await writeOptionalRoundScorecardArtifacts({
-        roundDirectory,
-        scorecard: roundScorecard
-      });
-      await markProgress(`Evaluation artifacts saved for round ${round}.`);
-      await recordRoundPhase({
-        round,
-        phase: "evaluation",
-        status: "completed",
-        artifacts: {
-          eval_report_path: artifacts.eval_report_path,
-          ...(roundScorecard ? { scorecard_path: artifacts.scorecard_json_path } : {}),
-          patch_request_path: artifacts.patch_request_json_path,
-          round_result_path: artifacts.round_result_json_path,
-          ...(adapterDriftReport
-            ? { adapter_drift_report_path: artifacts.adapter_drift_report_json_path }
-            : {})
-        }
-      });
-      return undefined;
-        }
-      );
-      if (evaluationResult) {
-        return evaluationResult;
-      }
+    const evaluatorStep = await runEvaluatorStep({
+      resumedRoundPhase,
+      artifacts,
+      roundDirectory,
+      round,
+      rubric: hydratedRubric,
+      contractArtifact,
+      contractReviewArtifact,
+      contractAgreementArtifact,
+      generatorPlanArtifact,
+      plannerBriefPath,
+      planPath,
+      loadedAdapter,
+      adapterExecutions,
+      coreProbeResults,
+      targetManifest,
+      previousPatchTargetCheckIds,
+      previousPatchRequestAddressed,
+      evaluationPolicy,
+      activeContractFrame,
+      history,
+      scoreDeltas,
+      plateauCount,
+      plateauLimit: hydratedRubric.stop_after_plateau_rounds,
+      bestScore,
+      previousRoundSummary,
+      adapterMigrationProposal,
+      adapterMigrationApplied,
+      runId,
+      transportMode,
+      transportProtocolCurrentPath,
+      appServerTransport,
+      idea,
+      executorMode,
+      withPhaseBudget,
+      recordRoundPhase,
+      checkpointForCurrentThreadWork,
+      markProgress
+    });
+    if (evaluatorStep.checkpointResult) {
+      return evaluatorStep.checkpointResult;
     }
+    runtimeWarnings = unique([
+      ...runtimeWarnings,
+      ...evaluatorStep.runtimeWarnings
+    ]);
+    evalReport = evaluatorStep.evalReport;
+    previousPatchRequestResolved = evaluatorStep.previousPatchRequestResolved;
+    evaluatorVerdictArtifact = evaluatorStep.evaluatorVerdictArtifact;
+    qualityCritiqueArtifact = evaluatorStep.qualityCritiqueArtifact;
+    patchRequestArtifact = evaluatorStep.patchRequestArtifact;
+    trajectoryDecisionArtifact = evaluatorStep.trajectoryDecisionArtifact;
+    roundResultArtifact = evaluatorStep.roundResultArtifact;
+    roundScorecard = evaluatorStep.roundScorecard;
+    failureLineage = evaluatorStep.failureLineage;
+    adapterDriftReport = evaluatorStep.adapterDriftReport;
+    adapterMigrationStopPreview = evaluatorStep.adapterMigrationStopPreview;
     latestEvalReport = evalReport;
     const improved = isImproved(evalReport.total_score, bestScore);
 
@@ -3936,143 +3622,76 @@ export const runClosedLoop = async (input: {
       plateauCount += 1;
     }
 
-    const roundSummary: RoundSummary = {
+    const attemptReport = buildAttemptRoundReport({
       round,
-      attempt_kind: directive.attempt_kind,
-      negotiation_mode: lifecycleDecision.negotiation_mode,
-      continuation_authority: lifecycleDecision.continuation_authority,
-      decision_source: lifecycleDecision.decision_source,
-      controller_mode: controllerMode,
-      transport_mode: transportMode,
-      ...(lifecycleDecision.recontract_reason
-        ? { recontract_reason: lifecycleDecision.recontract_reason }
-        : {}),
-      label: directive?.label ?? `round ${round}`,
-      controller_reason: lifecycleDecision.reason,
-      trajectory: trajectoryDecisionArtifact,
-      objective: contractArtifact.objective,
-      ...(resolvedTargetFamily ? { target_family: resolvedTargetFamily } : {}),
-      ...(resolvedValidationLane
-        ? { validation_lane: resolvedValidationLane }
-        : {}),
-      total_score: evalReport.total_score,
-      control_plane_score: evalReport.control_plane_score,
-      proof_score: evalReport.proof_score,
-      release_score: evalReport.release_score,
-      overall_verdict: evalReport.overall_verdict,
-      check_pass_rate: roundResultArtifact.check_pass_rate,
-      contract_path: artifacts.contract_json_path,
-      contract_review_path: persistContractReviewArtifact
+      attemptKind: directive.attempt_kind,
+      directiveLabel: directive?.label,
+      lifecycleDecision,
+      controllerMode,
+      transportMode,
+      targetFamily: resolvedTargetFamily,
+      validationLane: resolvedValidationLane,
+      artifacts,
+      contractReviewPath: persistContractReviewArtifact
         ? artifacts.contract_review_json_path
         : undefined,
-      contract_agreement_path: persistContractAgreementArtifact
+      contractAgreementPath: persistContractAgreementArtifact
         ? artifacts.contract_agreement_json_path
         : undefined,
-      generator_plan_path: artifacts.generator_plan_json_path,
-      evaluator_verdict_path: artifacts.evaluator_verdict_json_path,
-      patch_request_path: artifacts.patch_request_json_path,
-      quality_critique_path: artifacts.quality_critique_json_path,
-      trajectory_decision_path: artifacts.trajectory_decision_json_path,
-      eval_report_path: artifacts.eval_report_path,
-      ...(roundScorecard ? { scorecard_path: artifacts.scorecard_json_path } : {}),
-      failure_lineage_path: artifacts.failure_lineage_path,
-      ...(adapterDriftReport
-        ? { adapter_drift_report_path: artifacts.adapter_drift_report_json_path }
-        : {}),
-      ...(adapterMigrationProposal
-        ? {
-            adapter_migration_proposal_path:
-              artifacts.adapter_migration_proposal_json_path
-          }
-        : {}),
-      ...(adapterMigrationApplied
-        ? {
-            adapter_migration_applied_path:
-              artifacts.adapter_migration_applied_json_path
-          }
-        : {}),
-      planner_context_path: artifacts.planner_context_path,
-      generator_brief_path: artifacts.generator_brief_path,
-      qa_review_path: artifacts.qa_review_path,
-      controller_decision_path: artifacts.controller_decision_path,
-      evidence_paths: evalReport.evidence_paths,
-      previous_patch_request_addressed: roundResultArtifact.previous_patch_request_addressed,
-      previous_patch_request_resolved: roundResultArtifact.previous_patch_request_resolved,
-      resolved_check_ids: roundResultArtifact.resolved_check_ids,
-      unresolved_check_ids: roundResultArtifact.unresolved_check_ids,
-      threshold_results: evalReport.threshold_results,
-      dimension_scores: evalReport.dimension_scores,
-      ...(failureLineage ? { failure_lineage: failureLineage } : {})
-    };
-      latestRoundState = {
-        score: evalReport.total_score,
-        controlPlaneScore: evalReport.control_plane_score,
-        proofScore: evalReport.proof_score,
-        verdict: evalReport.overall_verdict,
-        unresolvedCheckIds: roundResultArtifact.unresolved_check_ids,
-        patchNextAction: patchRequestArtifact.next_action,
-        patchMustFixCount: patchRequestArtifact.must_fix.length,
-        thresholdResults: evalReport.threshold_results,
-        failureLineage,
-        staticAdapterContractInvalid:
-          contractReviewArtifact.static_blockers.length > 0 &&
-          (!adapterMigrationStopPreview ||
-            adapterMigrationStopPreview.apply_mode === "new_run_required")
-      };
-    const roundStopReason =
-      stopReasonForRoundTargetDecision({
-        state: latestRoundState,
-        plateauCount,
-        plateauLimit: hydratedRubric.stop_after_plateau_rounds,
-        completedRounds: round,
-        maxRounds: executionMaxRounds
-      }) ?? "continue";
-    roundSummary.round_stop_reason = roundStopReason;
-    const unresolvedSignature = unresolvedSignatureFor(roundResultArtifact.unresolved_check_ids);
-    if (!unresolvedSignature) {
-      repeatedUnresolvedCount = 0;
-    } else if (unresolvedSignature === latestFailureLineage?.unresolved_signature) {
-      repeatedUnresolvedCount += 1;
-    } else {
-      repeatedUnresolvedCount = 1;
-    }
-    latestFailureLineage = failureLineage;
-    if (history.length > 0) {
-      const previousScore = history[history.length - 1]?.total_score;
-      if (previousScore !== undefined) {
-        scoreDeltas = [
-          ...scoreDeltas,
-          Number((evalReport.total_score - previousScore).toFixed(3))
-        ].slice(-6);
-      }
-    }
-    const stopReason = roundStopReason === "continue" ? undefined : roundStopReason;
-    const roundCheckpointSummary = await withPhaseBudget(
-      "round_commit",
-      async () => {
-    await recordRoundPhase({
-      round,
-      phase: "round_commit",
-      status: "in_progress",
-      artifacts: {
-        round_summary_path: join(roundDirectory, "round_summary.json")
-      }
+      contractReviewArtifact,
+      contractAgreementArtifact,
+      evalReport,
+      roundResultArtifact,
+      patchRequestArtifact,
+      qualityCritiqueArtifact,
+      trajectoryDecisionArtifact,
+      failureLineage,
+      adapterDriftReportPath: adapterDriftReport
+        ? artifacts.adapter_drift_report_json_path
+        : undefined,
+      adapterMigrationProposalPath: adapterMigrationProposal
+        ? artifacts.adapter_migration_proposal_json_path
+        : undefined,
+      adapterMigrationAppliedPath: adapterMigrationApplied
+        ? artifacts.adapter_migration_applied_json_path
+        : undefined,
+      roundScorecard,
+      history,
+      plateauCount,
+      plateauLimit: hydratedRubric.stop_after_plateau_rounds,
+      executionMaxRounds,
+      latestFailureLineage,
+      repeatedUnresolvedCount,
+      scoreDeltas,
+      adapterMigrationStopPreview,
+      previousPatchRequestAddressed,
+      previousPatchRequestResolved
     });
-    history.push(roundSummary);
-    await writeRoundSummary(roundDirectory, roundSummary);
-    latestRoundSummaryPath = join(roundDirectory, "round_summary.json");
-    latestEvalReportPath = artifacts.eval_report_path;
-    await markProgress(`Round summary saved for round ${round}.`);
-    await writeRoundHandoff({
+    latestRoundState = attemptReport.latestRoundState;
+    repeatedUnresolvedCount = attemptReport.repeatedUnresolvedCount;
+    latestFailureLineage = attemptReport.latestFailureLineage;
+    scoreDeltas = attemptReport.scoreDeltas;
+    const roundSummary = attemptReport.roundSummary;
+    const stopReason = attemptReport.stopReason;
+    const roundCommit = await commitAttemptRoundReport({
+      withPhaseBudget,
+      recordRoundPhase,
+      markProgress,
+      writeCheckpoint,
+      updateSessionRefreshState,
+      history,
       roundDirectory,
+      summaryPath,
       scenario,
       round,
-      contractReview: contractReviewArtifact,
-      contractAgreement: contractAgreementArtifact,
+      roundSummary,
+      artifacts,
+      contractReviewArtifact,
+      contractAgreementArtifact,
       evalReport,
-      patchRequest: patchRequestArtifact,
-      qualityCritique: qualityCritiqueArtifact,
-      trajectoryDecision: trajectoryDecisionArtifact,
+      patchRequestArtifact,
+      qualityCritiqueArtifact,
+      trajectoryDecisionArtifact,
       failureLineage,
       executorMode,
       targetFamily: resolvedTargetFamily,
@@ -4082,40 +3701,14 @@ export const runClosedLoop = async (input: {
       previousPatchRequestResolved,
       stopReason
     });
-
+    latestRoundSummaryPath = roundCommit.latestRoundSummaryPath;
+    latestEvalReportPath = roundCommit.latestEvalReportPath;
     previousPatchRequest = patchRequestArtifact;
     previousPatchRequestPath = artifacts.patch_request_json_path;
     previousTrajectoryDecision = trajectoryDecisionArtifact;
     previousTrajectoryDecisionPath = artifacts.trajectory_decision_json_path;
     previousRoundSummary = roundSummary;
-    updateSessionRefreshState({
-      currentObjective: contractAgreementArtifact.objective,
-      steeringNotes: [],
-      reviewFeedback: reviewFeedbackFromArtifacts({
-        contractReviewArtifact,
-        patchRequestArtifact,
-        qualityCritiqueArtifact,
-        evalReport
-      }),
-      externalBlockers: externalBlockersFromPatchRequest(patchRequestArtifact),
-      scopeGuardrails: scopeGuardrailsFromPatchRequest(patchRequestArtifact),
-      latestRound: round,
-      latestStopReason: stopReason
-    });
-    const checkpointSummary = await writeCheckpoint(stopReason);
-    await markProgress(`Run checkpoint saved after round ${round}.`);
-    await recordRoundPhase({
-      round,
-      phase: "round_commit",
-      status: "completed",
-      artifacts: {
-        round_summary_path: latestRoundSummaryPath,
-        summary_path: summaryPath
-      }
-    });
-        return checkpointSummary;
-      }
-    );
+    const roundCheckpointSummary = roundCommit.checkpointSummary;
     if (repairRoundLimit === round) {
       return {
         plan,
